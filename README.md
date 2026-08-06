@@ -25,15 +25,17 @@ For canonical entities and domain rules, see [Data model](docs/data-model.md).
 
 ## Requirements
 
-- Windows with PowerShell
-- A supported Python installation
+- Windows with PowerShell, or Linux/macOS with a POSIX shell
+- A supported Python installation (verified on Python 3.12)
 - Approximately 32 GB RAM is comfortable for the existing datasets
 - No GPU is required for classical scoring
 - PyTorch is optional for ResNet scoring
 
 ## Setup
 
-Run from the project root:
+Run from the project root.
+
+**Windows (PowerShell):**
 
 ```powershell
 python -m venv .venv
@@ -41,16 +43,57 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-The virtual environment is machine-specific. If the project was copied from another computer, delete or ignore the copied `.venv/` and create a new one.
+**Linux / macOS:**
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+The virtual environment is machine-specific. If the project was copied from another computer, delete or ignore the copied `.venv/` and create a new one. `.venv/` is git-ignored, so it never arrives with a clone and must always be created locally.
+
+Do not install the requirements into the system Python. Without the virtual
+environment the application appears to start — Streamlit serves a page — and
+then fails inside it on the first missing import, typically `cv2` or `skimage`.
 
 ## Run
 
-From the project root:
+From the project root, **not** from `scripts/`.
+
+**Windows (PowerShell):**
 
 ```powershell
 .\.venv\Scripts\Activate.ps1
 streamlit run scripts\app.py
 ```
+
+**Linux / macOS:**
+
+```bash
+source .venv/bin/activate
+streamlit run scripts/app.py
+```
+
+Or without activating, using the environment's own launcher:
+
+```bash
+.venv/bin/streamlit run scripts/app.py
+```
+
+`run.sh` wraps that last form and works from any working directory. It checks
+the environment first and reports what to install if anything is missing, rather
+than failing later in the browser. Extra arguments are passed to Streamlit:
+
+```bash
+./run.sh
+./run.sh --server.address 127.0.0.1
+```
+
+If port 8501 is already in use, Streamlit selects the next free port and prints
+the chosen URL. An explicitly requested port is not moved: `--server.port 8502`
+fails outright when 8502 is taken. Use `--server.address 127.0.0.1` to keep the
+app off other machines on the network; by default it binds every interface.
 
 The application provides six views:
 
@@ -190,9 +233,28 @@ For a guaranteed CPU-only PyTorch installation:
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
 ```
 
+On Linux/macOS the same two installs are:
+
+```bash
+.venv/bin/pip install -r requirements-embedding.txt
+.venv/bin/pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+```
+
+Choose the CPU-only build on any machine without an Nvidia GPU, including AMD
+cards. The default PyPI wheels carry CUDA libraries that add roughly 2 GB and
+cannot be used there. CPU inference is fast enough for this tool: on a 16-thread
+desktop CPU, resnet18 reaches about 157 frames/s and resnet50 about 66
+frames/s, so the classical method and the batch sizes in `config.py` remain the
+practical limits rather than the model.
+
+Installing `umap-learn` may downgrade `numpy` slightly, because `numba` pins a
+supported range. This is expected; run `pip check` afterwards to confirm the
+environment is still consistent.
+
 The application automatically uses CUDA when a compatible PyTorch build and Nvidia GPU are available; otherwise it uses the CPU.
 
-The first neural run may download pretrained model weights.
+The first neural run downloads pretrained weights — about 45 MB for resnet18
+and 98 MB for resnet50 — into the PyTorch cache, once per machine.
 
 ## Freeze and export versions
 
@@ -269,21 +331,28 @@ ROI definitions, and exports:
 python scripts\reset_database.py --yes
 ```
 
+On Linux/macOS: `python scripts/reset_database.py --yes`
+
 Generated exports can be recreated from frozen versions as long as the source frames and database remain intact.
 
 ## Moving the project
 
 Copy the entire project folder except `.venv/`.
 
-On the destination computer:
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-```
+On the destination computer, follow [Setup](#setup) for that platform to create a
+fresh environment.
 
 Install `requirements-embedding.txt` only if neural scoring is wanted.
+
+A folder that has travelled through a zip archive or a non-POSIX filesystem may
+arrive with the executable bit set on every file. Git then reports a mode change
+on each one. Suppress it per clone with:
+
+```bash
+git config core.fileMode false
+```
+
+This setting lives in `.git/config` and does not survive to the next clone.
 
 ## Safe testing and development
 
@@ -294,6 +363,14 @@ The storage roots can be redirected to temporary directories with:
 ```powershell
 $env:CURATION_CAMERAS_ROOT = "<temporary camera directory>"
 $env:CURATION_DATA_DIR = "<temporary data directory>"
+```
+
+On Linux/macOS, scoped to a single command:
+
+```bash
+CURATION_CAMERAS_ROOT=<temporary camera directory> \
+CURATION_DATA_DIR=<temporary data directory> \
+.venv/bin/streamlit run scripts/app.py
 ```
 
 Unset or replace these values before launching the application against real data.
@@ -420,6 +497,11 @@ between releases. The ROI editor installs a compatibility shim and falls back to
 ### Neural methods are missing
 
 The base application works without PyTorch. If ResNet methods do not appear, activate the intended virtual environment and install the optional embedding requirements.
+
+Check which environment is actually in use before reinstalling. A system-wide
+`streamlit` earlier on `PATH` will run the app against the wrong interpreter, so
+packages installed into `.venv/` appear to be missing. `which streamlit` should
+report a path inside `.venv/bin`; `./run.sh` avoids the problem entirely.
 
 ### Scores are absent
 
