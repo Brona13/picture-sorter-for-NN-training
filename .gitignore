@@ -1,0 +1,38 @@
+# --- Python ---
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- Environment / secrets ---
+.env
+.env.*
+!.env.example
+
+# --- App data (generated, not source) ---
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+
+# --- Camera content (user data / generated, not source) ---
+cameras/*/unsorted/
+cameras/*/exports/
+
+# --- Perf / diagnostics output ---
+*.jsonl
+perf-log*
+
+# --- Streamlit ---
+.streamlit/secrets.toml
+
+# --- OS / editor cruft ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

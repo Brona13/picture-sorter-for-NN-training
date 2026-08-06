@@ -1,0 +1,15 @@
+# Base application: classical image scoring and Streamlit UI.
+# No model training or neural-scoring dependencies are required.
+numpy>=1.24
+opencv-python>=4.8
+scikit-image>=0.21
+pillow>=10.0
+streamlit>=1.30
+
+# Drag-and-resize ROI editing on an ingested reference frame.
+# Pinned because this component depends on Streamlit internals. The ROI editor
+# installs a compatibility shim; see README.md troubleshooting.
+streamlit-drawable-canvas==0.9.3
+
+# Reads browser viewport width for sizing the ROI editor canvas.
+streamlit-js-eval>=0.1.7

@@ -1,0 +1,341 @@
+"""Filesystem layout helpers: cameras, features, ROIs, image listing.
+
+Layout (see the plan / docs/methodology.md)::
+
+    cameras/<camera>/
+        unsorted/          the camera's immutable frame store (every ingested frame)
+        rois.json          [{name, x, y, w, h}]  (normalised)
+        exports/           materialised training folders, per version
+
+Labels, per-class golden *marks*, versions and the score cache live in SQLite
+(``data/picture_sorter.db``) — see ``db.py`` / ``labels.py``.
+"""
+from __future__ import annotations
+
+import json
+from contextlib import contextmanager
+from contextvars import ContextVar
+from pathlib import Path
+from typing import Callable, Iterator, TypeVar
+
+import config
+import perf
+from roi import ROI
+
+
+_T = TypeVar("_T")
+_render_cache: ContextVar[dict | None] = ContextVar(
+    "datamodel_render_cache", default=None
+)
+
+
+@contextmanager
+def render_snapshot() -> Iterator[None]:
+    """Memoize immutable/read-only domain snapshots for one view render."""
+    if _render_cache.get() is not None:
+        yield
+        return
+    token = _render_cache.set({})
+    try:
+        yield
+    finally:
+        _render_cache.reset(token)
+
+
+def _snapshot_value(key: tuple, loader: Callable[[], _T]) -> _T:
+    cache = _render_cache.get()
+    if cache is None:
+        return loader()
+    if key in cache:
+        perf.count("render_snapshot.hits")
+        perf.count(f"render_snapshot.{key[0]}.hits")
+        return cache[key]
+    perf.count("render_snapshot.misses")
+    perf.count(f"render_snapshot.{key[0]}.misses")
+    value = loader()
+    cache[key] = value
+    return value
+
+
+def _invalidate_snapshot(camera: str, categories: set[str]) -> None:
+    cache = _render_cache.get()
+    if cache is None:
+        return
+    for key in list(cache):
+        if key[0] in categories and (len(key) < 2 or key[1] == camera):
+            cache.pop(key, None)
+
+
+def invalidate_frames(camera: str) -> None:
+    """Invalidate frame and product-scope snapshots after ingest."""
+    _invalidate_snapshot(
+        camera, {"unsorted", "product_membership", "product_frames", "feature_frames"}
+    )
+
+
+def invalidate_product_membership(camera: str) -> None:
+    """Invalidate derived product and feature frame scopes after label changes."""
+    _invalidate_snapshot(
+        camera, {"product_membership", "product_frames", "feature_frames"}
+    )
+
+
+def invalidate_rois(camera: str) -> None:
+    """Invalidate ROI-derived snapshots after create, edit, scope, or delete."""
+    _invalidate_snapshot(
+        camera, {"rois", "product_membership", "product_frames", "feature_frames"}
+    )
+
+
+# --- path helpers ------------------------------------------------------------
+def camera_dir(camera: str) -> Path:
+    return config.CAMERAS_ROOT / camera
+
+
+def unsorted_dir(camera: str) -> Path:
+    return camera_dir(camera) / config.UNSORTED_DIRNAME
+
+
+def rois_path(camera: str) -> Path:
+    return camera_dir(camera) / config.ROIS_FILENAME
+
+
+# --- enumeration -------------------------------------------------------------
+def list_cameras() -> list[str]:
+    def load():
+        root = config.CAMERAS_ROOT
+        if not root.exists():
+            return []
+        perf.count("filesystem.camera_scans")
+        with perf.span("filesystem.list_cameras"):
+            return sorted(p.name for p in root.iterdir() if p.is_dir())
+
+    return _snapshot_value(("cameras", str(config.CAMERAS_ROOT)), load)
+
+
+def _list_images(directory: Path) -> list[Path]:
+    if not directory.exists():
+        return []
+    return sorted(
+        p
+        for p in directory.iterdir()
+        if p.is_file() and p.suffix.lower() in config.IMAGE_EXTENSIONS
+    )
+
+
+def list_unsorted(camera: str) -> list[Path]:
+    def load():
+        perf.count("filesystem.unsorted_scans")
+        with perf.span("filesystem.list_unsorted"):
+            return _list_images(unsorted_dir(camera))
+
+    return _snapshot_value(("unsorted", camera), load)
+
+
+# --- ROIs / features ---------------------------------------------------------
+def load_rois(camera: str) -> list[ROI]:
+    def load():
+        perf.count("roi.file_reads")
+        path = rois_path(camera)
+        if not path.exists():
+            return []
+        try:
+            with perf.span("roi.load_definitions"):
+                data = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return []
+        return [ROI.from_dict(d) for d in data]
+
+    return _snapshot_value(("rois", camera), load)
+
+
+def save_rois(camera: str, rois: list[ROI]) -> None:
+    path = rois_path(camera)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps([r.to_dict() for r in rois], indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    invalidate_rois(camera)
+
+
+def delete_roi(camera: str, feature: str) -> bool:
+    """Remove one ROI definition; associated SQLite state is purged separately."""
+    rois = load_rois(camera)
+    remaining = [roi for roi in rois if roi.name != feature]
+    if len(remaining) == len(rois):
+        return False
+    save_rois(camera, remaining)
+    return True
+
+
+def get_roi(camera: str, feature: str) -> ROI | None:
+    """Return the ROI named ``feature`` for ``camera``, or ``None``."""
+    for r in load_rois(camera):
+        if r.name == feature:
+            return r
+    return None
+
+
+def list_features(camera: str) -> list[str]:
+    """Feature names = ROI names defined for the camera."""
+    return [r.name for r in load_rois(camera)]
+
+
+# --- classes & frame scoping (multi-product hierarchy) -----------------------
+# A ROI can be a product *classifier* (``role="classify"``, classes = product
+# names) or a *quality* ROI (OK/NG). Quality ROIs that live under a product use
+# a composite feature name ``"<product>::<roi>"`` so the whole (camera, feature)
+# storage stack scopes them per product with no schema change.
+FEATURE_SEP = "::"
+
+
+def compose_feature(product: str | None, name: str) -> str:
+    """``("typeA", "rod") -> "typeA::rod"``; a falsy product returns ``name`` unchanged."""
+    return f"{product}{FEATURE_SEP}{name}" if product else name
+
+
+def split_feature(feature: str) -> tuple[str | None, str]:
+    """Inverse of :func:`compose_feature` — ``(product | None, short_name)``."""
+    if FEATURE_SEP in feature:
+        product, name = feature.split(FEATURE_SEP, 1)
+        return product, name
+    return None, feature
+
+
+def classify_feature(camera: str) -> str | None:
+    """Name of the camera's product-classification ROI, or ``None`` if none defined."""
+    for r in load_rois(camera):
+        if r.role == "classify":
+            return r.name
+    return None
+
+
+def classes_for(camera: str, feature: str) -> list[str]:
+    """The class vocabulary for a feature: the ROI's own ``classes`` if set,
+    otherwise the project default (``config.CLASSES`` = OK/NG)."""
+    roi = get_roi(camera, feature)
+    if roi is not None and roi.classes:
+        return list(roi.classes)
+    return list(config.CLASSES)
+
+
+def products(camera: str) -> list[str]:
+    """The camera's product names = the classification ROI's classes (empty if none)."""
+    cf = classify_feature(camera)
+    return classes_for(camera, cf) if cf else []
+
+
+def feature_products(camera: str, feature: str) -> list[str] | None:
+    """Products a **shared** camera-level ROI applies to, or ``None`` if unrestricted."""
+    roi = get_roi(camera, feature)
+    return list(roi.products) if roi is not None and roi.products else None
+
+
+def is_shared_feature(camera: str, feature: str) -> bool:
+    """True for a camera-level ROI explicitly shared across a subset of products."""
+    return split_feature(feature)[0] is None and feature_products(camera, feature) is not None
+
+
+def list_features_for(camera: str, product: str | None = None) -> list[str]:
+    """Full feature names visible in one scope.
+
+    ``product=None`` gives the camera-level features (the classification ROI plus
+    any camera-wide quality ROIs); a product name gives that product's own ROIs
+    **plus any shared ROI that lists this product** — the shared one is the same
+    feature in every scope, so it keeps a single golden/label set.
+    """
+    out: list[str] = []
+    for r in load_rois(camera):
+        owner = split_feature(r.name)[0]
+        if owner == product:
+            out.append(r.name)
+        elif (
+            owner is None
+            and product is not None
+            and r.role != "classify"
+            and r.products
+            and product in r.products
+        ):
+            out.append(r.name)
+    return out
+
+
+def _product_membership(camera: str) -> tuple[list[str], dict[str, set[str]]] | None:
+    def load():
+        perf.count("product.membership_builds")
+        all_frames = [path.name for path in list_unsorted(camera)]
+        cf = classify_feature(camera)
+        if not cf:
+            return None
+        import labels  # lazy: labels imports datamodel
+
+        labelled = labels.current_labels(camera, cf)
+        membership: dict[str, set[str]] = {}
+        for frame in all_frames:
+            cls = labelled.get(frame)
+            if cls:
+                membership.setdefault(cls, set()).add(frame)
+        return all_frames, membership
+
+    return _snapshot_value(("product_membership", camera), load)
+
+
+def frames_of_product(camera: str, product: str | None) -> list[str]:
+    """Frames belonging to ``product`` according to the classification feature.
+
+    A frame belongs to the product identified by its current product label.
+    Golden/label consistency is enforced transactionally by ``labels.py``.
+
+    ``product=None`` or a camera without a classification ROI returns the complete
+    frame store.
+    """
+    if not product:
+        return [path.name for path in list_unsorted(camera)]
+
+    def load():
+        snapshot = _product_membership(camera)
+        if snapshot is None:
+            return [path.name for path in list_unsorted(camera)]
+        all_frames, membership = snapshot
+        allowed = membership.get(product, set())
+        return [frame for frame in all_frames if frame in allowed]
+
+    return _snapshot_value(("product_frames", camera, product), load)
+
+
+def frames_for_feature(camera: str, feature: str) -> list[str]:
+    """Frame filenames this feature applies to.
+
+    A product-scoped feature ``"<product>::<roi>"`` sees only that product's
+    frames — the nesting's "teeth". A **shared** camera-level ROI sees the union
+    of the products it lists. Everything else sees the whole inbox.
+    """
+    def load():
+        product = split_feature(feature)[0]
+        if product:
+            return frames_of_product(camera, product)
+
+        shared = feature_products(camera, feature)
+        if shared:
+            allowed = set()
+            for selected_product in shared:
+                allowed.update(frames_of_product(camera, selected_product))
+            # keep the inbox order rather than the products' order
+            return [
+                frame for frame in frames_of_product(camera, None)
+                if frame in allowed
+            ]
+
+        return frames_of_product(camera, None)
+
+    return _snapshot_value(("feature_frames", camera, feature), load)
+
+
+def ensure_camera_dirs(camera: str) -> None:
+    unsorted_dir(camera).mkdir(parents=True, exist_ok=True)
+    cache = _render_cache.get()
+    if cache is not None:
+        for key in list(cache):
+            if key[0] == "cameras":
+                cache.pop(key, None)
