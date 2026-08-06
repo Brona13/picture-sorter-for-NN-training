@@ -3,7 +3,7 @@ name: MEMORY
 description: Portable index of project memory files
 status: current
 document_type: index
-last_updated: 2026-07-28
+last_updated: 2026-08-06
 ---
 
 # Project Memory Index
@@ -26,3 +26,4 @@ Portable memory for the *Picture Sorter for NN Training* project. Kept inside th
 - [Package layout](package-layout.md) — `view_classify/` and `view_roi_editor/` are packages (2026-07-28); where each concern lives.
 - [Streamlit gotchas](streamlit-gotchas.md) — image 404s, `st.markdown` strips `<img>`, selectbox keys, per-button CSS, redundant `st.rerun` resets widgets.
 - [TODO: ROI image full-width](todo-roi-image-fullwidth.md) — deferred; editor image doesn't stretch to full browser width.
+- [Session 2026-08-06: Git repo connection](session-2026-08-06-git-repo-connection.md) — repo connected to GitHub; camera content stays out of git; `core.fileMode false` doesn't survive a clone.
