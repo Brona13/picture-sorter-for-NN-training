@@ -103,7 +103,7 @@ def render_grid(
             "will take longer. Use 24 per page for the most responsive labeling flow."
         )
     preparing = st.empty()
-    preparing.caption(f"Preparing {len(shown)} grid cards and thumbnailsâ€¦")
+    preparing.caption(f"Preparing {len(shown)} grid cards and thumbnails…")
     token = _FULL_GRID_RENDER.set(True)
     try:
         with perf.span("grid.presentation"):
