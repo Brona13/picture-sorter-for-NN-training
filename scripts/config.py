@@ -38,7 +38,8 @@ STANDARD_SIZE = (256, 256)
 HIST_BINS = (50, 60, 3)
 
 # Weights for combining normalised distances into a novelty score, per metric.
-# Keys MUST match the metric names produced by ``curation.distance_between``.
+# Keys MUST match the metric names ``classify.py`` puts in its per-pair distance dict
+# (classical: "histogram", "mse", "ssim"; neural: each active backbone name).
 METRIC_WEIGHTS = {
     "histogram": 1.0,
     "mse": 1.0,

@@ -56,7 +56,7 @@ class RenderSnapshotTests(unittest.TestCase):
             self.assertEqual(["old"], [r.name for r in datamodel.load_rois(self.camera)])
 
             result = ingest.ingest_files(
-                self.camera, "unsorted", [("new.png", b"synthetic-image-bytes")]
+                self.camera, [("new.png", b"synthetic-image-bytes")]
             )
             self.assertEqual(1, result.n_added)
             self.assertEqual(["new.png"], [p.name for p in datamodel.list_unsorted(self.camera)])

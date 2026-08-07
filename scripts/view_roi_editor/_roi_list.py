@@ -181,7 +181,6 @@ def _render_delete_confirm(camera: str, r: ROI, short: str, confirm_key: str) ->
         db_removed = labels.purge_feature(camera, r.name)
         st.session_state.pop(confirm_key, None)
         st.session_state.pop(f"classify::{camera}::{r.name}", None)
-        ui_common.clear_ranked(camera, r.name)
         st.success(
             f"Deleted '{r.name}': removed "
             f"{db_removed['labels']} labels / {db_removed['goldens']} golden marks / "

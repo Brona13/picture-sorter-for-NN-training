@@ -62,7 +62,7 @@ class EndToEndFlowTests(unittest.TestCase):
         self._create_source_images()
         ingest_events: list[ingest.IngestProgress] = []
         ingested = ingest.ingest_folder(
-            self.camera, "unsorted", self.source, progress_cb=ingest_events.append
+            self.camera, self.source, progress_cb=ingest_events.append
         )
         self.assertEqual(10, ingested.n_added)
         self.assertEqual(10, db.frame_index_count(self.camera))

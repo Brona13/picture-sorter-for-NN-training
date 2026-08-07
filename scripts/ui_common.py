@@ -80,18 +80,6 @@ class ScoringProgressUI:
         self._status.update(label=label, state="error", expanded=True)
 
 
-def ranked_key(camera: str, feature: str, method: str = "cpu") -> str:
-    """Session-state key holding the scored candidate list for a camera+feature+method."""
-    return f"ranked::{camera}::{feature}::{method}"
-
-
-def clear_ranked(camera: str, feature: str) -> None:
-    """Drop every scored-list cache for a feature, across all scoring methods."""
-    prefix = f"ranked::{camera}::{feature}::"
-    for k in [key for key in st.session_state if key.startswith(prefix)]:
-        del st.session_state[k]
-
-
 def confirm_delete_key(camera: str, feature: str) -> str:
     """Session-state key flagging that a feature's delete is awaiting confirmation."""
     return f"confirm_del::{camera}::{feature}"

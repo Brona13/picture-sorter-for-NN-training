@@ -10,11 +10,6 @@ import datamodel
 import ingest
 import ui_common
 
-# Single destination: every frame lands in the camera's immutable inbox. Reference
-# frames are no longer a separate folder — any ingested frame can serve as the ROI
-# drawing background, and scoring references are per-class golden *marks*.
-_INGEST_TARGET = ("unsorted", "frames")
-
 
 class _IngestProgressUI:
     """Translate domain ingest phases into one live Streamlit status."""
@@ -59,7 +54,7 @@ def _show_ingest_report() -> None:
     rep = st.session_state.pop(ui_common.INGEST_REPORT_KEY, None)
     if not rep:
         return
-    msg = f"Added **{rep['added']}** to **{rep['target']}**"
+    msg = f"Added **{rep['added']}** frame(s)"
     if rep["skipped"]:
         msg += f" · skipped **{len(rep['skipped'])}** duplicate(s)"
     st.success(msg)
@@ -70,9 +65,8 @@ def _show_ingest_report() -> None:
         st.error("Errors:\n\n" + "\n".join(f"- {e}" for e in rep["errors"]))
 
 
-def _stash_and_rerun(target: str, result: ingest.IngestResult) -> None:
+def _stash_and_rerun(result: ingest.IngestResult) -> None:
     st.session_state[ui_common.INGEST_REPORT_KEY] = {
-        "target": target,
         "added": result.n_added,
         "skipped": result.skipped,
         "errors": result.errors,
@@ -80,14 +74,14 @@ def _stash_and_rerun(target: str, result: ingest.IngestResult) -> None:
     st.rerun()
 
 
-def _ingest_section(camera: str, target: str, label: str) -> None:
+def _ingest_section(camera: str) -> None:
     upload_types = [e.lstrip(".") for e in sorted(config.IMAGE_EXTENSIONS)]
-    with st.form(f"upload::{camera}::{target}", clear_on_submit=True):
+    with st.form(f"upload::{camera}", clear_on_submit=True):
         files = st.file_uploader(
-            f"Drop or browse images for **{label}**",
+            "Drop or browse images for **frames**",
             type=upload_types,
             accept_multiple_files=True,
-            key=f"uploader::{camera}::{target}",
+            key=f"uploader::{camera}",
         )
         submitted = st.form_submit_button("➕ Add frames")
     if submitted:
@@ -95,26 +89,25 @@ def _ingest_section(camera: str, target: str, label: str) -> None:
             progress = _IngestProgressUI(f"Preparing {len(files)} upload(s)…")
             result = ingest.ingest_files(
                 camera,
-                target,
                 [(f.name, f) for f in files],
                 progress_cb=progress,
                 total=len(files),
             )
             progress.complete(result)
-            _stash_and_rerun(target, result)
+            _stash_and_rerun(result)
         else:
             st.warning("No files selected.")
 
     with st.expander("…or import from a folder path on this computer"):
-        folder = st.text_input("Folder path", key=f"folder::{camera}::{target}")
-        if st.button("Import folder", key=f"folderbtn::{camera}::{target}"):
+        folder = st.text_input("Folder path", key=f"folder::{camera}")
+        if st.button("Import folder", key=f"folderbtn::{camera}"):
             if folder.strip():
                 progress = _IngestProgressUI("Scanning folder…")
                 result = ingest.ingest_folder(
-                    camera, target, folder.strip(), progress_cb=progress,
+                    camera, folder.strip(), progress_cb=progress,
                 )
                 progress.complete(result)
-                _stash_and_rerun(target, result)
+                _stash_and_rerun(result)
             else:
                 st.warning("Enter a folder path.")
 
@@ -132,8 +125,7 @@ def render(camera: str, product: str | None = None) -> None:
 
     st.metric("Frames in this camera", len(datamodel.list_unsorted(camera)))
 
-    target, label = _INGEST_TARGET
-    _ingest_section(camera, target, label)
+    _ingest_section(camera)
 
     with st.expander("Maintenance"):
         st.caption(

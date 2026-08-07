@@ -438,8 +438,7 @@ def mark_frames_deleted(
         con.close()
 
 
-def restore_frames(camera: str, frames: list[str], source: str = "user") -> int:
-    del source
+def restore_frames(camera: str, frames: list[str]) -> int:
     if not frames:
         return 0
     placeholders = ",".join("?" for _ in frames)
@@ -509,10 +508,7 @@ def add_dedup_mutes(
         con.close()
 
 
-def add_dedup_unmutes(
-    camera: str, feature: str, frames: list[str], source: str = "dedup"
-) -> int:
-    del source
+def add_dedup_unmutes(camera: str, feature: str, frames: list[str]) -> int:
     if not frames:
         return 0
     placeholders = ",".join("?" for _ in frames)
