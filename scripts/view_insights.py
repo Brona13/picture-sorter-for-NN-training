@@ -9,7 +9,6 @@ from __future__ import annotations
 import streamlit as st
 
 import classify
-import config
 import datamodel
 import labels
 import ui_common
@@ -18,13 +17,7 @@ import ui_common
 def render(camera: str, product: str | None = None) -> None:
     st.header(f"Insights — {camera}" + (f" › {product}" if product else ""))
 
-    features = datamodel.list_features_for(camera, product) + [
-        datamodel.compose_feature(product, config.WHOLE_FRAME_FEATURE)
-    ]
-    feature = st.selectbox(
-        "Feature (ROI)", features,
-        format_func=lambda f: ui_common.feature_label(camera, f, product),
-    )
+    feature = ui_common.feature_picker(camera, product)
 
     classes = datamodel.classes_for(camera, feature)
     gold = labels.current_goldens(camera, feature)

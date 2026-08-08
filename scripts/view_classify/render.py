@@ -4,7 +4,6 @@ from __future__ import annotations
 import streamlit as st
 
 import classify
-import config
 import datamodel
 import db
 import dedup
@@ -89,13 +88,7 @@ def render(camera: str, product: str | None = None) -> None:
 
 
 def _pick_feature(camera: str, product: str | None) -> str:
-    features = datamodel.list_features_for(camera, product) + [
-        datamodel.compose_feature(product, config.WHOLE_FRAME_FEATURE)
-    ]
-    feature = st.selectbox(
-        "Feature (ROI)", features,
-        format_func=lambda f: ui_common.feature_label(camera, f, product),
-    )
+    feature = ui_common.feature_picker(camera, product)
     shared_products = datamodel.feature_products(camera, feature)
     if shared_products:
         inbox = len(datamodel.list_unsorted(camera))

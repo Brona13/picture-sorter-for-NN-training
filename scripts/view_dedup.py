@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import streamlit as st
 
-import config
 import datamodel
 import db
 import dedup
@@ -48,9 +47,6 @@ def render(camera: str, product: str | None = None) -> None:
         return
 
     feature = _pick_feature(camera, product)
-    if feature is None:
-        return
-
     frames = datamodel.frames_for_feature(camera, feature)
     if not frames:
         st.info("This feature has no frames yet — ingest some first.")
@@ -84,19 +80,10 @@ def render(camera: str, product: str | None = None) -> None:
 
 
 # --- feature picker ----------------------------------------------------------
-def _pick_feature(camera: str, product: str | None) -> str | None:
-    features = datamodel.list_features_for(camera, product) + [
-        datamodel.compose_feature(product, config.WHOLE_FRAME_FEATURE)
-    ]
-    if not features:
-        st.info("No features defined for this scope. Draw an ROI first in **ROI editor**.")
-        return None
-    feature = st.selectbox(
-        "Feature (ROI)", features,
-        format_func=lambda f: ui_common.feature_label(camera, f, product),
-        key=f"dedup::feature::{camera}::{product}",
+def _pick_feature(camera: str, product: str | None) -> str:
+    return ui_common.feature_picker(
+        camera, product, key=f"dedup::feature::{camera}::{product}"
     )
-    return feature
 
 
 # --- controls ---------------------------------------------------------------

@@ -160,6 +160,32 @@ def feature_label(camera: str, feature: str, product: str | None = None) -> str:
     return short
 
 
+def feature_picker(
+    camera: str,
+    product: str | None,
+    *,
+    key: str | None = None,
+    label: str = "Feature (ROI)",
+) -> str:
+    """The 'Feature (ROI)' dropdown shared by Classify/Dedup/Versions/Insights.
+
+    Options are the ROIs visible in ``product``'s scope plus the synthetic
+    whole-frame entry, rendered through :func:`feature_label` so a shared
+    ROI's scope hint stays consistent across views.
+    """
+    import config
+    import datamodel
+
+    features = datamodel.list_features_for(camera, product) + [
+        datamodel.compose_feature(product, config.WHOLE_FRAME_FEATURE)
+    ]
+    return st.selectbox(
+        label, features,
+        format_func=lambda f: feature_label(camera, f, product),
+        key=key,
+    )
+
+
 def class_bars_html(
     dists: dict[str, float | None],
     classes: list[str],
