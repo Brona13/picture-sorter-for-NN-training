@@ -65,30 +65,43 @@ class SessionStateKeyConventionsTests(unittest.TestCase):
     state must agree on their exact shape. Silent drift here is precisely
     the failure mode ``BEHAVIOR_INVENTORY.md`` §10 warns about: the
     Versions Freeze form reads ``classify::<camera>::<feature>`` produced
-    by ``view_classify/_helpers.scored_key``. This test locks that
-    invariant so Step 3/4 refactors can't split them.
+    (and later popped) by the Classify view. The registry in
+    ``session_keys`` owns that convention; these tests lock its exact
+    output so refactors can't silently split producer and consumer.
     """
 
-    def test_scored_key_matches_versions_freeze_form_literal(self) -> None:
-        from view_classify import _helpers
+    def test_classify_scored_key_matches_documented_literal(self) -> None:
+        import session_keys
 
         camera = "cam"
         feature = "typeA::rod"
         expected = f"classify::{camera}::{feature}"
-        self.assertEqual(expected, _helpers.scored_key(camera, feature))
+        self.assertEqual(expected, session_keys.classify_scored(camera, feature))
 
-    def test_scored_key_survives_shared_and_composite_features(self) -> None:
-        from view_classify import _helpers
+    def test_classify_scored_survives_shared_and_composite_features(self) -> None:
+        import session_keys
 
         # A shared camera-level feature — no product prefix.
         self.assertEqual(
             "classify::cam::defects",
-            _helpers.scored_key("cam", "defects"),
+            session_keys.classify_scored("cam", "defects"),
         )
         # A product-scoped composite feature.
         self.assertEqual(
             "classify::cam::widgetA::rod",
-            _helpers.scored_key("cam", "widgetA::rod"),
+            session_keys.classify_scored("cam", "widgetA::rod"),
+        )
+
+    def test_classify_show_muted_and_insights_matrices_shapes(self) -> None:
+        import session_keys
+
+        self.assertEqual(
+            "classify::show-muted::cam::front",
+            session_keys.classify_show_muted("cam", "front"),
+        )
+        self.assertEqual(
+            "insights::cam::front",
+            session_keys.insights_matrices("cam", "front"),
         )
 
 

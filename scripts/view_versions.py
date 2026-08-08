@@ -13,6 +13,7 @@ import streamlit as st
 import classify
 import datamodel
 import labels
+import session_keys
 import ui_common
 import versions as versions_mod
 
@@ -41,7 +42,7 @@ def render(camera: str, product: str | None = None) -> None:
         name = st.text_input("Version name", placeholder="e.g. first-clean-batch")
         notes = st.text_area("Notes (optional)", placeholder="what changed and why")
         if st.form_submit_button("🔒 Freeze version", type="primary"):
-            scored = st.session_state.get(f"classify::{camera}::{feature}")
+            scored = st.session_state.get(session_keys.classify_scored(camera, feature))
             stats = classify.stats_for(scored) if scored else {}
             info = versions_mod.freeze(camera, feature, name, notes, stats=stats)
             st.success(
@@ -117,7 +118,7 @@ def render(camera: str, product: str | None = None) -> None:
                 if y.button("✅ Yes, revert", key=f"yes::{v['id']}"):
                     res = versions_mod.revert(camera, feature, v["id"])
                     st.session_state.pop(ck, None)
-                    st.session_state.pop(f"classify::{camera}::{feature}", None)
+                    st.session_state.pop(session_keys.classify_scored(camera, feature), None)
                     st.success(
                         f"Reverted to v{v['number']}: {res['labels']} labels, "
                         f"{res['goldens']} golden marks."
