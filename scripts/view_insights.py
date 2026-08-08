@@ -11,6 +11,7 @@ import streamlit as st
 import classify
 import datamodel
 import labels
+import session_keys
 import ui_common
 
 
@@ -44,7 +45,7 @@ def render(camera: str, product: str | None = None) -> None:
         )
         return
 
-    key = f"insights::{camera}::{feature}"
+    key = session_keys.insights_matrices(camera, feature)
     progress = None
     c1, c2 = st.columns([1, 3])
     if c1.button("🔄 Compute matrices", type="primary"):
