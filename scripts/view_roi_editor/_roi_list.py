@@ -15,6 +15,7 @@ import streamlit as st
 
 import datamodel
 import labels
+import session_keys
 import ui_common
 import versions
 from roi import ROI
@@ -180,7 +181,7 @@ def _render_delete_confirm(camera: str, r: ROI, short: str, confirm_key: str) ->
         datamodel.delete_roi(camera, r.name)
         db_removed = labels.purge_feature(camera, r.name)
         st.session_state.pop(confirm_key, None)
-        st.session_state.pop(f"classify::{camera}::{r.name}", None)
+        st.session_state.pop(session_keys.classify_scored(camera, r.name), None)
         st.success(
             f"Deleted '{r.name}': removed "
             f"{db_removed['labels']} labels / {db_removed['goldens']} golden marks / "
