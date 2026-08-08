@@ -11,6 +11,7 @@ import embedding
 import engine
 import labels
 import perf
+import session_keys
 import ui_common
 
 from . import _auto, _bulk, _controls, _grid, _helpers, _suggest_goldens
@@ -145,7 +146,7 @@ def _refresh(
     means the caller should early-return: either no frames at all, or no
     goldens yet (cold start).
     """
-    key = _helpers.scored_key(camera, feature)
+    key = session_keys.classify_scored(camera, feature)
     classes = datamodel.classes_for(camera, feature)
     roi_key = classify._roi_cache_key(engine.resolve_roi(camera, feature))
 
@@ -232,7 +233,7 @@ def _apply_mute_filter(camera: str, feature: str, results):
     show_muted = st.checkbox(
         f"Show muted ({len(muted)} hidden by dedup)",
         value=False,
-        key=f"classify::show-muted::{camera}::{feature}",
+        key=session_keys.classify_show_muted(camera, feature),
         help="Frames muted from the Dedup view are hidden here by default.",
     )
     if show_muted:
@@ -241,7 +242,7 @@ def _apply_mute_filter(camera: str, feature: str, results):
 
 
 def _stale_warning(camera: str, feature: str, gold: dict[str, list[str]]) -> None:
-    key = _helpers.scored_key(camera, feature)
+    key = session_keys.classify_scored(camera, feature)
     gsig_stale = st.session_state.get(key + "::gsig") != _helpers.golden_signature(gold)
     fsig_stale = st.session_state.get(key + "::fsig") != _helpers.frames_signature(camera, feature)
     if gsig_stale:

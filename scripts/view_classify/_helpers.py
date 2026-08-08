@@ -6,11 +6,6 @@ import datamodel
 import ui_common
 
 
-def scored_key(camera: str, feature: str) -> str:
-    """Session-state key holding the last scored ``list[FrameScore]``."""
-    return f"classify::{camera}::{feature}"
-
-
 def golden_signature(gold: dict[str, list[str]]) -> str:
     """Stable fingerprint of the golden sets, to detect 'scores are stale'."""
     return "|".join(f"{cls}:{','.join(sorted(gold.get(cls, [])))}" for cls in sorted(gold))
