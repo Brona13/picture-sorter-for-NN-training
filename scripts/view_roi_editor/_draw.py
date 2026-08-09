@@ -4,7 +4,6 @@ from __future__ import annotations
 import streamlit as st
 from PIL import Image
 
-import config
 import datamodel
 import ui_common
 from roi import ROI
@@ -114,6 +113,5 @@ def render_draw_new(
                 f"Saved ROI '{short}'"
                 + (f" under product '{product}'" if product else "")
                 + (f" — products: {', '.join(new_products)}" if make_classifier else "")
-                + f" → {config.ROIS_FILENAME}"
             )
             st.rerun()

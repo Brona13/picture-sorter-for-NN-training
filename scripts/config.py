@@ -76,7 +76,5 @@ CLASSICAL_COMPARISON_WORKERS = 4     # exact SSIM pairs evaluated concurrently
 
 UNSORTED_DIRNAME = "unsorted"
 
-ROIS_FILENAME = "rois.json"
-
 # Pseudo-feature used when comparing whole frames (no ROI defined).
 WHOLE_FRAME_FEATURE = "whole-frame"

@@ -312,6 +312,107 @@ def reset_database() -> list[Path]:
     return removed
 
 
+# --- ROIs --------------------------------------------------------------------
+def list_rois(camera: str) -> list[dict]:
+    """Return every ROI defined for ``camera`` in UI order (by ``position``).
+
+    Each row is a plain dict with keys ``name, x, y, w, h, role, classes,
+    products`` — the JSON columns are decoded to Python lists (or ``None``).
+    """
+    con = connect()
+    try:
+        rows = con.execute(
+            "SELECT name, x, y, w, h, role, classes_json, products_json "
+            "FROM rois WHERE camera=? ORDER BY position",
+            (camera,),
+        ).fetchall()
+    finally:
+        con.close()
+    return [_row_to_roi_dict(row) for row in rows]
+
+
+def get_roi_row(camera: str, name: str) -> dict | None:
+    """Return one ROI dict, or ``None`` if it doesn't exist."""
+    con = connect()
+    try:
+        row = con.execute(
+            "SELECT name, x, y, w, h, role, classes_json, products_json "
+            "FROM rois WHERE camera=? AND name=?",
+            (camera, name),
+        ).fetchone()
+    finally:
+        con.close()
+    return _row_to_roi_dict(row) if row else None
+
+
+def replace_rois(camera: str, entries: list[dict]) -> None:
+    """Atomically replace every ROI for ``camera`` with ``entries``.
+
+    ``entries`` is a list of ROI dicts (as returned by :func:`list_rois`);
+    their positions come from the list index so callers control ordering
+    by passing them in the desired UI order.
+    """
+    now = time.time()
+    con = connect()
+    try:
+        con.execute("BEGIN")
+        try:
+            con.execute("DELETE FROM rois WHERE camera=?", (camera,))
+            for position, entry in enumerate(entries):
+                classes = entry.get("classes") or None
+                products = entry.get("products") or None
+                con.execute(
+                    "INSERT INTO rois "
+                    "(camera, name, x, y, w, h, role, classes_json, "
+                    "products_json, position, updated) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        camera,
+                        str(entry["name"]),
+                        float(entry["x"]),
+                        float(entry["y"]),
+                        float(entry["w"]),
+                        float(entry["h"]),
+                        str(entry.get("role", "quality")),
+                        json.dumps(list(classes)) if classes else None,
+                        json.dumps(list(products)) if products else None,
+                        position,
+                        now,
+                    ),
+                )
+            con.execute("COMMIT")
+        except Exception:
+            con.execute("ROLLBACK")
+            raise
+    finally:
+        con.close()
+
+
+def delete_roi_row(camera: str, name: str) -> bool:
+    """Remove one ROI; return True if a row was actually deleted."""
+    con = connect()
+    try:
+        count = con.execute(
+            "DELETE FROM rois WHERE camera=? AND name=?", (camera, name)
+        ).rowcount
+        con.commit()
+        return count > 0
+    finally:
+        con.close()
+
+
+def _row_to_roi_dict(row: sqlite3.Row) -> dict:
+    classes = json.loads(row["classes_json"]) if row["classes_json"] else None
+    products = json.loads(row["products_json"]) if row["products_json"] else None
+    return {
+        "name": row["name"],
+        "x": row["x"], "y": row["y"], "w": row["w"], "h": row["h"],
+        "role": row["role"],
+        "classes": classes,
+        "products": products,
+    }
+
+
 # --- frame/content index -----------------------------------------------------
 def frame_index_count(camera: str) -> int:
     con = connect()

@@ -46,7 +46,7 @@ class RenderSnapshotTests(unittest.TestCase):
                 self.assertEqual(datamodel.load_rois(self.camera), datamodel.load_rois(self.camera))
 
         self.assertEqual(1, report.counters["filesystem.unsorted_scans"])
-        self.assertEqual(1, report.counters["roi.file_reads"])
+        self.assertEqual(1, report.counters["roi.db_reads"])
         self.assertEqual(2, report.counters["render_snapshot.hits"])
 
     def test_ingest_and_roi_save_invalidate_active_snapshot(self):

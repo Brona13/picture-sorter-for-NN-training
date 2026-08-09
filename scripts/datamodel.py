@@ -4,21 +4,20 @@ Layout (see the plan / docs/methodology.md)::
 
     cameras/<camera>/
         unsorted/          the camera's immutable frame store (every ingested frame)
-        rois.json          [{name, x, y, w, h}]  (normalised)
         exports/           materialised training folders, per version
 
-Labels, per-class golden *marks*, versions and the score cache live in SQLite
-(``data/picture_sorter.db``) — see ``db.py`` / ``labels.py``.
+ROI geometry, labels, per-class golden *marks*, versions and the score cache
+all live in SQLite (``data/picture_sorter.db``) — see ``db.py`` / ``labels.py``.
 """
 from __future__ import annotations
 
-import json
 from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
 from typing import Callable, Iterator, TypeVar
 
 import config
+import db
 import perf
 from roi import ROI
 
@@ -96,10 +95,6 @@ def unsorted_dir(camera: str) -> Path:
     return camera_dir(camera) / config.UNSORTED_DIRNAME
 
 
-def rois_path(camera: str) -> Path:
-    return camera_dir(camera) / config.ROIS_FILENAME
-
-
 # --- enumeration -------------------------------------------------------------
 def list_cameras() -> list[str]:
     def load():
@@ -135,37 +130,23 @@ def list_unsorted(camera: str) -> list[Path]:
 # --- ROIs / features ---------------------------------------------------------
 def load_rois(camera: str) -> list[ROI]:
     def load():
-        perf.count("roi.file_reads")
-        path = rois_path(camera)
-        if not path.exists():
-            return []
-        try:
-            with perf.span("roi.load_definitions"):
-                data = json.loads(path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            return []
-        return [ROI.from_dict(d) for d in data]
+        perf.count("roi.db_reads")
+        with perf.span("roi.load_definitions"):
+            return [ROI.from_dict(entry) for entry in db.list_rois(camera)]
 
     return _snapshot_value(("rois", camera), load)
 
 
 def save_rois(camera: str, rois: list[ROI]) -> None:
-    path = rois_path(camera)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps([r.to_dict() for r in rois], indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    db.replace_rois(camera, [r.to_dict() for r in rois])
     invalidate_rois(camera)
 
 
 def delete_roi(camera: str, feature: str) -> bool:
     """Remove one ROI definition; associated SQLite state is purged separately."""
-    rois = load_rois(camera)
-    remaining = [roi for roi in rois if roi.name != feature]
-    if len(remaining) == len(rois):
+    if not db.delete_roi_row(camera, feature):
         return False
-    save_rois(camera, remaining)
+    invalidate_rois(camera)
     return True
 
 
