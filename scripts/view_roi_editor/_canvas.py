@@ -16,7 +16,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw
 
-import engine
+import curation
 import ui_common
 from roi import ROI
 
@@ -65,7 +65,7 @@ def golden_with_rois(
     ``skip`` omits one ROI by name — used in edit mode, where that ROI is a live
     canvas object instead and would otherwise appear twice.
     """
-    img = engine.curation.load_image(frame_path)
+    img = curation.load_image(frame_path)
     pil = ui_common.bgr_to_pil(img)
     ratio = display_width / pil.width
     disp_w, disp_h = display_width, max(1, int(pil.height * ratio))

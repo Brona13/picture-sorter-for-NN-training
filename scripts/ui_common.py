@@ -15,7 +15,7 @@ import numpy as np
 import streamlit as st
 from PIL import Image
 
-import engine
+import curation
 import perf
 from roi import ROI
 
@@ -327,7 +327,7 @@ def box_from_object(obj: dict, disp_w: int, disp_h: int) -> tuple[float, float, 
 def _generate_cutout(frame_path: str, roi_tuple: tuple) -> Image.Image:
     """Load, crop, and resize one thumbnail without retaining decoded pixels."""
     roi = ROI(*roi_tuple) if len(roi_tuple) == 5 else ROI.full_frame("whole-frame")
-    img = engine.curation.load_image(frame_path)
+    img = curation.load_image(frame_path)
     cutout = roi.crop(img)
     pil = bgr_to_pil(cutout)
     if pil.width > THUMB_WIDTH:
