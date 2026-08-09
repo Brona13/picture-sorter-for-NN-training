@@ -190,11 +190,12 @@ These views evaluate the curation aid; they do not establish classifier accuracy
 
 ### Views
 
+- `scripts/view_status.py`
 - `scripts/view_ingest.py`
 - `scripts/view_roi_editor/`
+- `scripts/view_dedup/`
 - `scripts/view_classify/`
 - `scripts/view_insights.py`
-- `scripts/view_status.py`
 - `scripts/view_versions.py`
 
 ## Storage model

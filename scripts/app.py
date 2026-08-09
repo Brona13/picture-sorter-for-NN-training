@@ -4,13 +4,15 @@ Run from the project root::
 
     streamlit run scripts/app.py
 
-The sidebar picks a camera, a **product scope**, and one of five views, each of which
+The sidebar picks a camera, a **product scope**, and one of seven views, each of which
 lives in its own ``view_*.py`` module (shared helpers/constants are in ``ui_common.py``):
 
   * Status     — per-feature counts and a clear ROI-defined indicator.
   * Ingest     — upload / import images with content-based de-duplication.
   * ROI editor — drag-draw rectangles on any ingested frame; save as named features.
+  * Dedup      — perceptual near-duplicate clustering; mute redundant frames.
   * Classify   — mark per-class goldens, refresh scores, triage and label.
+  * Insights   — per-method confusion matrices vs the user's labels.
   * Versions   — freeze / revert / export dataset snapshots.
 
 The **Product** selector only appears once a camera has a ``role="classify"`` ROI
