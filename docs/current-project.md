@@ -204,17 +204,17 @@ These views evaluate the curation aid; they do not establish classifier accuracy
 cameras/
   <camera>/
     unsorted/     immutable source frames
-    rois.json     ROI definitions
     exports/      generated version exports
 
 data/
   picture_sorter.db
 ```
 
-SQLite contains the frame/hash catalog, direct current labels, goldens, deletion
-and dedup-mute sets, explicit versions, settings, feature caches, and scored-result
-caches. There are no event-history projections or compatibility triggers. Images
-are stored only as files and ROI definitions remain in `rois.json`.
+SQLite contains the frame/hash catalog, ROI definitions, direct current labels,
+goldens, deletion and dedup-mute sets, explicit versions, settings, feature
+caches, and scored-result caches. There are no event-history projections or
+compatibility triggers. Images are the only camera-local file artifacts; every
+piece of curation state is in the database.
 
 ## Current real-world findings
 

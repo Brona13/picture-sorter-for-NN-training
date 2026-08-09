@@ -24,7 +24,7 @@ Files in `memory/` and `plans/` may describe earlier workflows. Treat `docs/curr
 - An unlabeled frame cannot be golden.
 - Relabeling a golden changes its reference class to the new label.
 - Labels and goldens are scoped by camera, feature, and frame.
-- A feature is a named ROI; normalized ROI coordinates are stored in `cameras/<camera>/rois.json`.
+- A feature is a named ROI; normalized ROI coordinates are stored in the SQLite `rois` table, keyed by `(camera, name)`.
 - A `role="classify"` ROI defines the product classes for a camera.
 - Product-specific feature identifiers use `<product>::<roi>`.
 - Classical and ResNet scoring methods are independent opinions and must not be blended.

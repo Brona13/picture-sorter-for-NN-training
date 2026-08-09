@@ -296,7 +296,6 @@ Before writing each cutout, the exporter verifies the source-frame content hash.
 cameras/
   <camera>/
     unsorted/       immutable source frames
-    rois.json       ROI definitions
     exports/        generated training-folder exports
 
 data/
