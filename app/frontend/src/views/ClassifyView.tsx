@@ -6,7 +6,6 @@ import Card from "../classify/Card";
 import SuggestPanel from "../classify/SuggestPanel";
 import { useJob } from "../useJob";
 
-const MIN_CARD = 240;
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const PHASES: Record<string, string> = {
   discovery: "Finding frames and goldens…",
@@ -365,8 +364,7 @@ export default function ClassifyView({ camera, product }: { camera: string; prod
               <ul
                 style={{
                   display: "grid",
-                  // At most `cols` columns, but never narrower than MIN_CARD px, so the buttons fit.
-                  gridTemplateColumns: `repeat(auto-fill, minmax(max(${MIN_CARD}px, calc((100% - ${(st.settings.cols - 1) * 8}px) / ${st.settings.cols})), 1fr))`,
+                  gridTemplateColumns: `repeat(${st.settings.cols}, minmax(0, 1fr))`, // exactly the chosen number of columns
                   gap: 8,
                   padding: 0,
                 }}
