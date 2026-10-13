@@ -91,6 +91,66 @@ export interface IngestResult {
   errors: string[];
 }
 
+export interface FramesResponse {
+  frames: string[];
+  showing_all: boolean;
+  total: number;
+  reference_frame: string | null;
+}
+
+export interface RoiInfo {
+  feature: string;
+  short_name: string;
+  owner_product: string | null;
+  role: string;
+  classes: string[];
+  shared_products: string[] | null;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  frames_seen: number;
+  inbox_total: number;
+  labeled: number;
+  goldens: number;
+  version_count: number;
+  active_version: number | null;
+}
+
+export interface RoisResponse {
+  rois: RoiInfo[];
+  classify_feature: string | null;
+  products: string[];
+  inbox_total: number;
+  unclassified_frames: number;
+  shared_here: string[];
+}
+
+export interface RoiUpsert {
+  name: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  product?: string | null;
+  make_classifier?: boolean;
+  product_names?: string[];
+  shared_with?: string[];
+}
+
+const send = (method: string, body?: unknown): RequestInit => ({
+  method,
+  headers: { "Content-Type": "application/json" },
+  body: body === undefined ? undefined : JSON.stringify(body),
+});
+
+export const frameImageUrl = (camera: string, frame: string) =>
+  `/api/cameras/${encodeURIComponent(camera)}/frames/${encodeURIComponent(frame)}/image`;
+
+export const roiThumbUrl = (camera: string, frame: string, feature: string, size = 56) =>
+  `/api/cameras/${encodeURIComponent(camera)}/frames/${encodeURIComponent(frame)}/thumb` +
+  `?feature=${encodeURIComponent(feature)}&variant=square&size=${size}`;
+
 const post = (body?: unknown): RequestInit => ({
   method: "POST",
   headers: { "Content-Type": "application/json" },
@@ -152,5 +212,42 @@ export const api = {
     request<Job<{ tracked: number }>>(
       `/cameras/${encodeURIComponent(camera)}/ingest/rebuild`,
       post(),
+    ),
+  frames: (camera: string, product?: string) =>
+    request<FramesResponse>(
+      `/cameras/${encodeURIComponent(camera)}/frames` +
+        (product ? `?product=${encodeURIComponent(product)}` : ""),
+    ),
+  setReferenceFrame: (camera: string, frame: string) =>
+    request<{ reference_frame: string }>(
+      `/cameras/${encodeURIComponent(camera)}/reference-frame`,
+      send("PUT", { frame }),
+    ),
+  rois: (camera: string, product?: string) =>
+    request<RoisResponse>(
+      `/cameras/${encodeURIComponent(camera)}/rois` +
+        (product ? `?product=${encodeURIComponent(product)}` : ""),
+    ),
+  saveRoi: (camera: string, body: RoiUpsert) =>
+    request<RoiInfo>(`/cameras/${encodeURIComponent(camera)}/rois`, send("PUT", body)),
+  moveRoi: (camera: string, feature: string, box: { x: number; y: number; w: number; h: number }) =>
+    request<RoiInfo>(
+      `/cameras/${encodeURIComponent(camera)}/rois/${encodeURIComponent(feature)}/geometry`,
+      send("PATCH", box),
+    ),
+  setRoiProducts: (camera: string, feature: string, products: string[]) =>
+    request<RoiInfo>(
+      `/cameras/${encodeURIComponent(camera)}/rois/${encodeURIComponent(feature)}/products`,
+      send("PATCH", { products }),
+    ),
+  deleteRoi: (camera: string, feature: string) =>
+    request<{ removed: Record<string, number> }>(
+      `/cameras/${encodeURIComponent(camera)}/rois/${encodeURIComponent(feature)}`,
+      send("DELETE"),
+    ),
+  setProductNames: (camera: string, names: string[]) =>
+    request<{ products: string[] }>(
+      `/cameras/${encodeURIComponent(camera)}/product-names`,
+      send("PUT", { names }),
     ),
 };

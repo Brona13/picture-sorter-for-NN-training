@@ -3,6 +3,7 @@ import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import { api, ApiError } from "./api";
 import { VIEWS } from "./views";
 import IngestView from "./views/IngestView";
+import RoiEditorView from "./views/RoiEditorView";
 import StatusView from "./views/StatusView";
 import VersionsView from "./views/VersionsView";
 
@@ -78,7 +79,11 @@ export default function App() {
             path="/ingest"
             element={<IngestView camera={camera} onCameraCreated={loadCameras} />}
           />
-          {VIEWS.filter((v) => !["status", "versions", "ingest"].includes(v.path)).map((v) => (
+          <Route
+            path="/roi"
+            element={<RoiEditorView camera={camera} product={product || undefined} />}
+          />
+          {VIEWS.filter((v) => !["status", "versions", "ingest", "roi"].includes(v.path)).map((v) => (
             <Route key={v.path} path={`/${v.path}`} element={<h2>{v.label}</h2>} />
           ))}
         </Routes>
