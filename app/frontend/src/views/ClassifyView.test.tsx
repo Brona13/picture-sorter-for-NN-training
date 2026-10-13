@@ -230,3 +230,40 @@ test("auto-assign shows per-class preview, can filter the grid, and confirms", a
   await waitFor(() => expect(calls.some((c) => c.url.endsWith("/classify/auto") && c.method === "POST")).toBe(true));
   expect(await screen.findByText(/Auto-labelled 4 frame\(s\) using resnet50/)).toBeInTheDocument();
 });
+
+test("suggested goldens: lazy-loaded when opened; promote sends label+golden request", async () => {
+  const origFetch = globalThis.fetch as any;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.includes("/classify/suggest")) {
+        calls.push({ url, method: "GET" });
+        return new Response(
+          JSON.stringify({
+            available: true,
+            backbone: null,
+            n_min: 3,
+            n_max: 20,
+            default_n: 10,
+            picks: [{ frame: "s1.png", bars: { rows: [{ cls: "OK", dist: 1, rel: 1, leader: true }, { cls: "NG", dist: 1.1, rel: 0.9, leader: false }], novelty: 1, margin: 0.1, close_call: true } }],
+          }),
+        );
+      }
+      if (url.includes("/classify/promote")) {
+        calls.push({ url, method: "POST", body: JSON.parse(init!.body as string) });
+        return new Response(JSON.stringify({ card: { frame: "s1.png", label: "NG", golden: "NG", deleted: false }, counts: { OK: 1, NG: 1, total: 3 } }));
+      }
+      return origFetch(url, init);
+    }),
+  );
+  render(<ClassifyView camera="camA" />);
+  await cardEl("a.png");
+  expect(calls.some((c) => c.url.includes("/classify/suggest"))).toBe(false); // nothing fetched until opened
+  await userEvent.click(screen.getByText(/Suggested goldens/));
+  const item = await screen.findByTestId("suggest-s1.png");
+  expect(within(item).getByText(/close call/)).toBeInTheDocument();
+  await userEvent.click(within(item).getByRole("button", { name: "⭐ NG" }));
+  await waitFor(() => expect(calls.some((c) => c.url.includes("/classify/promote"))).toBe(true));
+  expect(calls.find((c) => c.url.includes("/classify/promote"))!.body).toEqual({ feature: "seal", frame: "s1.png", cls: "NG" });
+  expect(await screen.findByText(/Promoted s1.png → ⭐ NG/)).toBeInTheDocument();
+});

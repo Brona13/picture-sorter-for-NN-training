@@ -248,6 +248,29 @@ export function gridParams(q: GridQuery, extra: Record<string, string | number |
   return p.toString();
 }
 
+export interface SuggestResponse {
+  available: boolean;
+  backbone: string | null;
+  n_min: number;
+  n_max: number;
+  default_n: number;
+  picks: { frame: string; bars: CardData["bars"] }[];
+}
+
+export interface InsightsResponse {
+  feature: string;
+  classes: string[];
+  methods: string[];
+  goldens_in: string[];
+  evaluable: number;
+  reason: "needs_two_golden_classes" | "no_held_out_labels" | null;
+  has_results: boolean;
+  matrices: Record<
+    string,
+    { matrix: Record<string, Record<string, number>>; skipped: number; correct: number; total: number; accuracy: number }
+  >;
+}
+
 const post = (body?: unknown): RequestInit => ({
   method: "POST",
   headers: { "Content-Type": "application/json" },
@@ -388,4 +411,10 @@ export const api = {
       `/cameras/${encodeURIComponent(camera)}/classify/auto`,
       post({ query, classes, min_margin }),
     ),
+  suggestGoldens: (camera: string, q: GridQuery, n: number) =>
+    request<SuggestResponse>(`/cameras/${encodeURIComponent(camera)}/classify/suggest?${gridParams(q, { n })}`),
+  promote: (camera: string, feature: string, frame: string, cls: string) =>
+    request<CardUpdate>(`/cameras/${encodeURIComponent(camera)}/classify/promote`, post({ feature, frame, cls })),
+  insights: (camera: string, feature: string) =>
+    request<InsightsResponse>(`/cameras/${encodeURIComponent(camera)}/insights?feature=${encodeURIComponent(feature)}`),
 };

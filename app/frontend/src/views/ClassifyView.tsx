@@ -3,6 +3,7 @@ import { api, CardData, CardUpdate, ClassifyState, GridQuery, GridResponse } fro
 import AutoPanel, { AutoFilter } from "../classify/AutoPanel";
 import BulkPanel from "../classify/BulkPanel";
 import Card from "../classify/Card";
+import SuggestPanel from "../classify/SuggestPanel";
 import { useJob } from "../useJob";
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -335,6 +336,20 @@ export default function ClassifyView({ camera, product }: { camera: string; prod
                 }}
               />
             </>
+          )}
+          {st.scored && (
+            <SuggestPanel
+              camera={camera}
+              query={query}
+              classes={classes}
+              revision={revision}
+              onError={setError}
+              onPromoted={(frame, cls, c) => {
+                setNotice(`Promoted ${frame} → ⭐ ${cls}`);
+                setSt((s) => (s ? { ...s, counts: c } : s));
+                bump();
+              }}
+            />
           )}
           {auto.on && grid && (
             <p>

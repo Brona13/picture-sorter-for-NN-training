@@ -13,6 +13,7 @@ import dedup
 import embedding
 import engine
 import labels
+import suggest_goldens as suggest_goldens_mod
 from api import jobs
 from api.cameras import require_feature
 from api.frames_api import frame_path
@@ -457,3 +458,54 @@ def auto_apply(camera: str, body: AutoBody) -> dict:
                 camera, body.query.feature, [r.frame for r in rs], cls, source="auto"
             )
     return {"labeled": written, "counts": labels.counts(camera, body.query.feature)}
+
+
+# --- suggested goldens -------------------------------------------------------
+class PromoteBody(BaseModel):
+    feature: str
+    frame: str
+    cls: str
+
+
+@router.get("/cameras/{camera}/classify/suggest")
+def suggest_goldens(camera: str, q: QueryParams, n: int = suggest_goldens_mod.DEFAULT_N) -> dict:
+    """Most-uncertain unlabeled frames, spread for diversity. Empty unless two classes have goldens."""
+    if not suggest_goldens_mod.N_MIN <= n <= suggest_goldens_mod.N_MAX:
+        raise HTTPException(status_code=422, detail="n is out of range.")
+    ctx = _build(camera, q.model_copy(update={"auto_preview": False}))
+    have = [c for c in ctx.classes if ctx.gold.get(c)]
+    empty = {"available": False, "picks": [], "backbone": None, "n_min": suggest_goldens_mod.N_MIN,
+             "n_max": suggest_goldens_mod.N_MAX, "default_n": suggest_goldens_mod.DEFAULT_N}
+    if not ctx.scored or len(have) < 2:
+        return empty
+    picks = suggest_goldens_mod.suggest(
+        camera=camera, feature=q.feature, items=ctx.items, rank_method=ctx.rank, n=n,
+        lab=ctx.lab, gold=ctx.gold,
+    )
+    if not picks:
+        return empty
+    return {
+        **empty,
+        "available": True,
+        "backbone": suggest_goldens_mod._diversity_backbone(),
+        "picks": [
+            {
+                "frame": fs.frame,
+                "bars": cv.bars(fs.per_method[ctx.rank].dists, ctx.classes) if ctx.rank in fs.per_method else None,
+            }
+            for fs in picks
+        ],
+    }
+
+
+@router.post("/cameras/{camera}/classify/promote")
+def promote(camera: str, body: PromoteBody) -> dict:
+    """Label a frame and make it a golden for that class in one action."""
+    require_feature(camera, body.feature)
+    frame_path(camera, body.frame)
+    classes = datamodel.classes_for(camera, body.feature)
+    if body.cls not in classes:
+        raise HTTPException(status_code=422, detail=f"Unknown class: {body.cls}")
+    labels.set_label(camera, body.feature, body.frame, body.cls, source="suggest")
+    labels.mark_golden(camera, body.feature, body.frame, body.cls)
+    return _result(camera, body.feature, body.frame, classes)
