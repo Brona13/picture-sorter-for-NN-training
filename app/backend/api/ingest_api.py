@@ -16,7 +16,6 @@ from fastapi import APIRouter, HTTPException, UploadFile
 from pydantic import BaseModel
 
 router = APIRouter()
-_TARGET = "unsorted"  # every frame lands in the camera's immutable inbox
 
 
 class FolderRequest(BaseModel):
@@ -79,7 +78,7 @@ def upload(camera: str, files: list[UploadFile]) -> dict:
         raise
 
     def run(cb):
-        result = ingest.ingest_files(camera, _TARGET, items, progress_cb=cb, total=len(items))
+        result = ingest.ingest_files(camera, items, progress_cb=cb, total=len(items))
         result.errors[:0] = rejected
         return result
 
@@ -92,7 +91,7 @@ def import_folder(camera: str, body: FolderRequest) -> dict:
     if not body.path.strip():
         raise HTTPException(status_code=422, detail="Enter a folder path.")
     return _ingest_job(
-        camera, lambda cb: ingest.ingest_folder(camera, _TARGET, body.path.strip(), progress_cb=cb)
+        camera, lambda cb: ingest.ingest_folder(camera, body.path.strip(), progress_cb=cb)
     )
 
 

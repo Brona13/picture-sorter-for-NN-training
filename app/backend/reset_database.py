@@ -1,4 +1,4 @@
-"""Reset incompatible metadata/caches while preserving images and ROI files.
+"""Reset incompatible metadata/caches while preserving source images.
 
 This clean-break utility removes only:
 
@@ -6,7 +6,9 @@ This clean-break utility removes only:
 - retired ``features/`` cutout trees under each camera
 - retired ``logs/manifest.jsonl`` and ``logs/ingest_index.json`` files
 
-It never removes ``unsorted/`` source images, ``rois.json``, or exports.
+It never removes ``unsorted/`` source images or exports. ROI definitions
+now live in the SQLite ``rois`` table, so a reset also clears them —
+re-draw them in the ROI editor before re-labeling.
 """
 from __future__ import annotations
 
@@ -63,7 +65,7 @@ def main() -> None:
             print(f"- {path}")
     else:
         print("Nothing needed removal.")
-    print("Preserved all unsorted source images, rois.json files, and exports.")
+    print("Preserved all unsorted source images and exports (ROI definitions were in the database and are gone).")
 
 
 if __name__ == "__main__":

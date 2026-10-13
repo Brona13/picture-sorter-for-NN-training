@@ -1,15 +1,23 @@
 ---
 name: resnet-embedding-method
 description: ResNet18 and ResNet50 embeddings as independent neural scoring methods
-status: in-progress
+status: shipped
 document_type: plan
-last_updated: 2026-07-27
+last_updated: 2026-08-11
 ---
 
 # Plan: ResNet embedding as an independent "neural" scoring method
 
-*Status: in implementation (started 2026-07-16). Companion to
-[smart-data-curation-plan.md](smart-data-curation-plan.md).*
+> **Status — shipped.** Delivered in July 2026 (started 2026-07-16). `scripts/embedding.py`,
+> `METRIC_FAMILIES` / `EMBEDDING_*` config, ResNet18 & ResNet50 backbones, `requirements-embedding.txt`
+> as an optional install, and the neural-device caption in Classify are all in production; the
+> torch-free CPU-only fallback still works. Companion to
+> [smart-data-curation-plan.md](smart-data-curation-plan.md).
+>
+> **Drift note:** some of the file-level details below are stale relative to today's tree
+> (`view_sort.py` was renamed to `view_classify/`, and `curation.CutoutFeatures` + related helpers
+> were pruned as dead code in a later refactor pass) — the feature is delivered through the current
+> `classify.py` / `embedding.py` pipeline instead.
 
 ## Context
 The roadmap's open decision (see `smart-data-curation-plan.md` and `memory/flow-and-roadmap.md`) was whether to add a pretrained ResNet embedding as a stronger feature space. This implements it — **not** as a blended metric, but as an **independent scoring family** the user can switch to, alongside the existing classical metrics. Why: embeddings are robust to the slight frame-to-frame shift that weakens MSE, they align the tool's "eyes" with the target ResNet classifier, and they are groundwork for the later OK/NG QA. Scope = the **scoring method only** (not the QA feature).

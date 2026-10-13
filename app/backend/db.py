@@ -7,6 +7,7 @@ through explicit Versions rather than implicit append-only event logs.
 """
 from __future__ import annotations
 
+import json
 import sqlite3
 import time
 from pathlib import Path
@@ -15,7 +16,7 @@ import config
 import perf
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 class DatabaseResetRequired(RuntimeError):
@@ -33,6 +34,22 @@ CREATE TABLE IF NOT EXISTS frames (
     UNIQUE (camera, hash)
 );
 CREATE INDEX IF NOT EXISTS idx_frames_hash ON frames(camera, hash);
+
+CREATE TABLE IF NOT EXISTS rois (
+    camera        TEXT NOT NULL,
+    name          TEXT NOT NULL,
+    x             REAL NOT NULL,
+    y             REAL NOT NULL,
+    w             REAL NOT NULL,
+    h             REAL NOT NULL,
+    role          TEXT NOT NULL DEFAULT 'quality',
+    classes_json  TEXT,
+    products_json TEXT,
+    position      INTEGER NOT NULL,
+    updated       REAL NOT NULL,
+    PRIMARY KEY (camera, name)
+);
+CREATE INDEX IF NOT EXISTS idx_rois_camera_position ON rois(camera, position);
 
 CREATE TABLE IF NOT EXISTS labels (
     camera  TEXT NOT NULL,
@@ -167,7 +184,7 @@ def _has_user_tables(con: sqlite3.Connection) -> bool:
 
 
 def connect() -> sqlite3.Connection:
-    """Open a short-lived connection, creating only the clean schema."""
+    """Open a short-lived connection, creating or upgrading the schema in place."""
     perf.count("db.connections")
     path = db_path()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -176,17 +193,112 @@ def connect() -> sqlite3.Connection:
     con.execute("PRAGMA journal_mode=WAL")
     con.execute("PRAGMA foreign_keys=ON")
     version = int(con.execute("PRAGMA user_version").fetchone()[0])
-    if version != SCHEMA_VERSION:
-        if version != 0 or _has_user_tables(con):
-            con.close()
-            raise DatabaseResetRequired(
-                f"Database schema {version} is incompatible with clean schema "
-                f"{SCHEMA_VERSION}. Run `python app/backend/reset_database.py --yes` "
-                "to remove metadata and caches; source images and rois.json are kept."
-            )
+    if version == SCHEMA_VERSION:
+        return con
+    if version == 0 and not _has_user_tables(con):
         with perf.span("db.schema.initialize"):
             con.executescript(_SCHEMA)
+        return con
+    try:
+        while version in _MIGRATIONS and version < SCHEMA_VERSION:
+            with perf.span(f"db.schema.migrate_v{version}_v{version + 1}"):
+                _MIGRATIONS[version](con)
+            version = int(con.execute("PRAGMA user_version").fetchone()[0])
+    except Exception:
+        con.close()
+        raise
+    if version != SCHEMA_VERSION:
+        con.close()
+        raise DatabaseResetRequired(
+            f"Database schema {version} is incompatible with clean schema "
+            f"{SCHEMA_VERSION} and no forward migration is defined. "
+            "Run `python app/backend/reset_database.py --yes` to remove metadata and "
+            "caches; source images are kept."
+        )
     return con
+
+
+# --- schema migrations ------------------------------------------------------
+def _migrate_v2_to_v3(con: sqlite3.Connection) -> None:
+    """Add the ``rois`` table and backfill it from every ``cameras/<camera>/rois.json``.
+
+    All DB writes (schema, rows, user_version bump) run inside one explicit
+    ``BEGIN…COMMIT`` — a partial failure rolls the whole thing back and
+    leaves ``user_version`` at 2 with the JSON files intact. Corrupt or
+    malformed JSON is skipped (its file stays on disk for inspection). The
+    source JSONs are unlinked **after** commit so we never end up with
+    rolled-back DB rows but deleted files on disk.
+    """
+    to_delete: list[Path] = []
+    con.execute("BEGIN")
+    try:
+        con.execute(
+            "CREATE TABLE IF NOT EXISTS rois ("
+            "camera TEXT NOT NULL, name TEXT NOT NULL, "
+            "x REAL NOT NULL, y REAL NOT NULL, w REAL NOT NULL, h REAL NOT NULL, "
+            "role TEXT NOT NULL DEFAULT 'quality', "
+            "classes_json TEXT, products_json TEXT, "
+            "position INTEGER NOT NULL, updated REAL NOT NULL, "
+            "PRIMARY KEY (camera, name))"
+        )
+        con.execute(
+            "CREATE INDEX IF NOT EXISTS idx_rois_camera_position "
+            "ON rois(camera, position)"
+        )
+        now = time.time()
+        root = config.CAMERAS_ROOT
+        if root.exists():
+            for camera_dir in sorted(p for p in root.iterdir() if p.is_dir()):
+                json_path = camera_dir / "rois.json"
+                if not json_path.is_file():
+                    continue
+                try:
+                    data = json.loads(json_path.read_text(encoding="utf-8"))
+                except (json.JSONDecodeError, OSError):
+                    continue  # leave the file for the user to inspect
+                if not isinstance(data, list):
+                    continue
+                camera = camera_dir.name
+                for position, entry in enumerate(data):
+                    if not isinstance(entry, dict) or "name" not in entry:
+                        continue
+                    classes = entry.get("classes") or None
+                    products = entry.get("products") or None
+                    con.execute(
+                        "INSERT OR REPLACE INTO rois "
+                        "(camera, name, x, y, w, h, role, classes_json, "
+                        "products_json, position, updated) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (
+                            camera,
+                            str(entry["name"]),
+                            float(entry.get("x", 0.0)),
+                            float(entry.get("y", 0.0)),
+                            float(entry.get("w", 1.0)),
+                            float(entry.get("h", 1.0)),
+                            str(entry.get("role", "quality")),
+                            json.dumps(list(classes)) if classes else None,
+                            json.dumps(list(products)) if products else None,
+                            position,
+                            now,
+                        ),
+                    )
+                to_delete.append(json_path)
+        con.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+        con.execute("COMMIT")
+    except Exception:
+        con.execute("ROLLBACK")
+        raise
+    for path in to_delete:
+        try:
+            path.unlink()
+        except OSError:
+            perf.count("db.migrate_v2_v3.json_unlink_failed")
+
+
+_MIGRATIONS = {
+    2: _migrate_v2_to_v3,
+}
 
 
 def reset_database() -> list[Path]:
@@ -198,6 +310,107 @@ def reset_database() -> list[Path]:
             candidate.unlink()
             removed.append(candidate)
     return removed
+
+
+# --- ROIs --------------------------------------------------------------------
+def list_rois(camera: str) -> list[dict]:
+    """Return every ROI defined for ``camera`` in UI order (by ``position``).
+
+    Each row is a plain dict with keys ``name, x, y, w, h, role, classes,
+    products`` — the JSON columns are decoded to Python lists (or ``None``).
+    """
+    con = connect()
+    try:
+        rows = con.execute(
+            "SELECT name, x, y, w, h, role, classes_json, products_json "
+            "FROM rois WHERE camera=? ORDER BY position",
+            (camera,),
+        ).fetchall()
+    finally:
+        con.close()
+    return [_row_to_roi_dict(row) for row in rows]
+
+
+def get_roi_row(camera: str, name: str) -> dict | None:
+    """Return one ROI dict, or ``None`` if it doesn't exist."""
+    con = connect()
+    try:
+        row = con.execute(
+            "SELECT name, x, y, w, h, role, classes_json, products_json "
+            "FROM rois WHERE camera=? AND name=?",
+            (camera, name),
+        ).fetchone()
+    finally:
+        con.close()
+    return _row_to_roi_dict(row) if row else None
+
+
+def replace_rois(camera: str, entries: list[dict]) -> None:
+    """Atomically replace every ROI for ``camera`` with ``entries``.
+
+    ``entries`` is a list of ROI dicts (as returned by :func:`list_rois`);
+    their positions come from the list index so callers control ordering
+    by passing them in the desired UI order.
+    """
+    now = time.time()
+    con = connect()
+    try:
+        con.execute("BEGIN")
+        try:
+            con.execute("DELETE FROM rois WHERE camera=?", (camera,))
+            for position, entry in enumerate(entries):
+                classes = entry.get("classes") or None
+                products = entry.get("products") or None
+                con.execute(
+                    "INSERT INTO rois "
+                    "(camera, name, x, y, w, h, role, classes_json, "
+                    "products_json, position, updated) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        camera,
+                        str(entry["name"]),
+                        float(entry["x"]),
+                        float(entry["y"]),
+                        float(entry["w"]),
+                        float(entry["h"]),
+                        str(entry.get("role", "quality")),
+                        json.dumps(list(classes)) if classes else None,
+                        json.dumps(list(products)) if products else None,
+                        position,
+                        now,
+                    ),
+                )
+            con.execute("COMMIT")
+        except Exception:
+            con.execute("ROLLBACK")
+            raise
+    finally:
+        con.close()
+
+
+def delete_roi_row(camera: str, name: str) -> bool:
+    """Remove one ROI; return True if a row was actually deleted."""
+    con = connect()
+    try:
+        count = con.execute(
+            "DELETE FROM rois WHERE camera=? AND name=?", (camera, name)
+        ).rowcount
+        con.commit()
+        return count > 0
+    finally:
+        con.close()
+
+
+def _row_to_roi_dict(row: sqlite3.Row) -> dict:
+    classes = json.loads(row["classes_json"]) if row["classes_json"] else None
+    products = json.loads(row["products_json"]) if row["products_json"] else None
+    return {
+        "name": row["name"],
+        "x": row["x"], "y": row["y"], "w": row["w"], "h": row["h"],
+        "role": row["role"],
+        "classes": classes,
+        "products": products,
+    }
 
 
 # --- frame/content index -----------------------------------------------------
@@ -438,8 +651,7 @@ def mark_frames_deleted(
         con.close()
 
 
-def restore_frames(camera: str, frames: list[str], source: str = "user") -> int:
-    del source
+def restore_frames(camera: str, frames: list[str]) -> int:
     if not frames:
         return 0
     placeholders = ",".join("?" for _ in frames)
@@ -509,10 +721,7 @@ def add_dedup_mutes(
         con.close()
 
 
-def add_dedup_unmutes(
-    camera: str, feature: str, frames: list[str], source: str = "dedup"
-) -> int:
-    del source
+def add_dedup_unmutes(camera: str, feature: str, frames: list[str]) -> int:
     if not frames:
         return 0
     placeholders = ",".join("?" for _ in frames)

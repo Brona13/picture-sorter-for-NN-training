@@ -38,7 +38,8 @@ STANDARD_SIZE = (256, 256)
 HIST_BINS = (50, 60, 3)
 
 # Weights for combining normalised distances into a novelty score, per metric.
-# Keys MUST match the metric names produced by ``curation.distance_between``.
+# Keys MUST match the metric names ``classify.py`` puts in its per-pair distance dict
+# (classical: "histogram", "mse", "ssim"; neural: each active backbone name).
 METRIC_WEIGHTS = {
     "histogram": 1.0,
     "mse": 1.0,
@@ -74,8 +75,6 @@ CLASSICAL_COMPARISON_WORKERS = 4     # exact SSIM pairs evaluated concurrently
 # --- Folder / file names within a camera -------------------------------------
 
 UNSORTED_DIRNAME = "unsorted"
-
-ROIS_FILENAME = "rois.json"
 
 # Pseudo-feature used when comparing whole frames (no ROI defined).
 WHOLE_FRAME_FEATURE = "whole-frame"

@@ -38,7 +38,6 @@ class StreamingIngestTests(unittest.TestCase):
         events: list[ingest.IngestProgress] = []
         result = ingest.ingest_files(
             self.camera,
-            "unsorted",
             [
                 ("../ strange NAME.JPG", b"first-image"),
                 ("strange NAME.jpg", io.BytesIO(b"second-image")),
@@ -72,9 +71,9 @@ class StreamingIngestTests(unittest.TestCase):
         events: list[ingest.IngestProgress] = []
         with patch.object(Path, "read_bytes", side_effect=AssertionError("not streaming")):
             first = ingest.ingest_folder(
-                self.camera, "unsorted", self.source, progress_cb=events.append,
+                self.camera, self.source, progress_cb=events.append,
             )
-            second = ingest.ingest_folder(self.camera, "unsorted", self.source)
+            second = ingest.ingest_folder(self.camera, self.source)
 
         self.assertEqual(3, first.n_added)
         self.assertEqual(0, first.n_skipped)
@@ -95,7 +94,7 @@ class StreamingIngestTests(unittest.TestCase):
                 missing.unlink()
 
         result = ingest.ingest_folder(
-            self.camera, "unsorted", self.source, progress_cb=remove_after_scan,
+            self.camera, self.source, progress_cb=remove_after_scan,
         )
 
         self.assertEqual(["b_good.png"], result.added)
@@ -104,7 +103,7 @@ class StreamingIngestTests(unittest.TestCase):
 
     def test_frame_catalog_is_stored_in_sqlite(self):
         result = ingest.ingest_files(
-            self.camera, "unsorted", [("frame.png", b"indexed-content")]
+            self.camera, [("frame.png", b"indexed-content")]
         )
         self.assertEqual(1, result.n_added)
         self.assertEqual(1, db.frame_index_count(self.camera))
@@ -118,7 +117,7 @@ class StreamingIngestTests(unittest.TestCase):
         files = [(f"frame_{index}.png", f"payload-{index}".encode()) for index in range(26)]
         datamodel.ensure_camera_dirs(self.camera)
         with perf.trace("ingest", enabled=True, emit=False) as report:
-            result = ingest.ingest_files(self.camera, "unsorted", files)
+            result = ingest.ingest_files(self.camera, files)
 
         self.assertEqual(26, result.n_added)
         self.assertEqual(26, db.frame_index_count(self.camera))

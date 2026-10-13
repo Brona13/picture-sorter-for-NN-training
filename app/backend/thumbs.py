@@ -13,7 +13,7 @@ import cv2
 import numpy as np
 from PIL import Image
 
-import engine
+import curation
 import perf
 from roi import ROI
 
@@ -71,7 +71,7 @@ def thumb_data_uri(frame_path: str, roi_tuple: tuple, mtime: float, size: int = 
 def _generate_cutout(frame_path: str, roi_tuple: tuple) -> Image.Image:
     """Load, crop, and resize one thumbnail without retaining decoded pixels."""
     roi = ROI(*roi_tuple) if len(roi_tuple) == 5 else ROI.full_frame("whole-frame")
-    img = engine.curation.load_image(frame_path)
+    img = curation.load_image(frame_path)
     cutout = roi.crop(img)
     pil = bgr_to_pil(cutout)
     if pil.width > THUMB_WIDTH:

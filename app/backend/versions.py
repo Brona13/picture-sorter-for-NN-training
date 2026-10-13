@@ -12,6 +12,7 @@ import json
 import time
 from pathlib import Path
 
+import curation
 import datamodel
 import db
 import engine
@@ -246,7 +247,7 @@ def export(camera: str, feature: str, version_id: int) -> tuple[Path, dict]:
         if item["hash"] and labels.frame_hash(camera, frame, hmap) != item["hash"]:
             report["hash_mismatch"].append(frame)
             continue
-        img = engine.curation.load_image(src)
+        img = curation.load_image(src)
         cutout = roi.crop(img)
         out_dir = dest / cls
         out_dir.mkdir(parents=True, exist_ok=True)

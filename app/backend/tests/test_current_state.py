@@ -97,7 +97,7 @@ class DirectCurrentStateTests(unittest.TestCase):
         self.assertFalse(db.is_frame_deleted(self.camera, self.frame))
         db.mark_frames_deleted(self.camera, [(self.frame, "hash")], source="test")
         self.assertTrue(db.is_frame_deleted(self.camera, self.frame))
-        db.restore_frames(self.camera, [self.frame], source="test")
+        db.restore_frames(self.camera, [self.frame])
         self.assertFalse(db.is_frame_deleted(self.camera, self.frame))
 
     def test_targeted_reads_report_one_direct_state_row(self):

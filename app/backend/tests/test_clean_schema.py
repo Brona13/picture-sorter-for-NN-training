@@ -99,7 +99,7 @@ class CleanSchemaTests(unittest.TestCase):
         finally:
             con.close()
 
-    def test_reset_removes_metadata_but_preserves_sources_rois_and_exports(self):
+    def test_reset_removes_metadata_but_preserves_sources_and_exports(self):
         camera = config.CAMERAS_ROOT / "camera"
         unsorted = camera / "unsorted"
         exports = camera / "exports"
@@ -108,7 +108,6 @@ class CleanSchemaTests(unittest.TestCase):
         for directory in (unsorted, exports, features, logs):
             directory.mkdir(parents=True)
         (unsorted / "source.png").write_bytes(b"source")
-        (camera / "rois.json").write_text("[]", encoding="utf-8")
         (exports / "dataset.zip").write_bytes(b"export")
         (features / "cutout.png").write_bytes(b"retired")
         (logs / "manifest.jsonl").write_text("{}\n", encoding="utf-8")
@@ -118,7 +117,6 @@ class CleanSchemaTests(unittest.TestCase):
         reset_database.reset()
 
         self.assertTrue((unsorted / "source.png").exists())
-        self.assertTrue((camera / "rois.json").exists())
         self.assertTrue((exports / "dataset.zip").exists())
         self.assertFalse(features.exists())
         self.assertFalse(logs.exists())

@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import config
-import curation
 import datamodel
 from roi import ROI
 

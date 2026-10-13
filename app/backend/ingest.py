@@ -30,12 +30,6 @@ STREAM_CHUNK_SIZE = 1024 * 1024
 PROGRESS_UPDATE_BYTES = 8 * STREAM_CHUNK_SIZE
 INDEX_FLUSH_EVERY = 25
 
-# target name -> directory resolver. Single destination: the
-# camera's immutable inbox. (Reference frames are no longer a separate folder.)
-_TARGETS = {
-    "unsorted": datamodel.unsorted_dir,
-}
-
 _SAFE = re.compile(r"[^A-Za-z0-9._-]+")
 
 
@@ -211,26 +205,21 @@ def _stream_copy(
 # --- ingest ------------------------------------------------------------------
 def ingest_files(
     camera: str,
-    target: str,
     files,
     *,
     progress_cb: ProgressCallback | None = None,
     total: int | None = None,
 ) -> IngestResult:
-    """Ingest ``(name, source)`` items into a registered camera target.
+    """Ingest ``(name, source)`` items into the camera's immutable ``unsorted/`` store.
 
-    The current target is the camera's immutable ``unsorted/`` frame store.
     Byte-identical duplicates already present in the camera or repeated within the
     same batch are skipped. A source may be bytes, a ``Path``, or a seekable
     binary upload. Paths and uploads are hashed and copied in bounded chunks.
 
     Returns a summary of added, skipped, and errored files.
     """
-    if target not in _TARGETS:
-        raise ValueError(f"target must be one of {list(_TARGETS)}, got {target!r}")
     datamodel.ensure_camera_dirs(camera)
-    dir_fn = _TARGETS[target]
-    dest_dir = dir_fn(camera)
+    dest_dir = datamodel.unsorted_dir(camera)
     ensure_index(camera)
     con = db.connect()
     result = IngestResult()
@@ -400,7 +389,6 @@ def ingest_files(
 
 def ingest_folder(
     camera: str,
-    target: str,
     folder: str | Path,
     *,
     progress_cb: ProgressCallback | None = None,
@@ -438,7 +426,6 @@ def ingest_folder(
     )
     result = ingest_files(
         camera,
-        target,
         ((p.name, p) for p in paths),
         progress_cb=progress_cb,
         total=len(paths),

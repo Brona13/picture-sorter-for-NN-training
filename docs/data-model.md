@@ -39,7 +39,7 @@ Frame rules:
 
 ## ROI and feature
 
-ROI definitions remain human-readable in `cameras/<camera>/rois.json`. Coordinates `x`, `y`, `w`, and `h` are normalized fractions of image dimensions.
+ROI definitions live in the SQLite `rois` table, one row per named ROI keyed by `(camera, name)` and ordered by `position` for UI display. Coordinates `x`, `y`, `w`, and `h` are normalized fractions of image dimensions. Optional `classes` and `products` are stored as JSON columns; the `role` column distinguishes `quality` (default) from `classify`.
 
 A feature is the identity under which frames are labeled, compared, versioned, and exported. It is normally the name of an ROI.
 
@@ -150,7 +150,7 @@ Derived caches:
 
 There are no history projections, latest-row triggers, or `current_*` tables. Direct primary keys enforce one state row per domain identity.
 
-SQLite stores metadata and cache payloads, not image bytes. `rois.json` remains a small, editable filesystem document because measured loads are faster than SQLite at current ROI counts and the format is useful outside the app. Optional performance JSONL is diagnostics output only.
+SQLite stores metadata and cache payloads, not image bytes. The `rois` table joined the DB in schema v3 so ROI edits benefit from the same transactional writes as labels and goldens (see [[migration-v2-v3-rois|the v2→v3 migration]] for how earlier `rois.json` files are backfilled and removed). Optional performance JSONL is diagnostics output only.
 
 ## Clean schema boundary
 
@@ -160,7 +160,7 @@ Schema version 2 deliberately has no migration from older databases. An incompat
 python app/backend/reset_database.py --yes
 ```
 
-The reset removes database metadata/caches and retired `features/` and ingest/manifest files. It preserves `unsorted/` source images, `rois.json`, and exports. The frame catalog and all embeddings are rebuilt as the new dataset is ingested or used.
+The reset removes database metadata/caches and retired `features/` and ingest/manifest files. It preserves `unsorted/` source images and exports. Because ROI definitions live in the database, a reset wipes them too — re-draw them in the ROI editor before re-labeling. The frame catalog and all embeddings are rebuilt as the new dataset is ingested or used.
 
 ## Related documents
 

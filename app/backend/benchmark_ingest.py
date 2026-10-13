@@ -51,10 +51,10 @@ def run(count: int, bytes_per_file: int) -> dict[str, object]:
             tracemalloc.start()
             started = time.perf_counter()
             if callback is None:
-                result = ingest.ingest_folder("benchmark-camera", "unsorted", source)
+                result = ingest.ingest_folder("benchmark-camera", source)
             else:
                 result = ingest.ingest_folder(
-                    "benchmark-camera", "unsorted", source, progress_cb=callback,
+                    "benchmark-camera", source, progress_cb=callback,
                 )
             elapsed_ms = (time.perf_counter() - started) * 1_000.0
             _current, peak = tracemalloc.get_traced_memory()
