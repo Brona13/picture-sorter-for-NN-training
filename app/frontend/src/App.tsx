@@ -3,6 +3,7 @@ import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import { api, ApiError } from "./api";
 import { VIEWS } from "./views";
 import StatusView from "./views/StatusView";
+import VersionsView from "./views/VersionsView";
 
 export default function App() {
   const [cameras, setCameras] = useState<string[]>([]);
@@ -66,7 +67,11 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Navigate to="/status" replace />} />
           <Route path="/status" element={<StatusView camera={camera} />} />
-          {VIEWS.filter((v) => v.path !== "status").map((v) => (
+          <Route
+            path="/versions"
+            element={<VersionsView camera={camera} product={product || undefined} />}
+          />
+          {VIEWS.filter((v) => !["status", "versions"].includes(v.path)).map((v) => (
             <Route key={v.path} path={`/${v.path}`} element={<h2>{v.label}</h2>} />
           ))}
         </Routes>

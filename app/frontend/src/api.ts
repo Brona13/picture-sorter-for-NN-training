@@ -48,6 +48,38 @@ export interface CameraStatus {
   features: FeatureStatus[];
 }
 
+export interface VersionInfo {
+  id: number;
+  number: number;
+  name: string;
+  notes: string;
+  created: number;
+  counts: Record<string, number>;
+  stats: Record<string, Record<string, number>>;
+  active: boolean;
+  delta: string;
+}
+
+export interface VersionsResponse {
+  feature: string;
+  classes: string[];
+  counts: Record<string, number>;
+  versions: VersionInfo[];
+}
+
+export interface ExportReport {
+  destination: string;
+  written: number;
+  missing: string[];
+  hash_mismatch: string[];
+}
+
+const post = (body?: unknown): RequestInit => ({
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: body === undefined ? undefined : JSON.stringify(body),
+});
+
 export const api = {
   health: () => request<{ status: string }>("/health"),
   cameras: () => request<string[]>("/cameras"),
@@ -59,5 +91,29 @@ export const api = {
     request<string[]>(
       `/cameras/${encodeURIComponent(camera)}/features` +
         (product ? `?product=${encodeURIComponent(product)}` : ""),
+    ),
+  versionFeatures: (camera: string, product?: string) =>
+    request<{ feature: string; label: string }[]>(
+      `/cameras/${encodeURIComponent(camera)}/versions/features` +
+        (product ? `?product=${encodeURIComponent(product)}` : ""),
+    ),
+  versions: (camera: string, feature: string) =>
+    request<VersionsResponse>(
+      `/cameras/${encodeURIComponent(camera)}/versions?feature=${encodeURIComponent(feature)}`,
+    ),
+  freeze: (camera: string, feature: string, name: string, notes: string) =>
+    request<{ id: number; number: number; counts: Record<string, number> }>(
+      `/cameras/${encodeURIComponent(camera)}/versions`,
+      post({ feature, name, notes }),
+    ),
+  revert: (camera: string, feature: string, id: number) =>
+    request<{ labels: number; goldens: number }>(
+      `/cameras/${encodeURIComponent(camera)}/versions/${id}/revert?feature=${encodeURIComponent(feature)}`,
+      post(),
+    ),
+  exportVersion: (camera: string, feature: string, id: number) =>
+    request<ExportReport>(
+      `/cameras/${encodeURIComponent(camera)}/versions/${id}/export?feature=${encodeURIComponent(feature)}`,
+      post(),
     ),
 };

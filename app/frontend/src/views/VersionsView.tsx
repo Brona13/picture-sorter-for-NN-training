@@ -1,0 +1,220 @@
+import { FormEvent, useCallback, useEffect, useState } from "react";
+import { api, ExportReport, VersionInfo, VersionsResponse } from "../api";
+
+const fmt = (ts: number) => new Date(ts * 1000).toISOString().slice(0, 16).replace("T", " ");
+const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+export default function VersionsView({ camera, product }: { camera: string; product?: string }) {
+  const [features, setFeatures] = useState<{ feature: string; label: string }[]>([]);
+  const [feature, setFeature] = useState("");
+  const [data, setData] = useState<VersionsResponse | null>(null);
+  const [name, setName] = useState("");
+  const [notes, setNotes] = useState("");
+  const [confirming, setConfirming] = useState<number | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [exportReport, setExportReport] = useState<ExportReport | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!camera) return;
+    setFeature("");
+    api
+      .versionFeatures(camera, product)
+      .then((f) => {
+        setFeatures(f);
+        setFeature(f[0]?.feature ?? "");
+      })
+      .catch((e: unknown) => setError(msg(e)));
+  }, [camera, product]);
+
+  const load = useCallback(() => {
+    if (!camera || !feature) return;
+    api
+      .versions(camera, feature)
+      .then((d) => {
+        setData(d);
+        setError(null);
+      })
+      .catch((e: unknown) => setError(msg(e)));
+  }, [camera, feature]);
+
+  useEffect(() => {
+    setData(null);
+    setConfirming(null);
+    setNotice(null);
+    setExportReport(null);
+    load();
+  }, [load]);
+
+  async function onFreeze(e: FormEvent) {
+    e.preventDefault();
+    try {
+      const info = await api.freeze(camera, feature, name, notes);
+      setNotice(
+        `Froze v${info.number} — ` +
+          (data?.classes ?? []).map((c) => `${c}: ${info.counts[c] ?? 0}`).join(", "),
+      );
+      setName("");
+      setNotes("");
+      load();
+    } catch (err) {
+      setError(msg(err));
+    }
+  }
+
+  async function onRevert(v: VersionInfo) {
+    try {
+      const res = await api.revert(camera, feature, v.id);
+      setNotice(`Reverted to v${v.number}: ${res.labels} labels, ${res.goldens} golden marks.`);
+      setConfirming(null);
+      load();
+    } catch (err) {
+      setError(msg(err));
+    }
+  }
+
+  async function onExport(v: VersionInfo) {
+    try {
+      setExportReport(await api.exportVersion(camera, feature, v.id));
+    } catch (err) {
+      setError(msg(err));
+    }
+  }
+
+  if (!camera) return <p>Select a camera.</p>;
+  const classes = data?.classes ?? [];
+
+  return (
+    <section>
+      <h2>
+        Versions — {camera}
+        {product ? ` › ${product}` : ""}
+      </h2>
+      {error && <p role="alert">{error}</p>}
+      {notice && <p role="status">{notice}</p>}
+      <label>
+        Feature (ROI){" "}
+        <select value={feature} onChange={(e) => setFeature(e.target.value)}>
+          {features.map((f) => (
+            <option key={f.feature} value={f.feature}>
+              {f.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      {data && (
+        <p>
+          Current working state —{" "}
+          {classes
+            .map((c) => `${c}: ${data.counts[c] ?? 0} ⭐${data.counts[`golden_${c}`] ?? 0}`)
+            .join(" · ")}{" "}
+          · unlabeled: {data.counts.unlabeled ?? 0} of {data.counts.total ?? 0}
+        </p>
+      )}
+
+      <form onSubmit={onFreeze}>
+        <strong>Freeze the current state as a new version</strong>
+        <div>
+          <label>
+            Version name{" "}
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. first-clean-batch" />
+          </label>
+        </div>
+        <div>
+          <label>
+            Notes (optional){" "}
+            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} />
+          </label>
+        </div>
+        <button type="submit" disabled={!feature}>
+          🔒 Freeze version
+        </button>
+      </form>
+
+      {data && data.versions.length === 0 && (
+        <p>No versions yet for this feature. Freeze one above once you've labeled some frames.</p>
+      )}
+
+      {data && data.versions.length > 0 && (
+        <>
+          <h3>History ({data.versions.length})</h3>
+          <table>
+            <thead>
+              <tr>
+                <th></th>
+                <th>version</th>
+                <th>name</th>
+                <th>created</th>
+                {classes.map((c) => (
+                  <th key={c}>{c}</th>
+                ))}
+                {classes.map((c) => (
+                  <th key={`g${c}`}>⭐{c}</th>
+                ))}
+                <th>unlabeled</th>
+                <th>change vs previous</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {[...data.versions].reverse().map((v) => (
+                <tr key={v.id}>
+                  <td>{v.active ? "▶ active" : ""}</td>
+                  <td>v{v.number}</td>
+                  <td>{v.name}</td>
+                  <td>{fmt(v.created)}</td>
+                  {classes.map((c) => (
+                    <td key={c}>{v.counts[c] ?? 0}</td>
+                  ))}
+                  {classes.map((c) => (
+                    <td key={`g${c}`}>{v.counts[`golden_${c}`] ?? 0}</td>
+                  ))}
+                  <td>{v.counts.unlabeled ?? 0}</td>
+                  <td>{v.delta}</td>
+                  <td>
+                    <button disabled={v.active} onClick={() => setConfirming(v.id)}>
+                      ⏪ Revert v{v.number}
+                    </button>{" "}
+                    <button onClick={() => onExport(v)}>📦 Export v{v.number}</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          {data.versions
+            .filter((v) => v.id === confirming)
+            .map((v) => (
+              <div key={v.id} role="alertdialog" aria-label="Confirm revert">
+                <p>
+                  Revert the working state to <strong>v{v.number}</strong>? Current labels and golden
+                  marks will be replaced by that snapshot. Other saved versions remain available.
+                </p>
+                <button onClick={() => onRevert(v)}>✅ Yes, revert</button>{" "}
+                <button onClick={() => setConfirming(null)}>Cancel</button>
+              </div>
+            ))}
+
+          {exportReport && (
+            <div role="status">
+              <p>
+                Exported <strong>{exportReport.written}</strong> cutouts → <code>{exportReport.destination}</code>
+              </p>
+              {exportReport.missing.length > 0 && (
+                <p>
+                  {exportReport.missing.length} frame(s) missing: {exportReport.missing.slice(0, 5).join(", ")}
+                </p>
+              )}
+              {exportReport.hash_mismatch.length > 0 && (
+                <p role="alert">
+                  {exportReport.hash_mismatch.length} frame(s) changed since freeze:{" "}
+                  {exportReport.hash_mismatch.slice(0, 5).join(", ")}
+                </p>
+              )}
+            </div>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
