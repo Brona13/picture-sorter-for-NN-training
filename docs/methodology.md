@@ -174,7 +174,7 @@ d_cpu(C, G) =
 Weights are defined in:
 
 ```text
-scripts/config.py → METRIC_WEIGHTS
+app/backend/config.py → METRIC_WEIGHTS
 ```
 
 The current configured weights are equal.

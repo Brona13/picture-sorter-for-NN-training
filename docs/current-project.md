@@ -169,24 +169,24 @@ These views evaluate the curation aid; they do not establish classifier accuracy
 ### Entry point and configuration
 
 - `scripts/app.py` — Streamlit entry point and view dispatch
-- `scripts/config.py` — paths, classes, metric families, and optional embeddings
+- `app/backend/config.py` — paths, classes, metric families, and optional embeddings
 - `scripts/ui_common.py` — shared Streamlit presentation helpers
 
 ### Domain and persistence
 
-- `scripts/roi.py` — ROI representation and normalized cropping
-- `scripts/datamodel.py` — camera, product, feature, and frame scoping
-- `scripts/ingest.py` — import and exact duplicate detection
-- `scripts/db.py` — SQLite schema and low-level persistence
-- `scripts/labels.py` — direct label/golden state and transactional invariants
-- `scripts/versions.py` — freeze, revert, and export behavior
+- `app/backend/roi.py` — ROI representation and normalized cropping
+- `app/backend/datamodel.py` — camera, product, feature, and frame scoping
+- `app/backend/ingest.py` — import and exact duplicate detection
+- `app/backend/db.py` — SQLite schema and low-level persistence
+- `app/backend/labels.py` — direct label/golden state and transactional invariants
+- `app/backend/versions.py` — freeze, revert, and export behavior
 
 ### Scoring
 
-- `scripts/curation.py` — classical feature extraction and distances
-- `scripts/embedding.py` — optional pretrained ResNet embeddings
-- `scripts/classify.py` — multi-class scoring and the shared persistent feature cache
-- `scripts/dedup.py` — near-duplicate embedding clustering using the shared cache
+- `app/backend/curation.py` — classical feature extraction and distances
+- `app/backend/embedding.py` — optional pretrained ResNet embeddings
+- `app/backend/classify.py` — multi-class scoring and the shared persistent feature cache
+- `app/backend/dedup.py` — near-duplicate embedding clustering using the shared cache
 
 ### Views
 

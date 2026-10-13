@@ -157,7 +157,7 @@ SQLite stores metadata and cache payloads, not image bytes. `rois.json` remains 
 Schema version 2 deliberately has no migration from older databases. An incompatible database raises `DatabaseResetRequired`. Reset it with:
 
 ```powershell
-python scripts/reset_database.py --yes
+python app/backend/reset_database.py --yes
 ```
 
 The reset removes database metadata/caches and retired `features/` and ingest/manifest files. It preserves `unsorted/` source images, `rois.json`, and exports. The frame catalog and all embeddings are rebuilt as the new dataset is ingested or used.

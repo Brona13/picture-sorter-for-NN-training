@@ -19,7 +19,16 @@ flat list of features), so existing setups are untouched.
 """
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
 import streamlit as st
+
+# Domain modules live in app/backend (flat imports); the Streamlit views in this
+# directory are being retired in favour of app/frontend.
+_BACKEND_DIR = Path(__file__).resolve().parents[1] / "app" / "backend"
+if str(_BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(_BACKEND_DIR))
 
 # set_page_config must be the first Streamlit command, so call it before importing
 # the view modules (some pull in Streamlit components at import time).

@@ -33,14 +33,16 @@ Files in `memory/` and `plans/` may describe earlier workflows. Treat `docs/curr
 ## Code boundaries
 
 - `scripts/app.py`: Streamlit entry point and view routing.
-- `scripts/datamodel.py`: cameras, products, features, and frame selection.
-- `scripts/db.py`: SQLite schema and low-level persistence.
-- `scripts/labels.py`: label and golden state.
-- `scripts/classify.py`: multi-class scoring and score caching.
-- `scripts/versions.py`: freeze, revert, and export behavior.
+- `app/backend/datamodel.py`: cameras, products, features, and frame selection.
+- `app/backend/db.py`: SQLite schema and low-level persistence.
+- `app/backend/labels.py`: label and golden state.
+- `app/backend/classify.py`: multi-class scoring and score caching.
+- `app/backend/versions.py`: freeze, revert, and export behavior.
 - `scripts/view_*/`: Streamlit presentation and interaction.
 
 Keep domain logic out of Streamlit view modules when practical.
+
+_Migration in progress_ (see `plans/2026-10-13-streamlit-to-react-fastapi-migration.md`): domain modules now live in `app/backend/` (flat imports, tests in `app/backend/tests/`); `scripts/` keeps only the Streamlit UI until it is removed. Run tests with `.venv/bin/python -m pytest`.
 
 ## Safe working rules
 
@@ -59,7 +61,7 @@ Do not scan these by default:
 - `.venv/`
 - `cameras/*/unsorted/`
 - `cameras/*/exports/`
-- `scripts/**/__pycache__/`
+- `app/**/__pycache__/`, `scripts/**/__pycache__/`
 - historical plans or memory notes
 
 Inspect them only when the task specifically requires their data or history. Prefer targeted searches and relevant modules over repository-wide reads.

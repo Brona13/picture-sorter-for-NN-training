@@ -6,7 +6,7 @@ without rendering Streamlit widgets.
 
 Run from the project root::
 
-    .\.venv\Scripts\python.exe scripts\benchmark_render_data.py
+    .\.venv\Scripts\python.exe app\backend\benchmark_render_data.py
 """
 from __future__ import annotations
 

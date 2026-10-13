@@ -181,7 +181,7 @@ def connect() -> sqlite3.Connection:
             con.close()
             raise DatabaseResetRequired(
                 f"Database schema {version} is incompatible with clean schema "
-                f"{SCHEMA_VERSION}. Run `python scripts/reset_database.py --yes` "
+                f"{SCHEMA_VERSION}. Run `python app/backend/reset_database.py --yes` "
                 "to remove metadata and caches; source images and rois.json are kept."
             )
         with perf.span("db.schema.initialize"):

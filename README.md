@@ -328,10 +328,10 @@ incompatible database, reset metadata and caches while preserving source images,
 ROI definitions, and exports:
 
 ```powershell
-python scripts\reset_database.py --yes
+python app\backend\reset_database.py --yes
 ```
 
-On Linux/macOS: `python scripts/reset_database.py --yes`
+On Linux/macOS: `python app/backend/reset_database.py --yes`
 
 Generated exports can be recreated from frozen versions as long as the source frames and database remain intact.
 
@@ -397,7 +397,7 @@ For a repeatable classical-scoring baseline that cannot touch production storage
 run:
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\benchmark_performance.py
+.\.venv\Scripts\python.exe app\backend\benchmark_performance.py
 ```
 
 The benchmark creates temporary camera and database roots internally, compares a
@@ -408,8 +408,8 @@ To compare single-image and bounded neural inference without reading project
 images or the database, run:
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\benchmark_embedding_batches.py --backbone resnet18
-.\.venv\Scripts\python.exe scripts\benchmark_embedding_batches.py --backbone resnet50
+.\.venv\Scripts\python.exe app\backend\benchmark_embedding_batches.py --backbone resnet18
+.\.venv\Scripts\python.exe app\backend\benchmark_embedding_batches.py --backbone resnet50
 ```
 
 The model is warmed before timing, embeddings are checked for numerical
@@ -419,14 +419,14 @@ The classical benchmark accepts worker and decoded-vector batch overrides for
 controlled tuning:
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\benchmark_performance.py --comparison-workers 4 --vector-batch-size 32
+.\.venv\Scripts\python.exe app\backend\benchmark_performance.py --comparison-workers 4 --vector-batch-size 32
 ```
 
 To compare incremental decoded-vector memory for retain-all and streamed
 scoring, run:
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\benchmark_vector_memory.py
+.\.venv\Scripts\python.exe app\backend\benchmark_vector_memory.py
 ```
 
 Both scripts construct isolated synthetic storage and never access project
@@ -436,7 +436,7 @@ To reproduce the storage decision between append/projection writes and direct
 SQLite state, plus JSON-versus-SQLite lookup measurements, run:
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\benchmark_storage_cleanup.py
+.\.venv\Scripts\python.exe app\backend\benchmark_storage_cleanup.py
 ```
 
 Normal state is stored directly in keyed SQLite tables. Explicit Versions retain
@@ -446,7 +446,7 @@ event log or maintain duplicate projections.
 To benchmark Status-style filesystem, ROI, product-scope, and summary reads:
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\benchmark_render_data.py
+.\.venv\Scripts\python.exe app\backend\benchmark_render_data.py
 ```
 
 The fixture uses temporary storage. Render snapshots are request-scoped and are
@@ -456,7 +456,7 @@ To compare cold/warm thumbnail preparation and encoded cache payloads at
 24/48/96 cards, then measure Streamlit's backend grid construction:
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\benchmark_thumbnails.py
+.\.venv\Scripts\python.exe app\backend\benchmark_thumbnails.py
 .\.venv\Scripts\python.exe scripts\benchmark_grid_render.py
 ```
 
@@ -466,7 +466,7 @@ Python rerun and UI-delta construction but not browser layout and paint time.
 To measure folder-ingest time, peak Python memory, and emitted progress phases:
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\benchmark_ingest.py
+.\.venv\Scripts\python.exe app\backend\benchmark_ingest.py
 ```
 
 The benchmark creates its source folder, camera inbox, and SQLite frame catalog under one
@@ -477,7 +477,7 @@ To reproduce the result-cache format decision across 48, 300, and 1,000 scored
 frames:
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\benchmark_result_serialization.py
+.\.venv\Scripts\python.exe app\backend\benchmark_result_serialization.py
 ```
 
 It compares current JSON, compact JSON, and compressed JSON end to end using a

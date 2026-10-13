@@ -1,7 +1,7 @@
 """2D projections of ROI-cutout embeddings for the Dedup view's scatter plot.
 
 Sanity-check surface only — the 2D coordinates distort real cosine distances.
-Clustering decisions stay in full-dimensional space (see ``scripts/dedup.py``).
+Clustering decisions stay in full-dimensional space (see ``app/backend/dedup.py``).
 
 Projections are cached in SQLite keyed by (camera, feature, method, backbone).
 The cache is invalidated when the frame set signature changes.

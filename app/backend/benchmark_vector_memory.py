@@ -6,7 +6,7 @@ float32 arrays that Phase 4 bounds.
 
 Run from the project root::
 
-    .\.venv\Scripts\python.exe scripts\benchmark_vector_memory.py
+    .\.venv\Scripts\python.exe app\backend\benchmark_vector_memory.py
 """
 from __future__ import annotations
 

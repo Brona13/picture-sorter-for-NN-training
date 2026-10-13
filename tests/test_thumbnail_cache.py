@@ -13,6 +13,9 @@ from PIL import Image
 SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
+_BACKEND_DIR = Path(__file__).resolve().parents[1] / "app" / "backend"
+if str(_BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(_BACKEND_DIR))
 
 import perf
 import ui_common

@@ -1,6 +1,6 @@
 """Central configuration for the curation tool.
 
-All paths are derived from the project root (the parent of this ``scripts/``
+All paths are derived from the project root (two levels above this ``app/backend/``
 directory) so the project stays portable — copy the whole folder to another
 machine and everything still resolves.
 
@@ -13,8 +13,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-# Project root = parent of the scripts/ directory.
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+# Project root = two levels above app/backend/ (this directory).
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 # Cameras container (override for tests via CURATION_CAMERAS_ROOT).
 CAMERAS_ROOT = Path(os.environ.get("CURATION_CAMERAS_ROOT", PROJECT_ROOT / "cameras"))

@@ -5,7 +5,7 @@ read or written.
 
 Run from the project root::
 
-    .\.venv\Scripts\python.exe scripts\benchmark_embedding_batches.py
+    .\.venv\Scripts\python.exe app\backend\benchmark_embedding_batches.py
 """
 from __future__ import annotations
 

@@ -5,7 +5,7 @@ imports the application modules.  It cannot be pointed at production storage.
 
 Run from the project root::
 
-    .\.venv\Scripts\python.exe scripts\benchmark_performance.py
+    .\.venv\Scripts\python.exe app\backend\benchmark_performance.py
 """
 from __future__ import annotations
 
