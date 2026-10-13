@@ -337,4 +337,4 @@ Historical rationale may be consulted from `memory/` and `plans/` when needed.
 ## Platform status
 
 - Linux: verified (development platform).
-- Windows: expected to work but **untested** since the move to FastAPI + React; `run.sh` is bash-only, so Windows uses the manual commands in the README section "Running on Windows". A `run.ps1` launcher has been offered but not written.
+- Windows: expected to work but **untested** since the move to FastAPI + React; `run.sh` is bash-only; Windows uses `run.ps1` or the manual commands in the README section "Running on Windows". `run.ps1` mirrors `run.sh` but has never been run (written without a Windows machine).

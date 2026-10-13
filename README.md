@@ -82,7 +82,7 @@ Extra arguments go to uvicorn, e.g. `./run.sh --port 8510`.
 The server binds `127.0.0.1` only and has **no authentication**; the folder-import
 feature reads any directory path it is given. Do not expose it to a network.
 
-On Windows, `run.sh` does not work from PowerShell; see [Running on Windows](#running-on-windows).
+On Windows use `.\run.ps1` instead (same modes and arguments); see [Running on Windows](#running-on-windows).
 
 The application provides seven views:
 
@@ -100,7 +100,8 @@ The sidebar selects the camera. When a camera has a product-classification ROI, 
 
 > **Not yet tested on Windows.** The Python code uses `pathlib`, and the previous
 > (Streamlit) version ran on Windows, so it is expected to work, but only the Linux
-> launcher has been exercised. Report anything that breaks.
+> launcher has been exercised. `run.ps1` was written without being run on Windows.
+> Report anything that breaks.
 
 From the project folder in PowerShell:
 
@@ -118,7 +119,15 @@ npm run build
 cd ..\..
 ```
 
-Start the server:
+Or use the launcher, which does the checks and the first build for you (same modes as `run.sh`):
+
+```powershell
+.\run.ps1            # serve on http://127.0.0.1:8999
+.\run.ps1 build      # rebuild the frontend
+.\run.ps1 dev        # backend auto-reload + Vite dev server
+```
+
+If PowerShell refuses to run it, see *Execution policy* below. To start the server by hand instead:
 
 ```powershell
 .\.venv\Scripts\python.exe -m uvicorn api.main:app --app-dir app\backend --host 127.0.0.1 --port 8999
@@ -135,9 +144,10 @@ Notes:
   back up is `cameras\` and `data\picture_sorter.db`. If the database is still at
   schema v2, keep `cameras\*\rois.json` until the first launch has migrated it
   (see [Project storage](#project-storage)).
-- **Execution policy:** if `Activate.ps1` is blocked, run
-  `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`, or skip activation and call
-  `.\.venv\Scripts\python.exe` directly as above.
+- **Execution policy:** if `Activate.ps1` or `run.ps1` is blocked, run
+  `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once, or start the launcher with
+  `powershell -ExecutionPolicy Bypass -File .\run.ps1`. You can also skip activation and call
+  `.\.venv\Scripts\python.exe` directly.
 - **`run.sh` alternatives:** WSL or Git Bash can run `./run.sh` unchanged.
 - **Likely trouble spots:** Windows file locking during ingest, and install failures
   of the PyTorch or UMAP wheels. Install the base requirements first, then add
