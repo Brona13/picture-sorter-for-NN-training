@@ -15,3 +15,9 @@ session_date: 2026-10-13
 2. Expect conflicts: remote edits files under `scripts/` and `tests/` that the migration deleted.
 3. Port the ROI-table change and migration into `app/backend` (`db.py`, `datamodel.py`) plus its tests; the API/tests currently assume `rois.json`.
 4. The user pushes themselves; give commands rather than pushing.
+
+## Update: merge done locally (branch `merge-attempt`, commit 5f92d3c)
+- `origin/main` merged into the migration on a copy branch; 141 backend + 51 frontend tests pass. Not pushed yet.
+- Kept from remote: `rois` SQLite table + v2→v3 migration (+ its test, now in `app/backend/tests`), ingest signature cleanup (no `target` arg), `engine.curation` shim removal, docs.
+- Dropped: remote's Streamlit-only work (`session_keys`, `view_dedup` split, view smoke tests).
+- **Real `cameras/*/rois.json` files:** the merge deletes them from git (as the remote did). They were restored on disk, untracked, because this machine's real `data/picture_sorter.db` is still schema v2 and the v3 migration backfills ROIs from those files on first open. Don't delete them before the real DB has been opened once with the new code (back up `data/` first).
