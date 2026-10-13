@@ -333,3 +333,8 @@ Historical rationale may be consulted from `memory/` and `plans/` when needed.
 - [[multi-product-hierarchy|Multi-product hierarchy design]]
 - [[classify-and-versioning|Classification and versioning design]]
 - [[todo-roi-image-fullwidth|ROI editor sizing issue]]
+
+## Platform status
+
+- Linux: verified (development platform).
+- Windows: expected to work but **untested** since the move to FastAPI + React; `run.sh` is bash-only, so Windows uses the manual commands in the README section "Running on Windows". A `run.ps1` launcher has been offered but not written.

@@ -24,3 +24,9 @@ session_date: 2026-10-13
 
 ## Update: pushed (user, 2026-10-13)
 `origin/main` and `origin/react-fastapi` both at `da8e5c0` (the merge result). The migration is now on `main`; the remote's earlier Streamlit-side work is merged in history. Local `merge-attempt` branch can be deleted. Still open: browser click-through of the UI; back up `data/` + `cameras/` before first launching new code on the real v2 database (the v3 migration reads the restored, untracked `cameras/*/rois.json`).
+
+## Later changes (same day)
+- Default port is now **8999**. Simple global theme (`app/frontend/src/styles.css`); Classify cards wrap their buttons and honour the Columns setting exactly; thumbnail width 360.
+- Real DB (already schema v3): deleted all 210 labels of `pekat-cam3` at the user's request (all on feature `product`); backup at `data/picture_sorter-before-cam3-clear.db` (git-ignored). Mutes (47), 1 soft-deleted frame and the cached results were left alone.
+- Windows: documented in README ("Running on Windows"); untested; `run.ps1` offered, not written.
+- The UI has still never been exercised in a real browser by Claude (the Chrome extension was not connected; the user stopped a headless-Chrome run).

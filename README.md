@@ -82,9 +82,7 @@ Extra arguments go to uvicorn, e.g. `./run.sh --port 8510`.
 The server binds `127.0.0.1` only and has **no authentication**; the folder-import
 feature reads any directory path it is given. Do not expose it to a network.
 
-On Windows, activate the environment and run
-`python -m uvicorn api.main:app --app-dir app\backend --port 8999` after building
-the frontend with `npm install && npm run build` inside `app\frontend`.
+On Windows, `run.sh` does not work from PowerShell; see [Running on Windows](#running-on-windows).
 
 The application provides seven views:
 
@@ -97,6 +95,54 @@ The application provides seven views:
 - **Dedup** — cluster near-duplicate frames and mute the redundant ones
 
 The sidebar selects the camera. When a camera has a product-classification ROI, it also selects either the product-sorting stage or one product’s quality stage.
+
+## Running on Windows
+
+> **Not yet tested on Windows.** The Python code uses `pathlib`, and the previous
+> (Streamlit) version ran on Windows, so it is expected to work, but only the Linux
+> launcher has been exercised. Report anything that breaks.
+
+From the project folder in PowerShell:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+# optional, for ResNet scoring and the Dedup view:
+pip install -r requirements-embedding.txt
+
+# build the frontend once (needs Node.js 20+ from https://nodejs.org)
+cd app\frontend
+npm install
+npm run build
+cd ..\..
+```
+
+Start the server:
+
+```powershell
+.\.venv\Scripts\python.exe -m uvicorn api.main:app --app-dir app\backend --host 127.0.0.1 --port 8999
+```
+
+then open <http://127.0.0.1:8999>. Repeat `npm run build` after any frontend change.
+For development with auto-reload, run uvicorn with `--reload` and, in a second
+terminal, `npm run dev` inside `app\frontend` (open <http://127.0.0.1:5173>).
+
+Notes:
+
+- **Moving data from another computer:** copy the project folder without `.venv\`
+  and `app\frontend\node_modules\`, and create a fresh environment. The data to
+  back up is `cameras\` and `data\picture_sorter.db`. If the database is still at
+  schema v2, keep `cameras\*\rois.json` until the first launch has migrated it
+  (see [Project storage](#project-storage)).
+- **Execution policy:** if `Activate.ps1` is blocked, run
+  `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`, or skip activation and call
+  `.\.venv\Scripts\python.exe` directly as above.
+- **`run.sh` alternatives:** WSL or Git Bash can run `./run.sh` unchanged.
+- **Likely trouble spots:** Windows file locking during ingest, and install failures
+  of the PyTorch or UMAP wheels. Install the base requirements first, then add
+  `requirements-embedding.txt`.
+- The server binds `127.0.0.1` only and has no authentication, as on Linux.
 
 ## Add images
 
