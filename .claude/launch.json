@@ -4,8 +4,8 @@
     {
       "name": "picture-sorter",
       "runtimeExecutable": "./run.sh",
-      "runtimeArgs": ["--port", "8502"],
-      "port": 8502
+      "runtimeArgs": ["--port", "8999"],
+      "port": 8999
     }
   ]
 }

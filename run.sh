@@ -4,9 +4,9 @@
 # project's virtual environment.
 #
 # Usage:
-#   ./run.sh                    # serve the app on http://127.0.0.1:8000
+#   ./run.sh                    # serve the app on http://127.0.0.1:8999
 #   ./run.sh --port 8510        # extra arguments go to uvicorn
-#   ./run.sh dev                # backend with auto-reload (8000) + Vite dev server (5173)
+#   ./run.sh dev                # backend with auto-reload (8999) + Vite dev server (5173)
 #   ./run.sh build              # (re)build the frontend only
 #
 # The server binds 127.0.0.1 by default. Do not expose it to a network: the
@@ -83,7 +83,7 @@ case "$mode" in
         need_npm
         [ -d "$FRONTEND_DIR/node_modules" ] || (cd "$FRONTEND_DIR" && npm install)
         "$VENV_PYTHON" -m uvicorn api.main:app --app-dir "$BACKEND_DIR" \
-            --host 127.0.0.1 --port 8000 --reload --reload-dir "$BACKEND_DIR" "$@" &
+            --host 127.0.0.1 --port 8999 --reload --reload-dir "$BACKEND_DIR" "$@" &
         backend_pid=$!
         trap 'kill "$backend_pid" 2>/dev/null || true' EXIT INT TERM
         (cd "$FRONTEND_DIR" && npm run dev)
@@ -94,6 +94,6 @@ case "$mode" in
             build_frontend
         fi
         exec "$VENV_PYTHON" -m uvicorn api.main:app --app-dir "$BACKEND_DIR" \
-            --host 127.0.0.1 --port 8000 "$@"
+            --host 127.0.0.1 --port 8999 "$@"
         ;;
 esac

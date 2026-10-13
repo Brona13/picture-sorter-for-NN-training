@@ -69,21 +69,21 @@ From the project root:
 ./run.sh
 ```
 
-then open <http://127.0.0.1:8000>. `run.sh` checks the virtual environment, builds
+then open <http://127.0.0.1:8999>. `run.sh` checks the virtual environment, builds
 the frontend on first use, and starts the FastAPI server (uvicorn) from `.venv`.
 Extra arguments go to uvicorn, e.g. `./run.sh --port 8510`.
 
 | Command | What it does |
 |---|---|
-| `./run.sh` | Serve the app (backend + built frontend) on `127.0.0.1:8000` |
+| `./run.sh` | Serve the app (backend + built frontend) on `127.0.0.1:8999` |
 | `./run.sh build` | Rebuild the frontend (`app/frontend/dist`) |
-| `./run.sh dev` | Backend with auto-reload on 8000 plus the Vite dev server on 5173 (open 5173; `/api` is proxied) |
+| `./run.sh dev` | Backend with auto-reload on 8999 plus the Vite dev server on 5173 (open 5173; `/api` is proxied) |
 
 The server binds `127.0.0.1` only and has **no authentication**; the folder-import
 feature reads any directory path it is given. Do not expose it to a network.
 
 On Windows, activate the environment and run
-`python -m uvicorn api.main:app --app-dir app\backend --port 8000` after building
+`python -m uvicorn api.main:app --app-dir app\backend --port 8999` after building
 the frontend with `npm install && npm run build` inside `app\frontend`.
 
 The application provides seven views:
@@ -360,7 +360,7 @@ On Linux/macOS, scoped to a single command:
 ```bash
 CURATION_CAMERAS_ROOT=<temporary camera directory> \
 CURATION_DATA_DIR=<temporary data directory> \
-.venv/bin/python -m uvicorn api.main:app --app-dir app/backend --port 8000
+.venv/bin/python -m uvicorn api.main:app --app-dir app/backend --port 8999
 ```
 
 Unset or replace these values before launching the application against real data.
