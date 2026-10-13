@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import { api, ApiError } from "./api";
 import { VIEWS } from "./views";
+import IngestView from "./views/IngestView";
 import StatusView from "./views/StatusView";
 import VersionsView from "./views/VersionsView";
 
@@ -12,15 +13,17 @@ export default function App() {
   const [product, setProduct] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const loadCameras = useCallback((select?: string) => {
     api
       .cameras()
       .then((list) => {
         setCameras(list);
-        setCamera((c) => c || list[0] || "");
+        setCamera((c) => select || c || list[0] || "");
       })
       .catch((e: unknown) => setError(describe(e)));
   }, []);
+
+  useEffect(() => loadCameras(), [loadCameras]);
 
   useEffect(() => {
     if (!camera) return;
@@ -71,7 +74,11 @@ export default function App() {
             path="/versions"
             element={<VersionsView camera={camera} product={product || undefined} />}
           />
-          {VIEWS.filter((v) => !["status", "versions"].includes(v.path)).map((v) => (
+          <Route
+            path="/ingest"
+            element={<IngestView camera={camera} onCameraCreated={loadCameras} />}
+          />
+          {VIEWS.filter((v) => !["status", "versions", "ingest"].includes(v.path)).map((v) => (
             <Route key={v.path} path={`/${v.path}`} element={<h2>{v.label}</h2>} />
           ))}
         </Routes>

@@ -17,7 +17,7 @@ from fastapi import FastAPI, Request  # noqa: E402
 from fastapi.responses import JSONResponse  # noqa: E402
 
 import db  # noqa: E402
-from api import cameras, status, versions_api  # noqa: E402
+from api import cameras, ingest_api, jobs, status, versions_api  # noqa: E402
 
 
 def create_app() -> FastAPI:
@@ -37,6 +37,8 @@ def create_app() -> FastAPI:
     app.include_router(cameras.router, prefix="/api")
     app.include_router(status.router, prefix="/api")
     app.include_router(versions_api.router, prefix="/api")
+    app.include_router(ingest_api.router, prefix="/api")
+    app.include_router(jobs.router, prefix="/api")
     return app
 
 

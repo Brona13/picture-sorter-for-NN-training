@@ -43,3 +43,24 @@ class ApiTestCase(unittest.TestCase):
     def tearDown(self) -> None:
         config.CAMERAS_ROOT, config.DATA_DIR = self._old
         self.tmp.cleanup()
+
+
+def png_bytes(seed: int) -> bytes:
+    """Distinct, valid PNG bytes per ``seed``."""
+    img = np.full((30, 40, 3), (seed * 53) % 256, dtype=np.uint8)
+    img[: 3 + seed % 20, :] = (seed * 7 % 256, 255, 10 + seed)
+    ok, buf = cv2.imencode(".png", img)
+    assert ok
+    return buf.tobytes()
+
+
+def wait_for_job(client: TestClient, job_id: str, timeout: float = 20.0) -> dict:
+    import time
+
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        job = client.get(f"/api/jobs/{job_id}").json()
+        if job["status"] in ("done", "error"):
+            return job
+        time.sleep(0.02)
+    raise AssertionError(f"job {job_id} did not finish: {job}")

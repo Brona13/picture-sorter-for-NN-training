@@ -74,6 +74,23 @@ export interface ExportReport {
   hash_mismatch: string[];
 }
 
+export interface Job<R = unknown> {
+  id: string;
+  kind: string;
+  camera: string;
+  feature: string | null;
+  status: "queued" | "running" | "done" | "error";
+  progress: Record<string, unknown>;
+  result: R | null;
+  error: string | null;
+}
+
+export interface IngestResult {
+  added: number;
+  skipped: string[];
+  errors: string[];
+}
+
 const post = (body?: unknown): RequestInit => ({
   method: "POST",
   headers: { "Content-Type": "application/json" },
@@ -114,6 +131,26 @@ export const api = {
   exportVersion: (camera: string, feature: string, id: number) =>
     request<ExportReport>(
       `/cameras/${encodeURIComponent(camera)}/versions/${id}/export?feature=${encodeURIComponent(feature)}`,
+      post(),
+    ),
+  job: <R = unknown>(id: string) => request<Job<R>>(`/jobs/${encodeURIComponent(id)}`),
+  createCamera: (name: string) => request<{ name: string }>("/cameras", post({ name })),
+  uploadFrames: (camera: string, files: File[]) => {
+    const form = new FormData();
+    files.forEach((f) => form.append("files", f));
+    return request<Job<IngestResult>>(
+      `/cameras/${encodeURIComponent(camera)}/ingest/upload`,
+      { method: "POST", body: form },
+    );
+  },
+  importFolder: (camera: string, path: string) =>
+    request<Job<IngestResult>>(
+      `/cameras/${encodeURIComponent(camera)}/ingest/folder`,
+      post({ path }),
+    ),
+  rebuildCatalog: (camera: string) =>
+    request<Job<{ tracked: number }>>(
+      `/cameras/${encodeURIComponent(camera)}/ingest/rebuild`,
       post(),
     ),
 };
