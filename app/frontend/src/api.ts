@@ -271,6 +271,49 @@ export interface InsightsResponse {
   >;
 }
 
+export interface DedupParams {
+  method: string;
+  epsilon: number;
+  min_points: number;
+}
+
+export interface DedupResult {
+  params: DedupParams;
+  summary: { clusters: number; covered: number; unique: number; total: number };
+  would_mute: number;
+  clusters: { id: number; members: string[]; representative: string }[];
+  noise_frames: string[];
+}
+
+export interface DedupState {
+  feature: string;
+  reason: "no_embeddings" | "no_sklearn" | null;
+  backbones: string[];
+  params: DedupParams;
+  ranges: { epsilon: [number, number]; min_points: [number, number] };
+  frames: number;
+  device: string;
+  muted_count: number;
+  projections: string[];
+  result: DedupResult | null;
+}
+
+export interface ScatterPoint {
+  frame: string;
+  x: number;
+  y: number;
+  cluster: number;
+  representative: boolean;
+  golden: string | null;
+}
+
+export interface ScatterResult {
+  projection: string;
+  from_cache: boolean;
+  points: ScatterPoint[];
+  classes: string[];
+}
+
 const post = (body?: unknown): RequestInit => ({
   method: "POST",
   headers: { "Content-Type": "application/json" },
@@ -417,4 +460,22 @@ export const api = {
     request<CardUpdate>(`/cameras/${encodeURIComponent(camera)}/classify/promote`, post({ feature, frame, cls })),
   insights: (camera: string, feature: string) =>
     request<InsightsResponse>(`/cameras/${encodeURIComponent(camera)}/insights?feature=${encodeURIComponent(feature)}`),
+  dedupState: (camera: string, feature: string) =>
+    request<DedupState>(`/cameras/${encodeURIComponent(camera)}/dedup/state?feature=${encodeURIComponent(feature)}`),
+  dedupSaveSettings: (camera: string, feature: string, p: DedupParams) =>
+    request<{ params: DedupParams }>(`/cameras/${encodeURIComponent(camera)}/dedup/settings`, send("PUT", { feature, ...p })),
+  dedupCluster: (camera: string, feature: string, p: DedupParams) =>
+    request<Job<DedupResult>>(`/cameras/${encodeURIComponent(camera)}/dedup/cluster`, post({ feature, ...p })),
+  dedupApply: (camera: string, feature: string, picks: Record<number, string>) =>
+    request<{ muted: number; unmuted: number; skipped_labeled: number; skipped_golden: number }>(
+      `/cameras/${encodeURIComponent(camera)}/dedup/apply`,
+      post({ feature, picks }),
+    ),
+  dedupClearMutes: (camera: string, feature: string) =>
+    request<{ unmuted: number }>(
+      `/cameras/${encodeURIComponent(camera)}/dedup/mutes?feature=${encodeURIComponent(feature)}`,
+      send("DELETE"),
+    ),
+  dedupScatter: (camera: string, feature: string, projection: string) =>
+    request<Job<ScatterResult>>(`/cameras/${encodeURIComponent(camera)}/dedup/scatter`, post({ feature, projection })),
 };
