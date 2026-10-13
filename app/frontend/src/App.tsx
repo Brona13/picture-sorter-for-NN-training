@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import { api, ApiError } from "./api";
 import { VIEWS } from "./views";
+import ClassifyView from "./views/ClassifyView";
 import IngestView from "./views/IngestView";
 import RoiEditorView from "./views/RoiEditorView";
 import StatusView from "./views/StatusView";
@@ -83,7 +84,11 @@ export default function App() {
             path="/roi"
             element={<RoiEditorView camera={camera} product={product || undefined} />}
           />
-          {VIEWS.filter((v) => !["status", "versions", "ingest", "roi"].includes(v.path)).map((v) => (
+          <Route
+            path="/classify"
+            element={<ClassifyView camera={camera} product={product || undefined} />}
+          />
+          {VIEWS.filter((v) => !["status", "versions", "ingest", "roi", "classify"].includes(v.path)).map((v) => (
             <Route key={v.path} path={`/${v.path}`} element={<h2>{v.label}</h2>} />
           ))}
         </Routes>

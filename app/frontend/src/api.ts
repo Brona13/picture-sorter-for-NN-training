@@ -151,6 +151,103 @@ export const roiThumbUrl = (camera: string, frame: string, feature: string, size
   `/api/cameras/${encodeURIComponent(camera)}/frames/${encodeURIComponent(frame)}/thumb` +
   `?feature=${encodeURIComponent(feature)}&variant=square&size=${size}`;
 
+export interface ClassifyState {
+  feature: string;
+  classes: string[];
+  counts: Record<string, number>;
+  methods: string[];
+  default_rank: string;
+  device: string;
+  views: string[];
+  orders: string[];
+  has_results: boolean;
+  scored: boolean;
+  cold_start: boolean;
+  stale: { goldens: boolean; frames: boolean };
+  muted_count: number;
+  shared_products: string[] | null;
+  frames_seen: number;
+  inbox_total: number;
+  settings: { per_page: number; cols: number; per_page_options: number[]; cols_options: number[] };
+}
+
+export interface BarRow {
+  cls: string;
+  dist: number | null;
+  rel: number;
+  leader: boolean;
+}
+
+export interface CardData {
+  frame: string;
+  label: string | null;
+  golden: string | null;
+  deleted: boolean;
+  leanings: Record<string, string | null>;
+  bars: { rows: BarRow[]; novelty: number; margin: number | null; close_call: boolean } | null;
+  cluster: { id: number; is_rep: boolean } | null;
+}
+
+export interface GridResponse {
+  has_results: boolean;
+  scored: boolean;
+  rank: string;
+  page: number;
+  per_page: number;
+  n_pages: number;
+  total: number;
+  items: CardData[];
+}
+
+export interface CardUpdate {
+  card: { frame: string; label: string | null; golden: string | null; deleted: boolean };
+  counts: Record<string, number>;
+}
+
+export interface GridQuery {
+  feature: string;
+  view: string;
+  rank: string;
+  order: string;
+  show_muted: boolean;
+  auto_preview?: boolean;
+  auto_classes?: string[] | null;
+  auto_min_margin?: number | null;
+}
+
+export interface BulkPreview {
+  selectable: number;
+  selected: number;
+  lo: number;
+  hi: number;
+  threshold: number;
+}
+
+export interface AutoPreview {
+  candidates: number;
+  total: number;
+  per_class: { cls: string; count: number; avg_margin: number | null }[];
+  lo: number;
+  hi: number;
+  min_margin: number;
+}
+
+export function gridParams(q: GridQuery, extra: Record<string, string | number | boolean | undefined | null> = {}) {
+  const p = new URLSearchParams();
+  p.set("feature", q.feature);
+  p.set("view", q.view);
+  p.set("rank", q.rank);
+  p.set("order", q.order);
+  p.set("show_muted", String(q.show_muted));
+  if (q.auto_preview) {
+    p.set("auto_preview", "true");
+    (q.auto_classes ?? []).forEach((c) => p.append("auto_classes", c));
+    if (q.auto_min_margin != null) p.set("auto_min_margin", String(q.auto_min_margin));
+  }
+  Object.entries(extra).forEach(([k, v]) => v != null && p.set(k, String(v)));
+  return p.toString();
+}
+
 const post = (body?: unknown): RequestInit => ({
   method: "POST",
   headers: { "Content-Type": "application/json" },
@@ -249,5 +346,46 @@ export const api = {
     request<{ products: string[] }>(
       `/cameras/${encodeURIComponent(camera)}/product-names`,
       send("PUT", { names }),
+    ),
+  classifyState: (camera: string, feature: string) =>
+    request<ClassifyState>(`/cameras/${encodeURIComponent(camera)}/classify/state?feature=${encodeURIComponent(feature)}`),
+  classifyGrid: (camera: string, q: GridQuery, page: number) =>
+    request<GridResponse>(`/cameras/${encodeURIComponent(camera)}/classify/grid?${gridParams(q, { page })}`),
+  classifyRefresh: (camera: string, feature: string) =>
+    request<Job<{ frames: number; scored: boolean }>>(
+      `/cameras/${encodeURIComponent(camera)}/classify/refresh`,
+      post({ feature }),
+    ),
+  setLabel: (camera: string, feature: string, frame: string, cls: string | null) =>
+    request<CardUpdate>(`/cameras/${encodeURIComponent(camera)}/classify/label`, send("PUT", { feature, frame, cls })),
+  setGolden: (camera: string, feature: string, frame: string, golden: boolean) =>
+    request<CardUpdate>(`/cameras/${encodeURIComponent(camera)}/classify/golden`, send("PUT", { feature, frame, golden })),
+  deleteFrame: (camera: string, feature: string, frame: string) =>
+    request<CardUpdate>(`/cameras/${encodeURIComponent(camera)}/classify/delete`, post({ feature, frame })),
+  restoreFrame: (camera: string, feature: string, frame: string) =>
+    request<CardUpdate>(`/cameras/${encodeURIComponent(camera)}/classify/restore`, post({ feature, frame })),
+  setGridSettings: (camera: string, feature: string, per_page: number, cols: number) =>
+    request<{ per_page: number; cols: number }>(
+      `/cameras/${encodeURIComponent(camera)}/classify/grid-settings`,
+      send("PUT", { feature, per_page, cols }),
+    ),
+  bulkPreview: (camera: string, q: GridQuery, mode: string, lean_cls: string | null, threshold: number | null) =>
+    request<BulkPreview>(
+      `/cameras/${encodeURIComponent(camera)}/classify/bulk?${gridParams(q, { mode, lean_cls, threshold })}`,
+    ),
+  bulkLabel: (camera: string, query: GridQuery, mode: string, lean_cls: string | null, threshold: number | null, label_as: string) =>
+    request<{ labeled: number; counts: Record<string, number> }>(
+      `/cameras/${encodeURIComponent(camera)}/classify/bulk`,
+      post({ query, mode, lean_cls, threshold, label_as }),
+    ),
+  autoPreview: (camera: string, q: GridQuery, classes: string[], min_margin: number | null) => {
+    const p = new URLSearchParams(gridParams(q, { min_margin }));
+    classes.forEach((c) => p.append("classes", c));
+    return request<AutoPreview>(`/cameras/${encodeURIComponent(camera)}/classify/auto?${p.toString()}`);
+  },
+  autoApply: (camera: string, query: GridQuery, classes: string[], min_margin: number | null) =>
+    request<{ labeled: number; counts: Record<string, number> }>(
+      `/cameras/${encodeURIComponent(camera)}/classify/auto`,
+      post({ query, classes, min_margin }),
     ),
 };
