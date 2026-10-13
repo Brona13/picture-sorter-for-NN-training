@@ -39,9 +39,9 @@ export default function App() {
   }, [camera]);
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh", fontFamily: "sans-serif" }}>
-      <nav aria-label="Sidebar" style={{ width: 220, padding: 16, borderRight: "1px solid #ddd" }}>
-        <h1 style={{ fontSize: 18 }}>Picture Sorter</h1>
+    <div className="app">
+      <nav aria-label="Sidebar" className="sidebar">
+        <h1>Picture Sorter</h1>
         <label>
           Camera
           <select value={camera} onChange={(e) => setCamera(e.target.value)}>
@@ -51,7 +51,7 @@ export default function App() {
           </select>
         </label>
         {products.length > 0 && (
-          <label style={{ display: "block", marginTop: 8 }}>
+          <label>
             Product
             <select value={product} onChange={(e) => setProduct(e.target.value)}>
               <option value="">All</option>
@@ -61,7 +61,7 @@ export default function App() {
             </select>
           </label>
         )}
-        <ul style={{ listStyle: "none", padding: 0, marginTop: 16 }}>
+        <ul>
           {VIEWS.map((v) => (
             <li key={v.path}>
               <NavLink to={`/${v.path}`}>{v.label}</NavLink>
@@ -69,7 +69,7 @@ export default function App() {
           ))}
         </ul>
       </nav>
-      <main style={{ flex: 1, padding: 16 }}>
+      <main className="main">
         {error && <p role="alert">{error}</p>}
         <Routes>
           <Route path="/" element={<Navigate to="/status" replace />} />
