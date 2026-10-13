@@ -17,7 +17,7 @@ import curation
 import perf
 from roi import ROI
 
-THUMB_WIDTH = 240             # px width of cutout thumbnails in the Classify grid
+THUMB_WIDTH = 360             # px width of cutout thumbnails in the Classify grid
 THUMB_CACHE_MAX_ENTRIES = 256
 THUMB_URI_CACHE_MAX_ENTRIES = 128
 THUMB_JPEG_QUALITY = 90

@@ -50,7 +50,7 @@ export default function Card({ camera, feature, classes, methods, card, busy, on
       ) : (
         Object.keys(leanings).length > 0 && (
           <div>
-            <div style={{ display: "flex", gap: 4, margin: "2px 0" }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 4, margin: "2px 0" }}>
               {methods.map((m) => {
                 const l = leanings[m];
                 return l ? (
@@ -121,7 +121,7 @@ export default function Card({ camera, feature, classes, methods, card, busy, on
         </div>
       )}
 
-      <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
+      <div className="card-actions">
         {classes.map((c) => (
           <button
             key={c}

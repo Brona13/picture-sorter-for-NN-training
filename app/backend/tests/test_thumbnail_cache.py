@@ -39,7 +39,8 @@ class ThumbnailCacheTests(unittest.TestCase):
         self.assertIsInstance(first, bytes)
         self.assertEqual(first, second)
         with Image.open(io.BytesIO(first)) as decoded:
-            self.assertEqual((240, 240), decoded.size)
+            side = min(300, thumbs.THUMB_WIDTH)  # the 300px-wide crop is only shrunk if wider than the limit
+            self.assertEqual((side, side), decoded.size)
             actual = np.asarray(decoded.convert("RGB"), dtype=np.int16)
         expected = np.asarray(
             thumbs._generate_cutout(str(self.path), roi).convert("RGB"),
