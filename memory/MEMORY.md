@@ -28,3 +28,4 @@ Portable memory for the *Picture Sorter for NN Training* project. Kept inside th
 - [TODO: ROI image full-width](todo-roi-image-fullwidth.md) — deferred; editor image doesn't stretch to full browser width.
 - [Session 2026-08-06: Git repo connection & Linux runtime](session-2026-08-06-git-repo-connection.md) — repo connected to GitHub; camera content stays out of git; venv setup and run command for Linux.
 - [Session 2026-10-13: Streamlit → React + FastAPI migration](2026-10-13-streamlit-to-react-fastapi-migration.md) — full migration done (steps 0-12); browser click-through still unverified; `./run.sh` launches.
+- [Migration push state 2026-10-13](2026-10-13-migration-push-state.md) — pushed as origin/react-fastapi; origin/main diverged (remote ROI-table schema change); nothing merged yet.
