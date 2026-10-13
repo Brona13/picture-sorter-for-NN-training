@@ -8,7 +8,7 @@ import db
 import engine
 import labels
 import versions
-from api.cameras import require_camera
+from api.cameras import require_camera, require_feature
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -25,19 +25,6 @@ def _selectable_features(camera: str, product: str | None) -> list[str]:
     return datamodel.list_features_for(camera, product) + [
         datamodel.compose_feature(product, config.WHOLE_FRAME_FEATURE)
     ]
-
-
-def _require_feature(camera: str, feature: str) -> str:
-    """Accept any feature of this camera (product-scoped or shared) or its whole-frame variant."""
-    require_camera(camera)
-    known = set(datamodel.list_features(camera))
-    whole = {config.WHOLE_FRAME_FEATURE} | {
-        datamodel.compose_feature(p, config.WHOLE_FRAME_FEATURE)
-        for p in datamodel.products(camera)
-    }
-    if feature not in known | whole:
-        raise HTTPException(status_code=404, detail=f"Unknown feature: {feature}")
-    return feature
 
 
 def _require_version(camera: str, feature: str, version_id: int) -> dict:
@@ -73,7 +60,7 @@ def selectable_features(camera: str, product: str | None = None) -> list[dict]:
 
 @router.get("/cameras/{camera}/versions")
 def list_versions(camera: str, feature: str) -> dict:
-    _require_feature(camera, feature)
+    require_feature(camera, feature)
     return {
         "feature": feature,
         "classes": datamodel.classes_for(camera, feature),
@@ -84,7 +71,7 @@ def list_versions(camera: str, feature: str) -> dict:
 
 @router.post("/cameras/{camera}/versions", status_code=201)
 def freeze(camera: str, body: FreezeRequest) -> dict:
-    _require_feature(camera, body.feature)
+    require_feature(camera, body.feature)
     return versions.freeze(
         camera, body.feature, body.name, body.notes, stats=_cached_stats(camera, body.feature)
     )
@@ -92,14 +79,14 @@ def freeze(camera: str, body: FreezeRequest) -> dict:
 
 @router.post("/cameras/{camera}/versions/{version_id}/revert")
 def revert(camera: str, version_id: int, feature: str) -> dict:
-    _require_feature(camera, feature)
+    require_feature(camera, feature)
     _require_version(camera, feature, version_id)
     return versions.revert(camera, feature, version_id)
 
 
 @router.post("/cameras/{camera}/versions/{version_id}/export")
 def export(camera: str, version_id: int, feature: str) -> dict:
-    _require_feature(camera, feature)
+    require_feature(camera, feature)
     _require_version(camera, feature, version_id)
     dest, report = versions.export(camera, feature, version_id)
     return {"destination": str(dest), **report}

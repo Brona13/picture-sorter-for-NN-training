@@ -1,6 +1,7 @@
 """Camera, product and feature listing endpoints (thin wrappers over ``datamodel``)."""
 from __future__ import annotations
 
+import config
 import datamodel
 from fastapi import APIRouter, HTTPException
 
@@ -12,6 +13,19 @@ def require_camera(camera: str) -> str:
     if camera not in datamodel.list_cameras():
         raise HTTPException(status_code=404, detail=f"Unknown camera: {camera}")
     return camera
+
+
+def require_feature(camera: str, feature: str) -> str:
+    """Accept any feature of this camera (product-scoped or shared) or its whole-frame variant."""
+    require_camera(camera)
+    known = set(datamodel.list_features(camera))
+    whole = {config.WHOLE_FRAME_FEATURE} | {
+        datamodel.compose_feature(p, config.WHOLE_FRAME_FEATURE)
+        for p in datamodel.products(camera)
+    }
+    if feature not in known | whole:
+        raise HTTPException(status_code=404, detail=f"Unknown feature: {feature}")
+    return feature
 
 
 @router.get("/cameras")
