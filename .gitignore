@@ -40,3 +40,8 @@ perf-log*
 Thumbs.db
 .vscode/
 .idea/
+
+# --- Frontend ---
+node_modules/
+dist/
+.vite/
