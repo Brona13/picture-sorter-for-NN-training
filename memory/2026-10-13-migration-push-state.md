@@ -21,3 +21,6 @@ session_date: 2026-10-13
 - Kept from remote: `rois` SQLite table + v2→v3 migration (+ its test, now in `app/backend/tests`), ingest signature cleanup (no `target` arg), `engine.curation` shim removal, docs.
 - Dropped: remote's Streamlit-only work (`session_keys`, `view_dedup` split, view smoke tests).
 - **Real `cameras/*/rois.json` files:** the merge deletes them from git (as the remote did). They were restored on disk, untracked, because this machine's real `data/picture_sorter.db` is still schema v2 and the v3 migration backfills ROIs from those files on first open. Don't delete them before the real DB has been opened once with the new code (back up `data/` first).
+
+## Update: pushed (user, 2026-10-13)
+`origin/main` and `origin/react-fastapi` both at `da8e5c0` (the merge result). The migration is now on `main`; the remote's earlier Streamlit-side work is merged in history. Local `merge-attempt` branch can be deleted. Still open: browser click-through of the UI; back up `data/` + `cameras/` before first launching new code on the real v2 database (the v3 migration reads the restored, untracked `cameras/*/rois.json`).
