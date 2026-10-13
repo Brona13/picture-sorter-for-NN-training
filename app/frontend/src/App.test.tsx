@@ -20,6 +20,20 @@ beforeEach(() => {
     "/api/cameras": ["camA", "camB"],
     "/api/cameras/camA/products": ["P1", "P2"],
     "/api/cameras/camB/products": [],
+    "/api/cameras/camA/status": {
+      camera: "camA",
+      frame_count: 0,
+      feature_count: 0,
+      products: ["P1", "P2"],
+      features: [],
+    },
+    "/api/cameras/camB/status": {
+      camera: "camB",
+      frame_count: 0,
+      feature_count: 0,
+      products: [],
+      features: [],
+    },
   });
 });
 afterEach(() => vi.unstubAllGlobals());
@@ -30,7 +44,7 @@ test("shows cameras, products and view navigation; redirects to Status", async (
       <App />
     </MemoryRouter>,
   );
-  expect(await screen.findByRole("heading", { name: "Status" })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: "Status — camA" })).toBeInTheDocument();
   await waitFor(() => expect(screen.getByLabelText("Camera")).toHaveValue("camA"));
   expect(await screen.findByLabelText("Product")).toBeInTheDocument();
   for (const label of ["Status", "Ingest", "ROI editor", "Classify", "Insights", "Versions", "Dedup"]) {

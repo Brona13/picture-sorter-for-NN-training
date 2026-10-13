@@ -25,11 +25,36 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
+export interface FeatureStatus {
+  feature: string;
+  short_name: string;
+  owner_product: string | null;
+  shared_products: string[] | null;
+  role: string;
+  classes: string[];
+  labeled: Record<string, number>;
+  goldens: Record<string, number>;
+  unlabeled: number;
+  total: number;
+  version_count: number;
+  active_version: number | null;
+}
+
+export interface CameraStatus {
+  camera: string;
+  frame_count: number;
+  feature_count: number;
+  products: string[];
+  features: FeatureStatus[];
+}
+
 export const api = {
   health: () => request<{ status: string }>("/health"),
   cameras: () => request<string[]>("/cameras"),
   products: (camera: string) =>
     request<string[]>(`/cameras/${encodeURIComponent(camera)}/products`),
+  status: (camera: string) =>
+    request<CameraStatus>(`/cameras/${encodeURIComponent(camera)}/status`),
   features: (camera: string, product?: string) =>
     request<string[]>(
       `/cameras/${encodeURIComponent(camera)}/features` +
