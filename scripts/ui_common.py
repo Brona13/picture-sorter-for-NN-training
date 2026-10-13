@@ -18,14 +18,25 @@ from PIL import Image
 import engine
 import perf
 from roi import ROI
+from thumbs import (  # noqa: F401 - re-exported for the Streamlit views and tests
+    THUMB_CACHE_MAX_ENTRIES,
+    THUMB_JPEG_QUALITY,
+    THUMB_URI_CACHE_MAX_ENTRIES,
+    THUMB_WIDTH,
+    _cached_cutout_thumb,
+    _cached_thumb_data_uri,
+    _generate_cutout,
+    bgr_to_pil,
+    clear_thumbnail_caches,
+    cutout_thumb,
+    square_thumb,
+    thumb_data_uri,
+    thumbnail_cache_info,
+)
 
 # --- display constants -------------------------------------------------------
 DEFAULT_DISPLAY_WIDTH = 900   # fallback ROI-editor image width if viewport unknown
 MAX_DISPLAY_WIDTH = 1600      # cap so very wide screens don't over-scale the canvas
-THUMB_WIDTH = 240             # px width of cutout thumbnails in the Classify grid
-THUMB_CACHE_MAX_ENTRIES = 256
-THUMB_URI_CACHE_MAX_ENTRIES = 128
-THUMB_JPEG_QUALITY = 90
 
 # --- session-state keys (centralised so modules can't drift) -----------------
 INGEST_REPORT_KEY = "ingest_report"
@@ -118,47 +129,6 @@ def class_color(cls: str, classes: list[str] | tuple[str, ...] = ()) -> str:
     if cls in classes:
         return _CLASS_PALETTE[list(classes).index(cls) % len(_CLASS_PALETTE)]
     return "#6b7280"
-
-
-def square_thumb(frame_path: str, roi_tuple: tuple, mtime: float, size: int = 128) -> Image.Image:
-    """ROI cutout centre-cropped to a square, so a list of ROIs with very
-    different aspect ratios still renders as an even column of thumbnails."""
-    pil = _generate_cutout(frame_path, roi_tuple).convert("RGB")
-    side = min(pil.width, pil.height)
-    left, top = (pil.width - side) // 2, (pil.height - side) // 2
-    return pil.crop((left, top, left + side, top + side)).resize((size, size))
-
-
-@lru_cache(maxsize=THUMB_URI_CACHE_MAX_ENTRIES)
-def _cached_thumb_data_uri(
-    frame_path: str,
-    roi_tuple: tuple,
-    mtime: float,
-    size: int,
-) -> str:
-    perf.count("thumbnail_uri.cache_misses")
-    with perf.span("thumbnail_uri.generate"):
-        buf = io.BytesIO()
-        square_thumb(frame_path, roi_tuple, mtime, size).save(
-            buf, format="JPEG", quality=80,
-        )
-        return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
-
-
-def thumb_data_uri(frame_path: str, roi_tuple: tuple, mtime: float, size: int = 128) -> str:
-    """Square ROI thumbnail as an inline ``data:`` URI.
-
-    Embedding the bytes bypasses Streamlit's media-file manager entirely. That
-    matters in the ROI editor: the drawable-canvas shim registers its background
-    image by hand, and files added just after it can end up **404** — which is
-    what left the first two thumbnails permanently broken.
-    """
-    perf.count("thumbnail_uri.requests")
-    hits_before = _cached_thumb_data_uri.cache_info().hits
-    value = _cached_thumb_data_uri(frame_path, roi_tuple, mtime, size)
-    if _cached_thumb_data_uri.cache_info().hits > hits_before:
-        perf.count("thumbnail_uri.cache_hits")
-    return value
 
 
 def feature_label(camera: str, feature: str, product: str | None = None) -> str:
@@ -265,10 +235,6 @@ def editor_display_width() -> int:
     return max(480, min(content, MAX_DISPLAY_WIDTH))
 
 
-def bgr_to_pil(bgr: np.ndarray) -> Image.Image:
-    return Image.fromarray(cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB))
-
-
 def roi_key(roi: ROI) -> tuple:
     """A hashable tuple identifying a ROI (used as a cache key)."""
     return (roi.name, roi.x, roi.y, roi.w, roi.h)
@@ -308,59 +274,3 @@ def box_from_object(obj: dict, disp_w: int, disp_h: int) -> tuple[float, float, 
         max(0.0, min(1.0, w_px / disp_w)),
         max(0.0, min(1.0, h_px / disp_h)),
     )
-
-
-def _generate_cutout(frame_path: str, roi_tuple: tuple) -> Image.Image:
-    """Load, crop, and resize one thumbnail without retaining decoded pixels."""
-    roi = ROI(*roi_tuple) if len(roi_tuple) == 5 else ROI.full_frame("whole-frame")
-    img = engine.curation.load_image(frame_path)
-    cutout = roi.crop(img)
-    pil = bgr_to_pil(cutout)
-    if pil.width > THUMB_WIDTH:
-        ratio = THUMB_WIDTH / pil.width
-        pil = pil.resize((THUMB_WIDTH, max(1, int(pil.height * ratio))))
-    return pil
-
-
-@lru_cache(maxsize=THUMB_CACHE_MAX_ENTRIES)
-def _cached_cutout_thumb(frame_path: str, roi_tuple: tuple, mtime: float) -> bytes:
-    """Generate one immutable JPEG payload for the bounded thumbnail cache."""
-    perf.count("thumbnails.cache_misses")
-    with perf.span("thumbnails.generate"):
-        buf = io.BytesIO()
-        _generate_cutout(frame_path, roi_tuple).save(
-            buf,
-            format="JPEG",
-            quality=THUMB_JPEG_QUALITY,
-            optimize=True,
-        )
-        return buf.getvalue()
-
-
-def cutout_thumb(frame_path: str, roi_tuple: tuple, mtime: float) -> bytes:
-    """Return cached JPEG bytes for a ROI crop.
-
-    The immutable encoded payload is cheap for Streamlit to reuse and avoids
-    retaining full decoded PIL pixel buffers. Both ``mtime`` and ROI geometry
-    are part of the key, so file edits and ROI changes cannot show stale crops.
-    """
-    perf.count("thumbnails.requests")
-    hits_before = _cached_cutout_thumb.cache_info().hits
-    value = _cached_cutout_thumb(frame_path, roi_tuple, mtime)
-    if _cached_cutout_thumb.cache_info().hits > hits_before:
-        perf.count("thumbnails.cache_hits")
-    return value
-
-
-def thumbnail_cache_info() -> dict[str, object]:
-    """Expose bounded cache occupancy for diagnostics and regression tests."""
-    return {
-        "cutout": _cached_cutout_thumb.cache_info()._asdict(),
-        "data_uri": _cached_thumb_data_uri.cache_info()._asdict(),
-    }
-
-
-def clear_thumbnail_caches() -> None:
-    """Clear both thumbnail representations (primarily for tests/benchmarks)."""
-    _cached_cutout_thumb.cache_clear()
-    _cached_thumb_data_uri.cache_clear()

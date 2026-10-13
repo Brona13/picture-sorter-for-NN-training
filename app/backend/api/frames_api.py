@@ -1,0 +1,116 @@
+"""Serve source frames (read-only) and ROI cutout thumbnails."""
+from __future__ import annotations
+
+import io
+from pathlib import Path
+
+import config
+import cv2
+import datamodel
+import db
+import engine
+import thumbs
+from api.cameras import require_camera
+from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi.responses import FileResponse
+from pydantic import BaseModel
+
+router = APIRouter()
+_BROWSER_TYPES = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+
+
+def frame_path(camera: str, frame: str) -> Path:
+    """Resolve a frame name inside the camera's immutable inbox (no traversal)."""
+    require_camera(camera)
+    if Path(frame).name != frame or Path(frame).suffix.lower() not in config.IMAGE_EXTENSIONS:
+        raise HTTPException(status_code=404, detail=f"Unknown frame: {frame}")
+    path = datamodel.unsorted_dir(camera) / frame
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail=f"Unknown frame: {frame}")
+    return path
+
+
+def _roi_tuple(camera: str, feature: str | None) -> tuple:
+    roi = engine.resolve_roi(camera, feature or config.WHOLE_FRAME_FEATURE)
+    return (roi.name, roi.x, roi.y, roi.w, roi.h)
+
+
+def _cached(request: Request, etag: str, content: bytes, media_type: str) -> Response:
+    headers = {"ETag": etag, "Cache-Control": "no-cache"}
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers=headers)
+    return Response(content=content, media_type=media_type, headers=headers)
+
+
+@router.get("/cameras/{camera}/frames")
+def list_frames(camera: str, product: str | None = None) -> dict:
+    """Frames offered as drawing backgrounds; falls back to all frames when a product has none."""
+    require_camera(camera)
+    if product is not None and product not in datamodel.products(camera):
+        raise HTTPException(status_code=404, detail=f"Unknown product: {product}")
+    all_names = [p.name for p in datamodel.list_unsorted(camera)]
+    names = datamodel.frames_of_product(camera, product)
+    showing_all = not names
+    return {
+        "frames": all_names if showing_all else names,
+        "showing_all": showing_all,
+        "total": len(all_names),
+        "reference_frame": db.get_setting(camera, "reference_frame"),
+    }
+
+
+class ReferenceRequest(BaseModel):
+    frame: str
+
+
+@router.put("/cameras/{camera}/reference-frame")
+def set_reference_frame(camera: str, body: ReferenceRequest) -> dict:
+    frame_path(camera, body.frame)
+    db.set_setting(camera, "reference_frame", body.frame)
+    return {"reference_frame": body.frame}
+
+
+@router.get("/cameras/{camera}/frames/{frame}/image")
+def frame_image(camera: str, frame: str, request: Request) -> Response:
+    path = frame_path(camera, frame)
+    if path.suffix.lower() in _BROWSER_TYPES:
+        return FileResponse(path)  # sets ETag / Last-Modified
+    img = cv2.imread(str(path), cv2.IMREAD_COLOR)  # e.g. TIFF: not browser-displayable
+    if img is None:
+        raise HTTPException(status_code=415, detail=f"Cannot decode frame: {frame}")
+    ok, buf = cv2.imencode(".png", img)
+    st = path.stat()
+    return _cached(request, f'"{st.st_mtime_ns}-{st.st_size}"', buf.tobytes(), "image/png")
+
+
+@router.get("/cameras/{camera}/frames/{frame}/thumb")
+def frame_thumb(
+    camera: str,
+    frame: str,
+    request: Request,
+    feature: str | None = None,
+    variant: str = "cutout",
+    size: int = 128,
+) -> Response:
+    """ROI cutout thumbnail (JPEG). ``variant=square`` gives a centre-cropped square
+    of ``size`` px; the default is the grid cutout. No ``feature`` = whole frame."""
+    path = frame_path(camera, frame)
+    if variant not in ("cutout", "square"):
+        raise HTTPException(status_code=422, detail="variant must be 'cutout' or 'square'")
+    if not 16 <= size <= 512:
+        raise HTTPException(status_code=422, detail="size must be between 16 and 512")
+    roi_tuple = _roi_tuple(camera, feature)
+    mtime = path.stat().st_mtime
+    etag = f'"{variant}-{size}-{mtime}-{hash(roi_tuple) & 0xFFFFFFFF:x}"'
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers={"ETag": etag, "Cache-Control": "no-cache"})
+    try:
+        if variant == "cutout":
+            data = thumbs.cutout_thumb(str(path), roi_tuple, mtime)
+        else:
+            buf = io.BytesIO()
+            thumbs.square_thumb(str(path), roi_tuple, mtime, size).save(buf, format="JPEG", quality=80)
+            data = buf.getvalue()
+    except Exception as exc:  # noqa: BLE001 - unreadable image
+        raise HTTPException(status_code=415, detail=f"Cannot render thumbnail: {exc}") from exc
+    return _cached(request, etag, data, "image/jpeg")
