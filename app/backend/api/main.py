@@ -6,6 +6,7 @@ Domain modules are imported flat (``import datamodel``); ``app/backend`` must be
 """
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -13,11 +14,33 @@ _BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(_BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(_BACKEND_DIR))
 
-from fastapi import FastAPI, Request  # noqa: E402
-from fastapi.responses import JSONResponse  # noqa: E402
+from fastapi import FastAPI, HTTPException, Request  # noqa: E402
+from fastapi.responses import FileResponse, JSONResponse  # noqa: E402
 
 import db  # noqa: E402
 from api import cameras, classify_api, dedup_api, frames_api, ingest_api, insights_api, jobs, roi_api, status, versions_api  # noqa: E402
+
+
+def frontend_dist() -> Path:
+    """Built React app (``npm run build``); override with ``CURATION_FRONTEND_DIST``."""
+    default = _BACKEND_DIR.parent / "frontend" / "dist"
+    return Path(os.environ.get("CURATION_FRONTEND_DIST", default))
+
+
+def _mount_frontend(app: FastAPI) -> None:
+    """Serve the built single-page app: real files as-is, any other non-API path -> index.html."""
+    dist = frontend_dist().resolve()
+    if not (dist / "index.html").is_file():
+        return
+
+    @app.get("/{path:path}", include_in_schema=False)
+    def spa(path: str) -> FileResponse:
+        if path == "api" or path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="Not found")
+        target = (dist / path).resolve()
+        if path and target.is_file() and dist in target.parents:
+            return FileResponse(target)
+        return FileResponse(dist / "index.html")
 
 
 def create_app() -> FastAPI:
@@ -44,6 +67,7 @@ def create_app() -> FastAPI:
     app.include_router(classify_api.router, prefix="/api")
     app.include_router(insights_api.router, prefix="/api")
     app.include_router(dedup_api.router, prefix="/api")
+    _mount_frontend(app)  # last: its catch-all must not shadow /api routes
     return app
 
 

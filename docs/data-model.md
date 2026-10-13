@@ -9,7 +9,7 @@ schema_version: 2
 
 # Data model
 
-This document defines the current domain model independently of the Streamlit interface. Active code and tests must preserve these rules.
+This document defines the current domain model independently of the user interface. Active code and tests must preserve these rules.
 
 ## Hierarchy
 

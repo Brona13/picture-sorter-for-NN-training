@@ -21,9 +21,6 @@ torchvision>=0.15
 # Optional: the Dedup view only appears when scikit-learn imports successfully.
 scikit-learn>=1.3
 
-# Interactive 2D embedding scatter under the Dedup view.
-# Optional: the scatter panel guards on both imports and hides itself if either
-# is missing. UMAP is preferred over t-SNE for cluster preservation on the
-# small-to-medium frame sets this tool works with.
-plotly>=5.20
+# 2D embedding scatter under the Dedup view (UMAP is preferred over t-SNE for
+# cluster preservation on small-to-medium frame sets). Optional.
 umap-learn>=0.5

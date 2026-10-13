@@ -1,6 +1,6 @@
 # Picture Sorter for NN Training
 
-A local Streamlit tool for preparing compact, reliable image datasets for camera-based vision classification.
+A local web tool (FastAPI backend, React frontend) for preparing compact, reliable image datasets for camera-based vision classification.
 
 You ingest camera frames, define regions of interest, label products and quality classes, mark trusted labeled frames as references, compare machine-generated scoring opinions, and export frozen dataset versions.
 
@@ -28,6 +28,7 @@ For canonical entities and domain rules, see [Data model](docs/data-model.md).
 - Windows with PowerShell, or Linux/macOS with a POSIX shell
 - A supported Python installation (verified on Python 3.12)
 - Approximately 32 GB RAM is comfortable for the existing datasets
+- Node.js 20+ and npm, to build the web frontend
 - No GPU is required for classical scoring
 - PyTorch is optional for ResNet scoring
 
@@ -54,48 +55,38 @@ pip install -r requirements.txt
 The virtual environment is machine-specific. If the project was copied from another computer, delete or ignore the copied `.venv/` and create a new one. `.venv/` is git-ignored, so it never arrives with a clone and must always be created locally.
 
 Do not install the requirements into the system Python. Without the virtual
-environment the application appears to start — Streamlit serves a page — and
-then fails inside it on the first missing import, typically `cv2` or `skimage`.
+environment the server can start and then fail on the first missing import,
+typically `cv2` or `skimage`. `./run.sh` checks for this and says what to install.
+
+The frontend is built with npm; `./run.sh` does that automatically the first time
+(`./run.sh build` rebuilds it after frontend changes).
 
 ## Run
 
-From the project root, **not** from `scripts/`.
-
-**Windows (PowerShell):**
-
-```powershell
-.\.venv\Scripts\Activate.ps1
-streamlit run scripts\app.py
-```
-
-**Linux / macOS:**
-
-```bash
-source .venv/bin/activate
-streamlit run scripts/app.py
-```
-
-Or without activating, using the environment's own launcher:
-
-```bash
-.venv/bin/streamlit run scripts/app.py
-```
-
-`run.sh` wraps that last form and works from any working directory. It checks
-the environment first and reports what to install if anything is missing, rather
-than failing later in the browser. Extra arguments are passed to Streamlit:
+From the project root:
 
 ```bash
 ./run.sh
-./run.sh --server.address 127.0.0.1
 ```
 
-If port 8501 is already in use, Streamlit selects the next free port and prints
-the chosen URL. An explicitly requested port is not moved: `--server.port 8502`
-fails outright when 8502 is taken. Use `--server.address 127.0.0.1` to keep the
-app off other machines on the network; by default it binds every interface.
+then open <http://127.0.0.1:8000>. `run.sh` checks the virtual environment, builds
+the frontend on first use, and starts the FastAPI server (uvicorn) from `.venv`.
+Extra arguments go to uvicorn, e.g. `./run.sh --port 8510`.
 
-The application provides six views:
+| Command | What it does |
+|---|---|
+| `./run.sh` | Serve the app (backend + built frontend) on `127.0.0.1:8000` |
+| `./run.sh build` | Rebuild the frontend (`app/frontend/dist`) |
+| `./run.sh dev` | Backend with auto-reload on 8000 plus the Vite dev server on 5173 (open 5173; `/api` is proxied) |
+
+The server binds `127.0.0.1` only and has **no authentication**; the folder-import
+feature reads any directory path it is given. Do not expose it to a network.
+
+On Windows, activate the environment and run
+`python -m uvicorn api.main:app --app-dir app\backend --port 8000` after building
+the frontend with `npm install && npm run build` inside `app\frontend`.
+
+The application provides seven views:
 
 - **Status** — label, golden, version, and ROI-definition summaries
 - **Ingest** — add frames and maintain the duplicate index
@@ -103,6 +94,7 @@ The application provides six views:
 - **Classify** — label frames and compare scoring opinions
 - **Insights** — compare method behavior against human labels
 - **Versions** — freeze, revert, and export dataset snapshots
+- **Dedup** — cluster near-duplicate frames and mute the redundant ones
 
 The sidebar selects the camera. When a camera has a product-classification ROI, it also selects either the product-sorting stage or one product’s quality stage.
 
@@ -307,10 +299,9 @@ docs/
   data-model.md
   methodology.md
 
-scripts/
-  app.py
-  view_*/
-  domain and persistence modules
+app/
+  backend/          domain + persistence modules, api/ (FastAPI routers), tests/
+  frontend/         React + TypeScript UI (src/), built into dist/
 
 memory/             historical project notes and findings
 plans/              historical implementation plans
@@ -370,7 +361,7 @@ On Linux/macOS, scoped to a single command:
 ```bash
 CURATION_CAMERAS_ROOT=<temporary camera directory> \
 CURATION_DATA_DIR=<temporary data directory> \
-.venv/bin/streamlit run scripts/app.py
+.venv/bin/python -m uvicorn api.main:app --app-dir app/backend --port 8000
 ```
 
 Unset or replace these values before launching the application against real data.
@@ -379,15 +370,9 @@ Unset or replace these values before launching the application against real data
 
 ### Performance diagnostics
 
-Performance tracing is disabled by default. To show aggregate timings and workload
-counters for the latest view render in the Streamlit sidebar, set:
-
-```powershell
-$env:CURATION_PERF_DIAGNOSTICS = "1"
-streamlit run scripts\app.py
-```
-
-To also append each trace as JSON Lines, set an explicit development log path:
+Performance tracing is disabled by default. To record aggregate timings and workload
+counters, set `CURATION_PERF_DIAGNOSTICS=1` and append each trace as JSON Lines by
+setting an explicit development log path:
 
 ```powershell
 $env:CURATION_PERF_LOG = "<temporary or development log path>"
@@ -453,15 +438,13 @@ The fixture uses temporary storage. Render snapshots are request-scoped and are
 invalidated after ingest, ROI changes, and product-membership changes.
 
 To compare cold/warm thumbnail preparation and encoded cache payloads at
-24/48/96 cards, then measure Streamlit's backend grid construction:
+24/48/96 cards:
 
 ```powershell
 .\.venv\Scripts\python.exe app\backend\benchmark_thumbnails.py
-.\.venv\Scripts\python.exe scripts\benchmark_grid_render.py
 ```
 
-Both scripts create temporary images and storage. The grid result includes the
-Python rerun and UI-delta construction but not browser layout and paint time.
+The script creates temporary images and storage.
 
 To measure folder-ingest time, peak Python memory, and emitted progress phases:
 
@@ -487,21 +470,22 @@ latency.
 
 ### ROI drawing canvas
 
-`streamlit-drawable-canvas` depends on Streamlit internals that have changed
-between releases. The ROI editor installs a compatibility shim and falls back to numeric ROI entry if the drawing component cannot run.
+The ROI editor is a pointer-driven overlay on the frame image (draw, move, and
+resize with handles) and always offers numeric `x / y / w / h` fields as well.
 
 ### Large uploads
 
-`.streamlit/config.toml` raises Streamlit’s upload and message limits to 4 GB. Run Streamlit from the project root so this configuration is discovered.
+Uploads are streamed to a temporary staging folder and ingested by a background job,
+so file size is limited by disk space, not memory. Folder import avoids the copy
+entirely and is the better choice for very large batches.
 
 ### Neural methods are missing
 
 The base application works without PyTorch. If ResNet methods do not appear, activate the intended virtual environment and install the optional embedding requirements.
 
-Check which environment is actually in use before reinstalling. A system-wide
-`streamlit` earlier on `PATH` will run the app against the wrong interpreter, so
-packages installed into `.venv/` appear to be missing. `which streamlit` should
-report a path inside `.venv/bin`; `./run.sh` avoids the problem entirely.
+Check which environment is actually in use before reinstalling. Running
+`uvicorn` or `python` from outside `.venv/` uses the wrong interpreter, so packages
+installed into `.venv/` appear to be missing; `./run.sh` always uses `.venv/bin/python`.
 
 ### Scores are absent
 

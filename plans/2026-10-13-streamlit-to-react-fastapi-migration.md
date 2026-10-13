@@ -1,5 +1,7 @@
 # Plan: Streamlit → React + FastAPI full migration
 
+> **Status: completed 2026-10-13** — steps 0–12 are implemented and committed (one commit per step). The browser-level click-through in step 12 could not be run (Chrome extension not connected); the full workflow was instead exercised over HTTP against the real server, plus 135 backend and 51 frontend tests.
+
 ## Context
 Streamlit re-runs the script on every interaction and fights canvas/drag interaction (ROI editor). Decision: full refactor, no hybrid. Layout `app/backend` (FastAPI + existing domain code, SQLite) and `app/frontend` (Vite + React + TypeScript). Migrate view by view, backend first per view. Domain invariants in CLAUDE.md / docs/data-model.md must not change.
 

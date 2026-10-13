@@ -1,9 +1,0 @@
-# Streamlit configuration for the Picture Sorter app.
-# Picked up automatically when you run `streamlit run scripts/app.py` from the
-# project root.
-
-[server]
-# Allow large batch uploads (values in MB). The default per-file cap is 200 MB;
-# these just remove any practical ceiling for e.g. 100 x 7 MB frames at once.
-maxUploadSize = 4096
-maxMessageSize = 4096

@@ -76,7 +76,7 @@ See [[data-model]] for the canonical entities and invariants.
 
 ### Ingest
 
-- Multi-file upload through Streamlit
+- Multi-file upload through the web UI (staged to disk, ingested by a background job)
 - Import from a local folder path
 - SHA-256 content-based duplicate detection
 - Indexed per-camera frame catalog in SQLite
@@ -166,11 +166,13 @@ These views evaluate the curation aid; they do not establish classifier accuracy
 
 ## Active architecture
 
+The application is a FastAPI backend (`app/backend/`) that wraps the domain modules and serves a React + TypeScript single-page app (`app/frontend/`). The backend binds `127.0.0.1` and has no authentication: it is a local single-user tool.
+
 ### Entry point and configuration
 
-- `scripts/app.py` — Streamlit entry point and view dispatch
+- `app/backend/api/main.py` — FastAPI app factory; serves the built frontend (`app/frontend/dist`) with SPA fallback
 - `app/backend/config.py` — paths, classes, metric families, and optional embeddings
-- `scripts/ui_common.py` — shared Streamlit presentation helpers
+- `app/backend/api/jobs.py` — in-memory background jobs (one worker) for ingest, scoring, clustering, projection; polled via `GET /api/jobs/{id}`
 
 ### Domain and persistence
 
@@ -187,15 +189,25 @@ These views evaluate the curation aid; they do not establish classifier accuracy
 - `app/backend/embedding.py` — optional pretrained ResNet embeddings
 - `app/backend/classify.py` — multi-class scoring and the shared persistent feature cache
 - `app/backend/dedup.py` — near-duplicate embedding clustering using the shared cache
+- `app/backend/classify_view.py` — presentation-neutral filtering, sorting, bars, bulk and auto-assign selection
+- `app/backend/suggest_goldens.py` — most-uncertain, diversity-spread golden suggestions
+- `app/backend/insights.py` — per-method confusion matrices
+- `app/backend/thumbs.py` — bounded-cache ROI cutout and square thumbnails
 
-### Views
+### API (`app/backend/api/`)
 
-- `scripts/view_ingest.py`
-- `scripts/view_roi_editor/`
-- `scripts/view_classify/`
-- `scripts/view_insights.py`
-- `scripts/view_status.py`
-- `scripts/view_versions.py`
+One thin router per area, each delegating to the domain modules above:
+`cameras`, `status`, `versions_api`, `ingest_api`, `frames_api` (frames and thumbnails),
+`roi_api`, `classify_api`, `insights_api`, `dedup_api`.
+
+### Frontend (`app/frontend/src/`)
+
+- `App.tsx` — sidebar (camera, product, view) and routes
+- `api.ts` — typed API client
+- `views/` — Status, Ingest, ROI editor, Classify, Insights, Versions, Dedup
+- `classify/` — card, bulk, auto-assign, suggested-goldens panels, SVG scatter
+- `RoiCanvas.tsx` + `roiGeometry.ts` — pointer-driven ROI draw/move/resize in normalised coordinates
+- `useJob.ts` — polls background jobs
 
 ## Storage model
 
@@ -259,10 +271,6 @@ Margins are not calibrated probabilities and should not be compared blindly betw
 
 The main hierarchy is implemented, but Status and Versions presentation still need clearer per-product grouping.
 
-### ROI editor sizing
-
-The ROI canvas does not reliably occupy the intended browser width on every display.
-
 ### Runtime portability
 
 The project folder is portable, but `.venv/` is machine-specific and must be recreated after moving the project. The camera folders and SQLite database are the valuable data that must be backed up.
@@ -276,7 +284,7 @@ Listed in recommended priority order:
 3. Add coverage-aware or farthest-point selection to reduce candidate redundancy.
 4. Consider aligned difference views or heatmaps for faster human verification.
 5. Improve per-product grouping in Status and Versions.
-6. Resolve the ROI-editor width behavior.
+6. Add browser-level (end-to-end) tests for the React views; current frontend tests mock the API and cannot exercise real pointer interaction.
 
 ## Explicitly out of scope
 
@@ -293,7 +301,7 @@ Unless the project direction changes, the following remain outside this tool:
 Create a machine-local Python environment from the dependency files and run:
 
 ```powershell
-streamlit run scripts\app.py
+./run.sh
 ```
 
 Tests and verification must use temporary locations through:

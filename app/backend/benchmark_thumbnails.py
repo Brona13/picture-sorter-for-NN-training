@@ -16,7 +16,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 import perf
-import ui_common
+import thumbs as thumbs_mod
 
 
 PAGE_SIZES = (24, 48, 96)
@@ -49,11 +49,11 @@ def _make_frames(root: Path, count: int, width: int, height: int) -> list[Path]:
 
 
 def _clear_thumbnail_caches() -> None:
-    clear_all = getattr(ui_common, "clear_thumbnail_caches", None)
+    clear_all = getattr(thumbs_mod, "clear_thumbnail_caches", None)
     if clear_all is not None:
         clear_all()
         return
-    for function in (ui_common.cutout_thumb, ui_common.square_thumb, ui_common.thumb_data_uri):
+    for function in (thumbs_mod.cutout_thumb, thumbs_mod.square_thumb, thumbs_mod.thumb_data_uri):
         clear = getattr(function, "clear", None)
         if clear is not None:
             clear()
@@ -99,7 +99,7 @@ def run(frame_count: int, width: int, height: int) -> dict[str, object]:
         paths = _make_frames(Path(temp_dir), frame_count, width, height)
         # Initialize the decoder/encoder and cache before the
         # measured loops so the 24-card row does not absorb one-time setup.
-        ui_common.cutout_thumb(str(paths[0]), roi_tuple, paths[0].stat().st_mtime_ns)
+        thumbs_mod.cutout_thumb(str(paths[0]), roi_tuple, paths[0].stat().st_mtime_ns)
         for path in paths:
             path.read_bytes()
         _clear_thumbnail_caches()
@@ -107,9 +107,9 @@ def run(frame_count: int, width: int, height: int) -> dict[str, object]:
             selected = paths[:page_size]
             _clear_thumbnail_caches()
             with perf.trace("benchmark.thumbnails.cold", enabled=True, emit=False) as cold_trace:
-                cold_ms, thumbs = _render(selected, roi_tuple, ui_common.cutout_thumb)
+                cold_ms, thumbs = _render(selected, roi_tuple, thumbs_mod.cutout_thumb)
             with perf.trace("benchmark.thumbnails.warm", enabled=True, emit=False) as warm_trace:
-                warm_ms, _ = _render(selected, roi_tuple, ui_common.cutout_thumb)
+                warm_ms, _ = _render(selected, roi_tuple, thumbs_mod.cutout_thumb)
             results.append(
                 {
                     "page_size": page_size,
@@ -124,8 +124,8 @@ def run(frame_count: int, width: int, height: int) -> dict[str, object]:
             )
     return {
         "frame_size": [width, height],
-        "thumbnail_width": ui_common.THUMB_WIDTH,
-        "cache_info": getattr(ui_common, "thumbnail_cache_info", lambda: None)(),
+        "thumbnail_width": thumbs_mod.THUMB_WIDTH,
+        "cache_info": getattr(thumbs_mod, "thumbnail_cache_info", lambda: None)(),
         "results": results,
     }
 

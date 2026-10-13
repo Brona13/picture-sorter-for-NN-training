@@ -7,16 +7,8 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-from streamlit.testing.v1 import AppTest
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS_DIR = PROJECT_ROOT / "scripts"
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
-_BACKEND_DIR = Path(__file__).resolve().parents[1] / "app" / "backend"
-if str(_BACKEND_DIR) not in sys.path:
-    sys.path.insert(0, str(_BACKEND_DIR))
 
 import classify
 import config
@@ -59,7 +51,7 @@ class EndToEndFlowTests(unittest.TestCase):
             cv2.rectangle(image, (18, 14), (78, 58), (20, 180, 240), 2)
             self.assertTrue(cv2.imwrite(str(self.source / f"frame-{index:02d}.png"), image))
 
-    def test_complete_domain_and_streamlit_flow(self) -> None:
+    def test_complete_domain_flow(self) -> None:
         # Camera creation and streamed ingest establish the clean schema and frame catalog.
         datamodel.ensure_camera_dirs(self.camera)
         self._create_source_images()
@@ -145,24 +137,6 @@ class EndToEndFlowTests(unittest.TestCase):
         self.assertEqual([], export_report["missing"])
         self.assertEqual([], export_report["hash_mismatch"])
         self.assertEqual(len(frames), len(list(destination.rglob("*.png"))))
-
-        # Render every user-facing view and execute the explicit score refresh.
-        app = AppTest.from_file(PROJECT_ROOT / "scripts" / "app.py", default_timeout=60)
-        app.run()
-        self.assertFalse(app.exception)
-        for view in ("Ingest", "ROI editor", "Dedup", "Classify"):
-            next(radio for radio in app.radio if radio.label == "View").set_value(view).run()
-            self.assertFalse(app.exception, f"{view}: {app.exception}")
-
-        refresh = next(button for button in app.button if "Refresh scores" in button.label)
-        refresh.click().run()
-        self.assertFalse(app.exception)
-        self.assertTrue(app.status)
-        self.assertEqual("complete", app.status[0].state)
-
-        for view in ("Insights", "Versions", "Status"):
-            next(radio for radio in app.radio if radio.label == "View").set_value(view).run()
-            self.assertFalse(app.exception, f"{view}: {app.exception}")
 
 
 if __name__ == "__main__":

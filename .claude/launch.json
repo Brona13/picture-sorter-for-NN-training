@@ -2,22 +2,9 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "streamlit-app",
-      "runtimeExecutable": ".venv/Scripts/python.exe",
-      "runtimeArgs": [
-        "-m",
-        "streamlit",
-        "run",
-        "scripts/app.py",
-        "--server.port",
-        "8502",
-        "--server.headless",
-        "true",
-        "--browser.gatherUsageStats",
-        "false",
-        "--server.fileWatcherType",
-        "none"
-      ],
+      "name": "picture-sorter",
+      "runtimeExecutable": "./run.sh",
+      "runtimeArgs": ["--port", "8502"],
       "port": 8502
     }
   ]

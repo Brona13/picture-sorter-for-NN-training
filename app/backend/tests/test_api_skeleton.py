@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import os
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -58,7 +60,9 @@ class ApiSkeletonTests(unittest.TestCase):
         self.assertEqual(r.status_code, 404)
 
     def test_database_reset_maps_to_409(self) -> None:
-        app = create_app()
+        # No built frontend: its catch-all would shadow routes added after create_app().
+        with mock.patch.dict(os.environ, {"CURATION_FRONTEND_DIST": str(Path(self.tmp.name) / "none")}):
+            app = create_app()
 
         @app.get("/api/_boom")
         def boom() -> None:

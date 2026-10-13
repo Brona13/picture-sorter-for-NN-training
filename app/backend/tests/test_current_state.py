@@ -6,18 +6,11 @@ import unittest
 from pathlib import Path
 
 
-SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "scripts"
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
-_BACKEND_DIR = Path(__file__).resolve().parents[1] / "app" / "backend"
-if str(_BACKEND_DIR) not in sys.path:
-    sys.path.insert(0, str(_BACKEND_DIR))
 
 import config
 import db
 import labels
 import perf
-from view_classify import _grid
 
 
 class DirectCurrentStateTests(unittest.TestCase):
@@ -120,39 +113,6 @@ class DirectCurrentStateTests(unittest.TestCase):
             self.assertEqual(1, con.execute("SELECT COUNT(*) FROM labels").fetchone()[0])
         finally:
             con.close()
-
-    def test_full_grid_card_uses_snapshots_without_database_reads(self):
-        token = _grid._FULL_GRID_RENDER.set(True)
-        try:
-            with perf.trace("full-card", enabled=True, emit=False) as report:
-                state = _grid._card_state(
-                    self.camera,
-                    self.feature,
-                    self.frame,
-                    {self.frame: "OK"},
-                    {"OK": [self.frame]},
-                    {self.frame},
-                )
-        finally:
-            _grid._FULL_GRID_RENDER.reset(token)
-
-        self.assertEqual(("OK", "OK", True), state)
-        self.assertEqual(1, report.counters["grid.cards_using_bulk_state"])
-        self.assertNotIn("db.connections", report.counters)
-
-    def test_fragment_card_uses_three_targeted_reads(self):
-        self._insert_label("OK")
-        self._insert_golden("OK", "add")
-        db.mark_frames_deleted(self.camera, [(self.frame, "hash")], source="test")
-
-        with perf.trace("fragment-card", enabled=True, emit=False) as report:
-            state = _grid._card_state(
-                self.camera, self.feature, self.frame, {}, {}, set()
-            )
-
-        self.assertEqual(("OK", "OK", True), state)
-        self.assertEqual(1, report.counters["grid.cards_using_targeted_state"])
-        self.assertEqual(3, report.counters["db.connections"])
 
 
 if __name__ == "__main__":

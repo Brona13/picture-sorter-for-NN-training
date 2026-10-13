@@ -32,17 +32,20 @@ Files in `memory/` and `plans/` may describe earlier workflows. Treat `docs/curr
 
 ## Code boundaries
 
-- `scripts/app.py`: Streamlit entry point and view routing.
+- `app/backend/api/`: FastAPI routers (thin; one per area) and `api/main.py` app factory.
 - `app/backend/datamodel.py`: cameras, products, features, and frame selection.
 - `app/backend/db.py`: SQLite schema and low-level persistence.
 - `app/backend/labels.py`: label and golden state.
 - `app/backend/classify.py`: multi-class scoring and score caching.
 - `app/backend/versions.py`: freeze, revert, and export behavior.
-- `scripts/view_*/`: Streamlit presentation and interaction.
+- `app/backend/classify_view.py`, `suggest_goldens.py`, `insights.py`, `thumbs.py`: presentation-neutral Classify/Insights logic.
+- `app/frontend/src/`: React + TypeScript UI (`views/`, `classify/`, `api.ts`).
 
-Keep domain logic out of Streamlit view modules when practical.
+Keep domain logic out of API routers and React components when practical.
+Domain modules use flat imports (`import labels`) with `app/backend` on `sys.path`.
 
-_Migration in progress_ (see `plans/2026-10-13-streamlit-to-react-fastapi-migration.md`): domain modules now live in `app/backend/` (flat imports, tests in `app/backend/tests/`); `scripts/` keeps only the Streamlit UI until it is removed. Run tests with `.venv/bin/python -m pytest`.
+Run backend tests with `.venv/bin/python -m pytest`; frontend with `cd app/frontend && npm test && npx tsc --noEmit`.
+Launch with `./run.sh` (see README). History: `plans/2026-10-13-streamlit-to-react-fastapi-migration.md`.
 
 ## Safe working rules
 
@@ -61,7 +64,8 @@ Do not scan these by default:
 - `.venv/`
 - `cameras/*/unsorted/`
 - `cameras/*/exports/`
-- `app/**/__pycache__/`, `scripts/**/__pycache__/`
+- `app/**/__pycache__/`
+- `app/frontend/node_modules/`, `app/frontend/dist/`
 - historical plans or memory notes
 
 Inspect them only when the task specifically requires their data or history. Prefer targeted searches and relevant modules over repository-wide reads.
