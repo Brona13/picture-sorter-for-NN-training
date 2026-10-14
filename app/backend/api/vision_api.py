@@ -183,8 +183,6 @@ def list_detections(camera: str, feature: str, review_only: bool = False) -> dic
             state = "trusted"
         else:
             state = "review"
-        if review_only and state not in ("review", "none"):
-            continue
         boxes = [] if state == "none" else found
         rows.append({
             "frame": frame,
@@ -194,7 +192,9 @@ def list_detections(camera: str, feature: str, review_only: bool = False) -> dic
         })
     counts: dict[str, int] = {}
     for r in rows:
-        counts[r["state"]] = counts.get(r["state"], 0) + 1
+        counts[r["state"]] = counts.get(r["state"], 0) + 1  # over all frames, not just the queue
+    if review_only:
+        rows = [r for r in rows if r["state"] in ("review", "none")]
     return {"threshold": threshold, "frames": rows, "counts": counts}
 
 

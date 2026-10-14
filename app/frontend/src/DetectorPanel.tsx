@@ -1,11 +1,14 @@
 import { useEffect, useState } from "react";
-import { api, DetectionList, DetectorChoice, DetectorInfo, FilterChoice } from "./api";
+import { api, DetectionList, DetectionRow, DetectorChoice, DetectorInfo, FilterChoice } from "./api";
 import RoiCanvas from "./RoiCanvas";
 import { Box, roundBox } from "./roiGeometry";
 import { useJob } from "./useJob";
 import { usePreview } from "./usePreview";
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
+// Frames without a box first, then the least confident.
+const byConfidence = (a: DetectionRow, b: DetectionRow) =>
+  (a.boxes[0]?.conf ?? -1) - (b.boxes[0]?.conf ?? -1);
 const EMPTY: DetectorChoice = { exemplars: [], topk: 1, threshold: 0.3 };
 
 interface Props {
@@ -41,6 +44,7 @@ export default function DetectorPanel({
   const job = useJob<{ detected: number; needs_review: number; skipped_human: number }>(jobId);
   const [list, setList] = useState<DetectionList | null>(null);
   const [tick, setTick] = useState(0);
+  const [showAll, setShowAll] = useState(false);
   const [reviewFrame, setReviewFrame] = useState("");
   const [reviewBox, setReviewBox] = useState<Box | null>(null);
   const reviewUrl = usePreview(camera, feature, reviewFrame, filter, null, onError);
@@ -60,10 +64,12 @@ export default function DetectorPanel({
       return;
     }
     api
-      .detections(camera, feature, true)
-      .then(setList)
+      .detections(camera, feature, !showAll)
+      .then((l) =>
+        setList(showAll ? { ...l, frames: [...l.frames].sort(byConfidence) } : l),
+      )
       .catch((e: unknown) => onError(msg(e)));
-  }, [camera, feature, hasExemplars, jobDone, tick, onError]);
+  }, [camera, feature, hasExemplars, jobDone, tick, showAll, onError]);
 
   // Open the first frame that still needs a look whenever the queue changes.
   useEffect(() => {
@@ -96,6 +102,10 @@ export default function DetectorPanel({
       .then(() => setTick((t) => t + 1))
       .catch((e: unknown) => onError(msg(e)));
 
+  const confidences = (list?.frames ?? [])
+    .map((f) => f.boxes[0]?.conf)
+    .filter((c): c is number => c !== undefined);
+  const toCheck = (list?.counts.review ?? 0) + (list?.counts.none ?? 0);
   const maxExemplars = info?.max_exemplars ?? 3;
   const [minK, maxK] = info?.topk ?? [1, 5];
   const progress = job?.progress as { done?: number; total?: number } | undefined;
@@ -190,10 +200,21 @@ export default function DetectorPanel({
       {list && (
         <section aria-label="Review queue">
           <h4>
-            Review ({list.frames.length} to check
+            Review ({toCheck} to check
             {list.counts.trusted ? `, ${list.counts.trusted} trusted` : ""}
             {list.counts.human ? `, ${list.counts.human} decided` : ""})
           </h4>
+          <label>
+            <input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} /> Show
+            all frames, least confident first
+          </label>
+          {showAll && confidences.length > 0 && (
+            <p>
+              Confidence of the shown boxes: {Math.round(Math.min(...confidences) * 100)}% to{" "}
+              {Math.round(Math.max(...confidences) * 100)}% (threshold{" "}
+              {Math.round(list.threshold * 100)}%).
+            </p>
+          )}
           {list.frames.length === 0 && <p>Nothing to review.</p>}
           {list.frames.length > 0 && (
             <>
@@ -203,6 +224,7 @@ export default function DetectorPanel({
                   {list.frames.map((f) => (
                     <option key={f.frame} value={f.frame}>
                       {f.frame} — {f.state === "none" ? "no detection" : `${Math.round((f.boxes[0]?.conf ?? 0) * 100)}%`}
+                      {f.state === "human" ? " (decided)" : ""}
                     </option>
                   ))}
                 </select>

@@ -167,6 +167,8 @@ class ApiTests(DetectorBase):
         self.assertEqual(states[self.frames[0]], "trusted")
         self.assertEqual(states[self.frames[1]], "review")
         queue = self.client.get(f"{self.url}/detections", params={"review_only": True}).json()
+        self.assertEqual(queue["counts"], listing["counts"])  # counts cover every frame
+        self.assertEqual(queue["counts"]["trusted"], 1)
         self.assertEqual([f["frame"] for f in queue["frames"]], [self.frames[1], self.frames[2]])  # stub repeats its last result
 
     def test_accepting_and_clearing(self) -> None:

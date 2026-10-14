@@ -16,7 +16,13 @@ function install(savedDetector: any) {
       if (url.endsWith("/vision/filters")) return new Response(JSON.stringify({ filters: {} }));
       if (url.endsWith("/vision/detector"))
         return new Response(JSON.stringify({ available: true, model: "m", max_exemplars: 3, topk: [1, 5] }));
-      if (url.includes("/detections") && method === "GET") return new Response(JSON.stringify(detections));
+      if (url.includes("/detections") && method === "GET") {
+        const reviewOnly = url.includes("review_only=true");
+        const frames = detections.frames.filter(
+          (f: any) => !reviewOnly || f.state === "review" || f.state === "none",
+        );
+        return new Response(JSON.stringify({ ...detections, frames }));
+      }
       if (url.includes("/detections") && method === "PUT") return new Response('{"ok":true}');
       if (url.includes("/detections") && method === "DELETE") return new Response('{"ok":true}');
       if (url.endsWith("/detect"))
@@ -109,4 +115,23 @@ test("threshold and candidate count edit the detector settings", async () => {
     const put = calls.find((c) => c.method === "PUT" && c.url.endsWith("/vision/seal"));
     expect(put?.body.detector).toMatchObject({ topk: 4, threshold: 0.55 });
   });
+});
+
+test("show-all lists every frame least confident first, with the confidence range", async () => {
+  const frame = (name: string, conf: number, state: string) => ({
+    frame: name, state, status: "auto", boxes: [{ x: 0.1, y: 0.1, w: 0.3, h: 0.3, conf }],
+  });
+  detections = {
+    threshold: 0.5,
+    counts: { trusted: 2 },
+    frames: [frame("hi.png", 0.97, "trusted"), frame("mid.png", 0.71, "trusted")],
+  };
+  install({ exemplars: [EXEMPLAR], topk: 1, threshold: 0.5 });
+  render(<DetectorView camera="camA" />);
+  expect(await screen.findByText(/Review \(0 to check, 2 trusted/)).toBeInTheDocument();
+  expect(screen.getByText("Nothing to review.")).toBeInTheDocument();
+  await userEvent.click(screen.getByLabelText(/Show all frames/));
+  expect(await screen.findByText(/71% to 97% \(threshold 50%\)/)).toBeInTheDocument();
+  const options = within(screen.getByRole("region", { name: "Review queue" })).getAllByRole("option");
+  expect(options.map((o) => o.textContent)).toEqual([expect.stringContaining("mid.png"), expect.stringContaining("hi.png")]);
 });
