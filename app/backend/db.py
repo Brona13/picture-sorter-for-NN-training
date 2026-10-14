@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 import time
 from pathlib import Path
 
@@ -196,27 +197,41 @@ def connect() -> sqlite3.Connection:
     version = int(con.execute("PRAGMA user_version").fetchone()[0])
     if version == SCHEMA_VERSION:
         return con
+    # The UI fires several requests at once; without this lock they all try to
+    # create/upgrade the schema together and fail with "database is locked".
+    with _schema_lock:
+        try:
+            _bring_schema_current(con)
+        except Exception:
+            con.close()
+            raise
+    return con
+
+
+_schema_lock = threading.Lock()
+
+
+def _bring_schema_current(con: sqlite3.Connection) -> None:
+    """Create or upgrade the schema; call with ``_schema_lock`` held."""
+    # Another thread may have finished the upgrade while this one waited.
+    version = int(con.execute("PRAGMA user_version").fetchone()[0])
+    if version == SCHEMA_VERSION:
+        return
     if version == 0 and not _has_user_tables(con):
         with perf.span("db.schema.initialize"):
             con.executescript(_SCHEMA)
-        return con
-    try:
-        while version in _MIGRATIONS and version < SCHEMA_VERSION:
-            with perf.span(f"db.schema.migrate_v{version}_v{version + 1}"):
-                _MIGRATIONS[version](con)
-            version = int(con.execute("PRAGMA user_version").fetchone()[0])
-    except Exception:
-        con.close()
-        raise
+        return
+    while version in _MIGRATIONS and version < SCHEMA_VERSION:
+        with perf.span(f"db.schema.migrate_v{version}_v{version + 1}"):
+            _MIGRATIONS[version](con)
+        version = int(con.execute("PRAGMA user_version").fetchone()[0])
     if version != SCHEMA_VERSION:
-        con.close()
         raise DatabaseResetRequired(
             f"Database schema {version} is incompatible with clean schema "
             f"{SCHEMA_VERSION} and no forward migration is defined. "
             "Run `python app/backend/reset_database.py --yes` to remove metadata and "
             "caches; source images are kept."
         )
-    return con
 
 
 # --- schema migrations ------------------------------------------------------
@@ -303,7 +318,7 @@ def _migrate_v3_to_v4(con: sqlite3.Connection) -> None:
     Deleted versions stay as greyed-out history rows so their numbers are never
     reused. A database without a ``versions`` table is only re-stamped.
     """
-    con.execute("BEGIN")
+    con.execute("BEGIN IMMEDIATE")  # write lock first, so a second process waits and re-checks
     try:
         columns = {row[1] for row in con.execute("PRAGMA table_info(versions)").fetchall()}
         if columns and "deleted" not in columns:

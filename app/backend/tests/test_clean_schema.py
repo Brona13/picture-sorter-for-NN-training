@@ -168,3 +168,47 @@ class MigrationV3ToV4Tests(unittest.TestCase):
         self.assertIn("deleted", columns)
         self.assertEqual((row["name"], row["deleted"]), ("keep", None))
         self.assertEqual(version, db.SCHEMA_VERSION)
+
+    def test_parallel_first_connects_all_succeed(self) -> None:
+        """The UI fires several requests at once on startup; each opens the old DB."""
+        import threading
+
+        n = 12
+        barrier = threading.Barrier(n)
+        errors: list[BaseException] = []
+
+        def worker() -> None:
+            try:
+                barrier.wait()
+                db.connect().close()
+            except BaseException as exc:  # noqa: BLE001 - report any failure
+                errors.append(exc)
+
+        threads = [threading.Thread(target=worker) for _ in range(n)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        self.assertEqual([], [repr(e) for e in errors])
+
+    def test_parallel_first_connects_on_empty_database(self) -> None:
+        import threading
+
+        db.db_path().unlink()  # start from no database at all
+        n = 12
+        barrier = threading.Barrier(n)
+        errors: list[BaseException] = []
+
+        def worker() -> None:
+            try:
+                barrier.wait()
+                db.connect().close()
+            except BaseException as exc:  # noqa: BLE001
+                errors.append(exc)
+
+        threads = [threading.Thread(target=worker) for _ in range(n)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        self.assertEqual([], [repr(e) for e in errors])
