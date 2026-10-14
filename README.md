@@ -561,4 +561,4 @@ workflows and should be consulted as historical rationale rather than current op
 
 ## Version
 
-The app version and release date are shown under the title in the sidebar and served at `GET /api/version`. To release, edit `VERSION` and `RELEASED` in `app/backend/appinfo.py` (semantic versioning, ISO date).
+The app version and release date are shown under the title in the sidebar and served at `GET /api/version`. To release, edit `VERSION` and `RELEASED` in `app/backend/appinfo.py` (ISO date). Scheme: `0.x.y` was the Streamlit generation, `1.x.y` is the current FastAPI + React application.
