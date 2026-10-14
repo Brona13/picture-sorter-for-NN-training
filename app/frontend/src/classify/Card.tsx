@@ -43,7 +43,6 @@ function isTypingTarget(target: EventTarget | null): boolean {
 
 export default function Card({ camera, feature, classes, methods, card, busy, onLabel, onGolden, onDelete, onRestore }: Props) {
   const { frame, label, golden, deleted, bars, leanings, cluster } = card;
-  const tag = golden ? `⭐${golden}` : label ?? "—";
 
   // Number keys act on the card under the mouse. The handler is reread from a ref so the window
   // listener only comes and goes with hovering, not with every render.
@@ -157,11 +156,7 @@ export default function Card({ camera, feature, classes, methods, card, busy, on
         )
       )}
 
-      <div style={{ fontSize: 12 }}>
-        {frame.slice(0, 22)}
-        <br />
-        <strong>{tag}</strong>
-      </div>
+      <div style={{ fontSize: 12 }}>{frame.slice(0, 22)}</div>
 
       {cluster && (
         <div style={{ margin: "2px 0 4px", fontSize: 10 }}>
