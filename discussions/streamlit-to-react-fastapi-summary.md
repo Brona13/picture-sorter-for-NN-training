@@ -1,3 +1,11 @@
+---
+name: streamlit-to-react-fastapi-summary
+description: Summary of the discussion on moving from Streamlit to React, FastAPI and SQLite
+status: historical
+document_type: handoff
+last_updated: 2026-10-13
+---
+
 # Streamlit → React + FastAPI + SQLite: summary
 
 ## Why the question came up

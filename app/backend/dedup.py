@@ -91,11 +91,11 @@ def fetch_embeddings(
             "Install torch+torchvision (see requirements-embedding.txt)."
         )
     roi = engine.resolve_roi(camera, feature)
-    roi_key = classify._roi_cache_key(roi)
     hmap = labels.hash_map(camera)
 
     con = db.connect()
     try:
+        roi_key = classify._roi_cache_key(roi, camera, feature, con)
         vectors = classify.fetch_vectors(
             con,
             camera,

@@ -32,13 +32,13 @@ Release target: appinfo VERSION 1.2.0 (bump on each phase: 1.2.0, 1.3.0, ...).
 7. Domain invariants doc: update `docs/data-model.md` + `docs/current-project.md` in the same change as each phase.
 
 ## Phases (each: tests + docs + version bump; user runs/verifies/commits)
-**Phase 1 - Pre-processing filters**
+**Phase 1 - Pre-processing filters** (DONE, v1.2.0; thumbnails intentionally left unfiltered)
 - `vision/preprocess.py`: Gaussian, median, bilateral, box, NLM, morph open/close, shrink-rescale; param schema per filter (min/max/step) served to UI.
 - API `api/vision_api.py` (new router, register in main.py): GET/PUT `/cameras/{c}/vision/{feature}`, POST preview (filtered image bytes for a frame).
 - Apply filter in `classify._prepare_vector_cache` + thumbs; add sig to roi_key.
 - UI: new `DetectorView.tsx` (`views.ts` + `App.tsx` route): filter selector, param sliders, live preview (debounced).
 
-**Phase 2 - Shapes and mask**
+**Phase 2 - Shapes and mask** (DONE, v1.3.0; blank value = dark grey 64; flat modules `masking.py`/`ShapeCanvas.tsx`; "use mask" is a saved per-feature switch on the Detector page, not a per-request toggle in Classify/Dedup, so the cache key carries the mask signature)
 - `vision/masking.py`: rect/circle/polygon rasterisation (normalised coords), blank-outside, anchor-to-box transform.
 - Frontend: new `ShapeCanvas.tsx` (SVG, viewBox 0 0 1 1) with rectangle/circle/polygon + handles; reuse `pointerToNorm`/clamp from `roiGeometry.ts`. Add to DetectorView.
 - Mask applied (fixed position, no detector yet) -> object embeddings `:obj`; Classify/Dedup get a "use mask" toggle.
@@ -55,7 +55,7 @@ Release target: appinfo VERSION 1.2.0 (bump on each phase: 1.2.0, 1.3.0, ...).
 
 ## Open questions to settle before Phase 3
 - Settings scope: spec says per feature; features are keyed (camera, name), so "per feature" = per (camera, feature). Confirm.
-- Blank value outside mask: black vs. dataset mean.
+- ~~Blank value outside mask~~: decided dark grey.
 - Should exports ever include masked/filtered crops (currently full frames)?
 
 ## Verification

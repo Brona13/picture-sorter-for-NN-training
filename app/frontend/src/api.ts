@@ -1,3 +1,5 @@
+import { MaskShape } from "./shapeGeometry";
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -137,6 +139,29 @@ export interface RoiUpsert {
   make_classifier?: boolean;
   product_names?: string[];
   shared_with?: string[];
+}
+
+export interface FilterParamSpec {
+  min: number;
+  max: number;
+  step: number;
+  default: number;
+}
+export interface FilterSpec {
+  label: string;
+  params: Record<string, FilterParamSpec>;
+}
+export interface FilterChoice {
+  name: string;
+  params: Record<string, number>;
+}
+export interface MaskChoice {
+  enabled: boolean;
+  shape: MaskShape;
+}
+export interface VisionSettings {
+  filter: FilterChoice | null;
+  mask: MaskChoice | null;
 }
 
 const send = (method: string, body?: unknown): RequestInit => ({
@@ -328,6 +353,38 @@ const post = (body?: unknown): RequestInit => ({
 });
 
 export const api = {
+  visionFilters: () => request<{ filters: Record<string, FilterSpec> }>("/vision/filters"),
+  visionSettings: (camera: string, feature: string) =>
+    request<VisionSettings>(
+      `/cameras/${encodeURIComponent(camera)}/vision/${encodeURIComponent(feature)}`,
+    ),
+  saveVisionSettings: (camera: string, feature: string, settings: VisionSettings) =>
+    request<VisionSettings>(
+      `/cameras/${encodeURIComponent(camera)}/vision/${encodeURIComponent(feature)}`,
+      send("PUT", settings),
+    ),
+  visionPreview: async (
+    camera: string,
+    feature: string,
+    frame: string,
+    filter: FilterChoice | null,
+    mask: MaskChoice | null = null,
+  ): Promise<Blob> => {
+    const res = await fetch(
+      `/api/cameras/${encodeURIComponent(camera)}/vision/${encodeURIComponent(feature)}/preview`,
+      post({ frame, filter, mask }),
+    );
+    if (!res.ok) {
+      let detail = res.statusText || `HTTP ${res.status}`;
+      try {
+        detail = (await res.json()).detail ?? detail;
+      } catch {
+        /* non-JSON error body */
+      }
+      throw new ApiError(res.status, null, String(detail));
+    }
+    return res.blob();
+  },
   health: () => request<{ status: string }>("/health"),
   version: () => request<{ version: string; released: string }>("/version"),
   cameras: () => request<string[]>("/cameras"),

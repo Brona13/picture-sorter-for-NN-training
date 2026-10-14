@@ -105,7 +105,9 @@ Scores are derived data. Each scoring method can provide nearest-class distances
 - Scores never replace human labels.
 - Classical and ResNet methods remain independent opinions.
 - Scores from different method families are not blended.
-- Cache validity includes frame content, feature, ROI geometry, and method.
+- Cache validity includes frame content, feature, ROI geometry, vision settings (pre-processing filter and enabled object mask), and method.
+- A feature's pre-processing filter is metadata: it changes derived vectors only, never source frames, labels, or goldens. It is stored per (camera, feature) in `settings` under `vision.<feature>`; the cache key carries a signature of it only when a filter is set or the mask is enabled. Saving new settings drops the feature's `scatter_cache` and `cluster_snapshot`.
+- A feature's object mask (rectangle, circle or polygon, normalised to the ROI crop) is likewise metadata stored in `vision.<feature>`. When enabled, pixels outside it are blanked to dark grey (after the filter) before features and embeddings are computed, so scores describe the object only. It never alters source frames, labels, or goldens; a disabled mask is saved but has no effect and no cache impact.
 - Margin is a ranking signal, not a calibrated probability.
 
 ## Versions
@@ -141,7 +143,7 @@ Authoritative or indexed state:
 - `deleted_frames`: current camera-wide soft deletions
 - `dedup_mute`: current feature mute set
 - `versions` and `version_items`: explicit snapshots
-- `settings`: per-camera UI settings
+- `settings`: per-camera UI settings and per-feature vision settings (`vision.<feature>`)
 
 Derived caches:
 

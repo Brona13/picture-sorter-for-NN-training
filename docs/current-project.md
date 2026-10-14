@@ -194,20 +194,22 @@ The application is a FastAPI backend (`app/backend/`) that wraps the domain modu
 - `app/backend/suggest_goldens.py` — most-uncertain, diversity-spread golden suggestions
 - `app/backend/insights.py` — per-method confusion matrices
 - `app/backend/thumbs.py` — bounded-cache ROI cutout and square thumbnails
+- `app/backend/preprocess.py`, `masking.py`, `vision_settings.py` — per-feature OpenCV pre-processing filters and rectangle/circle/polygon object masks (dark-grey outside) applied to ROI crops before features/embeddings (Detector page; the detector itself is planned in `plans/detector-masking-plan.md`)
 
 ### API (`app/backend/api/`)
 
 One thin router per area, each delegating to the domain modules above:
 `cameras`, `status`, `versions_api`, `ingest_api`, `frames_api` (frames and thumbnails),
-`roi_api`, `classify_api`, `insights_api`, `dedup_api`.
+`roi_api`, `classify_api`, `insights_api`, `dedup_api`, `vision_api` (filter catalogue, per-feature filter and mask settings, live preview).
 
 ### Frontend (`app/frontend/src/`)
 
 - `App.tsx` — sidebar (camera, product, view) and routes
 - `api.ts` — typed API client
-- `views/` — Status, Ingest, ROI editor, Dedup, Classify, Insights, Versions (sidebar order)
+- `views/` — Status, Ingest, ROI editor, Detector, Dedup, Classify, Insights, Versions (sidebar order)
 - `classify/` — card, bulk, clear-labels, auto-assign, suggested-goldens panels, SVG scatter
 - `RoiCanvas.tsx` + `roiGeometry.ts` — pointer-driven ROI draw/move/resize in normalised coordinates
+- `ShapeCanvas.tsx` + `shapeGeometry.ts` — editable mask shape (rectangle, circle, polygon) with drag handles
 - `useJob.ts` — polls background jobs
 
 ## Storage model

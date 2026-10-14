@@ -40,7 +40,7 @@ def _require_version(camera: str, feature: str, version_id: int, *, allow_delete
 
 def _cached_stats(camera: str, feature: str) -> dict:
     """Novelty stats from the persisted scored results (empty if never scored)."""
-    roi_key = classify._roi_cache_key(engine.resolve_roi(camera, feature))
+    roi_key = classify._roi_cache_key(engine.resolve_roi(camera, feature), camera, feature)
     row = db.load_results(camera, feature, roi_key)
     if row is None:
         return {}

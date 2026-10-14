@@ -44,6 +44,7 @@ import embedding
 import engine
 import labels
 import perf
+import vision_settings
 
 
 # --- results -----------------------------------------------------------------
@@ -94,8 +95,11 @@ def methods_available() -> list[str]:
 
 
 # --- cached per-frame vectors ------------------------------------------------
-def _roi_cache_key(roi) -> str:
-    return f"{roi.x:.4f},{roi.y:.4f},{roi.w:.4f},{roi.h:.4f}"
+def _roi_cache_key(roi, camera: str | None = None, feature: str | None = None, con=None) -> str:
+    """Cache key for a ROI; carries the feature's vision-settings signature if any."""
+    key = f"{roi.x:.4f},{roi.y:.4f},{roi.w:.4f},{roi.h:.4f}"
+    sig = vision_settings.signature(camera, feature, con) if camera and feature else ""
+    return f"{key}|{sig}" if sig else key
 
 
 def _chunks(items: list, size: int):
@@ -181,6 +185,7 @@ def _prepare_vector_cache(
     reported: set[str] = set()
     unavailable: set[str] = set()
     completed = 0
+    vision = vision_settings.get(camera, feature, con)
 
     def report_ready(frame: str) -> None:
         nonlocal completed
@@ -208,6 +213,7 @@ def _prepare_vector_cache(
                 with perf.span("features.image_load_and_crop"):
                     img = curation.load_image(datamodel.unsorted_dir(camera) / frame)
                     cutouts[frame] = roi.crop(img)
+                    cutouts[frame] = vision_settings.apply_settings(vision, cutouts[frame])
             except FileNotFoundError:
                 unavailable.add(frame)
                 report_ready(frame)
@@ -481,6 +487,7 @@ def refresh(
     results: list[FrameScore] = []
     con = db.connect()
     try:
+        roi_key = _roi_cache_key(roi, camera, feature, con)
         if not any_golden:
             return [
                 FrameScore(frame=f, golden=labels.golden_class_of(goldens, f))

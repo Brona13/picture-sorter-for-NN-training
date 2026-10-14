@@ -3,6 +3,7 @@ import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import { api, ApiError } from "./api";
 import { VIEWS } from "./views";
 import ClassifyView from "./views/ClassifyView";
+import DetectorView from "./views/DetectorView";
 import DedupView from "./views/DedupView";
 import InsightsView from "./views/InsightsView";
 import IngestView from "./views/IngestView";
@@ -106,6 +107,10 @@ export default function App() {
           <Route
             path="/insights"
             element={<InsightsView camera={camera} product={product || undefined} />}
+          />
+          <Route
+            path="/detector"
+            element={<DetectorView camera={camera} product={product || undefined} />}
           />
           <Route path="/dedup" element={<DedupView camera={camera} product={product || undefined} />} />
           <Route path="*" element={<Navigate to="/status" replace />} />

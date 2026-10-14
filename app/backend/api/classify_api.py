@@ -63,7 +63,7 @@ _deserialised: dict[tuple[str, str], tuple[str, list]] = {}
 
 
 def _roi_key(camera: str, feature: str) -> str:
-    return classify._roi_cache_key(engine.resolve_roi(camera, feature))
+    return classify._roi_cache_key(engine.resolve_roi(camera, feature), camera, feature)
 
 
 def load_scored(camera: str, feature: str) -> tuple[list | None, str | None, str | None]:

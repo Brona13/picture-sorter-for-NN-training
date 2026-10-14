@@ -1,3 +1,11 @@
+---
+name: detector-masking-spec
+description: Design notes for the detector and masking update so embeddings cover the object only
+status: current
+document_type: handoff
+last_updated: 2026-10-14
+---
+
 # Picture Sorter: Detector + Masking Update
 
 Design notes from the discussion. Scope: picture sorter app only (curation tool), not the downstream production neural network.
