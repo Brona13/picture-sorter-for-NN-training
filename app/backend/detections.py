@@ -146,3 +146,25 @@ def clear_box(camera: str, feature: str, frame_hash: str) -> None:
     finally:
         con.close()
     vision_settings.purge_derived(camera, feature)
+
+
+def vision_snapshot(camera: str, feature: str) -> dict | None:
+    """What a freeze records so the version's derived vectors can be reproduced.
+
+    The filter, mask and detector settings, the cache signature they produce, and (when the
+    mask is anchored) the trusted box per frame hash. ``None`` when nothing is configured.
+    """
+    settings = vision_settings.get(camera, feature)
+    if not any(settings.values()):
+        return None
+    snap: dict = {**settings, "signature": vision_settings.signature(camera, feature)}
+    if vision_settings.anchored(settings):
+        sig = vision_settings.detection_signature(settings)
+        threshold = settings["detector"]["threshold"]
+        boxes = {}
+        for h, rows in load(camera, feature).items():
+            box = trusted_box(rows, sig, threshold)
+            if box:
+                boxes[h] = {k: round(v, 4) for k, v in box.items()}
+        snap["detections"] = boxes
+    return snap

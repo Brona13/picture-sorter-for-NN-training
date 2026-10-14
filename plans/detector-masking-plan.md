@@ -1,7 +1,7 @@
 ---
 name: detector-masking-plan
 description: Per-feature pre-processing, exemplar-based detector and anchored mask so embeddings cover the object only
-status: in-progress
+status: complete
 document_type: plan
 last_updated: 2026-10-14
 ---
@@ -47,7 +47,7 @@ Release target: appinfo VERSION 1.2.0 (bump on each phase: 1.2.0, 1.3.0, ...).
 - `vision/detector.py` (OWL-ViT image-guided), `detections` table + v4->v5 migration, job endpoint, review endpoints (PATCH box), exemplar picker from existing frames (1-3), top-k 1-5, confidence threshold.
 - Mask re-anchored per detection; low-confidence -> manual review queue in UI (move/adjust box via existing `RoiCanvas`).
 
-**Phase 4 - Integration + reproducibility**
+**Phase 4 - Integration + reproducibility** (DONE, v1.5.0: dedup/scatter/suggest already share `fetch_vectors`, so masked/anchored vectors reach them via the cache key; derived caches are purged when settings or detections change; freeze snapshots vision settings + trusted boxes; Versions shows a vision column)
 - Object embedding wired through dedup/scatter/suggest_goldens; signature in scatter/cluster caches.
 - Snapshot settings in freeze; show in Versions view.
 

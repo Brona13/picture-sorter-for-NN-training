@@ -5,6 +5,7 @@ import classify
 import config
 import datamodel
 import db
+import detections
 import engine
 import labels
 import versions
@@ -74,9 +75,11 @@ def list_versions(camera: str, feature: str) -> dict:
 @router.post("/cameras/{camera}/versions", status_code=201)
 def freeze(camera: str, body: FreezeRequest) -> dict:
     require_feature(camera, body.feature)
-    return versions.freeze(
-        camera, body.feature, body.name, body.notes, stats=_cached_stats(camera, body.feature)
-    )
+    stats = _cached_stats(camera, body.feature)
+    vision = detections.vision_snapshot(camera, body.feature)
+    if vision:
+        stats["vision"] = vision  # frozen with the version so its vectors are reproducible
+    return versions.freeze(camera, body.feature, body.name, body.notes, stats=stats)
 
 
 @router.post("/cameras/{camera}/versions/{version_id}/revert")

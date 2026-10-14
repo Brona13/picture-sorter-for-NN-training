@@ -58,7 +58,7 @@ export interface VersionInfo {
   notes: string;
   created: number;
   counts: Record<string, number>;
-  stats: Record<string, Record<string, number>>;
+  stats: Record<string, Record<string, number>> & { vision?: VisionSnapshot };
   active: boolean;
   deleted: number | null;
   delta: string;
@@ -173,6 +173,10 @@ export interface VisionSettings {
   filter: FilterChoice | null;
   mask: MaskChoice | null;
   detector: DetectorChoice | null;
+}
+export interface VisionSnapshot extends VisionSettings {
+  signature: string;
+  detections?: Record<string, Box>;
 }
 export interface DetectorInfo {
   available: boolean;

@@ -1,8 +1,18 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { api, ExportReport, VersionInfo, VersionsResponse } from "../api";
+import { api, ExportReport, VersionInfo, VersionsResponse, VisionSnapshot } from "../api";
 
 const fmt = (ts: number) => new Date(ts * 1000).toISOString().slice(0, 16).replace("T", " ");
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+/** One-line summary of the vision settings frozen with a version. */
+function visionSummary(v?: VisionSnapshot): string {
+  if (!v) return "—";
+  const parts: string[] = [];
+  if (v.filter) parts.push(v.filter.name);
+  if (v.mask?.enabled) parts.push(`mask ${v.mask.shape.shape}`);
+  if (v.detector?.exemplars.length) parts.push(`detector ×${v.detector.exemplars.length}`);
+  return parts.length ? parts.join(" · ") : "—";
+}
 
 export default function VersionsView({ camera, product }: { camera: string; product?: string }) {
   const [features, setFeatures] = useState<{ feature: string; label: string }[]>([]);
@@ -169,6 +179,7 @@ export default function VersionsView({ camera, product }: { camera: string; prod
                   <th key={`g${c}`}>⭐{c}</th>
                 ))}
                 <th>unlabeled</th>
+                <th>vision</th>
                 <th>change vs previous</th>
                 <th></th>
               </tr>
@@ -187,6 +198,9 @@ export default function VersionsView({ camera, product }: { camera: string; prod
                     <td key={`g${c}`}>{v.counts[`golden_${c}`] ?? 0}</td>
                   ))}
                   <td>{v.counts.unlabeled ?? 0}</td>
+                  <td title={v.stats.vision ? JSON.stringify(v.stats.vision, null, 1) : undefined}>
+                    {visionSummary(v.stats.vision)}
+                  </td>
                   <td>{v.delta}</td>
                   <td>
                     {v.deleted === null && (

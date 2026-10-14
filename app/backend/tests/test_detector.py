@@ -228,3 +228,33 @@ class CacheKeyTests(DetectorBase):
         self.assertEqual(len(shifted), 1)
         self.assertTrue(shifted[0].startswith(self.hash_of(self.frames[0]) + "@+0.4"))
         self.assertIn(self.hash_of(self.frames[1]), hashes)  # undetected frames keep the plain hash
+
+
+class FreezeSnapshotTests(DetectorBase):
+    def freeze(self) -> dict:
+        r = self.client.post("/api/cameras/camA/versions", json={"feature": "seal", "name": "one"})
+        self.assertEqual(r.status_code, 201, r.text)
+        versions = self.client.get("/api/cameras/camA/versions", params={"feature": "seal"}).json()["versions"]
+        return versions[-1]["stats"]
+
+    def test_unconfigured_feature_has_no_vision_snapshot(self) -> None:
+        self.assertNotIn("vision", self.freeze())
+
+    def test_freeze_records_settings_signature_and_trusted_boxes(self) -> None:
+        self.save()
+        detector.set_backend(StubBackend([[(box_at(0.4, 0.4), 0.9)], [(box_at(0.6, 0.6), 0.1)]]))
+        detector.run("camA", "seal")
+        vision = self.freeze()["vision"]
+        self.assertEqual(vision["mask"]["shape"], RECT)
+        self.assertEqual(vision["detector"]["exemplars"][0]["frame"], "frame_000.png")
+        self.assertEqual(vision["signature"], vision_settings.signature("camA", "seal"))
+        # the confident box and nothing else (frames 1 and 2 are below the threshold)
+        self.assertEqual(list(vision["detections"]), [self.hash_of(self.frames[0])])
+
+    def test_snapshot_is_frozen_not_live(self) -> None:
+        self.save()
+        first = self.freeze()["vision"]["signature"]
+        self.save(mask={"enabled": True, "shape": {**RECT, "w": 0.4}})
+        self.assertNotEqual(vision_settings.signature("camA", "seal"), first)
+        versions = self.client.get("/api/cameras/camA/versions", params={"feature": "seal"}).json()["versions"]
+        self.assertEqual(versions[0]["stats"]["vision"]["signature"], first)

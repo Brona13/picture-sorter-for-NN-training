@@ -2,6 +2,11 @@
 name: session-2026-10-13-summary
 description: Whole-day summary - migration merged and pushed, UI theme and Classify fixes, cam3 labels cleared, Windows launcher
 session_date: 2026-10-13
+last_updated: 2026-10-13
+status: current
+document_type: session-handoff
+metadata:
+  type: project
 ---
 
 # Session 2026-10-13 (full day)

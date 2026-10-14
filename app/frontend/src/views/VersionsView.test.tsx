@@ -120,3 +120,17 @@ test("export shows the report", async () => {
   await waitFor(() => expect(screen.getByText("/x/exports")).toBeInTheDocument());
   expect(screen.getByText(/1 frame\(s\) missing: a.png/)).toBeInTheDocument();
 });
+
+test("shows the vision settings frozen with a version", async () => {
+  versions[1].stats = {
+    vision: {
+      filter: { name: "gaussian", params: { sigma: 1.5 } },
+      mask: { enabled: true, shape: { shape: "circle", cx: 0.5, cy: 0.5, r: 0.2 } },
+      detector: { exemplars: [{ frame: "a.png", box: { x: 0, y: 0, w: 0.1, h: 0.1 } }], topk: 1, threshold: 0.3 },
+      signature: "abc12345",
+    },
+  } as any;
+  render(<VersionsView camera="camA" />);
+  expect(await screen.findByText("gaussian · mask circle · detector ×1")).toBeInTheDocument();
+  expect(screen.getAllByText("—").length).toBeGreaterThan(0); // v1 has none
+});

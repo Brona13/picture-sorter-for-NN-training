@@ -1,7 +1,12 @@
 ---
 name: migration-push-state
-description: Git state after the React+FastAPI migration was pushed (2026-10-13); nothing merged yet
+description: Git state after the React+FastAPI migration was pushed (2026-10-13); superseded - later merged into main and pushed
 session_date: 2026-10-13
+last_updated: 2026-10-13
+status: superseded
+document_type: session-handoff
+metadata:
+  type: project
 ---
 
 # Migration push state (2026-10-13)
