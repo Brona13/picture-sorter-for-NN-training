@@ -43,7 +43,7 @@ Release target: appinfo VERSION 1.2.0 (bump on each phase: 1.2.0, 1.3.0, ...).
 - Frontend: new `ShapeCanvas.tsx` (SVG, viewBox 0 0 1 1) with rectangle/circle/polygon + handles; reuse `pointerToNorm`/clamp from `roiGeometry.ts`. Add to DetectorView.
 - Mask applied (fixed position, no detector yet) -> object embeddings `:obj`; Classify/Dedup get a "use mask" toggle.
 
-**Phase 3 - Detector**
+**Phase 3 - Detector** (DONE, v1.4.0; schema v5 `detections`; mask anchoring = translation only, reference = first exemplar's centre; per-frame cache key `<hash>@dx,dy`; OWL-ViT path is untested against the real model, tests use a stub backend)
 - `vision/detector.py` (OWL-ViT image-guided), `detections` table + v4->v5 migration, job endpoint, review endpoints (PATCH box), exemplar picker from existing frames (1-3), top-k 1-5, confidence threshold.
 - Mask re-anchored per detection; low-confidence -> manual review queue in UI (move/adjust box via existing `RoiCanvas`).
 

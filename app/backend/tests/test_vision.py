@@ -49,12 +49,12 @@ class VisionApiTests(ApiTestCase):
         self.assertIn("gaussian", body["filters"])
 
     def test_default_then_save_roundtrip(self) -> None:
-        self.assertEqual(self.client.get(self.url).json(), {"filter": None, "mask": None})
+        self.assertEqual(self.client.get(self.url).json(), {"filter": None, "mask": None, "detector": None})
         r = self.client.put(self.url, json={"filter": {"name": "gaussian", "params": {"sigma": 2.5}}})
         self.assertEqual(r.status_code, 200)
         self.assertEqual(self.client.get(self.url).json()["filter"], {"name": "gaussian", "params": {"sigma": 2.5}})
         self.client.put(self.url, json={"filter": None})
-        self.assertEqual(self.client.get(self.url).json(), {"filter": None, "mask": None})
+        self.assertEqual(self.client.get(self.url).json(), {"filter": None, "mask": None, "detector": None})
 
     def test_invalid_settings_rejected(self) -> None:
         r = self.client.put(self.url, json={"filter": {"name": "gaussian", "params": {"sigma": 999}}})
@@ -74,7 +74,7 @@ class VisionApiTests(ApiTestCase):
         self.assertEqual(r.headers["content-type"], "image/jpeg")
         img = cv2.imdecode(np.frombuffer(r.content, np.uint8), cv2.IMREAD_COLOR)
         self.assertEqual(img.shape[:2], (20, 30))  # 40x60 frame, ROI 0.5 x 0.5
-        self.assertEqual(self.client.get(self.url).json(), {"filter": None, "mask": None})
+        self.assertEqual(self.client.get(self.url).json(), {"filter": None, "mask": None, "detector": None})
 
     def test_preview_unknown_frame_404(self) -> None:
         r = self.client.post(f"{self.url}/preview", json={"frame": "nope.png"})

@@ -111,6 +111,8 @@ python -m venv .venv
 pip install -r requirements.txt
 # optional, for ResNet scoring and the Dedup view:
 pip install -r requirements-embedding.txt
+# optional, for the Detector page's automatic object detection:
+pip install -r requirements-detector.txt
 
 # build the frontend once (needs Node.js 20+ from https://nodejs.org)
 cd app\frontend

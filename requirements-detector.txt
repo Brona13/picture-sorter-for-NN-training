@@ -1,0 +1,13 @@
+# Optional exemplar-based object detector (Detector page, "Run detection").
+#
+# The application works without these packages; filters, masks and manual
+# detection boxes do not need them. The first detection run downloads the
+# OWL-ViT model (about 600 MB) from Hugging Face; it then runs locally.
+#
+#   pip install -r requirements-detector.txt
+#
+# Needs PyTorch: install requirements-embedding.txt first (or the CUDA build of
+# torch for an Nvidia GPU; detection then uses it automatically).
+-r requirements-embedding.txt
+transformers>=4.35
+pillow>=10

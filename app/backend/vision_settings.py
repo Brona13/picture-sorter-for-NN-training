@@ -1,4 +1,4 @@
-"""Per-feature vision settings: the pre-processing filter and the object mask.
+"""Per-feature vision settings: pre-processing filter, object mask and object detector.
 
 Stored as JSON in the ``settings`` table under ``vision.<feature>``, scoped by camera.
 ``signature`` is folded into score-cache keys so cached vectors computed under other
@@ -12,6 +12,15 @@ import json
 import db
 import masking
 import preprocess
+
+MAX_EXEMPLARS = 3
+TOPK_RANGE = (1, 5)
+DEFAULT_TOPK = 1
+DEFAULT_THRESHOLD = 0.3
+
+
+class SettingsError(ValueError):
+    """Malformed detector settings."""
 
 
 def _key(feature: str) -> str:
@@ -40,9 +49,56 @@ def _clean_mask(mask: dict | None) -> dict | None:
     return {"enabled": bool(mask.get("enabled")), "shape": masking.normalize(mask.get("shape"))}
 
 
+def _unit(value, key: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 <= value <= 1:
+        raise SettingsError(f"{key!r} must be a number between 0 and 1")
+    return float(value)
+
+
+def clean_box(box) -> dict:
+    """Validate a box ``{x, y, w, h}`` normalised to the ROI crop."""
+    if not isinstance(box, dict):
+        raise SettingsError("Box must be an object")
+    out = {k: _unit(box.get(k), k) for k in ("x", "y", "w", "h")}
+    if out["w"] <= 0 or out["h"] <= 0:
+        raise SettingsError("Box must have a positive size")
+    return out
+
+
+def _clean_detector(det: dict | None) -> dict | None:
+    if not det:
+        return None
+    exemplars = det.get("exemplars") or []
+    if not isinstance(exemplars, list) or len(exemplars) > MAX_EXEMPLARS:
+        raise SettingsError(f"Use at most {MAX_EXEMPLARS} exemplars")
+    clean_ex = []
+    for ex in exemplars:
+        frame = ex.get("frame") if isinstance(ex, dict) else None
+        if not isinstance(frame, str) or not frame:
+            raise SettingsError("Exemplar needs a frame name")
+        clean_ex.append({"frame": frame, "box": clean_box(ex.get("box"))})
+    topk = det.get("topk", DEFAULT_TOPK)
+    if isinstance(topk, bool) or not isinstance(topk, int) or not TOPK_RANGE[0] <= topk <= TOPK_RANGE[1]:
+        raise SettingsError(f"topk must be a whole number between {TOPK_RANGE[0]} and {TOPK_RANGE[1]}")
+    threshold = _unit(det.get("threshold", DEFAULT_THRESHOLD), "threshold")
+    return {"exemplars": clean_ex, "topk": topk, "threshold": threshold}
+
+
+def anchored(settings: dict) -> bool:
+    """True when the mask is enabled and follows detected objects (exemplars are set)."""
+    mask, det = settings.get("mask"), settings.get("detector")
+    return bool(mask and mask["enabled"] and det and det["exemplars"])
+
+
+def reference_center(settings: dict) -> tuple[float, float]:
+    """Centre of the first exemplar's box: where the mask was drawn relative to the object."""
+    box = settings["detector"]["exemplars"][0]["box"]
+    return box["x"] + box["w"] / 2, box["y"] + box["h"] / 2
+
+
 def get(camera: str, feature: str, con=None) -> dict:
     """Stored settings; anything missing or unreadable falls back to "not set"."""
-    result: dict = {"filter": None, "mask": None}
+    result: dict = {"filter": None, "mask": None, "detector": None}
     raw = _read(camera, feature, con)
     if not raw:
         return result
@@ -50,30 +106,43 @@ def get(camera: str, feature: str, con=None) -> dict:
         data = json.loads(raw)
     except (ValueError, TypeError):
         return result
-    for field, clean in (("filter", _clean_filter), ("mask", _clean_mask)):
+    for field, clean in (
+        ("filter", _clean_filter),
+        ("mask", _clean_mask),
+        ("detector", _clean_detector),
+    ):
         try:
             result[field] = clean(data.get(field))
-        except (KeyError, TypeError, AttributeError, preprocess.FilterError, masking.MaskError):
+        except (
+            KeyError, TypeError, AttributeError,
+            preprocess.FilterError, masking.MaskError, SettingsError,
+        ):
             pass
     return result
 
 
-def put(camera: str, feature: str, settings: dict) -> dict:
-    """Validate and store ``settings``; raises ``FilterError``/``MaskError`` if invalid."""
-    clean = {
+def validate(settings: dict) -> dict:
+    """Cleaned copy of ``settings`` (all three parts); raises if any part is invalid."""
+    return {
         "filter": _clean_filter(settings.get("filter")),
         "mask": _clean_mask(settings.get("mask")),
+        "detector": _clean_detector(settings.get("detector")),
     }
+
+
+def put(camera: str, feature: str, settings: dict) -> dict:
+    """Validate and store ``settings``; raises ``FilterError``/``MaskError``/``SettingsError`` if invalid."""
+    clean = validate(settings)
     db.set_setting(camera, _key(feature), json.dumps(clean, sort_keys=True))
-    _purge_derived(camera, feature)
+    purge_derived(camera, feature)
     return clean
 
 
-def _purge_derived(camera: str, feature: str) -> None:
-    """Drop projections/clusters built on embeddings from the previous settings."""
+def purge_derived(camera: str, feature: str) -> None:
+    """Drop results/projections/clusters built on embeddings from the previous settings."""
     con = db.connect()
     try:
-        for table in ("scatter_cache", "cluster_snapshot"):
+        for table in ("scatter_cache", "cluster_snapshot", "results_cache"):
             con.execute(f"DELETE FROM {table} WHERE camera=? AND feature=?", (camera, feature))
         con.commit()
     finally:
@@ -87,6 +156,8 @@ def signature(camera: str, feature: str, con=None) -> str:
     active = {"filter": current["filter"]}
     if mask and mask["enabled"]:
         active["mask"] = mask["shape"]
+    if anchored(current):
+        active["detector"] = current["detector"]["exemplars"]
     if not any(active.values()):
         return ""
     # Filter-only settings hash exactly as before the mask existed, keeping old caches valid.
@@ -94,11 +165,26 @@ def signature(camera: str, feature: str, con=None) -> str:
     return hashlib.sha1(blob.encode()).hexdigest()[:8]
 
 
-def apply_settings(settings: dict, img):
-    """Filter then mask ``img`` per ``settings`` (a ``get`` result); disabled parts are skipped."""
+def detection_signature(settings: dict) -> str:
+    """Fingerprint of what auto detections depend on: filter, exemplars and model."""
+    import detector  # noqa: PLC0415 - detector imports this module
+
+    exemplars = (settings.get("detector") or {}).get("exemplars", [])
+    blob = json.dumps(
+        {"filter": settings["filter"], "exemplars": exemplars, "model": detector.MODEL_ID},
+        sort_keys=True,
+    )
+    return hashlib.sha1(blob.encode()).hexdigest()[:8]
+
+
+def apply_settings(settings: dict, img, offset: tuple[float, float] | None = None):
+    """Filter then mask ``img`` per ``settings`` (a ``get`` result); disabled parts are skipped.
+
+    ``offset`` re-anchors the mask on a detected object (see ``detections.offsets``).
+    """
     flt, mask = settings["filter"], settings["mask"]
     if flt:
         img = preprocess.apply(img, flt["name"], flt["params"])
     if mask and mask["enabled"]:
-        img = masking.apply(img, mask["shape"])
+        img = masking.apply(img, mask["shape"], offset or (0.0, 0.0))
     return img

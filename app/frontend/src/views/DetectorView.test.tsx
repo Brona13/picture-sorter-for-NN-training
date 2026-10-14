@@ -4,8 +4,9 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import DetectorView from "./DetectorView";
 
 let calls: { url: string; method: string; body?: any }[];
+let detections: any;
 
-function install(savedFilter: any = null, savedMask: any = null) {
+function install(savedFilter: any = null, savedMask: any = null, savedDetector: any = null) {
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, init?: RequestInit) => {
@@ -19,12 +20,22 @@ function install(savedFilter: any = null, savedMask: any = null) {
             },
           }),
         );
+      if (url.endsWith("/vision/detector"))
+        return new Response(JSON.stringify({ available: true, model: "m", max_exemplars: 3, topk: [1, 5] }));
+      if (url.includes("/detections") && method === "GET")
+        return new Response(JSON.stringify(detections));
+      if (url.includes("/detections") && method === "PUT") return new Response('{"ok":true}');
+      if (url.endsWith("/detect")) return new Response(JSON.stringify({ id: "j1", status: "queued", progress: {}, result: null, error: null }));
+      if (url.includes("/jobs/j1"))
+        return new Response(
+          JSON.stringify({ id: "j1", status: "done", progress: {}, error: null, result: { detected: 3, needs_review: 1, skipped_human: 0 } }),
+        );
       if (url.includes("/versions/features")) return new Response(JSON.stringify([{ feature: "seal", label: "seal" }]));
       if (url.includes("/frames"))
         return new Response(JSON.stringify({ frames: ["f1.png"], showing_all: false, total: 1, reference_frame: null }));
       if (url.endsWith("/preview")) return { ok: true, blob: async () => new Blob(["x"]) } as unknown as Response; // jsdom Blob != undici Blob
       if (url.includes("/vision/seal") && method === "PUT") return new Response(init!.body as string);
-      if (url.includes("/vision/seal")) return new Response(JSON.stringify({ filter: savedFilter, mask: savedMask }));
+      if (url.includes("/vision/seal")) return new Response(JSON.stringify({ filter: savedFilter, mask: savedMask, detector: savedDetector }));
       return new Response("{}", { status: 404 });
     }),
   );
@@ -32,6 +43,7 @@ function install(savedFilter: any = null, savedMask: any = null) {
 
 beforeEach(() => {
   calls = [];
+  detections = { threshold: 0.3, counts: {}, frames: [] };
   URL.createObjectURL = vi.fn(() => "blob:preview");
   URL.revokeObjectURL = vi.fn();
 });
@@ -53,7 +65,7 @@ test("choosing a filter shows its sliders, previews it and saves it", async () =
   await userEvent.click(screen.getByRole("button", { name: "Save settings" }));
   await waitFor(() => {
     const put = calls.find((c) => c.method === "PUT");
-    expect(put?.body).toEqual({ filter: { name: "gaussian", params: { sigma: 1.5 } }, mask: null });
+    expect(put?.body).toEqual({ filter: { name: "gaussian", params: { sigma: 1.5 } }, mask: null, detector: null });
   });
 });
 

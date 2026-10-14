@@ -1,49 +1,14 @@
 import { useEffect, useState } from "react";
-import { api, FilterChoice, FilterSpec, MaskChoice } from "../api";
+import { api, DetectorChoice, FilterChoice, FilterSpec, MaskChoice } from "../api";
+import DetectorPanel from "../DetectorPanel";
 import ShapeCanvas from "../ShapeCanvas";
 import { addVertex, defaultShape, MaskShape, ShapeKind } from "../shapeGeometry";
+import { usePreview } from "../usePreview";
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
-const PREVIEW_DEBOUNCE_MS = 250;
 
 const defaultsOf = (spec: FilterSpec): Record<string, number> =>
   Object.fromEntries(Object.entries(spec.params).map(([k, p]) => [k, p.default]));
-
-/** Debounced server-rendered preview of the crop with the proposed (unsaved) settings. */
-function usePreview(
-  camera: string,
-  feature: string,
-  frame: string,
-  filter: FilterChoice | null,
-  mask: MaskChoice | null,
-  onError: (message: string | null) => void,
-): string | null {
-  const [url, setUrl] = useState<string | null>(null);
-  const maskKey = JSON.stringify(mask);
-  useEffect(() => {
-    if (!camera || !feature || !frame) return;
-    let cancelled = false;
-    let created: string | null = null;
-    const timer = setTimeout(() => {
-      api
-        .visionPreview(camera, feature, frame, filter, mask)
-        .then((blob) => {
-          if (cancelled) return;
-          created = URL.createObjectURL(blob);
-          setUrl(created);
-          onError(null);
-        })
-        .catch((e: unknown) => !cancelled && onError(msg(e)));
-    }, PREVIEW_DEBOUNCE_MS);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-      if (created) URL.revokeObjectURL(created);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [camera, feature, frame, filter, maskKey]);
-  return url;
-}
 
 const SHAPE_LABELS: Record<ShapeKind, string> = { rect: "Rectangle", circle: "Circle", polygon: "Polygon" };
 
@@ -57,6 +22,8 @@ export default function DetectorView({ camera, product }: { camera: string; prod
   const [saved, setSaved] = useState<FilterChoice | null>(null);
   const [mask, setMask] = useState<MaskChoice | null>(null);
   const [savedMask, setSavedMask] = useState<MaskChoice | null>(null);
+  const [detector, setDetector] = useState<DetectorChoice | null>(null);
+  const [savedDetector, setSavedDetector] = useState<DetectorChoice | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -94,6 +61,8 @@ export default function DetectorView({ camera, product }: { camera: string; prod
         setSaved(s.filter);
         setMask(s.mask);
         setSavedMask(s.mask);
+        setDetector(s.detector);
+        setSavedDetector(s.detector);
         setError(null);
       })
       .catch((e: unknown) => setError(msg(e)));
@@ -101,31 +70,45 @@ export default function DetectorView({ camera, product }: { camera: string; prod
 
   // The editing canvas shows the filtered crop; the result image also applies the enabled mask.
   const canvasUrl = usePreview(camera, feature, frame, filter, null, setError);
-  const resultUrl = usePreview(camera, feature, frame, filter, mask?.enabled ? mask : null, setError);
+  const resultUrl = usePreview(
+    camera,
+    feature,
+    frame,
+    filter,
+    mask?.enabled ? mask : null,
+    setError,
+    detector,
+  );
 
   const choose = (name: string) =>
     setFilter(name ? { name, params: defaultsOf(catalogue[name]) } : null);
 
   const save = () =>
     api
-      .saveVisionSettings(camera, feature, { filter, mask })
+      .saveVisionSettings(camera, feature, { filter, mask, detector })
       .then((s) => {
         setSaved(s.filter);
         setFilter(s.filter);
         setSavedMask(s.mask);
         setMask(s.mask);
+        setSavedDetector(s.detector);
+        setDetector(s.detector);
         setError(null);
       })
       .catch((e: unknown) => setError(msg(e)));
 
   const dirty =
-    JSON.stringify(filter) !== JSON.stringify(saved) || JSON.stringify(mask) !== JSON.stringify(savedMask);
+    JSON.stringify(filter) !== JSON.stringify(saved) ||
+    JSON.stringify(mask) !== JSON.stringify(savedMask) ||
+    JSON.stringify(detector) !== JSON.stringify(savedDetector);
   const setShape = (shape: MaskShape | null) =>
     setMask(shape ? { enabled: mask?.enabled ?? false, shape } : null);
   const revert = () => {
     setFilter(saved);
     setMask(savedMask);
+    setDetector(savedDetector);
   };
+  const firstExemplar = detector?.exemplars[0]?.frame;
   const spec = filter ? catalogue[filter.name] : undefined;
 
   if (!camera) return <p>Select a camera.</p>;
@@ -228,7 +211,26 @@ export default function DetectorView({ camera, product }: { camera: string; prod
       {mask?.shape.shape === "polygon" && (
         <button onClick={() => setShape(addVertex(mask.shape))}>Add point</button>
       )}
+      {firstExemplar && (
+        <p>
+          With exemplars set, the mask follows the detected object: draw it on the first exemplar's
+          frame ({firstExemplar}) and it is shifted to each frame's detected position.{" "}
+          {frame !== firstExemplar && <button onClick={() => setFrame(firstExemplar)}>Show that frame</button>}
+        </p>
+      )}
       {canvasUrl && <ShapeCanvas imageUrl={canvasUrl} shape={mask?.shape ?? null} onChange={setShape} />}
+
+      <DetectorPanel
+        camera={camera}
+        feature={feature}
+        frame={frame}
+        cropUrl={canvasUrl}
+        filter={filter}
+        detector={detector}
+        onDetector={setDetector}
+        dirty={dirty}
+        onError={setError}
+      />
 
       <p>
         <button onClick={save} disabled={!dirty || !feature}>

@@ -351,6 +351,9 @@ def purge_feature(camera: str, feature: str) -> dict[str, int]:
             "dedup_mute": con.execute(
                 "DELETE FROM dedup_mute WHERE camera=? AND feature=?", (camera, feature)
             ).rowcount,
+            "detections": con.execute(
+                "DELETE FROM detections WHERE camera=? AND feature=?", (camera, feature)
+            ).rowcount,
             "scatter": con.execute(
                 "DELETE FROM scatter_cache WHERE camera=? AND feature=?", (camera, feature)
             ).rowcount,

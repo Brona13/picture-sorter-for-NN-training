@@ -17,7 +17,7 @@ import config
 import perf
 
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 class DatabaseResetRequired(RuntimeError):
@@ -166,6 +166,22 @@ CREATE TABLE IF NOT EXISTS results_cache (
     payload    BLOB NOT NULL,
     ts         REAL NOT NULL,
     PRIMARY KEY (camera, feature, roi_key)
+);
+
+CREATE TABLE IF NOT EXISTS detections (
+    camera  TEXT NOT NULL,
+    feature TEXT NOT NULL,
+    hash    TEXT NOT NULL,
+    rank    INTEGER NOT NULL,
+    x       REAL NOT NULL,
+    y       REAL NOT NULL,
+    w       REAL NOT NULL,
+    h       REAL NOT NULL,
+    conf    REAL NOT NULL,
+    status  TEXT NOT NULL,
+    sig     TEXT NOT NULL DEFAULT '',
+    ts      REAL NOT NULL,
+    PRIMARY KEY (camera, feature, hash, rank)
 );
 
 PRAGMA user_version = {SCHEMA_VERSION};
@@ -330,9 +346,29 @@ def _migrate_v3_to_v4(con: sqlite3.Connection) -> None:
         raise
 
 
+def _migrate_v4_to_v5(con: sqlite3.Connection) -> None:
+    """Add ``detections``: per-frame object boxes (auto, reviewed or manual) per feature."""
+    con.execute("BEGIN IMMEDIATE")  # write lock first, so a second process waits and re-checks
+    try:
+        con.execute(
+            "CREATE TABLE IF NOT EXISTS detections ("
+            "camera TEXT NOT NULL, feature TEXT NOT NULL, hash TEXT NOT NULL, "
+            "rank INTEGER NOT NULL, x REAL NOT NULL, y REAL NOT NULL, w REAL NOT NULL, "
+            "h REAL NOT NULL, conf REAL NOT NULL, status TEXT NOT NULL, "
+            "sig TEXT NOT NULL DEFAULT '', ts REAL NOT NULL, "
+            "PRIMARY KEY (camera, feature, hash, rank))"
+        )
+        con.execute("PRAGMA user_version = 5")
+        con.execute("COMMIT")
+    except Exception:
+        con.execute("ROLLBACK")
+        raise
+
+
 _MIGRATIONS = {
     2: _migrate_v2_to_v3,
     3: _migrate_v3_to_v4,
+    4: _migrate_v4_to_v5,
 }
 
 

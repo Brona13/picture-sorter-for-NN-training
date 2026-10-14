@@ -108,6 +108,8 @@ Scores are derived data. Each scoring method can provide nearest-class distances
 - Cache validity includes frame content, feature, ROI geometry, vision settings (pre-processing filter and enabled object mask), and method.
 - A feature's pre-processing filter is metadata: it changes derived vectors only, never source frames, labels, or goldens. It is stored per (camera, feature) in `settings` under `vision.<feature>`; the cache key carries a signature of it only when a filter is set or the mask is enabled. Saving new settings drops the feature's `scatter_cache` and `cluster_snapshot`.
 - A feature's object mask (rectangle, circle or polygon, normalised to the ROI crop) is likewise metadata stored in `vision.<feature>`. When enabled, pixels outside it are blanked to dark grey (after the filter) before features and embeddings are computed, so scores describe the object only. It never alters source frames, labels, or goldens; a disabled mask is saved but has no effect and no cache impact.
+- A feature's detector (up to three exemplar boxes, candidate count, confidence threshold) is metadata in `vision.<feature>`. It finds the object's box in each frame's filtered ROI crop. Boxes live in `detections` keyed by `(camera, feature, frame hash, rank)`, normalised to the ROI crop, with `status` `auto` (detector output, replaced by re-detection and ignored once the exemplars or filter change), `reviewed` or `manual` (human decisions: never overwritten by re-detection). Detections are suggestions; a human box always wins.
+- When the mask is enabled and exemplars exist, the mask is *anchored*: it is drawn on the first exemplar's frame and translated by (detected centre − exemplar centre) per frame, using only trusted detections (human boxes, or current auto boxes at or above the threshold). Frames without one keep the mask where it was drawn. A frame's vectors are cached under `<hash>@<dx>,<dy>`, so moving one box recomputes only that frame.
 - Margin is a ranking signal, not a calibrated probability.
 
 ## Versions
@@ -142,6 +144,7 @@ Authoritative or indexed state:
 - `goldens`: current golden marks
 - `deleted_frames`: current camera-wide soft deletions
 - `dedup_mute`: current feature mute set
+- `detections`: per-frame object boxes for a feature (see Detector below)
 - `versions` and `version_items`: explicit snapshots
 - `settings`: per-camera UI settings and per-feature vision settings (`vision.<feature>`)
 

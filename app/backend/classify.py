@@ -40,6 +40,7 @@ import config
 import curation
 import datamodel
 import db
+import detections
 import embedding
 import engine
 import labels
@@ -165,7 +166,16 @@ def _prepare_vector_cache(
 ) -> _PreparedVectorCache:
     """Bulk load or derive compact blobs without retaining decoded gray arrays."""
     kinds = (["hist", "gray"] if include_classical else []) + list(backbones)
-    frame_hashes = {f: labels.frame_hash(camera, f, hmap) for f in frames}
+    vision = vision_settings.get(camera, feature, con)
+    offsets = detections.offsets(camera, feature, vision, con)
+    frame_hashes: dict[str, str] = {}
+    frame_offsets: dict[str, tuple[float, float]] = {}
+    for f in frames:
+        h = labels.frame_hash(camera, f, hmap)
+        if h in offsets:  # the mask follows this frame's detection: its vectors are specific to it
+            frame_offsets[f] = offsets[h]
+            h = f"{h}@{offsets[h][0]:+.4f},{offsets[h][1]:+.4f}"
+        frame_hashes[f] = h
     blobs_by_hash = _load_cached_blobs(
         con, feature, roi_key, list(frame_hashes.values()), kinds
     )
@@ -185,7 +195,6 @@ def _prepare_vector_cache(
     reported: set[str] = set()
     unavailable: set[str] = set()
     completed = 0
-    vision = vision_settings.get(camera, feature, con)
 
     def report_ready(frame: str) -> None:
         nonlocal completed
@@ -213,7 +222,9 @@ def _prepare_vector_cache(
                 with perf.span("features.image_load_and_crop"):
                     img = curation.load_image(datamodel.unsorted_dir(camera) / frame)
                     cutouts[frame] = roi.crop(img)
-                    cutouts[frame] = vision_settings.apply_settings(vision, cutouts[frame])
+                    cutouts[frame] = vision_settings.apply_settings(
+                        vision, cutouts[frame], frame_offsets.get(frame)
+                    )
             except FileNotFoundError:
                 unavailable.add(frame)
                 report_ready(frame)

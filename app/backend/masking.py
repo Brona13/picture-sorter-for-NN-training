@@ -50,29 +50,37 @@ def normalize(shape: dict | None) -> dict:
     raise MaskError(f"Unknown mask shape {kind!r}")
 
 
-def rasterize(shape: dict, height: int, width: int) -> np.ndarray:
+def rasterize(
+    shape: dict, height: int, width: int, offset: tuple[float, float] = (0.0, 0.0)
+) -> np.ndarray:
     """Boolean ``(height, width)`` array, True inside the shape.
 
-    A circle's radius is a fraction of the crop *width*, so it stays round in pixels.
+    ``offset`` (dx, dy, fractions of the crop) translates the shape, e.g. to re-anchor it on a
+    detected object; parts moved outside the crop are clipped. A circle's radius is a fraction
+    of the crop *width*, so it stays round in pixels.
     """
     s = normalize(shape)
+    dx, dy = offset
     canvas = np.zeros((height, width), np.uint8)
     if s["shape"] == "rect":
-        x0, y0 = round(s["x"] * width), round(s["y"] * height)
-        x1, y1 = round((s["x"] + s["w"]) * width), round((s["y"] + s["h"]) * height)
-        canvas[y0:y1, x0:x1] = 1
+        x0, y0 = round((s["x"] + dx) * width), round((s["y"] + dy) * height)
+        x1, y1 = round((s["x"] + s["w"] + dx) * width), round((s["y"] + s["h"] + dy) * height)
+        canvas[max(y0, 0) : max(y1, 0), max(x0, 0) : max(x1, 0)] = 1
     elif s["shape"] == "circle":
-        centre = (round(s["cx"] * width), round(s["cy"] * height))
+        centre = (round((s["cx"] + dx) * width), round((s["cy"] + dy) * height))
         cv2.circle(canvas, centre, max(1, round(s["r"] * width)), 1, thickness=-1)
     else:
-        pts = np.array([[round(p["x"] * width), round(p["y"] * height)] for p in s["points"]], np.int32)
+        pts = np.array(
+            [[round((p["x"] + dx) * width), round((p["y"] + dy) * height)] for p in s["points"]],
+            np.int32,
+        )
         cv2.fillPoly(canvas, [pts], 1)
     return canvas.astype(bool)
 
 
-def apply(img: np.ndarray, shape: dict) -> np.ndarray:
-    """Copy of ``img`` with everything outside ``shape`` set to ``BLANK_VALUE``."""
-    inside = rasterize(shape, img.shape[0], img.shape[1])
+def apply(img: np.ndarray, shape: dict, offset: tuple[float, float] = (0.0, 0.0)) -> np.ndarray:
+    """Copy of ``img`` with everything outside ``shape`` (shifted by ``offset``) blanked."""
+    inside = rasterize(shape, img.shape[0], img.shape[1], offset)
     out = np.full_like(img, BLANK_VALUE)
     out[inside] = img[inside]
     return out

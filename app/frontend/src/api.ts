@@ -1,3 +1,4 @@
+import { Box } from "./roiGeometry";
 import { MaskShape } from "./shapeGeometry";
 
 export class ApiError extends Error {
@@ -159,9 +160,43 @@ export interface MaskChoice {
   enabled: boolean;
   shape: MaskShape;
 }
+export interface Exemplar {
+  frame: string;
+  box: Box;
+}
+export interface DetectorChoice {
+  exemplars: Exemplar[];
+  topk: number;
+  threshold: number;
+}
 export interface VisionSettings {
   filter: FilterChoice | null;
   mask: MaskChoice | null;
+  detector: DetectorChoice | null;
+}
+export interface DetectorInfo {
+  available: boolean;
+  model: string;
+  max_exemplars: number;
+  topk: [number, number];
+}
+export type DetectionState = "human" | "trusted" | "review" | "none";
+export interface DetectionRow {
+  frame: string;
+  state: DetectionState;
+  status: string | null;
+  boxes: (Box & { conf: number })[];
+}
+export interface DetectionList {
+  threshold: number;
+  frames: DetectionRow[];
+  counts: Partial<Record<DetectionState, number>>;
+}
+export interface DetectResult {
+  detected: number;
+  skipped_human: number;
+  unreadable: number;
+  needs_review: number;
 }
 
 const send = (method: string, body?: unknown): RequestInit => ({
@@ -363,16 +398,38 @@ export const api = {
       `/cameras/${encodeURIComponent(camera)}/vision/${encodeURIComponent(feature)}`,
       send("PUT", settings),
     ),
+  detectorInfo: () => request<DetectorInfo>("/vision/detector"),
+  detect: (camera: string, feature: string) =>
+    request<Job<DetectResult>>(
+      `/cameras/${encodeURIComponent(camera)}/vision/${encodeURIComponent(feature)}/detect`,
+      post(),
+    ),
+  detections: (camera: string, feature: string, reviewOnly = false) =>
+    request<DetectionList>(
+      `/cameras/${encodeURIComponent(camera)}/vision/${encodeURIComponent(feature)}/detections` +
+        (reviewOnly ? "?review_only=true" : ""),
+    ),
+  putDetection: (camera: string, feature: string, frame: string, box: Box, status: "manual" | "reviewed") =>
+    request<{ ok: boolean }>(
+      `/cameras/${encodeURIComponent(camera)}/vision/${encodeURIComponent(feature)}/detections/${encodeURIComponent(frame)}`,
+      send("PUT", { box, status }),
+    ),
+  deleteDetection: (camera: string, feature: string, frame: string) =>
+    request<{ ok: boolean }>(
+      `/cameras/${encodeURIComponent(camera)}/vision/${encodeURIComponent(feature)}/detections/${encodeURIComponent(frame)}`,
+      { method: "DELETE" },
+    ),
   visionPreview: async (
     camera: string,
     feature: string,
     frame: string,
     filter: FilterChoice | null,
     mask: MaskChoice | null = null,
+    detector: DetectorChoice | null = null,
   ): Promise<Blob> => {
     const res = await fetch(
       `/api/cameras/${encodeURIComponent(camera)}/vision/${encodeURIComponent(feature)}/preview`,
-      post({ frame, filter, mask }),
+      post({ frame, filter, mask, detector }),
     );
     if (!res.ok) {
       let detail = res.statusText || `HTTP ${res.status}`;
