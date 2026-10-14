@@ -89,10 +89,10 @@ The application provides seven views:
 - **Status** — label, golden, version, and ROI-definition summaries
 - **Ingest** — add frames and maintain the duplicate index
 - **ROI editor** — create, edit, scope, or delete ROIs
+- **Dedup** — cluster near-duplicate frames and mute the redundant ones (run before Classify; muted frames are hidden there)
 - **Classify** — label frames and compare scoring opinions
 - **Insights** — compare method behavior against human labels
 - **Versions** — freeze, revert, and export dataset snapshots
-- **Dedup** — cluster near-duplicate frames and mute the redundant ones
 
 The sidebar selects the camera. When a camera has a product-classification ROI, it also selects either the product-sorting stage or one product’s quality stage.
 

@@ -205,7 +205,7 @@ One thin router per area, each delegating to the domain modules above:
 
 - `App.tsx` — sidebar (camera, product, view) and routes
 - `api.ts` — typed API client
-- `views/` — Status, Ingest, ROI editor, Classify, Insights, Versions, Dedup
+- `views/` — Status, Ingest, ROI editor, Dedup, Classify, Insights, Versions (sidebar order)
 - `classify/` — card, bulk, clear-labels, auto-assign, suggested-goldens panels, SVG scatter
 - `RoiCanvas.tsx` + `roiGeometry.ts` — pointer-driven ROI draw/move/resize in normalised coordinates
 - `useJob.ts` — polls background jobs
