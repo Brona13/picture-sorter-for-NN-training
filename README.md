@@ -336,9 +336,9 @@ Export materializes a frozen version into class folders under:
 cameras/<camera>/exports/<feature>/<version>/<class>/
 ```
 
-The exported files are ROI cutouts suitable for downstream training.
+The exported files are full, unmodified copies of the source frames with their original filenames. No cutouts and no extra files are written.
 
-Before writing each cutout, the exporter verifies the source-frame content hash. Missing or changed frames are reported.
+Before copying each frame, the exporter verifies the source-frame content hash. Missing or changed frames are reported.
 
 ## Project storage
 

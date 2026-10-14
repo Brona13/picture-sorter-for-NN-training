@@ -12,10 +12,8 @@ import json
 import time
 from pathlib import Path
 
-import curation
 import datamodel
 import db
-import engine
 import labels
 
 
@@ -206,13 +204,15 @@ def revert(camera: str, feature: str, version_id: int) -> dict:
 
 # --- export ------------------------------------------------------------------
 def export(camera: str, feature: str, version_id: int) -> tuple[Path, dict]:
-    """Materialise a version's cutouts into training-ready class folders.
+    """Copy a version's full, unmodified frames into class folders.
 
-    Layout: ``cameras/<cam>/exports/<feature>/v<NNN>__<name>/<class>/frame__feature.png``.
-    Golden frames are exported into their class folder alongside labeled ones.
+    Layout: ``cameras/<cam>/exports/<feature>/v<NNN>__<name>/<class>/<original filename>``.
+    No cutouts and no manifest: the original filename is kept so labels in other
+    tools map back to the source frame. Golden frames are exported into their
+    class folder alongside labeled ones.
     Hashes are verified; missing/changed frames are reported, not silently skipped.
     """
-    import cv2
+    import shutil
 
     con = db.connect()
     try:
@@ -222,7 +222,6 @@ def export(camera: str, feature: str, version_id: int) -> tuple[Path, dict]:
     if v is None:
         raise ValueError(f"no such version id {version_id}")
 
-    roi = engine.resolve_roi(camera, feature)
     hmap = labels.hash_map(camera)
     safe = "".join(c if c.isalnum() or c in "-_" else "-" for c in v["name"])
     # A product-scoped feature is "<product>::<roi>"; ":" is not a legal path
@@ -247,12 +246,8 @@ def export(camera: str, feature: str, version_id: int) -> tuple[Path, dict]:
         if item["hash"] and labels.frame_hash(camera, frame, hmap) != item["hash"]:
             report["hash_mismatch"].append(frame)
             continue
-        img = curation.load_image(src)
-        cutout = roi.crop(img)
         out_dir = dest / cls
         out_dir.mkdir(parents=True, exist_ok=True)
-        ok, buf = cv2.imencode(".png", cutout)
-        if ok:
-            buf.tofile(str(out_dir / f"{Path(frame).stem}__{safe_feature}.png"))
-            report["written"] += 1
+        shutil.copy2(src, out_dir / Path(frame).name)
+        report["written"] += 1
     return dest, report

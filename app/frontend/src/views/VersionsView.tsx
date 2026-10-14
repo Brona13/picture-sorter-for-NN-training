@@ -198,7 +198,7 @@ export default function VersionsView({ camera, product }: { camera: string; prod
           {exportReport && (
             <div role="status">
               <p>
-                Exported <strong>{exportReport.written}</strong> cutouts → <code>{exportReport.destination}</code>
+                Exported <strong>{exportReport.written}</strong> full frames → <code>{exportReport.destination}</code>
               </p>
               {exportReport.missing.length > 0 && (
                 <p>

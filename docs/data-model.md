@@ -120,7 +120,7 @@ A version is an immutable snapshot recipe for one camera and feature. It stores 
 
 ## Export
 
-Exports materialize versioned ROI cutouts under `cameras/<camera>/exports/<feature>/<version>/<class>/`.
+Exports copy the versioned full, unmodified frames (original filenames, no cutouts, no manifest) under `cameras/<camera>/exports/<feature>/<version>/<class>/`.
 
 - Source frames remain unchanged.
 - A labeled golden is exported once.
