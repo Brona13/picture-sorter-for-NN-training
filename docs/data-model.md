@@ -158,7 +158,7 @@ Derived caches:
 
 There are no history projections, latest-row triggers, or `current_*` tables. Direct primary keys enforce one state row per domain identity.
 
-SQLite stores metadata and cache payloads, not image bytes. The `rois` table joined the DB in schema v3 so ROI edits benefit from the same transactional writes as labels and goldens (see [[migration-v2-v3-rois|the v2→v3 migration]] for how earlier `rois.json` files are backfilled and removed). Optional performance JSONL is diagnostics output only.
+SQLite stores metadata and cache payloads, not image bytes. The `rois` table joined the DB in schema v3 so ROI edits benefit from the same transactional writes as labels and goldens (see `_migrate_v2_to_v3` in `app/backend/db.py` for how earlier `rois.json` files are backfilled and removed). Optional performance JSONL is diagnostics output only.
 
 ## Clean schema boundary
 

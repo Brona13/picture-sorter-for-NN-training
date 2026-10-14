@@ -1,5 +1,5 @@
 ---
-name: session-2026-10-14-summary
+name: goldens-export-versioning-gpu
 description: Goldens-only export, Dedup before Classify, app version display (1.1.1), soft-deleted versions with schema v4, startup DB-lock fix, work-laptop GPU setup
 session_date: 2026-10-14
 last_updated: 2026-10-14
@@ -11,7 +11,7 @@ metadata:
 
 # Session 2026-10-14
 
-Context: the app is the React + FastAPI generation (see [[2026-10-13-streamlit-to-react-fastapi-migration]]). Work happened on branch `export-full-frames`; the user applies every patch with `git am` and pushes themselves.
+Context: the app is the React + FastAPI generation (see [[react-fastapi-migration]]). Work happened on branch `export-full-frames`; the user applies every patch with `git am` and pushes themselves.
 
 ## How the user actually uses the tool (clarified this session)
 - "Full frame" in this project means **the cutout produced by the user's other app**, not a raw camera frame. Labelling for the full inference network happens in that other app, inside these cutouts.

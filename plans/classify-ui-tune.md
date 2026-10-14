@@ -25,7 +25,7 @@ All in `scripts/view_classify/`.
 
 ### 1. Deselect toggle — `_grid.py::_buttons`
 
-Reuse `labels.clear_label(camera, feature, frame)` (already at [labels.py:75](../scripts/labels.py:75)). When the clicked class equals the current label:
+Reuse `labels.clear_label(camera, feature, frame)` (already at [labels.py](../app/backend/labels.py)). When the clicked class equals the current label:
 
 - Call `clear_label`.
 - If the frame is also starred for that class (`golden_now == cls`), call `unmark_golden` — a golden without a label would be inconsistent; the existing rule *"star follows the label"* already enforces this direction.
@@ -47,7 +47,7 @@ rank_default = methods.index("resnet50") if "resnet50" in methods else 0
 rank_method = f2.selectbox("Rank using", methods, index=rank_default, disabled=not scored)
 ```
 
-`methods_available()` in [classify.py:63](../scripts/classify.py:63) still returns `["cpu", "resnet18", "resnet50"]` — cpu remains selectable, the "Methods disagree" filter still consumes it. Only the default index changes.
+`methods_available()` in [classify.py](../app/backend/classify.py) still returns `["cpu", "resnet18", "resnet50"]` — cpu remains selectable, the "Methods disagree" filter still consumes it. Only the default index changes.
 
 ### 4. One-line control row (Option A) — `_grid.py::_control_row`
 

@@ -1,5 +1,5 @@
 ---
-name: session-2026-10-13-summary
+name: ui-polish-and-windows
 description: Whole-day summary - migration merged and pushed, UI theme and Classify fixes, cam3 labels cleared, Windows launcher
 session_date: 2026-10-13
 last_updated: 2026-10-13
@@ -11,7 +11,7 @@ metadata:
 
 # Session 2026-10-13 (full day)
 
-Details of the migration itself: [[2026-10-13-streamlit-to-react-fastapi-migration]]. Git state and merge: [[2026-10-13-migration-push-state]].
+Details of the migration itself: [[react-fastapi-migration]]. Git state and merge: [[migration-push-state]].
 
 ## Done
 - Streamlit → React + FastAPI migration, steps 0-12, one commit each (plan: `plans/streamlit-to-react-fastapi-migration.md`).

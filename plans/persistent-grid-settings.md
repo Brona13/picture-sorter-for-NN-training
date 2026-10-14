@@ -18,7 +18,7 @@ Intended outcome: pick `Per page` / `Columns` once per ROI, forever. Choice surv
 
 ## Approach
 
-Use the existing `settings` table (schema in [db.py](../scripts/db.py); helpers `db.get_setting` / `db.set_setting`). One row per (camera, key), where key is namespaced as `grid.perpage.<feature>` / `grid.cols.<feature>` — the feature name is unique per camera, so this covers per-ROI scope.
+Use the existing `settings` table (schema in [db.py](../app/backend/db.py); helpers `db.get_setting` / `db.set_setting`). One row per (camera, key), where key is namespaced as `grid.perpage.<feature>` / `grid.cols.<feature>` — the feature name is unique per camera, so this covers per-ROI scope.
 
 On render:
 

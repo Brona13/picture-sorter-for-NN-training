@@ -26,8 +26,8 @@ Portable memory for the *Picture Sorter for NN Training* project. Kept inside th
 - [Package layout](package-layout.md) — `view_classify/` and `view_roi_editor/` are packages (2026-07-28); where each concern lives.
 - [Streamlit gotchas](streamlit-gotchas.md) — image 404s, `st.markdown` strips `<img>`, selectbox keys, per-button CSS, redundant `st.rerun` resets widgets.
 - [TODO: ROI image full-width](todo-roi-image-fullwidth.md) — deferred; editor image doesn't stretch to full browser width.
-- [Session 2026-08-06: Git repo connection & Linux runtime](session-2026-08-06-git-repo-connection.md) — repo connected to GitHub; camera content stays out of git; venv setup and run command for Linux.
-- [Session 2026-10-13: Streamlit → React + FastAPI migration](2026-10-13-streamlit-to-react-fastapi-migration.md) — full migration done (steps 0-12); browser click-through still unverified; `./run.sh` launches.
-- [Migration push state 2026-10-13](2026-10-13-migration-push-state.md) — pushed as origin/react-fastapi; origin/main diverged (remote ROI-table schema change); nothing merged yet.
-- [Session 2026-10-13 summary](2026-10-13-session-summary-ui-polish-and-windows.md) — whole-day recap: merge pushed, theme, Classify fixes, cam3 labels cleared, run.ps1; UI never seen rendered by Claude.
-- [Session 2026-10-14 summary](2026-10-14-session-summary-goldens-export-versioning-gpu.md) — goldens-only export, Dedup before Classify, app version 1.1.1 shown in sidebar, soft-deleted versions (schema v4), DB-lock fix, work-laptop CUDA torch; how the user really uses goldens/labels.
+- [Session 2026-08-06: Git repo connection & Linux runtime](git-repo-connection.md) — repo connected to GitHub; camera content stays out of git; venv setup and run command for Linux.
+- [React + FastAPI migration](react-fastapi-migration.md) — full migration done (steps 0-12); browser click-through still unverified; `./run.sh` launches.
+- [Migration push state](migration-push-state.md) — superseded: the migration was later merged into main and pushed (see [UI polish and Windows](ui-polish-and-windows.md)).
+- [UI polish and Windows (2026-10-13)](ui-polish-and-windows.md) — whole-day recap: merge pushed, theme, Classify fixes, cam3 labels cleared, run.ps1; UI never seen rendered by Claude.
+- [Goldens export, versioning, GPU (2026-10-14)](goldens-export-versioning-gpu.md) — goldens-only export, Dedup before Classify, app version 1.1.1 shown in sidebar, soft-deleted versions (schema v4), DB-lock fix, work-laptop CUDA torch; how the user really uses goldens/labels.

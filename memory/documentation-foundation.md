@@ -1,5 +1,5 @@
 ---
-name: session-2026-07-29-documentation-foundation
+name: documentation-foundation
 session_date: 2026-07-29
 last_updated: 2026-07-29
 description: Project audit, canonical documentation foundation, terminology cleanup, and remaining work

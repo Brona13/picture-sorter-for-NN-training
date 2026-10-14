@@ -1,5 +1,5 @@
 ---
-name: session-2026-08-06-git-repo-connection
+name: git-repo-connection
 session_date: 2026-08-06
 last_updated: 2026-08-06
 description: Connected the project folder to its GitHub remote, and got the app running on the Linux machine

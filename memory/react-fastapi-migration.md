@@ -1,5 +1,5 @@
 ---
-name: session-2026-10-13-streamlit-to-react-fastapi-migration
+name: react-fastapi-migration
 description: Full Streamlit -> React + FastAPI migration, steps 0-12, one commit each
 session_date: 2026-10-13
 last_updated: 2026-10-13
