@@ -126,3 +126,27 @@ export function removeVertex(shape: MaskShape, index: number): MaskShape {
   if (shape.shape !== "polygon" || shape.points.length <= MIN_POLYGON_POINTS) return shape;
   return { shape: "polygon", points: shape.points.filter((_, i) => i !== index) };
 }
+
+/** Insert a vertex on the edge nearest to ``p``, at the point of that edge closest to ``p``. */
+export function insertVertex(shape: MaskShape, p: Point): MaskShape {
+  if (shape.shape !== "polygon") return shape;
+  const pts = shape.points;
+  let best = 0;
+  let bestDist = Infinity;
+  let bestPoint = p;
+  pts.forEach((a, i) => {
+    const b = pts[(i + 1) % pts.length];
+    const vx = b.x - a.x;
+    const vy = b.y - a.y;
+    const len2 = vx * vx + vy * vy;
+    const t = len2 === 0 ? 0 : clamp(((p.x - a.x) * vx + (p.y - a.y) * vy) / len2, 0, 1);
+    const q = { x: a.x + t * vx, y: a.y + t * vy };
+    const d = Math.hypot(p.x - q.x, p.y - q.y);
+    if (d < bestDist) {
+      bestDist = d;
+      best = i;
+      bestPoint = q;
+    }
+  });
+  return { shape: "polygon", points: [...pts.slice(0, best + 1), bestPoint, ...pts.slice(best + 1)] };
+}

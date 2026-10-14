@@ -107,3 +107,15 @@ test("saved mask is loaded and Revert restores it", async () => {
   await userEvent.click(screen.getByRole("button", { name: "Revert" }));
   expect(select).toHaveValue("rect");
 });
+
+test("polygon: Add point adds a vertex handle; double-click removes it", async () => {
+  install();
+  render(<DetectorView camera="camA" />);
+  await userEvent.selectOptions(await screen.findByLabelText("Shape"), "polygon");
+  expect(await screen.findByTestId("handle-v2")).toBeInTheDocument();
+  expect(screen.queryByTestId("handle-v3")).toBeNull();
+  await userEvent.click(screen.getByRole("button", { name: "Add point" }));
+  expect(await screen.findByTestId("handle-v3")).toBeInTheDocument();
+  await userEvent.dblClick(screen.getByTestId("handle-v3"));
+  await waitFor(() => expect(screen.queryByTestId("handle-v3")).toBeNull());
+});

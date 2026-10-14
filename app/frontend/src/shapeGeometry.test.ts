@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { addVertex, defaultShape, dragHandle, handlesOf, moveShape, removeVertex } from "./shapeGeometry";
+import { addVertex, insertVertex, defaultShape, dragHandle, handlesOf, moveShape, removeVertex } from "./shapeGeometry";
 
 test("rectangle handles resize, move keeps it inside", () => {
   const rect = defaultShape("rect");
@@ -34,4 +34,13 @@ test("polygon: vertex drag, add and remove (never below three points)", () => {
   expect((removeVertex(poly, 0) as any).points).toHaveLength(3);
   const moved = moveShape(poly, 5, 0) as any;
   expect(Math.max(...moved.points.map((p: any) => p.x))).toBeCloseTo(1);
+});
+
+test("insertVertex puts the new point on the nearest edge at the closest position", () => {
+  const poly = { shape: "polygon" as const, points: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }] };
+  const out = insertVertex(poly, { x: 0.6, y: 0.1 }) as any; // nearest to the top edge
+  expect(out.points).toHaveLength(5);
+  expect(out.points[1]).toEqual({ x: 0.6, y: 0 });
+  const left = insertVertex(poly, { x: -0.2, y: 0.5 }) as any; // nearest to the left edge (last -> first)
+  expect(left.points.at(-1)).toEqual({ x: 0, y: 0.5 });
 });

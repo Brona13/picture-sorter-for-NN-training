@@ -39,3 +39,30 @@ test("dragging the outline moves a rectangle; polygon vertex double-click remove
   fireEvent.doubleClick(screen.getByTestId("handle-v3"));
   expect(onChange.mock.calls.at(-1)![0].points).toHaveLength(3);
 });
+
+test("polygon: double-click on an edge inserts a point; right-click removes one", () => {
+  const onChange = vi.fn();
+  const four = { shape: "polygon" as const, points: [{ x: 0.2, y: 0.2 }, { x: 0.8, y: 0.2 }, { x: 0.8, y: 0.8 }, { x: 0.2, y: 0.8 }] };
+  render(<ShapeCanvas imageUrl="/c.png" shape={four} onChange={onChange} />);
+  const ev = createEvent.dblClick(screen.getByTestId("edge-0"), { clientX: 100, clientY: 22 });
+  fireEvent(screen.getByTestId("edge-0"), ev);
+  const added = onChange.mock.calls.at(-1)![0];
+  expect(added.points).toHaveLength(5);
+  expect(added.points[1].x).toBeCloseTo(0.5);
+  expect(added.points[1].y).toBeCloseTo(0.2);
+  fireEvent.contextMenu(screen.getByTestId("handle-v2"));
+  expect(onChange.mock.calls.at(-1)![0].points).toHaveLength(3);
+});
+
+test("polygon: selecting a point enables Remove selected point", () => {
+  const onChange = vi.fn();
+  const four = { shape: "polygon" as const, points: [{ x: 0.2, y: 0.2 }, { x: 0.8, y: 0.2 }, { x: 0.8, y: 0.8 }, { x: 0.2, y: 0.8 }] };
+  render(<ShapeCanvas imageUrl="/c.png" shape={four} onChange={onChange} />);
+  const button = screen.getByRole("button", { name: "Remove selected point" });
+  expect(button).toBeDisabled();
+  pointer(screen.getByTestId("handle-v1"), "pointerDown", 160, 20);
+  pointer(screen.getByTestId("shape-canvas"), "pointerUp", 160, 20);
+  expect(button).toBeEnabled();
+  fireEvent.click(button);
+  expect(onChange.mock.calls.at(-1)![0].points).toHaveLength(3);
+});
