@@ -328,7 +328,7 @@ A version is a small reproducible recipe, not a copy of the source images.
 Reverting replaces the working labels and goldens from a selected snapshot.
 Other saved versions remain available.
 
-A non-active version can be deleted from the history table (with confirmation). This removes only the saved snapshot; working labels and goldens and files already exported are not touched. The active version cannot be deleted.
+A non-active version can be deleted from the history table (with confirmation). Its snapshot is removed, but the row stays in the history greyed out as "deleted", so version numbers are never reused. Working labels and goldens and files already exported are not touched. The active version cannot be deleted.
 
 ### Export
 
@@ -563,4 +563,4 @@ workflows and should be consulted as historical rationale rather than current op
 
 ## Version
 
-The app version and release date are shown under the title in the sidebar and served at `GET /api/version`. To release, edit `VERSION` and `RELEASED` in `app/backend/appinfo.py` (ISO date). Scheme: `0.x.y` was the Streamlit generation, `1.x.y` is the current FastAPI + React application.
+The app version and release date are shown under the title in the sidebar and served at `GET /api/version`. Bump `VERSION` and `RELEASED` in `app/backend/appinfo.py` with every code change (ISO date; last number for small changes, middle number for new features). Scheme: `0.x.y` was the Streamlit generation, `1.x.y` is the current FastAPI + React application.

@@ -138,6 +138,8 @@ table { border-collapse: collapse; background: var(--panel); border: 1px solid v
 th, td { padding: 6px 12px; text-align: left; border-bottom: 1px solid var(--border); }
 th { background: var(--hover); font-weight: 600; font-size: 12.5px; }
 tbody tr:last-child td { border-bottom: 0; }
+tr.deleted-version { color: var(--muted); opacity: 0.55; }
+tr.deleted-version td:nth-child(3) { text-decoration: line-through; }
 table table, details table { border: 0; }
 
 /* ---- metrics (<dl> of <div><dt/><dd/></div>) ---- */

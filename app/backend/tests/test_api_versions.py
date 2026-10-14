@@ -78,29 +78,59 @@ class VersionsApiTests(ApiTestCase):
         self.assertEqual(r.status_code, 404)
         self.assertEqual(labels.current_labels("camA", "cap"), {self.frames[0]: "OK"})
 
-    def test_delete_removes_only_a_non_active_version(self) -> None:
+    def test_delete_keeps_a_greyed_out_row_and_never_reuses_numbers(self) -> None:
         import db
 
         labels.set_label("camA", "seal", self.frames[0], "OK")
         labels.mark_golden("camA", "seal", self.frames[0], "OK")
         v1 = self.freeze(name="a").json()["id"]
-        v2 = self.freeze(name="b").json()["id"]  # v2 is now active
+        v2 = self.freeze(name="b").json()["id"]
+        v3 = self.freeze(name="c").json()["id"]  # v3 is now active
 
+        self.assertEqual(
+            self.client.delete(f"{self.base}/{v3}", params={"feature": "seal"}).status_code, 409
+        )  # active
         r = self.client.delete(f"{self.base}/{v2}", params={"feature": "seal"})
-        self.assertEqual(r.status_code, 409)
-
-        r = self.client.delete(f"{self.base}/{v1}", params={"feature": "seal"})
         self.assertEqual(r.status_code, 200)
+        self.assertEqual(
+            self.client.delete(f"{self.base}/{v2}", params={"feature": "seal"}).status_code, 409
+        )  # already deleted
+
         vs = self.client.get(self.base, params={"feature": "seal"}).json()["versions"]
-        self.assertEqual([v["id"] for v in vs], [v2])
+        self.assertEqual([v["number"] for v in vs], [1, 2, 3])  # the gap stays visible
+        self.assertEqual([v["deleted"] is not None for v in vs], [False, True, False])
+        self.assertEqual(vs[1]["name"], "b")
         con = db.connect()
         try:
-            n = con.execute("SELECT COUNT(*) FROM version_items WHERE version_id=?", (v1,)).fetchone()[0]
+            n = con.execute("SELECT COUNT(*) FROM version_items WHERE version_id=?", (v2,)).fetchone()[0]
         finally:
             con.close()
-        self.assertEqual(n, 0)
-        # working state is untouched
-        self.assertEqual(labels.current_goldens("camA", "seal"), {"OK": [self.frames[0]]})
+        self.assertEqual(n, 0)  # snapshot gone
+        self.assertEqual(labels.current_goldens("camA", "seal"), {"OK": [self.frames[0]]})  # working state untouched
+
+        # A deleted version cannot be reverted to or exported.
+        for action in ("revert", "export"):
+            r = self.client.post(f"{self.base}/{v2}/{action}", params={"feature": "seal"})
+            self.assertEqual(r.status_code, 409)
+
+        # Deleting the newest non-active version must not free its number.
+        self.client.delete(f"{self.base}/{v1}", params={"feature": "seal"})
+        self.client.post(f"{self.base}/{v3}/revert", params={"feature": "seal"})  # no-op revert keeps v3 active
+        v4 = self.freeze(name="d").json()
+        self.assertEqual(v4["number"], 4)
+        v4_id = v4["id"]
+        self.freeze(name="e")  # v5 active, v4 not
+        self.client.delete(f"{self.base}/{v4_id}", params={"feature": "seal"})
+        self.assertEqual(self.freeze(name="f").json()["number"], 6)
+
+    def test_deleted_versions_are_not_counted_in_summaries(self) -> None:
+        labels.set_label("camA", "seal", self.frames[0], "OK")
+        a = self.freeze(name="a").json()["id"]
+        self.freeze(name="b")
+        self.client.delete(f"{self.base}/{a}", params={"feature": "seal"})
+        import versions
+
+        self.assertEqual(versions.summaries("camA", ["seal"])["seal"], {"count": 1, "active_number": 2})
 
     def test_delete_rejects_version_of_other_feature(self) -> None:
         labels.set_label("camA", "cap", self.frames[0], "OK")

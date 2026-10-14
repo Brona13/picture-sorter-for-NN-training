@@ -116,7 +116,7 @@ A version is an immutable snapshot recipe for one camera and feature. It stores 
 - Exactly one version per camera and feature is active.
 - Reverting replaces working labels and goldens with the snapshot.
 - Reverting never deletes other saved versions.
-- A non-active version can be deleted. Deleting removes only the snapshot; working labels and goldens and already exported files are untouched. The active version cannot be deleted.
+- A non-active version can be deleted. Deleting drops its snapshot items but keeps the history row, greyed out and marked deleted, so version numbers are never reused and gaps (v1 and v3 on disk, v2 deleted) stay explainable. Working labels and goldens and already exported files are untouched. The active version cannot be deleted, and a deleted version cannot be reverted to or exported.
 - Export reads the frozen snapshot and verifies hashes.
 
 ## Export
@@ -131,7 +131,7 @@ Exports copy the version's **golden** frames only, unmodified (original filename
 
 ## Persistence
 
-The SQLite database is `data/picture_sorter.db`, schema version 2.
+The SQLite database is `data/picture_sorter.db`, schema version 4.
 
 Authoritative or indexed state:
 

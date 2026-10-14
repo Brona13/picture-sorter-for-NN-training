@@ -54,6 +54,7 @@ Launch with `./run.sh` (see README). History: `plans/2026-10-13-streamlit-to-rea
 - For tests and verification, set `CURATION_CAMERAS_ROOT` and
   `CURATION_DATA_DIR` to temporary directories.
 - Do not modify, move, or delete real camera frames or generated exports unless the user explicitly requests it.
+- Bump `VERSION` and `RELEASED` in `app/backend/appinfo.py` with every code change (patch for small changes, minor for features).
 - Keep direct label/golden state transactionally consistent; deliberate history belongs in Versions.
 - When changing a domain invariant, update its canonical documentation and behavior tests in the same change.
 

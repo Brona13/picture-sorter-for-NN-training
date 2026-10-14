@@ -150,7 +150,11 @@ export default function VersionsView({ camera, product }: { camera: string; prod
 
       {data && data.versions.length > 0 && (
         <>
-          <h3>History ({data.versions.length})</h3>
+          <h3>
+            History ({data.versions.filter((v) => v.deleted === null).length})
+            {data.versions.some((v) => v.deleted !== null) &&
+              ` · ${data.versions.filter((v) => v.deleted !== null).length} deleted`}
+          </h3>
           <table>
             <thead>
               <tr>
@@ -171,8 +175,8 @@ export default function VersionsView({ camera, product }: { camera: string; prod
             </thead>
             <tbody>
               {[...data.versions].reverse().map((v) => (
-                <tr key={v.id}>
-                  <td>{v.active ? "▶ active" : ""}</td>
+                <tr key={v.id} className={v.deleted !== null ? "deleted-version" : undefined}>
+                  <td>{v.deleted !== null ? "deleted" : v.active ? "▶ active" : ""}</td>
                   <td>v{v.number}</td>
                   <td>{v.name}</td>
                   <td>{fmt(v.created)}</td>
@@ -185,13 +189,18 @@ export default function VersionsView({ camera, product }: { camera: string; prod
                   <td>{v.counts.unlabeled ?? 0}</td>
                   <td>{v.delta}</td>
                   <td>
-                    <button disabled={v.active} onClick={() => setConfirming(v.id)}>
-                      ⏪ Revert v{v.number}
-                    </button>{" "}
-                    <button onClick={() => onExport(v)}>📦 Export v{v.number}</button>{" "}
-                    <button disabled={v.active} onClick={() => setConfirmingDelete(v.id)}>
-                      🗑 Delete v{v.number}
-                    </button>
+                    {v.deleted === null && (
+                      <>
+                        <button disabled={v.active} onClick={() => setConfirming(v.id)}>
+                          ⏪ Revert v{v.number}
+                        </button>{" "}
+                        <button onClick={() => onExport(v)}>📦 Export v{v.number}</button>{" "}
+                        <button disabled={v.active} onClick={() => setConfirmingDelete(v.id)}>
+                          🗑 Delete v{v.number}
+                        </button>
+                      </>
+                    )}
+                    {v.deleted !== null && <span>deleted {fmt(v.deleted)}</span>}
                   </td>
                 </tr>
               ))}
@@ -216,8 +225,9 @@ export default function VersionsView({ camera, product }: { camera: string; prod
             .map((v) => (
               <div key={v.id} role="alertdialog" aria-label="Confirm delete">
                 <p>
-                  Delete <strong>v{v.number}</strong> ({v.name})? The saved snapshot is removed for good.
-                  Your current labels and goldens are not affected, and files already exported stay on disk.
+                  Delete <strong>v{v.number}</strong> ({v.name})? The saved snapshot is removed for good, but the row
+                  stays in the history greyed out, and the number is never reused. Your current labels and goldens
+                  are not affected, and files already exported stay on disk.
                 </p>
                 <button onClick={() => onDelete(v)}>✅ Yes, delete</button>{" "}
                 <button onClick={() => setConfirmingDelete(null)}>Cancel</button>

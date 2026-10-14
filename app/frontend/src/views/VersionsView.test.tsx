@@ -12,6 +12,7 @@ const version = (id: number, number: number, active: boolean) => ({
   counts: { OK: number, NG: 0, golden_OK: 1, golden_NG: 0, unlabeled: 2, total: 5 },
   stats: {},
   active,
+  deleted: null as number | null,
   delta: "first version",
 });
 
@@ -97,6 +98,19 @@ test("delete is disabled for the active version and needs confirmation", async (
   await screen.findByText("Deleted v1.");
   const del = calls.find((c) => c.method === "DELETE")!;
   expect(del.url).toContain("/versions/1?feature=seal");
+});
+
+test("a deleted version stays in the history, greyed out, without actions", async () => {
+  versions = [{ ...version(1, 1, false), deleted: 1_700_000_500 }, version(2, 2, true)];
+  render(<VersionsView camera="camA" />);
+  expect(await screen.findByText(/History \(1\)/)).toHaveTextContent("History (1) · 1 deleted");
+  const row = screen.getAllByRole("row").slice(1)[1]; // newest first -> v1 is last
+  expect(row).toHaveTextContent("v1");
+  expect(row).toHaveTextContent("deleted");
+  expect(row).toHaveClass("deleted-version");
+  expect(screen.queryByRole("button", { name: /Revert v1/ })).toBeNull();
+  expect(screen.queryByRole("button", { name: /Export v1/ })).toBeNull();
+  expect(screen.queryByRole("button", { name: /Delete v1/ })).toBeNull();
 });
 
 test("export shows the report", async () => {

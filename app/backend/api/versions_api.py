@@ -27,11 +27,13 @@ def _selectable_features(camera: str, product: str | None) -> list[str]:
     ]
 
 
-def _require_version(camera: str, feature: str, version_id: int) -> dict:
+def _require_version(camera: str, feature: str, version_id: int, *, allow_deleted: bool = False) -> dict:
     """A version id must belong to this camera+feature, else reverting would apply
-    another feature's snapshot."""
+    another feature's snapshot. A deleted version has no snapshot left to use."""
     for v in versions.list_versions(camera, feature):
         if v["id"] == version_id:
+            if v["deleted"] is not None and not allow_deleted:
+                raise HTTPException(status_code=409, detail=f"Version {v['number']} was deleted")
             return v
     raise HTTPException(status_code=404, detail=f"No version {version_id} for {feature}")
 
@@ -87,10 +89,10 @@ def revert(camera: str, version_id: int, feature: str) -> dict:
 @router.delete("/cameras/{camera}/versions/{version_id}")
 def delete_version(camera: str, version_id: int, feature: str) -> dict:
     require_feature(camera, feature)
-    _require_version(camera, feature, version_id)
+    _require_version(camera, feature, version_id, allow_deleted=True)
     try:
         versions.delete_version(camera, feature, version_id)
-    except versions.ActiveVersionError as exc:
+    except (versions.ActiveVersionError, versions.AlreadyDeletedError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return {"deleted": version_id}
 

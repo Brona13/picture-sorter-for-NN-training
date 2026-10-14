@@ -56,7 +56,7 @@ def _describe(camera: str, r: ROI, inbox_total: int) -> dict:
     owner, short = datamodel.split_feature(r.name)
     classes = datamodel.classes_for(camera, r.name)
     counts = labels.counts(camera, r.name)
-    vl = versions.list_versions(camera, r.name)
+    vl = [v for v in versions.list_versions(camera, r.name) if v["deleted"] is None]
     active = next((v["number"] for v in vl if v["active"]), None)
     return {
         "feature": r.name,

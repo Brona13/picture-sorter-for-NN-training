@@ -16,7 +16,7 @@ import config
 import perf
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 class DatabaseResetRequired(RuntimeError):
@@ -116,6 +116,7 @@ CREATE TABLE IF NOT EXISTS versions (
     counts_json TEXT NOT NULL DEFAULT '{{}}',
     stats_json  TEXT NOT NULL DEFAULT '{{}}',
     active      INTEGER NOT NULL DEFAULT 0,
+    deleted     REAL,
     UNIQUE (camera, feature, number)
 );
 CREATE INDEX IF NOT EXISTS idx_versions_lookup ON versions(camera, feature, number);
@@ -284,7 +285,7 @@ def _migrate_v2_to_v3(con: sqlite3.Connection) -> None:
                         ),
                     )
                 to_delete.append(json_path)
-        con.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+        con.execute("PRAGMA user_version = 3")
         con.execute("COMMIT")
     except Exception:
         con.execute("ROLLBACK")
@@ -296,8 +297,27 @@ def _migrate_v2_to_v3(con: sqlite3.Connection) -> None:
             perf.count("db.migrate_v2_v3.json_unlink_failed")
 
 
+def _migrate_v3_to_v4(con: sqlite3.Connection) -> None:
+    """Add ``versions.deleted`` (NULL, or the time a version was deleted).
+
+    Deleted versions stay as greyed-out history rows so their numbers are never
+    reused. A database without a ``versions`` table is only re-stamped.
+    """
+    con.execute("BEGIN")
+    try:
+        columns = {row[1] for row in con.execute("PRAGMA table_info(versions)").fetchall()}
+        if columns and "deleted" not in columns:
+            con.execute("ALTER TABLE versions ADD COLUMN deleted REAL")
+        con.execute("PRAGMA user_version = 4")
+        con.execute("COMMIT")
+    except Exception:
+        con.execute("ROLLBACK")
+        raise
+
+
 _MIGRATIONS = {
     2: _migrate_v2_to_v3,
+    3: _migrate_v3_to_v4,
 }
 
 

@@ -5,6 +5,9 @@ hashes) at freeze time, plus counts and novelty statistics. No images are copied
 frames are immutable in ``unsorted/`` and hashes make every snapshot verifiable.
 Exactly one version per (camera, feature) is *active* — the one the current
 working state derives from (set on freeze, or by revert).
+
+Deleting a version keeps its history row (number, name, counts, time) greyed
+out and drops only its snapshot items, so version numbers are never reused.
 """
 from __future__ import annotations
 
@@ -104,6 +107,7 @@ def list_versions(camera: str, feature: str) -> list[dict]:
                 "counts": counts,
                 "stats": json.loads(r["stats_json"]),
                 "active": bool(r["active"]),
+                "deleted": r["deleted"],
                 "delta": delta,
             }
         )
@@ -126,7 +130,8 @@ def summaries(camera: str, features: list[str]) -> dict[str, dict[str, int | Non
             "SELECT feature,COUNT(*) AS version_count,"
             "MAX(CASE WHEN active=1 THEN number END) AS active_number "
             "FROM versions "
-            f"WHERE camera=? AND feature IN ({placeholders}) GROUP BY feature",
+            f"WHERE camera=? AND feature IN ({placeholders}) AND deleted IS NULL "
+            "GROUP BY feature",
             (camera, *unique),
         ).fetchall()
     finally:
@@ -207,23 +212,31 @@ class ActiveVersionError(ValueError):
     """The active version cannot be deleted."""
 
 
-def delete_version(camera: str, feature: str, version_id: int) -> None:
-    """Delete a saved (non-active) version and its snapshot items.
+class AlreadyDeletedError(ValueError):
+    """The version was deleted before."""
 
-    Working labels/goldens are untouched. Files already exported to disk are
-    not removed. Raises :class:`ActiveVersionError` for the active version.
+
+def delete_version(camera: str, feature: str, version_id: int) -> None:
+    """Delete a saved (non-active) version's snapshot; keep its history row.
+
+    The row stays (marked deleted) so numbers are never reused and the history
+    explains gaps such as v1 and v3 on disk with v2 gone. Working labels/goldens
+    are untouched and files already exported are not removed.
     """
     con = db.connect()
     try:
         row = con.execute(
-            "SELECT active FROM versions WHERE id=? AND camera=? AND feature=?",
+            "SELECT active, deleted FROM versions WHERE id=? AND camera=? AND feature=?",
             (version_id, camera, feature),
         ).fetchone()
         if row is None:
             raise ValueError(f"no such version id {version_id}")
+        if row["deleted"] is not None:
+            raise AlreadyDeletedError("this version is already deleted")
         if row["active"]:
             raise ActiveVersionError("the active version cannot be deleted")
-        con.execute("DELETE FROM versions WHERE id=?", (version_id,))  # items cascade
+        con.execute("DELETE FROM version_items WHERE version_id=?", (version_id,))
+        con.execute("UPDATE versions SET deleted=? WHERE id=?", (time.time(), version_id))
         con.commit()
     finally:
         con.close()

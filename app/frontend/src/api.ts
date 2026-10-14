@@ -57,6 +57,7 @@ export interface VersionInfo {
   counts: Record<string, number>;
   stats: Record<string, Record<string, number>>;
   active: boolean;
+  deleted: number | null;
   delta: string;
 }
 
