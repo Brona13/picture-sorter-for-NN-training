@@ -139,6 +139,35 @@ def clear_label(camera: str, feature: str, frame: str) -> None:
     datamodel.invalidate_product_membership(camera)
 
 
+def clear_labels_bulk(camera: str, feature: str, frames: list[str]) -> int:
+    """Clear labels (and any goldens) for many frames in one transaction.
+
+    Returns how many labels were removed. A golden is always a labeled frame, so its
+    golden mark goes with its label and the invariant cannot drift.
+    """
+    if not frames:
+        return 0
+    keys = [(camera, feature, frame) for frame in frames]
+    con = db.connect()
+    try:
+        con.execute("BEGIN IMMEDIATE")
+        con.executemany(
+            "DELETE FROM goldens WHERE camera=? AND feature=? AND frame=?", keys
+        )
+        cur = con.executemany(
+            "DELETE FROM labels WHERE camera=? AND feature=? AND frame=?", keys
+        )
+        removed = cur.rowcount
+        con.commit()
+    except Exception:
+        con.rollback()
+        raise
+    finally:
+        con.close()
+    datamodel.invalidate_product_membership(camera)
+    return max(removed, 0)
+
+
 def current_labels(camera: str, feature: str) -> dict[str, str]:
     perf.count("db.label_state.reads")
     con = db.connect()

@@ -234,6 +234,8 @@ Expensive image features are cached, so later refreshes usually recompute distan
 
 Frames can be labeled individually or through an explicitly selected bulk operation.
 
+Labels can be removed the same way: **Clear labels in this view** removes the label from every labeled frame in the current Show filter (all pages, not only the one displayed). Goldens in the view are kept unless you tick the option to clear them too; clearing a golden's label also removes its golden mark. The action asks for confirmation, and a frozen version is the way back.
+
 Useful review strategies include:
 
 - Smallest margin first

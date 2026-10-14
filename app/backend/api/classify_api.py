@@ -410,6 +410,39 @@ def bulk_label(camera: str, body: BulkBody) -> dict:
     return {"labeled": n, "counts": labels.counts(camera, body.query.feature)}
 
 
+# --- bulk clear --------------------------------------------------------------
+class ClearBody(BaseModel):
+    query: GridQuery
+    include_goldens: bool = False
+
+
+@router.get("/cameras/{camera}/classify/clear")
+def clear_preview(camera: str, q: QueryParams) -> dict:
+    """What clearing the current view would touch: labeled frames, and goldens in it."""
+    ctx = _build(camera, q)
+    plain, goldens = cv.clear_pick(ctx.items, lab=ctx.lab, gold=ctx.gold, include_goldens=False)
+    return {"matching": len(ctx.items), "labeled": len(plain), "goldens": goldens}
+
+
+@router.post("/cameras/{camera}/classify/clear")
+def clear_labels(camera: str, body: ClearBody) -> dict:
+    """Clear labels of every labeled frame in the current view (all pages, not just the one shown).
+
+    Goldens in the view are skipped unless ``include_goldens``; then their golden mark is
+    removed together with the label. Source frames are never touched.
+    """
+    ctx = _build(camera, body.query)
+    picked, spared = cv.clear_pick(
+        ctx.items, lab=ctx.lab, gold=ctx.gold, include_goldens=body.include_goldens
+    )
+    cleared = labels.clear_labels_bulk(camera, body.query.feature, picked)
+    return {
+        "cleared": cleared,
+        "goldens_spared": spared,
+        "counts": labels.counts(camera, body.query.feature),
+    }
+
+
 # --- auto-assign -------------------------------------------------------------
 class AutoBody(BaseModel):
     query: GridQuery

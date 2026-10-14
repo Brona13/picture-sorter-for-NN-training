@@ -3,6 +3,7 @@ import { api, CardData, CardUpdate, ClassifyState, GridQuery, GridResponse } fro
 import AutoPanel, { AutoFilter } from "../classify/AutoPanel";
 import BulkPanel from "../classify/BulkPanel";
 import Card from "../classify/Card";
+import ClearPanel from "../classify/ClearPanel";
 import SuggestPanel from "../classify/SuggestPanel";
 import { useJob } from "../useJob";
 
@@ -316,6 +317,20 @@ export default function ClassifyView({ camera, product }: { camera: string; prod
                 onError={setError}
                 onLabeled={(n, cls, c) => {
                   setNotice(`Labeled ${n} frames as ${cls}.`);
+                  setSt((s) => (s ? { ...s, counts: c } : s));
+                  bump();
+                }}
+              />
+              <ClearPanel
+                camera={camera}
+                query={query}
+                revision={revision}
+                onError={setError}
+                onCleared={(n, spared, c) => {
+                  setNotice(
+                    `Cleared ${n} label${n === 1 ? "" : "s"}.` +
+                      (spared > 0 ? ` ${spared} golden${spared === 1 ? "" : "s"} kept.` : ""),
+                  );
                   setSt((s) => (s ? { ...s, counts: c } : s));
                   bump();
                 }}

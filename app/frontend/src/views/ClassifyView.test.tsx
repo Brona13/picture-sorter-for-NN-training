@@ -86,6 +86,8 @@ function install() {
       }
       if (url.includes("/classify/delete"))
         return ok({ card: { frame: "a.png", label: null, golden: null, deleted: true }, counts: { OK: 0, golden_OK: 0, NG: 0, golden_NG: 0, unlabeled: 2, total: 3 } });
+      if (url.includes("/classify/clear") && method === "GET") return ok({ matching: 6, labeled: 3, goldens: 2 });
+      if (url.includes("/classify/clear")) return ok({ cleared: 3, goldens_spared: 2, counts: { OK: 1, unlabeled: 5 } });
       if (url.includes("/classify/bulk") && method === "GET") return ok({ selectable: 5, selected: 3, lo: 0.1, hi: 0.9, threshold: 0.1 });
       if (url.includes("/classify/bulk")) return ok({ labeled: 3, counts: { OK: 4 } });
       if (url.includes("/classify/auto") && method === "GET")
@@ -217,6 +219,36 @@ test("bulk panel previews the selection and labels it on click", async () => {
   expect(post.body.label_as).toBe("NG");
   expect(post.body.mode).toBe("leaning");
   expect(await screen.findByText("Labeled 3 frames as NG.")).toBeInTheDocument();
+});
+
+test("clear panel needs a confirmation and spares goldens by default", async () => {
+  render(<ClassifyView camera="camA" />);
+  await cardEl("a.png");
+  await userEvent.click(await screen.findByText(/Clear labels in this view \(5 labeled\)/));
+  expect(screen.getByText(/The 2 goldens in this view will be kept/)).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: /Clear 3 labels/ }));
+  // nothing is sent until the confirmation is accepted
+  expect(calls.some((c) => c.url.endsWith("/classify/clear") && c.method === "POST")).toBe(false);
+  await userEvent.click(screen.getByRole("button", { name: "Yes, clear" }));
+  await waitFor(() => expect(calls.some((c) => c.url.endsWith("/classify/clear") && c.method === "POST")).toBe(true));
+  const post = calls.find((c) => c.url.endsWith("/classify/clear") && c.method === "POST")!;
+  expect(post.body.include_goldens).toBe(false);
+  expect(post.body.query.feature).toBe("seal");
+  expect(await screen.findByText("Cleared 3 labels. 2 goldens kept.")).toBeInTheDocument();
+});
+
+test("clear panel can include goldens, and cancel sends nothing", async () => {
+  render(<ClassifyView camera="camA" />);
+  await cardEl("a.png");
+  await userEvent.click(await screen.findByText(/Clear labels in this view/));
+  await userEvent.click(screen.getByLabelText(/Also clear the 2 goldens in this view/));
+  await userEvent.click(screen.getByRole("button", { name: /Clear 5 labels/ }));
+  await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(calls.some((c) => c.url.endsWith("/classify/clear") && c.method === "POST")).toBe(false);
+  await userEvent.click(screen.getByRole("button", { name: /Clear 5 labels/ }));
+  await userEvent.click(screen.getByRole("button", { name: "Yes, clear" }));
+  await waitFor(() => expect(calls.some((c) => c.url.endsWith("/classify/clear") && c.method === "POST")).toBe(true));
+  expect(calls.find((c) => c.url.endsWith("/classify/clear") && c.method === "POST")!.body.include_goldens).toBe(true);
 });
 
 test("auto-assign shows per-class preview, can filter the grid, and confirms", async () => {

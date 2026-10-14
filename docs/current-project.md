@@ -104,6 +104,7 @@ See [[data-model]] for the canonical entities and invariants.
 - Multi-class product classification
 - Per-frame labeling
 - Bulk labeling of filtered selections
+- Bulk clearing of labels in the current Show filter (all pages); goldens are kept unless explicitly included, and clearing a golden's label removes its golden mark
 - Per-class golden reference marks
 - Goldens and labels kept consistent transactionally in the domain API
 - Pagination and configurable grid columns
@@ -205,7 +206,7 @@ One thin router per area, each delegating to the domain modules above:
 - `App.tsx` — sidebar (camera, product, view) and routes
 - `api.ts` — typed API client
 - `views/` — Status, Ingest, ROI editor, Classify, Insights, Versions, Dedup
-- `classify/` — card, bulk, auto-assign, suggested-goldens panels, SVG scatter
+- `classify/` — card, bulk, clear-labels, auto-assign, suggested-goldens panels, SVG scatter
 - `RoiCanvas.tsx` + `roiGeometry.ts` — pointer-driven ROI draw/move/resize in normalised coordinates
 - `useJob.ts` — polls background jobs
 

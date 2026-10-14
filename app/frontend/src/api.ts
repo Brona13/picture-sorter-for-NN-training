@@ -223,6 +223,12 @@ export interface BulkPreview {
   threshold: number;
 }
 
+export interface ClearPreview {
+  matching: number;
+  labeled: number;
+  goldens: number;
+}
+
 export interface AutoPreview {
   candidates: number;
   total: number;
@@ -443,6 +449,13 @@ export const api = {
     request<{ labeled: number; counts: Record<string, number> }>(
       `/cameras/${encodeURIComponent(camera)}/classify/bulk`,
       post({ query, mode, lean_cls, threshold, label_as }),
+    ),
+  clearPreview: (camera: string, q: GridQuery) =>
+    request<ClearPreview>(`/cameras/${encodeURIComponent(camera)}/classify/clear?${gridParams(q)}`),
+  clearLabels: (camera: string, query: GridQuery, include_goldens: boolean) =>
+    request<{ cleared: number; goldens_spared: number; counts: Record<string, number> }>(
+      `/cameras/${encodeURIComponent(camera)}/classify/clear`,
+      post({ query, include_goldens }),
     ),
   autoPreview: (camera: string, q: GridQuery, classes: string[], min_margin: number | null) => {
     const p = new URLSearchParams(gridParams(q, { min_margin }));

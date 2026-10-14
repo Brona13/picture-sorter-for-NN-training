@@ -224,6 +224,58 @@ class ClassifyApiTests(ApiTestCase):
         bad = self.client.post(f"{self.base}/bulk", json={"query": q, "mode": "wat", "label_as": "OK"})
         self.assertEqual(bad.status_code, 422)
 
+    def test_bulk_clear_applies_to_the_filtered_view_and_spares_goldens(self) -> None:
+        self.seed_goldens()  # blue0 golden OK, red0 golden NG
+        for f in (self.blue[1], self.blue[2]):
+            self.label(f, "OK")
+        self.label(self.red[1], "NG")
+        self.refresh()
+        q = {"feature": FEAT, "rank": "cpu", "view": "Labeled OK"}
+
+        pre = self.client.get(f"{self.base}/clear", params=q).json()
+        self.assertEqual(pre, {"matching": 3, "labeled": 2, "goldens": 1})
+
+        r = self.client.post(f"{self.base}/clear", json={"query": q}).json()
+        self.assertEqual((r["cleared"], r["goldens_spared"]), (2, 1))
+        lab = labels.current_labels(CAM, FEAT)
+        self.assertNotIn(self.blue[1], lab)
+        self.assertNotIn(self.blue[2], lab)
+        self.assertEqual(lab[self.blue[0]], "OK")  # golden kept its label
+        self.assertEqual(lab[self.red[1]], "NG")  # outside the filtered view: untouched
+        self.assertEqual(labels.current_goldens(CAM, FEAT), {"OK": [self.blue[0]], "NG": [self.red[0]]})
+        self.assertEqual(r["counts"]["OK"], 1)
+
+    def test_bulk_clear_with_goldens_removes_the_mark_with_the_label(self) -> None:
+        self.seed_goldens()
+        self.label(self.red[1], "NG")
+        self.refresh()
+        q = {"feature": FEAT, "rank": "cpu", "view": "Labeled NG"}
+
+        r = self.client.post(f"{self.base}/clear", json={"query": q, "include_goldens": True}).json()
+        self.assertEqual((r["cleared"], r["goldens_spared"]), (2, 0))
+        lab = labels.current_labels(CAM, FEAT)
+        gold = labels.current_goldens(CAM, FEAT)
+        for f in (self.red[0], self.red[1]):
+            self.assertNotIn(f, lab)
+            self.assertIsNone(labels.golden_class_of(gold, f))  # an unlabeled frame cannot be golden
+        self.assertEqual(lab[self.blue[0]], "OK")
+        self.assertEqual(labels.golden_class_of(gold, self.blue[0]), "OK")
+        for f in self.blue + self.red:  # source frames are never touched
+            self.assertTrue((datamodel.unsorted_dir(CAM) / f).exists())
+
+    def test_bulk_clear_nothing_to_clear_and_bad_view(self) -> None:
+        self.seed_goldens()
+        self.refresh()
+        q = {"feature": FEAT, "rank": "cpu", "view": "Unlabeled"}
+        r = self.client.post(f"{self.base}/clear", json={"query": q, "include_goldens": True}).json()
+        self.assertEqual((r["cleared"], r["goldens_spared"]), (0, 0))
+        self.assertEqual(len(labels.current_labels(CAM, FEAT)), 2)
+        bad = self.client.post(f"{self.base}/clear", json={"query": {**q, "view": "Bogus"}})
+        self.assertEqual(bad.status_code, 422)
+        self.assertEqual(
+            self.client.get(f"{self.base}/clear", params={"feature": "zzz"}).status_code, 404
+        )
+
     def test_auto_assign_preview_then_apply(self) -> None:
         self.seed_goldens()
         self.refresh()

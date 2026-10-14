@@ -89,6 +89,27 @@ def filter_and_sort(
     return items
 
 
+def clear_pick(
+    items, *, lab: dict[str, str], gold: dict[str, list[str]], include_goldens: bool
+) -> tuple[list[str], int]:
+    """Frames of ``items`` whose label would be cleared, and how many goldens were spared.
+
+    Unlabeled frames have nothing to clear. Goldens are trusted references, so they are
+    left alone unless ``include_goldens`` is set (clearing a golden's label drops the mark).
+    """
+    picked: list[str] = []
+    spared = 0
+    for r in items:
+        is_golden = labels.golden_class_of(gold, r.frame) is not None
+        if r.frame not in lab and not is_golden:
+            continue
+        if is_golden and not include_goldens:
+            spared += 1
+            continue
+        picked.append(r.frame)
+    return picked, spared
+
+
 def bars(dists: dict[str, float | None], classes: list[str]) -> dict | None:
     """Per-class relative closeness for one frame under one method.
 
