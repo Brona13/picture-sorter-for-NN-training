@@ -202,6 +202,42 @@ product classes.
 Deleting an ROI requires confirmation and removes its associated labels,
 goldens, cached results, versions, and deduplication state. Source frames remain unchanged.
 
+## Detector page: filters, mask and object detection
+
+The **Detector** page (sidebar, after the ROI editor) is optional. It changes what the scoring
+and Dedup see for one feature (ROI): instead of the whole ROI crop they can see a filtered
+crop with everything outside the object blanked. It never changes source frames, labels or
+goldens, and the settings are saved per camera and feature. Everything on the page is one
+settings set: edit it, then press **Save settings**.
+
+Pipeline for every frame of the feature, in this order:
+
+1. **ROI crop**, as drawn in the ROI editor.
+2. **Pre-processing filter** (Gaussian, median, bilateral, box, non-local means, morphological
+   open/close, shrink and rescale), with sliders and a live preview. Reduces sensor noise and
+   small lighting differences.
+3. **Object mask** (rectangle, circle or polygon). Pixels outside it become dark grey. Tick
+   **Apply mask to Classify, Dedup and suggestions** to turn it on. Rectangle: drag the corners
+   or edges; circle: centre and radius handles; polygon: drag a point, double-click an edge to
+   add a point, double-click or right-click a point to remove it (three stay).
+4. **Detector** (optional, needs `requirements-detector.txt`): the mask follows the object.
+   Mark the object with a box on up to three frames (**exemplars**; vary lighting and screw
+   lean), save, then **Run detection**. The detector (OWL-ViT, runs locally, about 600 MB
+   download on first use) looks for the most similar object in every frame of the feature.
+   The mask is drawn on the first exemplar's frame and shifted by how far each frame's
+   detected object is from the exemplar's position (translation only, no resizing).
+
+Detections are suggestions. A box is *trusted* when its confidence is at or above the
+threshold slider; otherwise it waits in the **review queue**, where you can adjust it, accept
+it or clear it. Boxes you accepted or adjusted are never overwritten by a re-run. **Show all
+frames, least confident first** lists every frame with the confidence range, so you can
+check the confident ones too. Frames without a trusted box keep the mask where it was drawn.
+
+Changing any setting or accepting a box makes cached scores for that feature recompute (only
+the affected frames for a moved box). Freezing a version stores the settings in the version
+(Versions page, "vision" column); reverting restores labels and goldens, not these settings.
+Details: [Data model](docs/data-model.md).
+
 ## Classify frames
 
 Use the **Classify** view.
@@ -233,6 +269,8 @@ These values assist review. They are not calibrated probabilities and do not rep
 Expensive image features are cached, so later refreshes usually recompute distances rather than extracting every feature again.
 
 ### Review and label
+
+**Keyboard shortcuts:** hover a card and press `1`-`9` to set the class in the order of the card's buttons (the same number again removes the label), `0` to clear the label, or the key left of `1` to toggle golden (the frame must be labeled).
 
 Frames can be labeled individually or through an explicitly selected bulk operation.
 

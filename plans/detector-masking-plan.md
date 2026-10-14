@@ -51,6 +51,8 @@ Release target: appinfo VERSION 1.2.0 (bump on each phase: 1.2.0, 1.3.0, ...).
 - Object embedding wired through dedup/scatter/suggest_goldens; signature in scatter/cluster caches.
 - Snapshot settings in freeze; show in Versions view.
 
+**Follow-up**: the Detector page's layout and workflow need rework, see `memory/todo-detector-ux.md`. Session history: `memory/detector-masking.md`.
+
 **Deferred**: background embedding, segmentation beyond a shape, feature-vs-camera model.
 
 ## Open questions to settle before Phase 3

@@ -121,6 +121,17 @@ See [[data-model]] for the canonical entities and invariants.
 - Bounded encoded thumbnail caches with ROI/file-change invalidation and hit/miss diagnostics
 - Visible grid-card preparation plus 24-card page-size guidance for responsive labeling
 
+### Vision settings: filter, mask, detector
+
+Per (camera, feature), edited on the Detector page; see the README section for the user view.
+
+- Pre-processing filters (OpenCV) applied to each ROI crop before features and embeddings, with live preview
+- Object mask (rectangle, circle, polygon; dark grey outside) applied after the filter when enabled
+- Exemplar-based object detector (OWL-ViT, optional dependency) that finds the object per frame; the mask is translated onto each frame's trusted detection
+- Stored detections with human review: accept, adjust, clear; human boxes survive re-detection
+- Everything is metadata: vectors, results, scatter and cluster caches are derived and recomputed when settings or boxes change
+- Frozen versions record the settings and trusted boxes (Versions page "vision" column)
+
 ### Scoring
 
 The application presents independent scoring opinions:
@@ -256,6 +267,12 @@ See [[findings-real-data-method-comparison]] for the recorded measurements.
 
 ## Known limitations
 
+### Detector
+
+- The OWL-ViT path has been run on real frames once (275 frames, none below a 50% threshold) but its confidence scores are not calibrated or validated; a high score does not prove the box is right. Check boxes with "Show all frames".
+- The mask follows the detected object by translation only; rotation and scale changes are not followed.
+- Detection uses the saved settings, not unsaved edits.
+
 ### Metric calibration
 
 The classical metrics are nominally combined with equal weights, but their effective scales differ. The current CPU-family score is not calibrated across ROIs or datasets.
@@ -283,6 +300,8 @@ The project folder is portable, but `.venv/` is machine-specific and must be rec
 ## Open work
 
 Listed in recommended priority order:
+
+0. **Detector page usability.** The page is one long form and its workflow is hard to follow (what saves what, why Run detection is disabled until saved, why the mask is drawn on the first exemplar's frame). Needs a clearer layout and step structure. See `memory/todo-detector-ux.md`.
 
 1. Add focused automated tests for product-scope, version, and export invariants.
 2. Measure and normalize classical metric scales per representative ROI.

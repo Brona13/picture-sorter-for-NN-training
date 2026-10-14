@@ -33,3 +33,5 @@ Portable memory for the *Picture Sorter for NN Training* project. Kept inside th
 - [Goldens export, versioning, GPU (2026-10-14)](goldens-export-versioning-gpu.md) — goldens-only export, Dedup before Classify, app version 1.1.1 shown in sidebar, soft-deleted versions (schema v4), DB-lock fix, work-laptop CUDA torch; how the user really uses goldens/labels.
 - [Memory housekeeping (2026-10-14)](memory-housekeeping.md) — front matter aligned, notes renamed to short undated names, five dead links fixed.
 - [Memory note naming](memory-note-naming.md) — short descriptive filenames, no date; date lives in front matter.
+- [Detector + masking, 1.2.0-1.6.2 (2026-10-14)](detector-masking.md) — filters, mask, OWL-ViT detector, review, polygon editing, Classify keyboard shortcuts; decisions, unverified parts, build/venv lessons.
+- [TODO: Detector page usability](todo-detector-ux.md) — open: the page is confusing and badly laid out; analysis and proposals, to discuss before coding.
