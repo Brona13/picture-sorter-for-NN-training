@@ -6,7 +6,7 @@ session_date: 2026-10-13
 
 # Session 2026-10-13: Streamlit → React + FastAPI
 
-Plan: `plans/2026-10-13-streamlit-to-react-fastapi-migration.md` (status: completed).
+Plan: `plans/streamlit-to-react-fastapi-migration.md` (status: completed).
 Decisions: no hybrid, full refactor; `app/backend` + `app/frontend`; Vite + React + TypeScript; pytest + TestClient; Dedup included; one commit per step, no push.
 
 ## Result

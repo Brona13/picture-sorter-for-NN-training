@@ -45,7 +45,7 @@ Keep domain logic out of API routers and React components when practical.
 Domain modules use flat imports (`import labels`) with `app/backend` on `sys.path`.
 
 Run backend tests with `.venv/bin/python -m pytest`; frontend with `cd app/frontend && npm test && npx tsc --noEmit`.
-Launch with `./run.sh` (see README). History: `plans/2026-10-13-streamlit-to-react-fastapi-migration.md`.
+Launch with `./run.sh` (see README). History: `plans/streamlit-to-react-fastapi-migration.md`.
 
 ## Safe working rules
 

@@ -9,7 +9,7 @@ session_date: 2026-10-13
 Details of the migration itself: [[2026-10-13-streamlit-to-react-fastapi-migration]]. Git state and merge: [[2026-10-13-migration-push-state]].
 
 ## Done
-- Streamlit → React + FastAPI migration, steps 0-12, one commit each (plan: `plans/2026-10-13-streamlit-to-react-fastapi-migration.md`).
+- Streamlit → React + FastAPI migration, steps 0-12, one commit each (plan: `plans/streamlit-to-react-fastapi-migration.md`).
 - Merged the remote's Streamlit-side work (ROIs in a SQLite `rois` table, v2→v3 migration, ingest signature cleanup); pushed to `origin/main`.
 - Default port **8999**. Simple global theme (`app/frontend/src/styles.css`). Classify cards: buttons wrap, Columns setting is honoured exactly, thumbnails 360 px.
 - Real data: deleted all 210 labels of `pekat-cam3` (all on feature `product`) at the user's request; backup `data/picture_sorter-before-cam3-clear.db` (git-ignored). Mutes, the soft-deleted frame and cached results were left.

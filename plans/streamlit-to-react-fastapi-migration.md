@@ -1,3 +1,11 @@
+---
+name: streamlit-to-react-fastapi-migration
+description: Full migration from Streamlit to a React + FastAPI app, done view by view with backend first
+status: shipped
+document_type: plan
+last_updated: 2026-10-13
+---
+
 # Plan: Streamlit → React + FastAPI full migration
 
 > **Status: completed 2026-10-13** — steps 0–12 are implemented and committed (one commit per step). The browser-level click-through in step 12 could not be run (Chrome extension not connected); the full workflow was instead exercised over HTTP against the real server, plus 135 backend and 51 frontend tests.
