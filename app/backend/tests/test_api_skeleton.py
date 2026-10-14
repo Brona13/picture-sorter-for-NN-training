@@ -42,6 +42,11 @@ class ApiSkeletonTests(unittest.TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.json(), {"status": "ok"})
 
+    def test_version(self) -> None:
+        body = self.client.get("/api/version").json()
+        self.assertRegex(body["version"], r"^\d+\.\d+\.\d+$")
+        self.assertRegex(body["released"], r"^\d{4}-\d{2}-\d{2}$")
+
     def test_cameras(self) -> None:
         self.assertEqual(self.client.get("/api/cameras").json(), ["camA", "camB"])
 

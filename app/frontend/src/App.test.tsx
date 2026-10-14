@@ -52,6 +52,19 @@ test("shows cameras, products and view navigation; redirects to Status", async (
   }
 });
 
+test("shows the app version and release date", async () => {
+  mockFetch({
+    "/api/version": { version: "0.3.1", released: "2026-10-14" },
+    "/api/cameras": [],
+  });
+  render(
+    <MemoryRouter>
+      <App />
+    </MemoryRouter>,
+  );
+  expect(await screen.findByText("v0.3.1 · 2026-10-14")).toBeInTheDocument();
+});
+
 test("hides the product picker for cameras without products", async () => {
   render(
     <MemoryRouter>

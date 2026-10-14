@@ -17,6 +17,7 @@ if str(_BACKEND_DIR) not in sys.path:
 from fastapi import FastAPI, HTTPException, Request  # noqa: E402
 from fastapi.responses import FileResponse, JSONResponse  # noqa: E402
 
+import appinfo  # noqa: E402
 import db  # noqa: E402
 from api import cameras, classify_api, dedup_api, frames_api, ingest_api, insights_api, jobs, roi_api, status, versions_api  # noqa: E402
 
@@ -56,6 +57,10 @@ def create_app() -> FastAPI:
     @app.get("/api/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/api/version")
+    def version() -> dict[str, str]:
+        return {"version": appinfo.VERSION, "released": appinfo.RELEASED}
 
     app.include_router(cameras.router, prefix="/api")
     app.include_router(status.router, prefix="/api")

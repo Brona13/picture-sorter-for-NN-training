@@ -328,6 +328,7 @@ const post = (body?: unknown): RequestInit => ({
 
 export const api = {
   health: () => request<{ status: string }>("/health"),
+  version: () => request<{ version: string; released: string }>("/version"),
   cameras: () => request<string[]>("/cameras"),
   products: (camera: string) =>
     request<string[]>(`/cameras/${encodeURIComponent(camera)}/products`),

@@ -55,6 +55,8 @@ body {
   overflow-y: auto;
 }
 .sidebar h1 { font-size: 17px; margin: 0 0 16px; }
+.sidebar h1:has(+ .app-version) { margin-bottom: 2px; }
+.app-version { margin: 0 0 16px; color: var(--muted); font-size: 12px; }
 .sidebar label { display: block; margin: 0 0 10px; color: var(--muted); font-size: 12px; }
 .sidebar select { width: 100%; margin-top: 2px; }
 .sidebar ul { list-style: none; padding: 0; margin: 16px 0 0; }

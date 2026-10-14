@@ -16,6 +16,14 @@ export default function App() {
   const [products, setProducts] = useState<string[]>([]);
   const [product, setProduct] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<{ version: string; released: string } | null>(null);
+
+  useEffect(() => {
+    api
+      .version()
+      .then(setInfo)
+      .catch(() => setInfo(null)); // cosmetic; never block the app on it
+  }, []);
 
   const loadCameras = useCallback((select?: string) => {
     api
@@ -42,6 +50,11 @@ export default function App() {
     <div className="app">
       <nav aria-label="Sidebar" className="sidebar">
         <h1>Picture Sorter</h1>
+        {info && (
+          <p className="app-version" title="Application version and release date">
+            v{info.version} · {info.released}
+          </p>
+        )}
         <label>
           Camera
           <select value={camera} onChange={(e) => setCamera(e.target.value)}>

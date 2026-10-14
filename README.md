@@ -558,3 +558,7 @@ Current authoritative documents:
 
 Files under `memory/` and `plans/` may describe earlier
 workflows and should be consulted as historical rationale rather than current operating instructions.
+
+## Version
+
+The app version and release date are shown under the title in the sidebar and served at `GET /api/version`. To release, edit `VERSION` and `RELEASED` in `app/backend/appinfo.py` (semantic versioning, ISO date).
