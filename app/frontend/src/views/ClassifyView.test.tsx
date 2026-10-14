@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import ClassifyView from "./ClassifyView";
@@ -298,4 +298,51 @@ test("suggested goldens: lazy-loaded when opened; promote sends label+golden req
   await waitFor(() => expect(calls.some((c) => c.url.includes("/classify/promote"))).toBe(true));
   expect(calls.find((c) => c.url.includes("/classify/promote"))!.body).toEqual({ feature: "seal", frame: "s1.png", cls: "NG" });
   expect(await screen.findByText(/Promoted s1.png → ⭐ NG/)).toBeInTheDocument();
+});
+
+
+const labelCalls = () => calls.filter((c) => c.url.includes("/classify/label"));
+
+test("number keys label the hovered card: 1 = first class, 2 = second, 0 clears", async () => {
+  render(<ClassifyView camera="camA" />);
+  const a = await cardEl("a.png");
+  await userEvent.hover(a);
+  await userEvent.keyboard("2");
+  await waitFor(() => expect(labelCalls().length).toBe(1));
+  expect(labelCalls()[0].body).toEqual({ feature: "seal", frame: "a.png", cls: "NG" });
+  await waitFor(() => expect(within(a).getByRole("button", { name: "NG" })).toBeEnabled());
+  await userEvent.keyboard("0");
+  await waitFor(() => expect(labelCalls().length).toBe(2));
+  expect(labelCalls()[1].body.cls).toBeNull();
+});
+
+test("number keys do nothing without hover, for unknown classes, with modifiers, or while typing", async () => {
+  render(<ClassifyView camera="camA" />);
+  const a = await cardEl("a.png");
+  await userEvent.keyboard("1"); // nothing hovered
+  await userEvent.hover(a);
+  await userEvent.keyboard("7"); // only two classes
+  await userEvent.keyboard("{Control>}1{/Control}");
+  const select = screen.getAllByRole("combobox")[0];
+  select.focus();
+  fireEvent.keyDown(select, { key: "1" }); // typing in a control
+  await userEvent.unhover(a);
+  await userEvent.keyboard("1");
+  expect(labelCalls()).toHaveLength(0);
+});
+
+test("pressing the active class's number keeps the label (only 0 or the button clears it)", async () => {
+  grid = () => gridBody([card("a.png", { label: "OK" })]);
+  render(<ClassifyView camera="camA" />);
+  const a = await cardEl("a.png");
+  await userEvent.hover(a);
+  await userEvent.keyboard("1");
+  expect(labelCalls()).toHaveLength(0);
+});
+
+test("class buttons show their shortcut number and the grid explains the shortcuts", async () => {
+  render(<ClassifyView camera="camA" />);
+  const a = await cardEl("a.png");
+  expect(within(a).getByRole("button", { name: "NG" })).toHaveAttribute("title", expect.stringContaining("press 2"));
+  expect(screen.getByText(/1 = OK, 2 = NG, 0 = clear label/)).toBeInTheDocument();
 });

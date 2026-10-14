@@ -102,7 +102,7 @@ See [[data-model]] for the canonical entities and invariants.
 - Metadata labels; source frames do not move
 - Default binary quality classes: `OK` and `NG`
 - Multi-class product classification
-- Per-frame labeling
+- Per-frame labeling, by buttons or by keyboard: hover a card and press 1-9 (class in listed order) or 0 (clear label)
 - Bulk labeling of filtered selections
 - Bulk clearing of labels in the current Show filter (all pages); goldens are kept unless explicitly included, and clearing a golden's label removes its golden mark
 - Per-class golden reference marks

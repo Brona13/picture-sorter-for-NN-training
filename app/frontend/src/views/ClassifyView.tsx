@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, CardData, CardUpdate, ClassifyState, GridQuery, GridResponse } from "../api";
 import AutoPanel, { AutoFilter } from "../classify/AutoPanel";
 import BulkPanel from "../classify/BulkPanel";
-import Card from "../classify/Card";
+import Card, { MAX_SHORTCUT_CLASSES } from "../classify/Card";
 import ClearPanel from "../classify/ClearPanel";
 import SuggestPanel from "../classify/SuggestPanel";
 import { useJob } from "../useJob";
@@ -375,6 +375,13 @@ export default function ClassifyView({ camera, product }: { camera: string; prod
           {grid && grid.total === 0 && <p>No frames match this view.</p>}
           {grid && grid.total > 0 && (
             <>
+              <p>
+                <small>
+                  ⌨ Hover a card and press{" "}
+                  {classes.slice(0, MAX_SHORTCUT_CLASSES).map((c, i) => `${i + 1} = ${c}`).join(", ")}
+                  {", 0 = clear label"} to label it without clicking.
+                </small>
+              </p>
               <Pager grid={grid} settings={st.settings} onPage={setPage} onSettings={changeSetting} where="top" />
               <ul
                 style={{
