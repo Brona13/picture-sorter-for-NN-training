@@ -379,7 +379,7 @@ export default function ClassifyView({ camera, product }: { camera: string; prod
                 <small>
                   ⌨ Hover a card and press{" "}
                   {classes.slice(0, MAX_SHORTCUT_CLASSES).map((c, i) => `${i + 1} = ${c}`).join(", ")}
-                  {", 0 = clear label"} to label it without clicking.
+                  {", 0 = clear label, the key left of 1 = golden on/off"} (no clicking needed).
                 </small>
               </p>
               <Pager grid={grid} settings={st.settings} onPage={setPage} onSettings={changeSetting} where="top" />

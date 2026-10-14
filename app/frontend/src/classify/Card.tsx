@@ -30,7 +30,10 @@ const badge = (bg: string): React.CSSProperties => ({
   fontSize: 11,
 });
 
-/** Keyboard shortcuts label the hovered card: 1-9 pick the class in that position, 0 clears. */
+/**
+ * Keyboard shortcuts act on the hovered card: 1-9 pick the class in that position (again to
+ * remove it), 0 clears, and the key left of 1 (``Backquote``, whatever it prints) toggles golden.
+ */
 export const MAX_SHORTCUT_CLASSES = 9;
 
 function isTypingTarget(target: EventTarget | null): boolean {
@@ -45,22 +48,29 @@ export default function Card({ camera, feature, classes, methods, card, busy, on
   // Number keys act on the card under the mouse. The handler is reread from a ref so the window
   // listener only comes and goes with hovering, not with every render.
   const [hovered, setHovered] = useState(false);
-  const latest = useRef({ classes, label, busy, deleted, onLabel });
-  latest.current = { classes, label, busy, deleted, onLabel };
+  const latest = useRef({ classes, label, golden, busy, deleted, onLabel, onGolden });
+  latest.current = { classes, label, golden, busy, deleted, onLabel, onGolden };
   useEffect(() => {
     if (!hovered) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.ctrlKey || e.metaKey || e.altKey || e.repeat || isTypingTarget(e.target)) return;
-      if (!/^[0-9]$/.test(e.key)) return;
+      const isGoldenKey = e.code === "Backquote";
+      if (!isGoldenKey && !/^[0-9]$/.test(e.key)) return;
       const cur = latest.current;
       if (cur.busy || cur.deleted) return;
+      if (isGoldenKey) {
+        if (cur.label === null) return; // a golden is always a labeled frame
+        cur.onGolden(!cur.golden);
+        e.preventDefault();
+        return;
+      }
       const n = Number(e.key);
       if (n === 0) {
         if (cur.label !== null) cur.onLabel(null);
       } else {
         const cls = cur.classes[n - 1];
         if (cls === undefined || n > MAX_SHORTCUT_CLASSES) return;
-        if (cur.label !== cls) cur.onLabel(cls);
+        cur.onLabel(cur.label === cls ? null : cls);
       }
       e.preventDefault();
     };
@@ -187,7 +197,7 @@ export default function Card({ camera, feature, classes, methods, card, busy, on
           disabled={busy || label === null}
           title={
             label === null
-              ? "Label the frame first, then star it to make it a golden reference for that class."
+              ? "Label the frame first, then star it to make it a golden reference for that class. Shortcut: the key left of 1."
               : golden
                 ? `Currently a ⭐${golden} reference — click to remove.`
                 : `Mark as a golden reference for ${label}.`

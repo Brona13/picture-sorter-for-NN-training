@@ -331,18 +331,36 @@ test("number keys do nothing without hover, for unknown classes, with modifiers,
   expect(labelCalls()).toHaveLength(0);
 });
 
-test("pressing the active class's number keeps the label (only 0 or the button clears it)", async () => {
+test("pressing the active class's number again removes the label", async () => {
   grid = () => gridBody([card("a.png", { label: "OK" })]);
   render(<ClassifyView camera="camA" />);
   const a = await cardEl("a.png");
   await userEvent.hover(a);
   await userEvent.keyboard("1");
-  expect(labelCalls()).toHaveLength(0);
+  await waitFor(() => expect(labelCalls()).toHaveLength(1));
+  expect(labelCalls()[0].body.cls).toBeNull();
+});
+
+const goldenCalls = () => calls.filter((c) => c.url.includes("/classify/golden"));
+
+test("the key left of 1 toggles golden on a labeled card and is ignored without a label", async () => {
+  grid = () => gridBody([card("a.png"), card("b.png", { label: "OK" })]);
+  render(<ClassifyView camera="camA" />);
+  const a = await cardEl("a.png");
+  const b = await cardEl("b.png");
+  await userEvent.hover(a);
+  await userEvent.keyboard("{`}"); // unlabeled: no golden
+  expect(goldenCalls()).toHaveLength(0);
+  await userEvent.unhover(a);
+  await userEvent.hover(b);
+  fireEvent.keyDown(window, { key: ";", code: "Backquote" }); // Czech layout prints ';' for this key
+  await waitFor(() => expect(goldenCalls()).toHaveLength(1));
+  expect(goldenCalls()[0].body).toEqual({ feature: "seal", frame: "b.png", golden: true });
 });
 
 test("class buttons show their shortcut number and the grid explains the shortcuts", async () => {
   render(<ClassifyView camera="camA" />);
   const a = await cardEl("a.png");
   expect(within(a).getByRole("button", { name: "NG" })).toHaveAttribute("title", expect.stringContaining("press 2"));
-  expect(screen.getByText(/1 = OK, 2 = NG, 0 = clear label/)).toBeInTheDocument();
+  expect(screen.getByText(/1 = OK, 2 = NG, 0 = clear label, the key left of 1 = golden/)).toBeInTheDocument();
 });
