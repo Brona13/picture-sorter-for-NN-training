@@ -3,7 +3,7 @@ name: MEMORY
 description: Portable index of project memory files
 status: current
 document_type: index
-last_updated: 2026-08-06
+last_updated: 2026-10-14
 ---
 
 # Project Memory Index
@@ -30,3 +30,4 @@ Portable memory for the *Picture Sorter for NN Training* project. Kept inside th
 - [Session 2026-10-13: Streamlit → React + FastAPI migration](2026-10-13-streamlit-to-react-fastapi-migration.md) — full migration done (steps 0-12); browser click-through still unverified; `./run.sh` launches.
 - [Migration push state 2026-10-13](2026-10-13-migration-push-state.md) — pushed as origin/react-fastapi; origin/main diverged (remote ROI-table schema change); nothing merged yet.
 - [Session 2026-10-13 summary](2026-10-13-session-summary-ui-polish-and-windows.md) — whole-day recap: merge pushed, theme, Classify fixes, cam3 labels cleared, run.ps1; UI never seen rendered by Claude.
+- [Session 2026-10-14 summary](2026-10-14-session-summary-goldens-export-versioning-gpu.md) — goldens-only export, Dedup before Classify, app version 1.1.1 shown in sidebar, soft-deleted versions (schema v4), DB-lock fix, work-laptop CUDA torch; how the user really uses goldens/labels.
