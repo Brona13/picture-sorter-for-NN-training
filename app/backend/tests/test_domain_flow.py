@@ -133,10 +133,11 @@ class EndToEndFlowTests(unittest.TestCase):
         destination, export_report = versions.export(
             self.camera, self.feature, frozen["id"]
         )
-        self.assertEqual(len(frames), export_report["written"])
+        golden_count = 2  # frames[0] (OK) and frames[1] (NG); only goldens are exported
+        self.assertEqual(golden_count, export_report["written"])
         self.assertEqual([], export_report["missing"])
         self.assertEqual([], export_report["hash_mismatch"])
-        self.assertEqual(len(frames), len(list(destination.rglob("*.png"))))
+        self.assertEqual(golden_count, len(list(destination.rglob("*.png"))))
 
 
 if __name__ == "__main__":

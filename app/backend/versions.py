@@ -202,14 +202,41 @@ def revert(camera: str, feature: str, version_id: int) -> dict:
     return {"labels": len(snap_labels), "goldens": sum(len(v) for v in snap_gold.values())}
 
 
+# --- delete ------------------------------------------------------------------
+class ActiveVersionError(ValueError):
+    """The active version cannot be deleted."""
+
+
+def delete_version(camera: str, feature: str, version_id: int) -> None:
+    """Delete a saved (non-active) version and its snapshot items.
+
+    Working labels/goldens are untouched. Files already exported to disk are
+    not removed. Raises :class:`ActiveVersionError` for the active version.
+    """
+    con = db.connect()
+    try:
+        row = con.execute(
+            "SELECT active FROM versions WHERE id=? AND camera=? AND feature=?",
+            (version_id, camera, feature),
+        ).fetchone()
+        if row is None:
+            raise ValueError(f"no such version id {version_id}")
+        if row["active"]:
+            raise ActiveVersionError("the active version cannot be deleted")
+        con.execute("DELETE FROM versions WHERE id=?", (version_id,))  # items cascade
+        con.commit()
+    finally:
+        con.close()
+
+
 # --- export ------------------------------------------------------------------
 def export(camera: str, feature: str, version_id: int) -> tuple[Path, dict]:
-    """Copy a version's full, unmodified frames into class folders.
+    """Copy a version's golden frames, untouched, into class folders.
 
     Layout: ``cameras/<cam>/exports/<feature>/v<NNN>__<name>/<class>/<original filename>``.
-    No cutouts and no manifest: the original filename is kept so labels in other
-    tools map back to the source frame. Golden frames are exported into their
-    class folder alongside labeled ones.
+    Only golden frames are exported; other labeled frames exist for scoring and
+    stay in the snapshot only. No cutouts and no manifest: the original filename
+    is kept so labels in other tools map back to the source frame.
     Hashes are verified; missing/changed frames are reported, not silently skipped.
     """
     import shutil
@@ -232,9 +259,12 @@ def export(camera: str, feature: str, version_id: int) -> tuple[Path, dict]:
     )
     report = {"written": 0, "missing": [], "hash_mismatch": []}
 
-    # A frame can be both labeled and golden for the same class — export it once.
+    # Goldens only. A golden is always labeled, so its snapshot also holds a label
+    # item; skipping kind="label" exports each golden once.
     seen: set[tuple[str, str]] = set()
     for item in load_items(version_id):
+        if item["kind"] != "golden":
+            continue
         frame, cls = item["frame"], item["class"]
         if (frame, cls) in seen:
             continue

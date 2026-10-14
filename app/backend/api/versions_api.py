@@ -84,6 +84,17 @@ def revert(camera: str, version_id: int, feature: str) -> dict:
     return versions.revert(camera, feature, version_id)
 
 
+@router.delete("/cameras/{camera}/versions/{version_id}")
+def delete_version(camera: str, version_id: int, feature: str) -> dict:
+    require_feature(camera, feature)
+    _require_version(camera, feature, version_id)
+    try:
+        versions.delete_version(camera, feature, version_id)
+    except versions.ActiveVersionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"deleted": version_id}
+
+
 @router.post("/cameras/{camera}/versions/{version_id}/export")
 def export(camera: str, version_id: int, feature: str) -> dict:
     require_feature(camera, feature)

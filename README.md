@@ -328,6 +328,8 @@ A version is a small reproducible recipe, not a copy of the source images.
 Reverting replaces the working labels and goldens from a selected snapshot.
 Other saved versions remain available.
 
+A non-active version can be deleted from the history table (with confirmation). This removes only the saved snapshot; working labels and goldens and files already exported are not touched. The active version cannot be deleted.
+
 ### Export
 
 Export materializes a frozen version into class folders under:
@@ -336,7 +338,7 @@ Export materializes a frozen version into class folders under:
 cameras/<camera>/exports/<feature>/<version>/<class>/
 ```
 
-The exported files are full, unmodified copies of the source frames with their original filenames. No cutouts and no extra files are written.
+Only the version's golden frames are exported, as unmodified copies of the source images with their original filenames. Labeled frames that are not golden are used for scoring only and are not exported. No cutouts and no extra files are written.
 
 Before copying each frame, the exporter verifies the source-frame content hash. Missing or changed frames are reported.
 

@@ -116,14 +116,16 @@ A version is an immutable snapshot recipe for one camera and feature. It stores 
 - Exactly one version per camera and feature is active.
 - Reverting replaces working labels and goldens with the snapshot.
 - Reverting never deletes other saved versions.
+- A non-active version can be deleted. Deleting removes only the snapshot; working labels and goldens and already exported files are untouched. The active version cannot be deleted.
 - Export reads the frozen snapshot and verifies hashes.
 
 ## Export
 
-Exports copy the versioned full, unmodified frames (original filenames, no cutouts, no manifest) under `cameras/<camera>/exports/<feature>/<version>/<class>/`.
+Exports copy the version's **golden** frames only, unmodified (original filenames, no cutouts, no manifest), under `cameras/<camera>/exports/<feature>/<version>/<class>/`.
 
 - Source frames remain unchanged.
-- A labeled golden is exported once.
+- Labeled frames that are not golden are not exported; they exist for scoring and stay in the snapshot.
+- A golden is exported once, into the folder of its class.
 - Missing sources and hash mismatches are reported.
 - Exports are generated artifacts, not authoritative metadata.
 

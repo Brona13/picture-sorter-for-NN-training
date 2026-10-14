@@ -78,16 +78,49 @@ class VersionsApiTests(ApiTestCase):
         self.assertEqual(r.status_code, 404)
         self.assertEqual(labels.current_labels("camA", "cap"), {self.frames[0]: "OK"})
 
+    def test_delete_removes_only_a_non_active_version(self) -> None:
+        import db
+
+        labels.set_label("camA", "seal", self.frames[0], "OK")
+        labels.mark_golden("camA", "seal", self.frames[0], "OK")
+        v1 = self.freeze(name="a").json()["id"]
+        v2 = self.freeze(name="b").json()["id"]  # v2 is now active
+
+        r = self.client.delete(f"{self.base}/{v2}", params={"feature": "seal"})
+        self.assertEqual(r.status_code, 409)
+
+        r = self.client.delete(f"{self.base}/{v1}", params={"feature": "seal"})
+        self.assertEqual(r.status_code, 200)
+        vs = self.client.get(self.base, params={"feature": "seal"}).json()["versions"]
+        self.assertEqual([v["id"] for v in vs], [v2])
+        con = db.connect()
+        try:
+            n = con.execute("SELECT COUNT(*) FROM version_items WHERE version_id=?", (v1,)).fetchone()[0]
+        finally:
+            con.close()
+        self.assertEqual(n, 0)
+        # working state is untouched
+        self.assertEqual(labels.current_goldens("camA", "seal"), {"OK": [self.frames[0]]})
+
+    def test_delete_rejects_version_of_other_feature(self) -> None:
+        labels.set_label("camA", "cap", self.frames[0], "OK")
+        other = self.freeze(feature="cap").json()["id"]
+        self.freeze(feature="cap", name="again")
+        r = self.client.delete(f"{self.base}/{other}", params={"feature": "seal"})
+        self.assertEqual(r.status_code, 404)
+
     def test_export_is_reproducible_and_leaves_sources_untouched(self) -> None:
         f = self.frames
         labels.set_label("camA", "seal", f[0], "OK")
         labels.set_label("camA", "seal", f[1], "NG")
+        labels.set_label("camA", "seal", f[2], "NG")
         labels.mark_golden("camA", "seal", f[0], "OK")
+        labels.mark_golden("camA", "seal", f[1], "NG")
         vid = self.freeze().json()["id"]
         before = sorted(p.name for p in datamodel.list_unsorted("camA"))
 
         r1 = self.client.post(f"{self.base}/{vid}/export", params={"feature": "seal"}).json()
-        self.assertEqual(r1["written"], 2)
+        self.assertEqual(r1["written"], 2)  # goldens only; f[2] is labeled but not golden
         self.assertEqual(r1["missing"], [])
         self.assertEqual(r1["hash_mismatch"], [])
         from pathlib import Path

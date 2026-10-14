@@ -82,6 +82,23 @@ test("revert needs confirmation and can be cancelled", async () => {
   expect(calls.find((c) => c.url.includes("/revert"))!.url).toContain("/versions/1/revert?feature=seal");
 });
 
+test("delete is disabled for the active version and needs confirmation", async () => {
+  render(<VersionsView camera="camA" />);
+  await screen.findByText("History (2)");
+  expect(screen.getByRole("button", { name: /Delete v2/ })).toBeDisabled();
+
+  await userEvent.click(screen.getByRole("button", { name: /Delete v1/ }));
+  expect(screen.getByRole("alertdialog", { name: "Confirm delete" })).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(calls.some((c) => c.method === "DELETE")).toBe(false);
+
+  await userEvent.click(screen.getByRole("button", { name: /Delete v1/ }));
+  await userEvent.click(screen.getByRole("button", { name: /Yes, delete/ }));
+  await screen.findByText("Deleted v1.");
+  const del = calls.find((c) => c.method === "DELETE")!;
+  expect(del.url).toContain("/versions/1?feature=seal");
+});
+
 test("export shows the report", async () => {
   render(<VersionsView camera="camA" />);
   await screen.findByText("History (2)");

@@ -358,6 +358,11 @@ export const api = {
       `/cameras/${encodeURIComponent(camera)}/versions/${id}/revert?feature=${encodeURIComponent(feature)}`,
       post(),
     ),
+  deleteVersion: (camera: string, feature: string, id: number) =>
+    request<{ deleted: number }>(
+      `/cameras/${encodeURIComponent(camera)}/versions/${id}?feature=${encodeURIComponent(feature)}`,
+      send("DELETE"),
+    ),
   exportVersion: (camera: string, feature: string, id: number) =>
     request<ExportReport>(
       `/cameras/${encodeURIComponent(camera)}/versions/${id}/export?feature=${encodeURIComponent(feature)}`,

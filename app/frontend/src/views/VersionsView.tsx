@@ -11,6 +11,7 @@ export default function VersionsView({ camera, product }: { camera: string; prod
   const [name, setName] = useState("");
   const [notes, setNotes] = useState("");
   const [confirming, setConfirming] = useState<number | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState<number | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [exportReport, setExportReport] = useState<ExportReport | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -41,6 +42,7 @@ export default function VersionsView({ camera, product }: { camera: string; prod
   useEffect(() => {
     setData(null);
     setConfirming(null);
+    setConfirmingDelete(null);
     setNotice(null);
     setExportReport(null);
     load();
@@ -67,6 +69,17 @@ export default function VersionsView({ camera, product }: { camera: string; prod
       const res = await api.revert(camera, feature, v.id);
       setNotice(`Reverted to v${v.number}: ${res.labels} labels, ${res.goldens} golden marks.`);
       setConfirming(null);
+      load();
+    } catch (err) {
+      setError(msg(err));
+    }
+  }
+
+  async function onDelete(v: VersionInfo) {
+    try {
+      await api.deleteVersion(camera, feature, v.id);
+      setNotice(`Deleted v${v.number}.`);
+      setConfirmingDelete(null);
       load();
     } catch (err) {
       setError(msg(err));
@@ -175,7 +188,10 @@ export default function VersionsView({ camera, product }: { camera: string; prod
                     <button disabled={v.active} onClick={() => setConfirming(v.id)}>
                       ⏪ Revert v{v.number}
                     </button>{" "}
-                    <button onClick={() => onExport(v)}>📦 Export v{v.number}</button>
+                    <button onClick={() => onExport(v)}>📦 Export v{v.number}</button>{" "}
+                    <button disabled={v.active} onClick={() => setConfirmingDelete(v.id)}>
+                      🗑 Delete v{v.number}
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -195,10 +211,23 @@ export default function VersionsView({ camera, product }: { camera: string; prod
               </div>
             ))}
 
+          {data.versions
+            .filter((v) => v.id === confirmingDelete)
+            .map((v) => (
+              <div key={v.id} role="alertdialog" aria-label="Confirm delete">
+                <p>
+                  Delete <strong>v{v.number}</strong> ({v.name})? The saved snapshot is removed for good.
+                  Your current labels and goldens are not affected, and files already exported stay on disk.
+                </p>
+                <button onClick={() => onDelete(v)}>✅ Yes, delete</button>{" "}
+                <button onClick={() => setConfirmingDelete(null)}>Cancel</button>
+              </div>
+            ))}
+
           {exportReport && (
             <div role="status">
               <p>
-                Exported <strong>{exportReport.written}</strong> full frames → <code>{exportReport.destination}</code>
+                Exported <strong>{exportReport.written}</strong> golden images → <code>{exportReport.destination}</code>
               </p>
               {exportReport.missing.length > 0 && (
                 <p>
