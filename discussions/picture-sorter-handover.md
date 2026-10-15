@@ -1,7 +1,7 @@
 ---
 name: picture-sorter-handover
 description: Voice-discussion handover - decisions, rule-based edge-angle tool, embedding-family ideas, TODO list (to be reconciled with current docs)
-status: draft
+status: implemented
 document_type: handoff
 last_updated: 2026-10-15
 ---
@@ -107,3 +107,22 @@ Use case: the object sits close to the camera against a blurred background, so i
 - Final naming and structure for the toolbox (tabs vs. branching flow).
 - Whether a tool recommendation layer is worth building after manual selection works.
 - Background embedding design (deferred until object embedding works).
+
+## Status after implementation (2026-10-15)
+
+Reconciled with the code; details in `memory/handover-new-tools.md`, plan in `plans/handover-new-tools-plan.md`.
+
+- Corrections to this note: the development machine now has an AMD GPU working through ROCm (the work laptop has an Nvidia RTX); ROIs still define the crops, the detector refines inside them and moves the mask; goldens are marked in Classify, after Dedup; the Dedup sliders are DBSCAN epsilon and min points, not a cluster count; features stay scoped to one camera (cross-camera features were declared out of scope).
+- Section 8 TODO list:
+  - [x] Batch functionality: the existing Bulk/Auto-assign select by leaning, margin or novelty against goldens, not by similarity to one example.
+  - [x] Stricter near-duplicate threshold: already covered by the Dedup epsilon (minimum 0.001).
+  - [x] Edge-angle tool: v1.17.0.
+  - [x] Outlier detection: v1.15.0.
+  - [x] Nearest-neighbour batch labeling (Find similar): v1.16.0.
+  - [ ] Embedding drift over time: not started; filenames carry `dd.mm.yyyy_hh.mm.ss`.
+  - [x] Augmentation view: v1.18.0, measures and records ranges only; it never changes pictures.
+  - [~] Downstream quality form: v1.19.0 records free-text metrics per version; the downstream system's real metrics are still to be found out.
+  - [-] Feature-vs-camera data model: out of scope, the tool only analyses pictures.
+  - [x] Overview hub with per-ROI progress: Overview page (laptop session, v1.12.0-v1.14.1) plus pipeline stages and the step bar (v1.20.0).
+  - [ ] Reorganize the UI into tabs/branches: deferred.
+  - [ ] Git for the Windows folder: not app work; which machine is not a repo is unanswered.

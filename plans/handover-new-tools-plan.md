@@ -1,7 +1,7 @@
 ---
 name: handover-new-tools-plan
 description: Six phases extending the app with outlier scoring, nearest-neighbour labeling, edge-angle rule tool, augmentation ranges, quality record form and pipeline hub
-status: active
+status: complete
 document_type: plan
 last_updated: 2026-10-15
 ---

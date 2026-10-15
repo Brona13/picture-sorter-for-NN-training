@@ -3,7 +3,7 @@ name: MEMORY
 description: Portable index of project memory files
 status: current
 document_type: index
-last_updated: 2026-10-14
+last_updated: 2026-10-15
 ---
 
 # Project Memory Index
@@ -34,5 +34,6 @@ Portable memory for the *Picture Sorter for NN Training* project. Kept inside th
 - [Memory housekeeping (2026-10-14)](memory-housekeeping.md) — front matter aligned, notes renamed to short undated names, five dead links fixed.
 - [Memory note naming](memory-note-naming.md) — short descriptive filenames, no date; date lives in front matter.
 - [Detector + masking, 1.2.0-1.6.2 (2026-10-14)](detector-masking.md) — filters, mask, OWL-ViT detector, review, polygon editing, Classify keyboard shortcuts; decisions, unverified parts, build/venv lessons.
-- [TODO: Detector page usability](todo-detector-ux.md) — open: the page is confusing and badly laid out; analysis and proposals, to discuss before coding.
+- [TODO: Detector page usability](todo-detector-ux.md) — done in 1.11.0 (tabbed workflow); kept for the analysis.
 - [GPU backends and ROCm (2026-10-15)](gpu-backends-rocm.md) — CPU/CUDA/ROCm per machine, RX 7800 XT verified in `.venv-rocm`, v1.7.0; helper scripts and Windows untested.
+- [Handover tools, 1.15.0-1.20.0 (2026-10-15)](handover-new-tools.md) — outliers, find similar, edge angle, augmentation ranges, downstream results, pipeline stages + the laptop's Overview integrated; unverified on real data; git/schema cautions.

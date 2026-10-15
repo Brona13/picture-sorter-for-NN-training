@@ -27,4 +27,4 @@ metadata:
 - `run.sh` still launches `.venv`; use `.venv-rocm` by activating it first.
 - Flaky test: `test_clean_schema.py::MigrationV3ToV4Tests::test_parallel_first_connects_all_succeed` failed once in a full run, passes in isolation and on the previous code.
 
-Related: [[goldens-export-versioning-gpu]], [[detector-masking]].
+Related: [[goldens-export-versioning-gpu]], [[detector-masking]], [[handover-new-tools]].

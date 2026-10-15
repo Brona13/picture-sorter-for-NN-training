@@ -3,7 +3,7 @@ name: current-project
 description: Authoritative snapshot of the current purpose, architecture, capabilities, limitations, and open work
 status: current
 document_type: project-status
-last_updated: 2026-08-03
+last_updated: 2026-10-15
 ---
 
 # Current project
@@ -345,13 +345,17 @@ The project folder is portable, but `.venv/` is machine-specific and must be rec
 
 Listed in recommended priority order:
 
-1. Add focused automated tests for product-scope, version, and export invariants.
-2. Measure and normalize classical metric scales per representative ROI.
-3. Add coverage-aware or farthest-point selection to reduce candidate redundancy.
-4. Consider aligned difference views or heatmaps for faster human verification.
-5. Improve per-product grouping in Status and Versions.
-6. Add browser-level (end-to-end) tests for the React views; current frontend tests mock the API and cannot exercise real pointer interaction.
-7. Build the `setup_torch.sh` / `setup_torch.ps1` hardware detect-or-ask helper; investigate the flaky `test_clean_schema.py::MigrationV3ToV4Tests::test_parallel_first_connects_all_succeed`. See `memory/gpu-backends-rocm.md`.
+0. **Try the 2026-10-15 tools on real data** (nothing in v1.15.0-v1.20.0 has been used on the real cameras or in a browser): Overview stage chips and the step bar, Outliers, Find similar, the edge-angle rule (angle, band width), augmentation ranges (the "not measured" counts), the downstream results form. See `memory/handover-new-tools.md`.
+1. Find out which quality metrics the downstream system reports, then refine the Downstream results form (today: free-text metric names).
+2. Add focused automated tests for product-scope, version, and export invariants.
+3. Measure and normalize classical metric scales per representative ROI.
+4. Add coverage-aware or farthest-point selection to reduce candidate redundancy.
+5. Consider aligned difference views or heatmaps for faster human verification.
+6. Improve per-product grouping in Status and Versions.
+7. Add browser-level (end-to-end) tests for the React views; current frontend tests mock the API and cannot exercise real pointer interaction.
+8. Build the `setup_torch.sh` / `setup_torch.ps1` hardware detect-or-ask helper; investigate the flaky `test_clean_schema.py::MigrationV3ToV4Tests::test_parallel_first_connects_all_succeed`. See `memory/gpu-backends-rocm.md`.
+
+Deferred (discussed, not planned): embedding drift over time (filenames carry `dd.mm.yyyy_hh.mm.ss`), reorganizing the menu into tabs or branches, further rule-based tools (object counting, presence in a zone, colour threshold, blob area).
 
 ## Explicitly out of scope
 
