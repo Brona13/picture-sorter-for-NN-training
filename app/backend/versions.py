@@ -11,7 +11,9 @@ out and drops only its snapshot items, so version numbers are never reused.
 """
 from __future__ import annotations
 
+import datetime
 import json
+import math
 import time
 from pathlib import Path
 
@@ -294,3 +296,116 @@ def export(camera: str, feature: str, version_id: int) -> tuple[Path, dict]:
         shutil.copy2(src, out_dir / Path(frame).name)
         report["written"] += 1
     return dest, report
+
+
+# --- downstream results ------------------------------------------------------
+# Quality values measured by the training/inspection system on a dataset exported from a version.
+# This app never computes them; it only records them so curation choices can be traced to outcomes.
+RESULT_NAME_MAX = 80
+RESULT_NOTE_MAX = 500
+
+
+class ResultError(ValueError):
+    """A recorded result that is malformed or refers to nothing."""
+
+
+def _clean_result(name, value, note, measured) -> tuple[str, float, str, str]:
+    name = " ".join(str(name or "").split())
+    if not name:
+        raise ResultError("A result needs a metric name")
+    if len(name) > RESULT_NAME_MAX:
+        raise ResultError(f"The metric name is limited to {RESULT_NAME_MAX} characters")
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        raise ResultError("The value must be a number")
+    note = str(note or "").strip()
+    if len(note) > RESULT_NOTE_MAX:
+        raise ResultError(f"The note is limited to {RESULT_NOTE_MAX} characters")
+    day = measured or datetime.date.today().isoformat()
+    try:
+        day = datetime.date.fromisoformat(str(day)).isoformat()
+    except ValueError as exc:
+        raise ResultError("The date must look like 2026-10-15") from exc
+    return name, float(value), note, day
+
+
+def _result_row(r) -> dict:
+    return {
+        "id": r["id"],
+        "version_id": r["version_id"],
+        "name": r["name"],
+        "value": r["value"],
+        "note": r["note"],
+        "measured": r["measured"],
+        "created": r["created"],
+    }
+
+
+def results_by_version(camera: str, feature: str) -> dict[int, list[dict]]:
+    """Every recorded result of the feature's versions, newest measurement first, by version id."""
+    con = db.connect()
+    try:
+        rows = con.execute(
+            "SELECT r.* FROM version_results r JOIN versions v ON v.id = r.version_id "
+            "WHERE v.camera=? AND v.feature=? ORDER BY r.measured DESC, r.created DESC, r.id DESC",
+            (camera, feature),
+        ).fetchall()
+    finally:
+        con.close()
+    out: dict[int, list[dict]] = {}
+    for r in rows:
+        out.setdefault(r["version_id"], []).append(_result_row(r))
+    return out
+
+
+def add_result(camera: str, feature: str, version_id: int, name, value, note="", measured=None) -> dict:
+    """Record a downstream value against a version of this feature (also a deleted one: history stays)."""
+    name, value, note, day = _clean_result(name, value, note, measured)
+    con = db.connect()
+    try:
+        owner = con.execute("SELECT 1 FROM versions WHERE id=? AND camera=? AND feature=?", (version_id, camera, feature)).fetchone()
+        if owner is None:
+            raise ResultError(f"no such version id {version_id}")
+        cur = con.execute(
+            "INSERT INTO version_results(version_id, name, value, note, measured, created) VALUES (?,?,?,?,?,?)",
+            (version_id, name, value, note, day, time.time()),
+        )
+        con.commit()
+        row = con.execute("SELECT * FROM version_results WHERE id=?", (cur.lastrowid,)).fetchone()
+    finally:
+        con.close()
+    return _result_row(row)
+
+
+def _owned_result(con, camera: str, feature: str, result_id: int, version_id: int | None = None):
+    row = con.execute(
+        "SELECT r.* FROM version_results r JOIN versions v ON v.id = r.version_id "
+        "WHERE r.id=? AND v.camera=? AND v.feature=?",
+        (result_id, camera, feature),
+    ).fetchone()
+    return row if row is not None and version_id in (None, row["version_id"]) else None
+
+
+def update_result(camera: str, feature: str, result_id: int, name, value, note="", measured=None, version_id: int | None = None) -> dict:
+    """Correct a recorded result; the version it belongs to cannot change."""
+    name, value, note, day = _clean_result(name, value, note, measured)
+    con = db.connect()
+    try:
+        if _owned_result(con, camera, feature, result_id, version_id) is None:
+            raise ResultError(f"no such result id {result_id}")
+        con.execute("UPDATE version_results SET name=?, value=?, note=?, measured=? WHERE id=?", (name, value, note, day, result_id))
+        con.commit()
+        row = con.execute("SELECT * FROM version_results WHERE id=?", (result_id,)).fetchone()
+    finally:
+        con.close()
+    return _result_row(row)
+
+
+def delete_result(camera: str, feature: str, result_id: int, version_id: int | None = None) -> None:
+    con = db.connect()
+    try:
+        if _owned_result(con, camera, feature, result_id, version_id) is None:
+            raise ResultError(f"no such result id {result_id}")
+        con.execute("DELETE FROM version_results WHERE id=?", (result_id,))
+        con.commit()
+    finally:
+        con.close()

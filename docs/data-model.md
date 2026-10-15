@@ -141,7 +141,7 @@ Exports copy the version's **golden** frames only, unmodified (original filename
 
 ## Persistence
 
-The SQLite database is `data/picture_sorter.db`, schema version 6.
+The SQLite database is `data/picture_sorter.db`, schema version 7.
 
 Authoritative or indexed state:
 
@@ -152,6 +152,7 @@ Authoritative or indexed state:
 - `dedup_mute`: current feature mute set
 - `detections`: per-frame object boxes for a feature (see Detector below)
 - `versions` and `version_items`: explicit snapshots
+- `version_results`: values measured downstream on a dataset exported from a version (`name`, numeric `value`, `note`, the `measured` day as `YYYY-MM-DD`, `created`). Several rows per version and name are allowed; the newest `measured` (then `created`) is the latest. They belong to the version row, which is only ever soft-deleted, so they outlive a deleted version. They are records, not inputs: nothing in scoring, ranking or export reads them
 - `settings`: per-camera UI settings and per-feature vision settings (`vision.<feature>`)
 
 Derived caches:

@@ -17,7 +17,7 @@ import config
 import perf
 
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 
 class DatabaseResetRequired(RuntimeError):
@@ -131,6 +131,17 @@ CREATE TABLE IF NOT EXISTS version_items (
     class      TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_version_items ON version_items(version_id);
+
+CREATE TABLE IF NOT EXISTS version_results (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    version_id INTEGER NOT NULL REFERENCES versions(id) ON DELETE CASCADE,
+    name       TEXT NOT NULL,
+    value      REAL NOT NULL,
+    note       TEXT NOT NULL DEFAULT '',
+    measured   TEXT NOT NULL,
+    created    REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_version_results ON version_results(version_id);
 
 CREATE TABLE IF NOT EXISTS settings (
     camera TEXT NOT NULL,
@@ -380,11 +391,31 @@ def _migrate_v5_to_v6(con: sqlite3.Connection) -> None:
         raise
 
 
+def _migrate_v6_to_v7(con: sqlite3.Connection) -> None:
+    """Add ``version_results``: downstream quality values recorded against a version."""
+    con.execute("BEGIN IMMEDIATE")
+    try:
+        con.execute(
+            "CREATE TABLE IF NOT EXISTS version_results ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+            "version_id INTEGER NOT NULL REFERENCES versions(id) ON DELETE CASCADE, "
+            "name TEXT NOT NULL, value REAL NOT NULL, note TEXT NOT NULL DEFAULT '', "
+            "measured TEXT NOT NULL, created REAL NOT NULL)"
+        )
+        con.execute("CREATE INDEX IF NOT EXISTS idx_version_results ON version_results(version_id)")
+        con.execute("PRAGMA user_version = 7")
+        con.execute("COMMIT")
+    except Exception:
+        con.execute("ROLLBACK")
+        raise
+
+
 _MIGRATIONS = {
     2: _migrate_v2_to_v3,
     3: _migrate_v3_to_v4,
     4: _migrate_v4_to_v5,
     5: _migrate_v5_to_v6,
+    6: _migrate_v6_to_v7,
 }
 
 

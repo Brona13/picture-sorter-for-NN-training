@@ -66,12 +66,56 @@ def selectable_features(camera: str, product: str | None = None) -> list[dict]:
 @router.get("/cameras/{camera}/versions")
 def list_versions(camera: str, feature: str) -> dict:
     require_feature(camera, feature)
+    recorded = versions.results_by_version(camera, feature)
+    names = sorted({r["name"] for rs in recorded.values() for r in rs}, key=str.lower)
     return {
         "feature": feature,
         "classes": datamodel.classes_for(camera, feature),
         "counts": labels.counts(camera, feature),
-        "versions": versions.list_versions(camera, feature),
+        "versions": [{**v, "results": recorded.get(v["id"], [])} for v in versions.list_versions(camera, feature)],
+        "result_names": names,
     }
+
+
+class ResultBody(BaseModel):
+    feature: str
+    name: str
+    value: float
+    note: str = ""
+    measured: str | None = None
+
+
+def _result_error(exc: versions.ResultError) -> HTTPException:
+    return HTTPException(status_code=404 if "no such" in str(exc) else 422, detail=str(exc))
+
+
+@router.post("/cameras/{camera}/versions/{version_id}/results", status_code=201)
+def add_result(camera: str, version_id: int, body: ResultBody) -> dict:
+    """Record a value measured downstream on a dataset exported from this version."""
+    require_feature(camera, body.feature)
+    try:
+        return versions.add_result(camera, body.feature, version_id, body.name, body.value, body.note, body.measured)
+    except versions.ResultError as exc:
+        raise _result_error(exc) from exc
+
+
+@router.put("/cameras/{camera}/versions/{version_id}/results/{result_id}")
+def update_result(camera: str, version_id: int, result_id: int, body: ResultBody) -> dict:
+    require_feature(camera, body.feature)
+    try:
+        return versions.update_result(camera, body.feature, result_id, body.name, body.value, body.note, body.measured, version_id)
+    except versions.ResultError as exc:
+        raise _result_error(exc) from exc
+
+
+@router.delete("/cameras/{camera}/versions/{version_id}/results/{result_id}")
+def delete_result(camera: str, version_id: int, result_id: int, feature: str) -> dict:
+    require_feature(camera, feature)
+    try:
+        versions.delete_result(camera, feature, result_id, version_id)
+    except versions.ResultError as exc:
+        raise _result_error(exc) from exc
+    return {"deleted": result_id}
 
 
 @router.post("/cameras/{camera}/versions", status_code=201)

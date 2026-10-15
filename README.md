@@ -504,6 +504,21 @@ After an export the destination folder is shown with a **Copy path** button for 
 
 Before copying each frame, the exporter verifies the source-frame content hash. Missing or changed frames are reported.
 
+### Downstream results
+
+The training or inspection system that uses an exported dataset measures its own quality values (for
+example accuracy, or the recall of NG). This tool does not compute them, but the **Downstream results**
+section at the bottom of the Versions page records them against the version the dataset came from, so you
+can see which curation choices led to which outcome.
+
+- **Record a result:** choose the version (the active one by default, a deleted one is possible too), type
+  a metric name (earlier names are suggested; free text), the number, the day it was measured (today by
+  default) and an optional note, then **Record**. Several values per metric are allowed, for example one per
+  training run; the newest measurement counts as the latest.
+- **Compare:** a table lists each metric against the versions that have a value (hover a cell for the date
+  and note). Edit or delete a single entry with the pencil and bin buttons.
+- Results stay with a version even after it is deleted, and they are never used for scoring or ranking.
+
 ## Project storage
 
 ```text

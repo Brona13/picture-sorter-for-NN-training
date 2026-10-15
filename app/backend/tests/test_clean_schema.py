@@ -51,7 +51,7 @@ class CleanSchemaTests(unittest.TestCase):
 
         self.assertEqual(db.SCHEMA_VERSION, version)
         self.assertIn("frames", tables)
-        self.assertTrue({"labels", "goldens", "deleted_frames", "dedup_mute"} <= tables)
+        self.assertTrue({"labels", "goldens", "deleted_frames", "dedup_mute", "version_results"} <= tables)
         self.assertFalse(any(name.startswith("current_") for name in tables))
         self.assertEqual([], triggers)
         self.assertNotIn("id", label_columns)
@@ -121,6 +121,62 @@ class CleanSchemaTests(unittest.TestCase):
         self.assertFalse(features.exists())
         self.assertFalse(logs.exists())
         self.assertFalse(db.db_path().exists())
+
+
+class MigrationV6ToV7Tests(unittest.TestCase):
+    """version_results is added in place; existing versions and their data are untouched."""
+
+    def setUp(self) -> None:
+        import sqlite3
+        import tempfile
+        from pathlib import Path
+
+        self.tmp = tempfile.TemporaryDirectory(prefix="v6-v7-")
+        self.old = (config.CAMERAS_ROOT, config.DATA_DIR)
+        config.CAMERAS_ROOT = Path(self.tmp.name) / "cameras"
+        config.DATA_DIR = Path(self.tmp.name) / "data"
+        db.db_path().parent.mkdir(parents=True)
+        con = sqlite3.connect(db.db_path())
+        con.executescript(
+            "CREATE TABLE versions (id INTEGER PRIMARY KEY AUTOINCREMENT, camera TEXT NOT NULL, "
+            "feature TEXT NOT NULL, number INTEGER NOT NULL, name TEXT NOT NULL, "
+            "notes TEXT NOT NULL DEFAULT '', created REAL NOT NULL, "
+            "counts_json TEXT NOT NULL DEFAULT '{}', stats_json TEXT NOT NULL DEFAULT '{}', "
+            "active INTEGER NOT NULL DEFAULT 0, deleted REAL, UNIQUE (camera, feature, number));"
+            "INSERT INTO versions(camera,feature,number,name,created,active) VALUES ('c','f',1,'keep',0,1);"
+            "PRAGMA user_version = 6;"
+        )
+        con.commit()
+        con.close()
+
+    def tearDown(self) -> None:
+        config.CAMERAS_ROOT, config.DATA_DIR = self.old
+        self.tmp.cleanup()
+
+    def test_adds_the_table_and_keeps_versions(self) -> None:
+        con = db.connect()
+        try:
+            tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            name = con.execute("SELECT name FROM versions").fetchone()["name"]
+            version = con.execute("PRAGMA user_version").fetchone()[0]
+            con.execute(
+                "INSERT INTO version_results(version_id,name,value,measured,created) VALUES (1,'accuracy',0.97,'2026-10-15',0)"
+            )
+            con.commit()
+            n = con.execute("SELECT COUNT(*) FROM version_results").fetchone()[0]
+        finally:
+            con.close()
+        self.assertIn("version_results", tables)
+        self.assertEqual((name, version, n), ("keep", db.SCHEMA_VERSION, 1))
+
+    def test_migrating_twice_is_harmless(self) -> None:
+        db.connect().close()
+        db.connect().close()
+        con = db.connect()
+        try:
+            self.assertEqual(con.execute("PRAGMA user_version").fetchone()[0], db.SCHEMA_VERSION)
+        finally:
+            con.close()
 
 
 if __name__ == "__main__":

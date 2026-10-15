@@ -38,7 +38,7 @@ The handover lists new curation tools. Cross-camera features, drift over time, U
 - View with histograms and suggested X/Y and rotation ranges (editable), saved as metadata and written to the export manifest.
 - Measures and records only; no augmented images are generated (training-time augmentation is out of scope). Decision: ranges are recorded in the frozen version's statistics only; exports keep their documented 'no manifest' layout.
 
-## Phase 5 - Quality record form (v1.19.0)
+## Phase 5 - Quality record form (v1.19.0) - done
 - Generic `version_results` table (schema v7): metric name, value, note, date per exported version; shown on the Versions page. Refine once the downstream metrics are known.
 
 ## Phase 6 - Pipeline stages on the Overview page (v1.20.0)

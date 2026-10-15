@@ -51,6 +51,25 @@ export interface CameraStatus {
   features: FeatureStatus[];
 }
 
+/** A value measured by the downstream training/inspection system on a dataset exported from a version. */
+export interface VersionResult {
+  id: number;
+  version_id: number;
+  name: string;
+  value: number;
+  note: string;
+  /** The day the value refers to, YYYY-MM-DD. */
+  measured: string;
+  created: number;
+}
+
+export interface ResultInput {
+  name: string;
+  value: number;
+  note: string;
+  measured: string;
+}
+
 export interface VersionInfo {
   id: number;
   number: number;
@@ -66,6 +85,7 @@ export interface VersionInfo {
   active: boolean;
   deleted: number | null;
   delta: string;
+  results?: VersionResult[];
 }
 
 export interface VersionsResponse {
@@ -73,6 +93,8 @@ export interface VersionsResponse {
   classes: string[];
   counts: Record<string, number>;
   versions: VersionInfo[];
+  /** Every metric name recorded on any version of this feature. */
+  result_names?: string[];
 }
 
 export interface ExportReport {
@@ -648,6 +670,15 @@ export const api = {
   deleteVersion: (camera: string, feature: string, id: number) =>
     request<{ deleted: number }>(
       `/cameras/${encodeURIComponent(camera)}/versions/${id}?feature=${encodeURIComponent(feature)}`,
+      send("DELETE"),
+    ),
+  addVersionResult: (camera: string, feature: string, versionId: number, r: ResultInput) =>
+    request<VersionResult>(`/cameras/${encodeURIComponent(camera)}/versions/${versionId}/results`, post({ feature, ...r })),
+  updateVersionResult: (camera: string, feature: string, versionId: number, id: number, r: ResultInput) =>
+    request<VersionResult>(`/cameras/${encodeURIComponent(camera)}/versions/${versionId}/results/${id}`, send("PUT", { feature, ...r })),
+  deleteVersionResult: (camera: string, feature: string, versionId: number, id: number) =>
+    request<{ deleted: number }>(
+      `/cameras/${encodeURIComponent(camera)}/versions/${versionId}/results/${id}?feature=${encodeURIComponent(feature)}`,
       send("DELETE"),
     ),
   exportVersion: (camera: string, feature: string, id: number) =>

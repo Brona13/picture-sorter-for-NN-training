@@ -204,6 +204,7 @@ These views evaluate the curation aid; they do not establish classifier accuracy
 - Export a frozen version into class folders
 - Verify hashes during export
 - Report missing or changed source frames
+- Record values measured downstream (metric name, number, day, note) against a version; compare them across versions; edit and delete entries (`version_results`, schema v7). The app only stores them: they never affect scoring, and the metrics themselves are defined by the downstream system
 
 ## Active architecture
 

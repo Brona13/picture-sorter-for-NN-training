@@ -1,6 +1,7 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { api, ExportReport, VersionInfo, VersionsResponse, VisionSnapshot } from "../api";
 import CopyButton from "../CopyButton";
+import VersionResults from "../VersionResults";
 
 const fmt = (ts: number) => new Date(ts * 1000).toISOString().slice(0, 16).replace("T", " ");
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -293,6 +294,16 @@ export default function VersionsView({ camera, product }: { camera: string; prod
               )}
             </div>
           )}
+
+          <VersionResults
+            camera={camera}
+            feature={feature}
+            versions={data.versions}
+            names={data.result_names ?? []}
+            onChanged={load}
+            onNotice={setNotice}
+            onError={setError}
+          />
         </>
       )}
     </section>
