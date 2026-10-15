@@ -40,8 +40,12 @@ const chipStyle = (kind: "idle" | "ok" | "warn") => ({
   borderRadius: 9,
   fontSize: 11,
   fontWeight: 400,
-  background: kind === "ok" ? "#dff3e6" : kind === "warn" ? "#fdebc8" : "#eee",
-  color: "#333",
+  background: kind === "ok"
+      ? "color-mix(in srgb, #2e9e5b 35%, var(--panel))"
+      : kind === "warn"
+        ? "color-mix(in srgb, #e08a00 35%, var(--panel))"
+        : "var(--hover)",
+  color: "var(--fg)",
 });
 
 function Overlay({ box, label }: { box: Box; label: string }) {
@@ -367,9 +371,9 @@ export default function DetectorView({ camera, product }: { camera: string; prod
           position: "sticky",
           top: 0,
           zIndex: 5,
-          background: "#fff",
+          background: "var(--bg)",
           padding: "6px 0",
-          borderBottom: "1px solid #ddd",
+          borderBottom: "1px solid var(--border)",
           display: "flex",
           gap: 8,
           alignItems: "center",
@@ -408,9 +412,10 @@ export default function DetectorView({ camera, product }: { camera: string; prod
             }}
             style={{
               padding: "6px 12px",
-              border: "1px solid #bbb",
-              borderBottom: tab === t.id ? "3px solid #1a73e8" : "1px solid #bbb",
-              background: tab === t.id ? "#f2f7ff" : "#fff",
+              border: "1px solid var(--border)",
+              borderBottom: tab === t.id ? "3px solid var(--accent)" : "1px solid var(--border)",
+              color: "var(--fg)",
+              background: tab === t.id ? "var(--info-bg)" : "var(--panel)",
               fontWeight: tab === t.id ? 600 : 400,
               cursor: "pointer",
             }}

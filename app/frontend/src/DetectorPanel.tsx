@@ -68,8 +68,8 @@ export function FrameStrip({
                 flex: "0 0 auto",
                 lineHeight: 0,
                 background: "none",
-                border: `2px solid ${row ? STATE_COLOR[row.state] ?? "#bbb" : "#ddd"}`,
-                outline: active ? "2px solid #111" : "none",
+                border: `2px solid ${row ? STATE_COLOR[row.state] ?? "var(--border)" : "var(--border)"}`,
+                outline: active ? "2px solid var(--fg)" : "none",
                 outlineOffset: 1,
                 cursor: "pointer",
               }}
