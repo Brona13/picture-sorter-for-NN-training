@@ -35,3 +35,4 @@ Portable memory for the *Picture Sorter for NN Training* project. Kept inside th
 - [Memory note naming](memory-note-naming.md) — short descriptive filenames, no date; date lives in front matter.
 - [Detector + masking, 1.2.0-1.6.2 (2026-10-14)](detector-masking.md) — filters, mask, OWL-ViT detector, review, polygon editing, Classify keyboard shortcuts; decisions, unverified parts, build/venv lessons.
 - [TODO: Detector page usability](todo-detector-ux.md) — open: the page is confusing and badly laid out; analysis and proposals, to discuss before coding.
+- [GPU backends and ROCm (2026-10-15)](gpu-backends-rocm.md) — CPU/CUDA/ROCm per machine, RX 7800 XT verified in `.venv-rocm`, v1.7.0; helper scripts and Windows untested.

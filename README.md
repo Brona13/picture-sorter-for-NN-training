@@ -340,6 +340,19 @@ machine (or reinstall `torch` when moving):
 | Nvidia GPU (Windows or Linux) | CUDA | the matching build from <https://pytorch.org> |
 | AMD GPU on Linux | ROCm | `pip install torch torchvision --index-url https://download.pytorch.org/whl/rocmX.Y` (pick `X.Y` from pytorch.org; support depends on the card model) |
 
+For example, a separate ROCm environment on Linux (leaves `.venv` alone):
+
+```bash
+python3 -m venv .venv-rocm
+.venv-rocm/bin/pip install torch torchvision --index-url https://download.pytorch.org/whl/rocm7.2
+.venv-rocm/bin/pip install -r requirements.txt -r requirements-detector.txt
+```
+
+Activate it (`source .venv-rocm/bin/activate`) before `./run.sh` to use the GPU.
+Check it with `.venv-rocm/bin/python -c "import torch; print(torch.version.hip, torch.cuda.is_available())"`.
+If the card is not recognised, try `HSA_OVERRIDE_GFX_VERSION` set to the nearest
+supported architecture (for RDNA3, `11.0.0`).
+
 PyTorch has no stable ROCm build for Windows, so a Windows machine with an AMD
 card runs the CPU build. CPU inference is fast enough for this tool: on a
 16-thread desktop CPU, resnet18 reaches about 157 frames/s and resnet50 about

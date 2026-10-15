@@ -309,6 +309,7 @@ Listed in recommended priority order:
 4. Consider aligned difference views or heatmaps for faster human verification.
 5. Improve per-product grouping in Status and Versions.
 6. Add browser-level (end-to-end) tests for the React views; current frontend tests mock the API and cannot exercise real pointer interaction.
+7. Build the `setup_torch.sh` / `setup_torch.ps1` hardware detect-or-ask helper; investigate the flaky `test_clean_schema.py::MigrationV3ToV4Tests::test_parallel_first_connects_all_succeed`. See `memory/gpu-backends-rocm.md`.
 
 ## Explicitly out of scope
 
