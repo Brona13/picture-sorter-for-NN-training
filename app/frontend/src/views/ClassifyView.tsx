@@ -3,6 +3,7 @@ import { api, CardData, CardUpdate, ClassifyState, GridQuery, GridResponse } fro
 import AutoPanel, { AutoFilter } from "../classify/AutoPanel";
 import BulkPanel from "../classify/BulkPanel";
 import Card, { MAX_SHORTCUT_CLASSES } from "../classify/Card";
+import SimilarPanel from "../classify/SimilarPanel";
 import ClearPanel from "../classify/ClearPanel";
 import Pager from "../classify/Pager";
 import DeletedByDay from "../classify/DeletedByDay";
@@ -32,6 +33,7 @@ export default function ClassifyView({ camera, product }: { camera: string; prod
   const [jobId, setJobId] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
+  const [similarSeed, setSimilarSeed] = useState<{ frame: string; label: string } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const job = useJob<{ frames: number; scored: boolean }>(jobId);
@@ -51,12 +53,15 @@ export default function ClassifyView({ camera, product }: { camera: string; prod
     [feature, view, rank, order, showMuted, auto, st?.default_rank],
   );
 
+  useEffect(() => setSimilarSeed(null), [feature]);
+
   // --- load feature list ---
   useEffect(() => {
     if (!camera) return;
     setFeature("");
     setSt(null);
     setGrid(null);
+    setSimilarSeed(null);
     api
       .versionFeatures(camera, product)
       .then((f) => {
@@ -299,6 +304,23 @@ export default function ClassifyView({ camera, product }: { camera: string; prod
             <DeletedByDay camera={camera} feature={feature} revision={revision} onChanged={bump} onNotice={setNotice} onError={setError} />
           ) : (
             <>
+          {similarSeed && (
+            <SimilarPanel
+              camera={camera}
+              feature={feature}
+              seed={similarSeed}
+              methods={st.methods.filter((m) => m.startsWith("resnet"))}
+              classes={classes}
+              onClose={() => setSimilarSeed(null)}
+              onError={setError}
+              onLabeled={(n, skipped, cls, counts) => {
+                setNotice(`Labeled ${n} frame${n === 1 ? "" : "s"} as ${cls}.` + (skipped > 0 ? ` ${skipped} skipped (already labeled or deleted).` : ""));
+                setSt((s) => (s ? { ...s, counts } : s));
+                bump();
+              }}
+            />
+          )}
+
           {!st.scored ? (
             <p>
               ℹ️ <em>Rank using</em> and <em>Order by</em> are greyed out, and no scores appear under the pictures, because <strong>nothing is scored yet</strong> —
@@ -410,6 +432,11 @@ export default function ClassifyView({ camera, product }: { camera: string; prod
                     onGolden={(on) => act(card.frame, () => api.setGolden(camera, feature, card.frame, on))}
                     onDelete={() => act(card.frame, () => api.deleteFrame(camera, feature, card.frame), true)}
                     onRestore={() => act(card.frame, () => api.restoreFrame(camera, feature, card.frame), true)}
+                    onSimilar={
+                      st.methods.some((m) => m.startsWith("resnet"))
+                        ? () => card.label && setSimilarSeed({ frame: card.frame, label: card.label })
+                        : undefined
+                    }
                   />
                 ))}
               </ul>

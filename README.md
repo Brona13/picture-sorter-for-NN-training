@@ -298,6 +298,18 @@ Pagination and grid-column controls make larger batches manageable. The default
 remain available when reducing pagination is more important. Thumbnail caches
 are bounded and keyed by both ROI geometry and source-file modification time.
 
+### Find similar (batch labeling from one example)
+
+On a labeled Classify card, the **🔍≈** button opens a *Find similar* panel (it needs the ResNet
+methods; the button is greyed out on an unlabeled card). Pick the embedding and how many frames to
+show (30-250), then click **Find similar**. The panel lists the **unlabeled** frames of the same ROI
+nearest to that card, closest first, with their cosine distance. Nothing is ticked at first. Move the
+**Distance** slider to tick everything up to that distance, or tick pictures one by one, then click
+**Label N ticked as <class>**. Only the seed's label is applied, goldens are never created, and
+frames labeled, deleted or muted since the list was made are skipped and reported. The filter and mask
+of the feature apply, as in Dedup. This is separate from *Bulk label* and *Auto-assign*, which select
+by leaning, margin or novelty against the goldens.
+
 ### Outliers in Dedup
 
 The Dedup page has an **Outliers (most isolated frames)** panel. Choose *k* (how many nearest

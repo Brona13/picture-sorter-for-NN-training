@@ -20,6 +20,8 @@ interface Props {
   fullSize?: boolean;
   /** Small neutral badge under the file name, e.g. an outlier score. */
   caption?: string;
+  /** Classify only: open "Find similar" with this (labeled) frame as the seed. */
+  onSimilar?: () => void;
 }
 
 export function thumbUrl(camera: string, frame: string, feature: string) {
@@ -49,7 +51,7 @@ function isTypingTarget(target: EventTarget | null): boolean {
   return !!el && (el.isContentEditable || ["INPUT", "SELECT", "TEXTAREA"].includes(el.tagName));
 }
 
-export default function Card({ camera, feature, classes, methods, card, busy, onLabel, onGolden, onDelete, onRestore, isRep, onSetRep, fullSize, caption }: Props) {
+export default function Card({ camera, feature, classes, methods, card, busy, onLabel, onGolden, onDelete, onRestore, isRep, onSetRep, fullSize, caption, onSimilar }: Props) {
   const { frame, label, golden, deleted, bars, leanings, cluster } = card;
 
   // Number keys act on the card under the mouse. The handler is reread from a ref so the window
@@ -242,6 +244,16 @@ export default function Card({ camera, feature, classes, methods, card, busy, on
             style={isRep ? { background: "#111", color: "#fff" } : undefined}
           >
             {isRep ? "◉ rep" : "○ rep"}
+          </button>
+        )}
+        {onSimilar && (
+          <button
+            aria-label="Find similar"
+            disabled={busy || label === null}
+            title={label === null ? "Label this frame first: its label is what gets applied to the matches." : "Find unlabeled frames that look like this one and label them as a batch."}
+            onClick={onSimilar}
+          >
+            🔍≈
           </button>
         )}
         <button

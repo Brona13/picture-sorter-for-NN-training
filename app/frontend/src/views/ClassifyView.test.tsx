@@ -77,6 +77,17 @@ function install() {
       if (url.endsWith("/classify/refresh")) return ok({ id: "job1", status: "queued", progress: {} }, 202);
       if (url === "/api/jobs/job1")
         return ok({ id: "job1", status: "done", progress: {}, result: { frames: 3, scored: true }, error: null });
+      if (url.endsWith("/classify/similar")) return ok({ id: "sim1", status: "queued", progress: {} }, 202);
+      if (url === "/api/jobs/sim1")
+        return ok({
+          id: "sim1",
+          status: "done",
+          progress: {},
+          result: { seed: { frame: "b.png", label: "OK" }, method: "resnet50", neighbors: [{ frame: "a.png", distance: 0.02 }], classes: ["OK", "NG"] },
+          error: null,
+        });
+      if (url.endsWith("/classify/label-frames"))
+        return ok({ labeled: 1, skipped: [], counts: { OK: 2, golden_OK: 1, NG: 0, golden_NG: 0, unlabeled: 1, total: 3 } });
       if (url.includes("/classify/label") || url.includes("/classify/golden")) {
         const b = JSON.parse(init!.body as string);
         const lab = url.includes("/label") ? b.cls : "OK";
@@ -387,4 +398,21 @@ test("the Delete key deletes the hovered card and does nothing otherwise", async
   await userEvent.keyboard("{Delete}");
   await waitFor(() => expect(calls.some((c) => c.url.endsWith("/classify/delete"))).toBe(true));
   expect(calls.find((c) => c.url.endsWith("/classify/delete"))!.body).toEqual({ feature: "seal", frame: "a.png" });
+});
+
+test("Find similar needs a labeled frame; ticked matches get the seed's label and the grid reloads", async () => {
+  render(<ClassifyView camera="camA" />);
+  const a = await cardEl("a.png");
+  expect(within(a).getByRole("button", { name: "Find similar" })).toBeDisabled();
+  const b = await cardEl("b.png");
+  await userEvent.click(within(b).getByRole("button", { name: "Find similar" }));
+  const panel = await screen.findByTestId("similar-panel");
+  await userEvent.click(within(panel).getByRole("button", { name: "Find similar" }));
+  expect(calls.find((c) => c.url.endsWith("/classify/similar"))!.body).toEqual({ feature: "seal", frame: "b.png", method: "resnet50", limit: 60 });
+  await userEvent.click(await within(panel).findByLabelText("Tick a.png"));
+  const before = calls.filter((c) => c.url.includes("/classify/grid?")).length;
+  await userEvent.click(within(panel).getByRole("button", { name: /Label 1 ticked as OK/ }));
+  await waitFor(() => expect(calls.find((c) => c.url.endsWith("/label-frames"))!.body).toEqual({ feature: "seal", frames: ["a.png"], cls: "OK" }));
+  await waitFor(() => expect(calls.filter((c) => c.url.includes("/classify/grid?")).length).toBeGreaterThan(before));
+  expect(await screen.findByText("Labeled 1 frame as OK.")).toBeInTheDocument();
 });

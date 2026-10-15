@@ -435,6 +435,14 @@ export interface OutlierResult {
   classes: string[];
 }
 
+export interface SimilarResult {
+  seed: { frame: string; label: string };
+  method: string;
+  /** Unlabeled frames, nearest to the seed first. */
+  neighbors: { frame: string; distance: number }[];
+  classes: string[];
+}
+
 const post = (body?: unknown): RequestInit => ({
   method: "POST",
   headers: { "Content-Type": "application/json" },
@@ -676,6 +684,13 @@ export const api = {
     request<{ unmuted: number }>(
       `/cameras/${encodeURIComponent(camera)}/dedup/mutes?feature=${encodeURIComponent(feature)}`,
       send("DELETE"),
+    ),
+  classifySimilar: (camera: string, feature: string, frame: string, method: string, limit: number) =>
+    request<Job<SimilarResult>>(`/cameras/${encodeURIComponent(camera)}/classify/similar`, post({ feature, frame, method, limit })),
+  classifyLabelFrames: (camera: string, feature: string, frames: string[], cls: string) =>
+    request<{ labeled: number; skipped: string[]; counts: Record<string, number> }>(
+      `/cameras/${encodeURIComponent(camera)}/classify/label-frames`,
+      post({ feature, frames, cls }),
     ),
   dedupOutliers: (camera: string, feature: string, method: string, k: number) =>
     request<Job<OutlierResult>>(`/cameras/${encodeURIComponent(camera)}/dedup/outliers`, post({ feature, method, k })),

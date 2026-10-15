@@ -157,6 +157,13 @@ independent candidate/reference pairs. The refresh keeps decoded golden vectors
 and one bounded candidate group in memory rather than decoding the complete frame
 set at once.
 
+### Find similar
+
+- Classify card action (🔍≈, ResNet methods only): unlabeled, live, unmuted frames of the feature ranked by cosine distance to a labeled seed frame, over the shared embedding cache (filter and mask apply)
+- A distance slider ticks everything within a distance; ticks can be edited per picture; only the seed's label is applied, in one bulk write tagged `source="similar"`; goldens are never created
+- The server re-checks each frame when applying and skips any that was deleted, labeled, or is not part of the feature since the list was made
+- `neighbors.py`, `api/similar_api.py` (`POST classify/similar` job, `POST classify/label-frames`), `classify/SimilarPanel.tsx`; no stored state. Distinct from Bulk label and Auto-assign, which are golden-based
+
 ### Outlier scoring
 
 - Dedup page panel: each live frame's mean cosine distance to its k nearest other frames (k 1-20, default 5) over the Dedup embeddings, so the feature's filter and mask apply
@@ -208,6 +215,7 @@ The application is a FastAPI backend (`app/backend/`) that wraps the domain modu
 - `app/backend/classify.py` — multi-class scoring and the shared persistent feature cache
 - `app/backend/dedup.py` — near-duplicate embedding clustering using the shared cache
 - `app/backend/outliers.py` — k-nearest-neighbour isolation score over the same embeddings
+- `app/backend/neighbors.py` — nearest unlabeled frames to a labeled seed, and the guarded batch-apply of the seed's label
 - `app/backend/classify_view.py` — presentation-neutral filtering, sorting, bars, bulk and auto-assign selection
 - `app/backend/suggest_goldens.py` — most-uncertain, diversity-spread golden suggestions
 - `app/backend/insights.py` — per-method confusion matrices
@@ -219,7 +227,7 @@ The application is a FastAPI backend (`app/backend/`) that wraps the domain modu
 
 One thin router per area, each delegating to the domain modules above:
 `cameras`, `status`, `versions_api`, `ingest_api`, `frames_api` (frames and thumbnails),
-`roi_api`, `classify_api`, `insights_api`, `dedup_api`, `overview_api` (all cameras with reference frame and ROIs for the Overview page), `outliers_api`, `vision_api` (filter catalogue, per-feature filter/mask/detector settings, live preview, detection job and review).
+`roi_api`, `classify_api`, `insights_api`, `dedup_api`, `overview_api` (all cameras with reference frame and ROIs for the Overview page), `outliers_api`, `similar_api`, `vision_api` (filter catalogue, per-feature filter/mask/detector settings, live preview, detection job and review).
 
 ### Frontend (`app/frontend/src/`)
 

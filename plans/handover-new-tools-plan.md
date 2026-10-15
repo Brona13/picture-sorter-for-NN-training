@@ -23,7 +23,7 @@ The handover lists new curation tools. Cross-camera features, drift over time, U
 - Dedup view: Outliers panel with k slider, most-isolated-first card grid reusing the cluster-browser cards, scatter colouring by score.
 - Derived on demand; no schema change.
 
-## Phase 2 - Nearest-neighbour batch labeling (v1.13.0)
+## Phase 2 - Nearest-neighbour batch labeling (v1.13.0) - done
 - `neighbors.py`: closest unlabeled frames to a seed frame.
 - Classify card action "Find similar": distance slider, list, tick matches, apply the seed's label through the existing bulk-label path. Human confirms; goldens untouched.
 
