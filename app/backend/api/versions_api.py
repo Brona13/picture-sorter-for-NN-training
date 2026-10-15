@@ -9,6 +9,7 @@ import detections
 import edge_angle
 import engine
 import labels
+import motion
 import versions
 from api.cameras import require_camera, require_feature
 from fastapi import APIRouter, HTTPException
@@ -83,6 +84,9 @@ def freeze(camera: str, body: FreezeRequest) -> dict:
     rule = edge_angle.snapshot(camera, body.feature)
     if rule:
         stats["rules"] = {"edge_angle": rule}  # the rule-based opinion, as configured at freeze time
+    augmentation = motion.snapshot(camera, body.feature)
+    if augmentation:
+        stats["augmentation"] = augmentation  # the chosen movement ranges; nothing is applied to images
     return versions.freeze(camera, body.feature, body.name, body.notes, stats=stats)
 
 

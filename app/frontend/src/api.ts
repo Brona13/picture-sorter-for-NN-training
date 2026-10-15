@@ -58,7 +58,11 @@ export interface VersionInfo {
   notes: string;
   created: number;
   counts: Record<string, number>;
-  stats: Record<string, Record<string, number>> & { vision?: VisionSnapshot };
+  stats: Record<string, Record<string, number>> & {
+    vision?: VisionSnapshot;
+    rules?: { edge_angle?: { settings: EdgeAngleSettings; results: string; summary: EdgeSummary | null } };
+    augmentation?: { ranges: MotionRanges; coverage: number; results: string; reference: string | null; unit: string };
+  };
   active: boolean;
   deleted: number | null;
   delta: string;
@@ -491,6 +495,55 @@ export interface EdgePreview {
   crop_size: [number, number];
 }
 
+export interface MotionRanges {
+  dx: [number, number] | null;
+  dy: [number, number] | null;
+  rot: [number, number] | null;
+}
+
+export interface MotionSettings {
+  reference: string | null;
+  source: "auto" | "detector" | "template";
+  rotation: boolean;
+  coverage: number;
+  label: string | null;
+  ranges: MotionRanges;
+}
+
+export interface MotionAxis {
+  n: number;
+  min: number;
+  max: number;
+  mean: number;
+  median: number;
+  /** The central ``coverage`` percent of the measured values. */
+  suggested: [number, number];
+  hist: { edges: number[]; counts: number[] };
+}
+
+export interface MotionAnalysis {
+  crop: [number, number] | null;
+  reference: string | null;
+  frames: number;
+  sources: { detector: number; template: number; none: number };
+  coverage: number;
+  dx: MotionAxis | null;
+  dy: MotionAxis | null;
+  rot: MotionAxis | null;
+}
+
+export interface MotionState {
+  feature: string;
+  classes: string[];
+  settings: MotionSettings;
+  saved: boolean;
+  reference: string | null;
+  has_detector: boolean;
+  results: "none" | "fresh" | "stale";
+  analysis: MotionAnalysis | null;
+  coverage_range: [number, number];
+}
+
 export interface SimilarResult {
   seed: { frame: string; label: string };
   method: string;
@@ -752,6 +805,20 @@ export const api = {
     ),
   edgeAngleRun: (camera: string, feature: string) =>
     request<Job<EdgeSummary>>(`/cameras/${encodeURIComponent(camera)}/rules/edge-angle/${encodeURIComponent(feature)}/run`, post()),
+  motionState: (camera: string, feature: string, coverage?: number, label?: string) =>
+    request<MotionState>(
+      `/cameras/${encodeURIComponent(camera)}/augmentation/${encodeURIComponent(feature)}` +
+        (coverage !== undefined || label !== undefined
+          ? `?${[coverage !== undefined ? `coverage=${coverage}` : "", label !== undefined ? `label=${encodeURIComponent(label)}` : ""].filter(Boolean).join("&")}`
+          : ""),
+    ),
+  motionSave: (camera: string, feature: string, settings: MotionSettings | null) =>
+    request<MotionState>(`/cameras/${encodeURIComponent(camera)}/augmentation/${encodeURIComponent(feature)}`, send("PUT", { settings })),
+  motionRun: (camera: string, feature: string) =>
+    request<Job<{ measured: number; total: number; reference: string }>>(
+      `/cameras/${encodeURIComponent(camera)}/augmentation/${encodeURIComponent(feature)}/run`,
+      post(),
+    ),
   classifySimilar: (camera: string, feature: string, frame: string, method: string, limit: number) =>
     request<Job<SimilarResult>>(`/cameras/${encodeURIComponent(camera)}/classify/similar`, post({ feature, frame, method, limit })),
   classifyLabelFrames: (camera: string, feature: string, frames: string[], cls: string) =>

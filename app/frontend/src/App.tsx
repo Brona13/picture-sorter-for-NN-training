@@ -4,6 +4,7 @@ import { api, ApiError } from "./api";
 import { VIEWS } from "./views";
 import ClassifyView from "./views/ClassifyView";
 import DetectorView from "./views/DetectorView";
+import AugmentationView from "./views/AugmentationView";
 import EdgeAngleView from "./views/EdgeAngleView";
 import DedupView from "./views/DedupView";
 import InsightsView from "./views/InsightsView";
@@ -114,6 +115,7 @@ export default function App() {
             path="/insights"
             element={<InsightsView camera={camera} product={product || undefined} />}
           />
+          <Route path="/augmentation" element={<AugmentationView camera={camera} product={product || undefined} />} />
           <Route path="/edge-angle" element={<EdgeAngleView camera={camera} product={product || undefined} />} />
           <Route
             path="/detector"

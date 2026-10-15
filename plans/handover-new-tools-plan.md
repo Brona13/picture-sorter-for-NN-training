@@ -33,10 +33,10 @@ The handover lists new curation tools. Cross-camera features, drift over time, U
 - Settings are per-feature metadata, recorded in frozen versions; results appear in Classify as a separate pass/fail/undetermined column and filter.
 - Tested on synthetic images with known angles.
 
-## Phase 4 - Augmentation range view (v1.18.0)
+## Phase 4 - Augmentation range view (v1.18.0) - done
 - `motion.py`: per-frame object shift from stored detections, fallback template matching.
 - View with histograms and suggested X/Y and rotation ranges (editable), saved as metadata and written to the export manifest.
-- Measures and records only; no augmented images are generated (training-time augmentation is out of scope).
+- Measures and records only; no augmented images are generated (training-time augmentation is out of scope). Decision: ranges are recorded in the frozen version's statistics only; exports keep their documented 'no manifest' layout.
 
 ## Phase 5 - Quality record form (v1.19.0)
 - Generic `version_results` table (schema v7): metric name, value, note, date per exported version; shown on the Versions page. Refine once the downstream metrics are known.

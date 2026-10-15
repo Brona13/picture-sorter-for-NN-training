@@ -15,6 +15,23 @@ function visionSummary(v?: VisionSnapshot): string {
   return parts.length ? parts.join(" · ") : "—";
 }
 
+/** One-line summary of the rule and movement ranges frozen with a version. */
+function rulesSummary(stats: VersionInfo["stats"]): string {
+  const parts: string[] = [];
+  const edge = stats.rules?.edge_angle;
+  if (edge) {
+    const e = edge.settings.expected;
+    parts.push(e ? `edge ${e.angle.toFixed(1)}°±${e.tolerance} ${e.polarity}` : "edge (measure only)");
+  }
+  const aug = stats.augmentation;
+  if (aug) {
+    const r = aug.ranges;
+    const span = (name: string, v: [number, number] | null, unit: string) => (v ? [`${name} ${v[0]}…${v[1]}${unit}`] : []);
+    parts.push(...span("dx", r.dx, " px"), ...span("dy", r.dy, " px"), ...span("rot", r.rot, "°"));
+  }
+  return parts.length ? parts.join(" · ") : "—";
+}
+
 export default function VersionsView({ camera, product }: { camera: string; product?: string }) {
   const [features, setFeatures] = useState<{ feature: string; label: string }[]>([]);
   const [feature, setFeature] = useState("");
@@ -181,6 +198,7 @@ export default function VersionsView({ camera, product }: { camera: string; prod
                 ))}
                 <th>unlabeled</th>
                 <th>vision</th>
+                <th>rules &amp; ranges</th>
                 <th>change vs previous</th>
                 <th></th>
               </tr>
@@ -201,6 +219,13 @@ export default function VersionsView({ camera, product }: { camera: string; prod
                   <td>{v.counts.unlabeled ?? 0}</td>
                   <td title={v.stats.vision ? JSON.stringify(v.stats.vision, null, 1) : undefined}>
                     {visionSummary(v.stats.vision)}
+                  </td>
+                  <td
+                    title={
+                      v.stats.rules || v.stats.augmentation ? JSON.stringify({ rules: v.stats.rules, augmentation: v.stats.augmentation }, null, 1) : undefined
+                    }
+                  >
+                    {rulesSummary(v.stats)}
                   </td>
                   <td>{v.delta}</td>
                   <td>

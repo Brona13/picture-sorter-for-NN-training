@@ -145,3 +145,19 @@ test("shows the vision settings frozen with a version", async () => {
   expect(await screen.findByText("gaussian · mask circle · detector ×1")).toBeInTheDocument();
   expect(screen.getAllByText("—").length).toBeGreaterThan(0); // v1 has none
 });
+
+test("shows the frozen edge-angle rule and augmentation ranges in one column", async () => {
+  versions = [
+    {
+      ...version(1, 1, true),
+      stats: {
+        rules: { edge_angle: { settings: { expected: { angle: 90, tolerance: 5, polarity: "+" } }, results: "fresh", summary: null } },
+        augmentation: { ranges: { dx: [-6, 8], dy: null, rot: [-2, 2] }, coverage: 95, results: "fresh", reference: "f00.png", unit: "px" },
+      },
+    } as unknown as ReturnType<typeof version>,
+    version(2, 2, false),
+  ];
+  render(<VersionsView camera="camA" />);
+  expect(await screen.findByText("edge 90.0°±5 + · dx -6…8 px · rot -2…2°")).toBeInTheDocument();
+  expect(screen.getByRole("columnheader", { name: "rules & ranges" })).toBeInTheDocument();
+});

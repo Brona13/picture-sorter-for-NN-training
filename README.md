@@ -94,6 +94,7 @@ The application provides these views:
 - **Dedup** — cluster near-duplicate frames and mute the redundant ones (run before Classify; muted frames are hidden there)
 - **Classify** — label frames and compare scoring opinions
 - **Insights** — compare method behavior against human labels
+- **Augmentation** — measure how far the object moves between frames and keep movement ranges for the training side (see *Augmentation ranges* below)
 - **Versions** — freeze, revert, and export dataset snapshots
 
 The sidebar selects the camera. When a camera has a product-classification ROI, it also selects either the product-sorting stage or one product’s quality stage.
@@ -203,6 +204,34 @@ product classes.
 
 Deleting an ROI requires confirmation and removes its associated labels,
 goldens, cached results, versions, and deduplication state. Source frames remain unchanged.
+
+## Augmentation ranges
+
+The **Augmentation** page answers one question for an ROI: how far does the object move between
+frames? It measures and records only. It does not create, change or export any picture; applying
+shifts or rotations is the job of the training system, and this tool gives it the ranges.
+
+1. Pick the ROI and a **reference frame**: a typical OK frame where the object sits where it should
+   (by default the first golden, else the camera's reference frame). Every frame is compared with it.
+2. Choose where the **shift** comes from: the stored detector box when the frame has a trusted one
+   (see the Detector page), otherwise matching the two pictures (after the feature's filter). "Detector
+   box only" and "picture matching only" restrict it. Tick **Measure rotation** to estimate each frame's
+   rotation too; it is only reliable for a few degrees. A rotated frame still gets the correct shift.
+3. Click **Measure all frames** (it saves first if you changed something). It takes a few milliseconds
+   per frame once the pictures are read.
+4. Each axis shows a histogram, the minimum, maximum and median, and the central part of the values
+   (set **Cover the central N% of the frames**, default 95%) as the suggested range. **Use frames** can
+   restrict the statistics to the frames labeled with one class, for example only OK. Shifts are in pixels
+   of the ROI crop (right and down positive; the percentage of the crop is shown); rotation is in degrees,
+   counter-clockwise on screen positive. Frames that could not be measured (no clear match) are counted
+   but left out.
+5. **Use suggested** copies the suggestion into the editable range; adjust it by hand if you know better,
+   then **Save**. Changing the range, coverage or class filter needs no new measurement; changing the
+   reference frame, the shift source, the rotation option, the feature's filter or its detector does.
+
+Freezing a version records the saved ranges, the reference frame and the crop size in the version's
+statistics; the Versions page lists them in the *rules & ranges* column. Exports are unchanged: class
+folders with the original filenames and no extra file.
 
 ## Edge angle rule
 

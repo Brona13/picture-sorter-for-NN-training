@@ -157,6 +157,14 @@ independent candidate/reference pairs. The refresh keeps decoded golden vectors
 and one bounded candidate group in memory rather than decoding the complete frame
 set at once.
 
+### Augmentation ranges
+
+- Augmentation page: per frame, the object's shift (px of the ROI crop) and optionally rotation (degrees) against a reference frame; suggested ranges from the central N% of the distribution, editable and saved per ROI
+- Shift from a trusted stored detection box when there is one, else phase correlation refined by an ECC alignment (a rotated frame biases phase correlation); rotation from the ECC alignment; frames with no clear match are counted as not measured
+- Measures and records only: it never creates or changes an image (training-time augmentation stays out of scope). Ranges are frozen in the version statistics (`stats.augmentation`) and listed on the Versions page; exports stay without a manifest
+- Settings, ranges and per-frame results are metadata in `settings` (no schema change); results are signed and recomputed when the reference frame, source, rotation option, filter or detector change; changing ranges, coverage or the class filter needs no new run
+- `motion.py`, `api/motion_api.py`, `views/AugmentationView.tsx`, `classify/Histogram.tsx`. Checked on synthetic images with known shifts and rotations only; not yet calibrated on real camera frames
+
 ### Edge-angle rule
 
 - Edge angle page: draw a line along an edge, size a band, see the straightened band with the points found and the fitted line; measure the angle (0-180°) and direction (brighter side) per frame
@@ -223,6 +231,7 @@ The application is a FastAPI backend (`app/backend/`) that wraps the domain modu
 - `app/backend/classify.py` — multi-class scoring and the shared persistent feature cache
 - `app/backend/dedup.py` — near-duplicate embedding clustering using the shared cache
 - `app/backend/outliers.py` — k-nearest-neighbour isolation score over the same embeddings
+- `app/backend/motion.py` — object shift/rotation measurement against a reference frame and the suggested augmentation ranges
 - `app/backend/edge_angle.py` — edge-angle measurement, verdict, settings and per-feature results (rule-based family)
 - `app/backend/neighbors.py` — nearest unlabeled frames to a labeled seed, and the guarded batch-apply of the seed's label
 - `app/backend/classify_view.py` — presentation-neutral filtering, sorting, bars, bulk and auto-assign selection
@@ -236,13 +245,13 @@ The application is a FastAPI backend (`app/backend/`) that wraps the domain modu
 
 One thin router per area, each delegating to the domain modules above:
 `cameras`, `status`, `versions_api`, `ingest_api`, `frames_api` (frames and thumbnails),
-`roi_api`, `classify_api`, `insights_api`, `dedup_api`, `overview_api` (all cameras with reference frame and ROIs for the Overview page), `outliers_api`, `similar_api`, `rules_api`, `vision_api` (filter catalogue, per-feature filter/mask/detector settings, live preview, detection job and review).
+`roi_api`, `classify_api`, `insights_api`, `dedup_api`, `overview_api` (all cameras with reference frame and ROIs for the Overview page), `outliers_api`, `similar_api`, `rules_api`, `motion_api`, `vision_api` (filter catalogue, per-feature filter/mask/detector settings, live preview, detection job and review).
 
 ### Frontend (`app/frontend/src/`)
 
 - `App.tsx` — sidebar (camera, product, view) and routes
 - `api.ts` — typed API client
-- `views/` — Overview, Status, Ingest, ROI editor, Detector, Edge angle, Dedup, Classify, Insights, Versions (sidebar order)
+- `views/` — Overview, Status, Ingest, ROI editor, Detector, Edge angle, Dedup, Classify, Insights, Augmentation, Versions (sidebar order)
 - `classify/` — card, bulk, clear-labels, auto-assign, suggested-goldens panels, SVG scatter (drag a rectangle to zoom and list the frames inside, optionally delete them with a note; right-click resets), per-day Deleted view, cluster browser (vertical cluster list, paged card grid per cluster with its own grid size per ROI; cards can be labeled, made golden, made representative or deleted, with the same hover keys as Classify, plus Delete)
 - `RoiCanvas.tsx` + `roiGeometry.ts` — pointer-driven ROI draw/move/resize in normalised coordinates
 - `DetectorPanel.tsx` — frame strip, run bar and review panel of the tabbed Detector page (`views/DetectorView.tsx`: Filter / Detector / Review / Mask tabs, sticky save bar, shared preview); `CopyButton.tsx` — copy-to-clipboard button (Versions export path)
