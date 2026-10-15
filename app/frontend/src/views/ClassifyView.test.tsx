@@ -416,3 +416,19 @@ test("Find similar needs a labeled frame; ticked matches get the seed's label an
   await waitFor(() => expect(calls.filter((c) => c.url.includes("/classify/grid?")).length).toBeGreaterThan(before));
   expect(await screen.findByText("Labeled 1 frame as OK.")).toBeInTheDocument();
 });
+
+test("cards show the edge-angle badge with the verdict when the rule has results", async () => {
+  state = baseState({ views: [...baseState().views.slice(0, -1), "Edge angle: pass", "Edge angle: fail", "Edge angle: undetermined", "Deleted"] });
+  grid = () =>
+    gridBody([
+      card("a.png", { edge: { verdict: "pass", status: "ok", angle: 90.3, polarity: "+" } }),
+      card("b.png", { edge: { verdict: "undetermined", status: "none", angle: null, polarity: null } }),
+      card("c.png"),
+    ]);
+  render(<ClassifyView camera="camA" />);
+  const a = await cardEl("a.png");
+  expect(within(a).getByTestId("edge-badge")).toHaveTextContent("∠ 90.3° + · pass");
+  expect(within(await cardEl("b.png")).getByTestId("edge-badge")).toHaveTextContent("no edge · undetermined");
+  expect(within(await cardEl("c.png")).queryByTestId("edge-badge")).toBeNull();
+  expect(screen.getByRole("option", { name: "Edge angle: fail" })).toBeInTheDocument();
+});

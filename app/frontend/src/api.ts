@@ -286,6 +286,8 @@ export interface CardData {
   leanings: Record<string, string | null>;
   bars: { rows: BarRow[]; novelty: number; margin: number | null; close_call: boolean } | null;
   cluster: { id: number; is_rep: boolean } | null;
+  /** Edge-angle rule result for this frame, when the rule has been run on the current settings. */
+  edge?: { verdict: "pass" | "fail" | "undetermined" | null; status: "ok" | "none"; angle: number | null; polarity: "+" | "-" | null } | null;
 }
 
 export interface GridResponse {
@@ -433,6 +435,60 @@ export interface OutlierResult {
   summary: { min: number; median: number; p95: number; max: number };
   marks: Record<string, { label: string | null; golden: string | null }>;
   classes: string[];
+}
+
+export interface EdgeExpected {
+  angle: number;
+  tolerance: number;
+  polarity: "+" | "-";
+}
+
+export interface EdgeAngleSettings {
+  p1: { x: number; y: number };
+  p2: { x: number; y: number };
+  half_width: number;
+  points: number;
+  expected: EdgeExpected | null;
+}
+
+export interface EdgeMeasurement {
+  status: "ok" | "none";
+  angle: number | null;
+  polarity: "+" | "-" | null;
+  contrast: number | null;
+  rms: number | null;
+  n_points: number;
+  /** Normalised to the ROI crop. */
+  points: { x: number; y: number }[];
+  line: { x: number; y: number }[];
+  /** Normalised to the straightened band. */
+  patch_points: { x: number; y: number }[];
+  patch_line: { x: number; y: number }[];
+}
+
+export interface EdgeSummary {
+  total: number;
+  pass: number;
+  fail: number;
+  undetermined: number;
+  measured: number;
+}
+
+export interface EdgeAngleState {
+  feature: string;
+  settings: EdgeAngleSettings | null;
+  ranges: { points: [number, number]; half_width: [number, number]; tolerance: [number, number] };
+  defaults: { points: number; half_width: number; tolerance: number };
+  results: "none" | "fresh" | "stale";
+  summary: EdgeSummary | null;
+}
+
+export interface EdgePreview {
+  measurement: EdgeMeasurement;
+  verdict: "pass" | "fail" | "undetermined" | null;
+  band: { x: number; y: number }[];
+  patch: string | null;
+  crop_size: [number, number];
 }
 
 export interface SimilarResult {
@@ -685,6 +741,17 @@ export const api = {
       `/cameras/${encodeURIComponent(camera)}/dedup/mutes?feature=${encodeURIComponent(feature)}`,
       send("DELETE"),
     ),
+  edgeAngleState: (camera: string, feature: string) =>
+    request<EdgeAngleState>(`/cameras/${encodeURIComponent(camera)}/rules/edge-angle/${encodeURIComponent(feature)}`),
+  edgeAngleSave: (camera: string, feature: string, settings: EdgeAngleSettings | null) =>
+    request<EdgeAngleState>(`/cameras/${encodeURIComponent(camera)}/rules/edge-angle/${encodeURIComponent(feature)}`, send("PUT", { settings })),
+  edgeAnglePreview: (camera: string, feature: string, frame: string, settings: EdgeAngleSettings) =>
+    request<EdgePreview>(
+      `/cameras/${encodeURIComponent(camera)}/rules/edge-angle/${encodeURIComponent(feature)}/preview`,
+      post({ frame, settings }),
+    ),
+  edgeAngleRun: (camera: string, feature: string) =>
+    request<Job<EdgeSummary>>(`/cameras/${encodeURIComponent(camera)}/rules/edge-angle/${encodeURIComponent(feature)}/run`, post()),
   classifySimilar: (camera: string, feature: string, frame: string, method: string, limit: number) =>
     request<Job<SimilarResult>>(`/cameras/${encodeURIComponent(camera)}/classify/similar`, post({ feature, frame, method, limit })),
   classifyLabelFrames: (camera: string, feature: string, frames: string[], cls: string) =>

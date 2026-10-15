@@ -4,6 +4,7 @@ export const VIEWS = [
   { path: "ingest", label: "Ingest" },
   { path: "roi", label: "ROI editor" },
   { path: "detector", label: "Detector" },
+  { path: "edge-angle", label: "Edge angle" },
   { path: "dedup", label: "Dedup" },
   { path: "classify", label: "Classify" },
   { path: "insights", label: "Insights" },

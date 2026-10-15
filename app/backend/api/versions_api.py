@@ -6,6 +6,7 @@ import config
 import datamodel
 import db
 import detections
+import edge_angle
 import engine
 import labels
 import versions
@@ -79,6 +80,9 @@ def freeze(camera: str, body: FreezeRequest) -> dict:
     vision = detections.vision_snapshot(camera, body.feature)
     if vision:
         stats["vision"] = vision  # frozen with the version so its vectors are reproducible
+    rule = edge_angle.snapshot(camera, body.feature)
+    if rule:
+        stats["rules"] = {"edge_angle": rule}  # the rule-based opinion, as configured at freeze time
     return versions.freeze(camera, body.feature, body.name, body.notes, stats=stats)
 
 

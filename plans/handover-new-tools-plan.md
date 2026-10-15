@@ -27,7 +27,7 @@ The handover lists new curation tools. Cross-camera features, drift over time, U
 - `neighbors.py`: closest unlabeled frames to a seed frame.
 - Classify card action "Find similar": distance slider, list, tick matches, apply the seed's label through the existing bulk-label path. Human confirms; goldens untouched.
 
-## Phase 3 - Edge-angle rule tool (v1.14.0)
+## Phase 3 - Edge-angle rule tool (v1.14.0) - done
 - `edge_angle.py`: band crop, feature filter, Canny, least-squares line fit through N strongest edge points; angle 0-180 degrees; polarity from pixel gradient (not click order); verdict = angle range plus polarity.
 - New view: two-click line, auto rectangle with one drag handle, live crop preview with edge-point dots, point-count slider, "calibrate from this frame", tolerance.
 - Settings are per-feature metadata, recorded in frozen versions; results appear in Classify as a separate pass/fail/undetermined column and filter.

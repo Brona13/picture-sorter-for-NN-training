@@ -10,6 +10,7 @@ import classify_view as cv
 import datamodel
 import db
 import dedup
+import edge_angle
 import embedding
 import engine
 import labels
@@ -87,6 +88,27 @@ def load_scored(camera: str, feature: str) -> tuple[list | None, str | None, str
     return results, row["golden_sig"], row["frames_sig"]
 
 
+# --- edge-angle rule results -------------------------------------------------
+def _edge_state(camera: str, feature: str) -> dict:
+    """Fresh edge-angle measurements by frame name plus verdicts ({} when the rule has not been run
+    on the current settings). Verdicts exist only when an expected angle is set."""
+    settings = edge_angle.get(camera, feature)
+    if settings is None or edge_angle.results_status(camera, feature) != "fresh":
+        return {"measured": {}, "verdicts": {}}
+    results = edge_angle.load_results(camera, feature)
+    hmap = labels.hash_map(camera)
+    measured, verdicts = {}, {}
+    for frame, h in hmap.items():
+        r = results.get(h)
+        if r is None:
+            continue
+        measured[frame] = r
+        v = edge_angle.verdict(r, settings["expected"])
+        if v:
+            verdicts[frame] = v
+    return {"measured": measured, "verdicts": verdicts}
+
+
 # --- shared context ----------------------------------------------------------
 @dataclasses.dataclass
 class Ctx:
@@ -101,6 +123,7 @@ class Ctx:
     deleted: set
     scored: bool
     items: list
+    edge: dict
 
 
 def _build(camera: str, q: GridQuery, *, apply_auto_preview: bool = True) -> Ctx:
@@ -110,7 +133,8 @@ def _build(camera: str, q: GridQuery, *, apply_auto_preview: bool = True) -> Ctx
     rank = q.rank or cv.default_rank_method(methods)
     if rank not in methods:
         raise HTTPException(status_code=422, detail=f"Unknown rank method: {rank}")
-    if q.view not in cv.valid_views(classes):
+    edge = _edge_state(camera, q.feature)
+    if q.view not in cv.valid_views(classes, edge_angle=bool(edge["verdicts"])):
         raise HTTPException(status_code=422, detail=f"Unknown view: {q.view}")
     if q.order not in cv.ORDERS:
         raise HTTPException(status_code=422, detail=f"Unknown order: {q.order}")
@@ -126,9 +150,9 @@ def _build(camera: str, q: GridQuery, *, apply_auto_preview: bool = True) -> Ctx
             visible = [r for r in visible if r.frame not in muted]
     items = cv.filter_and_sort(
         visible, view=q.view, rank_method=rank, order=q.order, scored=scored,
-        methods=methods, lab=lab, gold=gold, deleted=deleted,
+        methods=methods, lab=lab, gold=gold, deleted=deleted, edge_verdicts=edge["verdicts"],
     )
-    ctx = Ctx(camera, q.feature, classes, methods, rank, results, gold, lab, deleted, scored, items)
+    ctx = Ctx(camera, q.feature, classes, methods, rank, results, gold, lab, deleted, scored, items, edge)
     if apply_auto_preview and q.auto_preview and scored:
         picks = _auto_picks(ctx, q.auto_classes, q.auto_min_margin)[0]
         keep = {r.frame for rs in picks.values() for r in rs}
@@ -189,7 +213,7 @@ def state(camera: str, feature: str) -> dict:
         "default_rank": cv.default_rank_method(methods),
         "device": embedding.active_device(),
         "device_label": embedding.device_label(),
-        "views": cv.valid_views(classes),
+        "views": cv.valid_views(classes, edge_angle=bool(_edge_state(camera, feature)["verdicts"])),
         "orders": cv.ORDERS,
         "has_results": results is not None,
         "scored": bool(results) and any(r.per_method for r in results),
@@ -247,6 +271,13 @@ def _card(camera: str, feature: str, frame: str, classes: list[str]) -> dict:
     }
 
 
+def _edge_card(edge: dict, frame: str) -> dict | None:
+    r = edge["measured"].get(frame)
+    if r is None:
+        return None
+    return {"verdict": edge["verdicts"].get(frame), "status": r["status"], "angle": r["angle"], "polarity": r["polarity"]}
+
+
 @router.get("/cameras/{camera}/classify/grid")
 def grid(camera: str, q: QueryParams, page: int = 1, per_page: int | None = None) -> dict:
     ctx = _build(camera, q)
@@ -273,6 +304,7 @@ def grid(camera: str, q: QueryParams, page: int = 1, per_page: int | None = None
                 "leanings": {m: p.leaning for m, p in fs.per_method.items()},
                 "bars": None if golden or not ms else cv.bars(ms.dists, ctx.classes),
                 "cluster": {"id": chip[0], "is_rep": chip[1]} if chip else None,
+                "edge": _edge_card(ctx.edge, fs.frame),
             }
         )
     return {

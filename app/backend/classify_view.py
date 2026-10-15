@@ -13,8 +13,15 @@ ORDERS = ["Most novel first", "Most uncertain first", "Name"]
 BULK_MODES = ["leaning", "ordinary", "uncertain"]
 
 
-def valid_views(classes: list[str]) -> list[str]:
-    return [*BASE_VIEWS[:2], *[f"Labeled {c}" for c in classes], *BASE_VIEWS[2:]]
+EDGE_VIEW_PREFIX = "Edge angle: "
+EDGE_VERDICTS = ["pass", "fail", "undetermined"]
+EDGE_VIEWS = [f"{EDGE_VIEW_PREFIX}{v}" for v in EDGE_VERDICTS]
+
+
+def valid_views(classes: list[str], *, edge_angle: bool = False) -> list[str]:
+    """The Show filter choices; the edge-angle ones only exist while a rule with an expected
+    angle has fresh results."""
+    return [*BASE_VIEWS[:2], *[f"Labeled {c}" for c in classes], *BASE_VIEWS[2:-1], *(EDGE_VIEWS if edge_angle else []), BASE_VIEWS[-1]]
 
 
 def golden_signature(gold: dict[str, list[str]]) -> str:
@@ -43,6 +50,7 @@ def filter_and_sort(
     lab: dict[str, str],
     gold: dict[str, list[str]],
     deleted: set[str] | None = None,
+    edge_verdicts: dict[str, str] | None = None,
 ) -> list:
     """Apply the Show filter + the Order sort.
 
@@ -71,6 +79,9 @@ def filter_and_sort(
             items = [r for r in items if labels.golden_class_of(gold, r.frame)]
         elif view == "Methods disagree":
             items = [r for r in items if len(leanings(r) - {None}) > 1]
+        elif view.startswith(EDGE_VIEW_PREFIX):
+            want = view[len(EDGE_VIEW_PREFIX):]
+            items = [r for r in items if (edge_verdicts or {}).get(r.frame) == want]
 
     def _ms(r):
         return r.per_method.get(rank_method)

@@ -84,12 +84,13 @@ feature reads any directory path it is given. Do not expose it to a network.
 
 On Windows use `.\run.ps1` instead (same modes and arguments); see [Running on Windows](#running-on-windows).
 
-The application provides seven views:
+The application provides these views:
 
 - **Overview** — start page: every camera with its reference frame (ROI boxes drawn on it) and a card per ROI (cutout, products, labeled/golden counts, active version). Click a camera or ROI to make that camera the active one in the left menu; hovering an ROI card highlights its box.
 - **Status** — label, golden, version, and ROI-definition summaries
 - **Ingest** — add frames and maintain the duplicate index
 - **ROI editor** — create, edit, scope, or delete ROIs
+- **Edge angle** — a rule-based check of one edge's angle and direction (see *Edge angle rule* below)
 - **Dedup** — cluster near-duplicate frames and mute the redundant ones (run before Classify; muted frames are hidden there)
 - **Classify** — label frames and compare scoring opinions
 - **Insights** — compare method behavior against human labels
@@ -202,6 +203,36 @@ product classes.
 
 Deleting an ROI requires confirmation and removes its associated labels,
 goldens, cached results, versions, and deduplication state. Source frames remain unchanged.
+
+## Edge angle rule
+
+The **Edge angle** page is a rule-based tool for ROIs where one edge decides OK or not OK: only one
+angle **and** one direction are good, any other angle or the opposite direction is not. It gives its
+own opinion, separate from the embedding scores, and is never blended with them.
+
+1. Choose the ROI and a frame. Click once on the crop to place the first point of a line along the
+   edge (the line follows the cursor), click again for the second point. A band appears around the
+   line; drag the red ends to adjust the line and the orange handle on one long side to resize the
+   band, or use the **Band half-width** slider.
+2. The **Band preview** shows the band straightened, with the points that were found (yellow) and the
+   fitted line (green); the same points are drawn on the crop. **Points used** sets how many points
+   feed the fit (the band is cut into that many slices along the line and the strongest edge in each
+   slice is kept). Start with 5 and raise it if the angle jumps between frames. Adjust until the green
+   line matches what your eye sees.
+3. The measurement shows the **angle** (0-180°, counter-clockwise on screen) and the **direction**:
+   `+` when the side to the left of that angle is brighter, `-` when the right side is. Direction comes
+   from the picture, not from the order of your clicks. Only edges within 45° of your line are used.
+4. Pick a frame that is OK and click **Use this frame as the OK example**; this fills the expected
+   angle and direction. Set the tolerance (±°). A frame passes when its angle is within the tolerance
+   and the direction is the same; otherwise it fails. A frame with no usable edge is *undetermined*.
+5. **Save**, then **Measure all frames**. The results are kept as metadata (derived, recomputed when the
+   line, band, number of points or the feature's filter changes; changing only the expectation or
+   tolerance needs no new run). In Classify every measured card shows a badge such as `∠ 90.3° + · pass`,
+   and **Show: Edge angle: pass / fail / undetermined** filters the grid. Freezing a version records the
+   rule's settings and counts in the version's statistics.
+
+The rule needs no PyTorch. Measuring a frame takes a few milliseconds, so a run is limited by reading
+the images.
 
 ## Detector page: filters, mask and object detection
 

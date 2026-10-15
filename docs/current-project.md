@@ -157,6 +157,14 @@ independent candidate/reference pairs. The refresh keeps decoded golden vectors
 and one bounded candidate group in memory rather than decoding the complete frame
 set at once.
 
+### Edge-angle rule
+
+- Edge angle page: draw a line along an edge, size a band, see the straightened band with the points found and the fitted line; measure the angle (0-180°) and direction (brighter side) per frame
+- A separate, rule-based opinion (no PyTorch); pass/fail against an expected angle ± tolerance and polarity, taken from an OK example; frames with no usable edge are undetermined
+- Settings and per-frame results are metadata in `settings` (no schema change); results are recomputed when the line, band, points or filter change; the verdict follows the current expectation without a new run
+- Classify shows a badge per measured card and the Show filters `Edge angle: pass / fail / undetermined`; a freeze records the rule in the version statistics
+- `edge_angle.py`, `api/rules_api.py`, `classify_api._edge_state`, `views/EdgeAngleView.tsx`, `LineCanvas.tsx`, `lineGeometry.ts`. Checked on synthetic images with known angles only; not yet calibrated on real camera frames
+
 ### Find similar
 
 - Classify card action (🔍≈, ResNet methods only): unlabeled, live, unmuted frames of the feature ranked by cosine distance to a labeled seed frame, over the shared embedding cache (filter and mask apply)
@@ -215,6 +223,7 @@ The application is a FastAPI backend (`app/backend/`) that wraps the domain modu
 - `app/backend/classify.py` — multi-class scoring and the shared persistent feature cache
 - `app/backend/dedup.py` — near-duplicate embedding clustering using the shared cache
 - `app/backend/outliers.py` — k-nearest-neighbour isolation score over the same embeddings
+- `app/backend/edge_angle.py` — edge-angle measurement, verdict, settings and per-feature results (rule-based family)
 - `app/backend/neighbors.py` — nearest unlabeled frames to a labeled seed, and the guarded batch-apply of the seed's label
 - `app/backend/classify_view.py` — presentation-neutral filtering, sorting, bars, bulk and auto-assign selection
 - `app/backend/suggest_goldens.py` — most-uncertain, diversity-spread golden suggestions
@@ -227,13 +236,13 @@ The application is a FastAPI backend (`app/backend/`) that wraps the domain modu
 
 One thin router per area, each delegating to the domain modules above:
 `cameras`, `status`, `versions_api`, `ingest_api`, `frames_api` (frames and thumbnails),
-`roi_api`, `classify_api`, `insights_api`, `dedup_api`, `overview_api` (all cameras with reference frame and ROIs for the Overview page), `outliers_api`, `similar_api`, `vision_api` (filter catalogue, per-feature filter/mask/detector settings, live preview, detection job and review).
+`roi_api`, `classify_api`, `insights_api`, `dedup_api`, `overview_api` (all cameras with reference frame and ROIs for the Overview page), `outliers_api`, `similar_api`, `rules_api`, `vision_api` (filter catalogue, per-feature filter/mask/detector settings, live preview, detection job and review).
 
 ### Frontend (`app/frontend/src/`)
 
 - `App.tsx` — sidebar (camera, product, view) and routes
 - `api.ts` — typed API client
-- `views/` — Overview, Status, Ingest, ROI editor, Detector, Dedup, Classify, Insights, Versions (sidebar order)
+- `views/` — Overview, Status, Ingest, ROI editor, Detector, Edge angle, Dedup, Classify, Insights, Versions (sidebar order)
 - `classify/` — card, bulk, clear-labels, auto-assign, suggested-goldens panels, SVG scatter (drag a rectangle to zoom and list the frames inside, optionally delete them with a note; right-click resets), per-day Deleted view, cluster browser (vertical cluster list, paged card grid per cluster with its own grid size per ROI; cards can be labeled, made golden, made representative or deleted, with the same hover keys as Classify, plus Delete)
 - `RoiCanvas.tsx` + `roiGeometry.ts` — pointer-driven ROI draw/move/resize in normalised coordinates
 - `DetectorPanel.tsx` — frame strip, run bar and review panel of the tabbed Detector page (`views/DetectorView.tsx`: Filter / Detector / Review / Mask tabs, sticky save bar, shared preview); `CopyButton.tsx` — copy-to-clipboard button (Versions export path)

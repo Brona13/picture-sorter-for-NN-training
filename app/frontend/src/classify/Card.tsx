@@ -52,7 +52,7 @@ function isTypingTarget(target: EventTarget | null): boolean {
 }
 
 export default function Card({ camera, feature, classes, methods, card, busy, onLabel, onGolden, onDelete, onRestore, isRep, onSetRep, fullSize, caption, onSimilar }: Props) {
-  const { frame, label, golden, deleted, bars, leanings, cluster } = card;
+  const { frame, label, golden, deleted, bars, leanings, cluster, edge } = card;
 
   // Number keys act on the card under the mouse. The handler is reread from a ref so the window
   // listener only comes and goes with hovering, not with every render.
@@ -184,6 +184,18 @@ export default function Card({ camera, feature, classes, methods, card, busy, on
       )}
 
       <div style={{ fontSize: 12 }}>{frame.slice(0, 22)}</div>
+
+      {edge && (
+        <div style={{ margin: "2px 0 4px", fontSize: 10 }} data-testid="edge-badge">
+          <span
+            title="Edge-angle rule: the measured angle (counter-clockwise on screen) and which side is brighter. A separate rule-based opinion, not blended with the scores."
+            style={badge(edge.verdict === "pass" ? "#1a7f37" : edge.verdict === "fail" ? "#c62828" : "#777")}
+          >
+            ∠ {edge.angle === null ? "no edge" : `${edge.angle.toFixed(1)}° ${edge.polarity}`}
+            {edge.verdict ? ` · ${edge.verdict}` : ""}
+          </span>
+        </div>
+      )}
 
       {caption && (
         <div style={{ margin: "2px 0 4px", fontSize: 10 }}>
