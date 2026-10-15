@@ -135,6 +135,52 @@ test("scatter is computed on demand and draws one marker per frame", async () =>
   expect(within(svg).getByTestId("pt-f.png").querySelector("title")!.textContent).toContain("golden OK");
 });
 
+async function openScatter() {
+  state = baseState({ result });
+  render(<DedupView camera="camA" />);
+  await userEvent.click(await screen.findByText(/2D scatter/));
+  await userEvent.click(screen.getByRole("button", { name: "Compute projection" }));
+  const svg = await screen.findByRole("img", { name: /2D scatter/ });
+  svg.getBoundingClientRect = () => ({ left: 0, top: 0, width: 720, height: 420, right: 720, bottom: 420, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
+  return svg;
+}
+
+test("dragging a rectangle on the scatter zooms in and lists the frames inside it", async () => {
+  const svg = await openScatter();
+  expect(screen.queryByTestId("scatter-selection")).toBeNull();
+  fireEvent.mouseDown(svg, { button: 0, clientX: 0, clientY: 0 });
+  fireEvent.mouseMove(window, { clientX: 100, clientY: 100 });
+  expect(screen.getByTestId("scatter-drag-box")).toBeInTheDocument();
+  fireEvent.mouseUp(window, { clientX: 100, clientY: 100 });
+  const panel = await screen.findByTestId("scatter-selection");
+  expect(within(panel).getByText("1 frame(s) in the selected region")).toBeInTheDocument();
+  expect(within(panel).getByAltText("a.png")).toBeInTheDocument();
+  expect(within(panel).queryByAltText("f.png")).toBeNull();
+  expect(within(panel).getByText("cluster 0: 1")).toBeInTheDocument();
+  expect(svg.getAttribute("viewBox")).not.toBe("0 0 720 420");
+  expect(screen.getByTestId("pt-f.png").getAttribute("opacity")).toBe("0.2");
+});
+
+test("right-click on the scatter restores the full view and clears the selection", async () => {
+  const svg = await openScatter();
+  fireEvent.mouseDown(svg, { button: 0, clientX: 0, clientY: 0 });
+  fireEvent.mouseUp(window, { clientX: 100, clientY: 100 });
+  await screen.findByTestId("scatter-selection");
+  const notPrevented = fireEvent.contextMenu(svg);
+  expect(notPrevented).toBe(false); // default context menu suppressed
+  await waitFor(() => expect(screen.queryByTestId("scatter-selection")).toBeNull());
+  expect(svg.getAttribute("viewBox")).toBe("0 0 720 420");
+  expect(screen.getByTestId("pt-f.png").getAttribute("opacity")).toBe("1");
+});
+
+test("a plain click (tiny drag) on the scatter does not change the view", async () => {
+  const svg = await openScatter();
+  fireEvent.mouseDown(svg, { button: 0, clientX: 50, clientY: 50 });
+  fireEvent.mouseUp(window, { clientX: 52, clientY: 51 });
+  expect(screen.queryByTestId("scatter-selection")).toBeNull();
+  expect(svg.getAttribute("viewBox")).toBe("0 0 720 420");
+});
+
 test("unmute needs a second confirming click", async () => {
   state = baseState({ muted_count: 3 });
   render(<DedupView camera="camA" />);

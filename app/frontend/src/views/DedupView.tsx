@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, DedupParams, DedupResult, DedupState, ScatterResult } from "../api";
+import { api, DedupParams, DedupResult, DedupState, ScatterPoint, ScatterResult } from "../api";
 import { thumbUrl } from "../classify/Card";
 import Scatter from "../classify/Scatter";
 import { useJob } from "../useJob";
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const MAX_SHOWN = 24;
+const MAX_SELECTED = 60;
 
 export function drift(existing: DedupParams, now: DedupParams): string[] {
   const bits: string[] = [];
@@ -26,6 +27,7 @@ export default function DedupView({ camera, product }: { camera: string; product
   const [scatterJob, setScatterJob] = useState<string | null>(null);
   const [projection, setProjection] = useState("umap");
   const [scatter, setScatter] = useState<ScatterResult | null>(null);
+  const [selected, setSelected] = useState<ScatterPoint[] | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -33,6 +35,8 @@ export default function DedupView({ camera, product }: { camera: string; product
   const sj = useJob<ScatterResult>(scatterJob);
   const clustering = clusterJob !== null && (cj === null || cj.status === "queued" || cj.status === "running");
   const projecting = scatterJob !== null && (sj === null || sj.status === "queued" || sj.status === "running");
+
+  useEffect(() => setSelected(null), [scatter]);
 
   useEffect(() => {
     if (!camera) return;
@@ -252,7 +256,8 @@ export default function DedupView({ camera, product }: { camera: string; product
               )}
               {scatter && (
                 <>
-                  <Scatter points={scatter.points} classes={scatter.classes} />
+                  <Scatter points={scatter.points} classes={scatter.classes} onSelect={setSelected} />
+                  {selected && <ScatterSelection camera={camera} feature={feature} points={selected} />}
                   <p>
                     <em>2D projection distorts distances — use for sanity check only.</em> Clustering decisions above stay in full-dimensional embedding
                     space. {scatter.from_cache ? "(from cache)" : "(freshly projected)"}
@@ -370,5 +375,42 @@ export default function DedupView({ camera, product }: { camera: string; product
         </div>
       )}
     </section>
+  );
+}
+
+function ScatterSelection({ camera, feature, points }: { camera: string; feature: string; points: ScatterPoint[] }) {
+  const sorted = [...points].sort((a, b) => (a.cluster < 0 ? 1e9 : a.cluster) - (b.cluster < 0 ? 1e9 : b.cluster) || a.frame.localeCompare(b.frame));
+  const counts = new Map<number, number>();
+  for (const p of points) counts.set(p.cluster, (counts.get(p.cluster) ?? 0) + 1);
+  const summary = [...counts.entries()]
+    .sort((a, b) => (a[0] < 0 ? 1e9 : a[0]) - (b[0] < 0 ? 1e9 : b[0]))
+    .map(([c, n]) => `${c < 0 ? "unique" : `cluster ${c}`}: ${n}`)
+    .join(" · ");
+  return (
+    <div data-testid="scatter-selection">
+      <h4>{points.length} frame(s) in the selected region</h4>
+      {points.length === 0 ? (
+        <p>No frames inside the rectangle. Right-click to reset the view.</p>
+      ) : (
+        <>
+          <p style={{ fontSize: 12 }}>{summary}</p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {sorted.slice(0, MAX_SELECTED).map((p) => (
+              <figure key={p.frame} style={{ margin: 0, width: 110 }}>
+                <img src={thumbUrl(camera, p.frame, feature)} alt={p.frame} style={{ width: "100%" }} />
+                <figcaption style={{ fontSize: 11 }}>
+                  {p.representative ? "⭐ " : ""}
+                  {p.frame}
+                  <br />
+                  {p.cluster < 0 ? "unique" : `cluster ${p.cluster}`}
+                  {p.golden ? ` · golden ${p.golden}` : ""}
+                </figcaption>
+              </figure>
+            ))}
+          </div>
+          {points.length > MAX_SELECTED && <p>…and {points.length - MAX_SELECTED} more — zoom in further to see them.</p>}
+        </>
+      )}
+    </div>
   );
 }
