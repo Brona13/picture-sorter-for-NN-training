@@ -236,7 +236,7 @@ export default function ClassifyView({ camera, product }: { camera: string; prod
         </button>{" "}
         {st && (
           <small>
-            Methods: {st.methods.join(", ")} · neural device: {st.device} · cached — only the first pass over a new batch is slow.
+            Methods: {st.methods.join(", ")} · neural device: {st.device_label} · cached — only the first pass over a new batch is slow.
           </small>
         )}
         {refreshing && (

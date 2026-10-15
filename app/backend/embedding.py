@@ -4,12 +4,16 @@ PyTorch is an **optional** dependency. This module imports it lazily, so the res
 the tool runs unchanged when torch is not installed: ``available()`` returns ``False``
 and the UI simply doesn't offer the neural scoring family.
 
-Install (only when you want neural scoring):
-  * CPU (AMD / no Nvidia):  pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+Install (only when you want neural scoring), one PyTorch build per machine:
+  * CPU (any machine, incl. Windows + AMD): pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
   * Nvidia GPU:             install the matching CUDA build from https://pytorch.org
+  * AMD GPU (Linux only):   install the ROCm build, https://download.pytorch.org/whl/rocmX.Y
+ROCm and CUDA builds both expose the GPU through ``torch.cuda``, so the device
+string stays ``"cuda"`` for either; ``device_label()`` says which vendor it is.
 """
 from __future__ import annotations
 
+import shutil
 import threading
 from functools import lru_cache
 
@@ -63,6 +67,37 @@ def active_device() -> str:
     if pref in ("auto", "cuda"):
         return "cuda" if _torch.cuda.is_available() else "cpu"
     return "cpu"
+
+
+def torch_backend() -> str:
+    """Which PyTorch build is installed: 'cuda', 'rocm', 'cpu', or 'none' (no torch)."""
+    if not _ensure_torch():
+        return "none"
+    version = _torch.version
+    if getattr(version, "hip", None):
+        return "rocm"
+    if getattr(version, "cuda", None):
+        return "cuda"
+    return "cpu"
+
+
+def device_label() -> str:
+    """Human-readable device for the UI, e.g. 'cpu', 'AMD GPU (ROCm)', 'Nvidia GPU (CUDA)'.
+
+    When the CPU is in use but a GPU toolchain is visible on PATH, appends a hint that a
+    GPU-enabled PyTorch build would be used (PATH lookup only; nothing is executed).
+    """
+    device = active_device()
+    backend = torch_backend()
+    if device == "cuda":
+        return "AMD GPU (ROCm)" if backend == "rocm" else "Nvidia GPU (CUDA)"
+    label = "cpu"
+    if backend == "cpu":
+        if shutil.which("nvidia-smi"):
+            label += " — Nvidia GPU found, but the CPU-only PyTorch build is installed"
+        elif shutil.which("rocminfo"):
+            label += " — AMD GPU found, but the CPU-only PyTorch build is installed"
+    return label
 
 
 # --- model registry ----------------------------------------------------------

@@ -7,7 +7,8 @@
 #   pip install -r requirements-detector.txt
 #
 # Needs PyTorch: install requirements-embedding.txt first (or the CUDA build of
-# torch for an Nvidia GPU; detection then uses it automatically).
+# torch for an Nvidia GPU, or the ROCm build on Linux + AMD; detection then uses
+# the GPU automatically).
 -r requirements-embedding.txt
 transformers>=4.35
 pillow>=10

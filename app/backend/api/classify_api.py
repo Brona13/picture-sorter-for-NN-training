@@ -188,6 +188,7 @@ def state(camera: str, feature: str) -> dict:
         "methods": methods,
         "default_rank": cv.default_rank_method(methods),
         "device": embedding.active_device(),
+        "device_label": embedding.device_label(),
         "views": cv.valid_views(classes),
         "orders": cv.ORDERS,
         "has_results": results is not None,

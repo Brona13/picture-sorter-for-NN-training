@@ -13,6 +13,10 @@
 # For Nvidia acceleration, install the PyTorch build appropriate for the
 # machine's CUDA driver, then install any remaining requirements from this file.
 #
+# For AMD acceleration (Linux only), install the ROCm build, e.g.:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/rocmX.Y
+# Windows + AMD has no stable ROCm build; use the CPU build there.
+#
 # See README.md for current setup guidance.
 torch>=2.0
 torchvision>=0.15

@@ -10,6 +10,7 @@ const baseState = (over: Record<string, unknown> = {}) => ({
   methods: ["cpu", "resnet50"],
   default_rank: "resnet50",
   device: "cpu",
+  device_label: "cpu",
   views: ["All", "Unlabeled", "Labeled OK", "Labeled NG", "Golden", "Methods disagree", "Deleted"],
   orders: ["Most novel first", "Most uncertain first", "Name"],
   has_results: true,

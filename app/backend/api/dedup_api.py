@@ -118,6 +118,7 @@ def state(camera: str, feature: str) -> dict:
         "ranges": {"epsilon": EPSILON_RANGE, "min_points": MIN_POINTS_RANGE},
         "frames": len(datamodel.frames_for_feature(camera, feature)),
         "device": embedding.active_device(),
+        "device_label": embedding.device_label(),
         "muted_count": len(db.muted_frames(camera, feature)),
         "projections": list(scatter.SUPPORTED_METHODS),
         "result": _describe(result) if result else None,

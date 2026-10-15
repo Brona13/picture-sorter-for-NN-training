@@ -223,6 +223,7 @@ export interface ClassifyState {
   methods: string[];
   default_rank: string;
   device: string;
+  device_label: string;
   views: string[];
   orders: string[];
   has_results: boolean;
@@ -364,6 +365,7 @@ export interface DedupState {
   ranges: { epsilon: [number, number]; min_points: [number, number] };
   frames: number;
   device: string;
+  device_label: string;
   muted_count: number;
   projections: string[];
   result: DedupResult | null;

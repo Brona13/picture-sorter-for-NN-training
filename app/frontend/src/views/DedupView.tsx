@@ -190,7 +190,7 @@ export default function DedupView({ camera, product }: { camera: string; product
             >
               ↺ Revert sliders
             </button>{" "}
-            <small>Neural device: {st.device} · vectors are cached — first pass over a new batch is the slow one.</small>
+            <small>Neural device: {st.device_label} · vectors are cached — first pass over a new batch is the slow one.</small>
             {clustering && (
               <p aria-live="polite">
                 <progress value={Number(progress.done ?? 0)} max={Number(progress.total ?? 0) || undefined} /> Embedding {Number(progress.done ?? 0)}/

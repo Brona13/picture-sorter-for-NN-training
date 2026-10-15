@@ -60,7 +60,7 @@ DEFAULT_FAMILY = "cpu"
 
 # --- Neural (ResNet) embedding scoring (optional; requires torch) -------------
 EMBEDDING_ENABLED = True            # auto-disabled if torch isn't installed
-EMBEDDING_DEVICE = "auto"           # "auto" (cuda if present else cpu) | "cpu" | "cuda"
+EMBEDDING_DEVICE = "auto"           # "auto" (GPU if present, CUDA or ROCm, else cpu) | "cpu" | "cuda"
 EMBEDDING_BACKBONES = ["resnet18", "resnet50"]
 EMBEDDING_BATCH_SIZE_CPU = 8       # conservative bounded inference batches
 EMBEDDING_BATCH_SIZE_CUDA = 8      # safe default for modest GPU memory

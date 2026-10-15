@@ -2,7 +2,7 @@
 
 The user marks 1-3 exemplar boxes on frames of a feature; the detector finds the most
 similar object in every other frame's ROI crop. No training: a pretrained model is
-downloaded once from Hugging Face and run locally (CPU, or CUDA when available).
+downloaded once from Hugging Face and run locally (CPU, or a GPU when available: Nvidia CUDA or AMD ROCm builds of PyTorch).
 Optional dependency: see ``requirements-detector.txt``. Everything model-specific lives
 behind a *backend* callable so tests (and other models) can replace it::
 

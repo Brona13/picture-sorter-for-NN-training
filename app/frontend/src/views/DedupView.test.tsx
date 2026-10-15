@@ -22,6 +22,7 @@ const baseState = (over: Record<string, unknown> = {}) => ({
   ranges: { epsilon: [0.001, 0.2], min_points: [2, 10] },
   frames: 6,
   device: "cpu",
+  device_label: "cpu",
   muted_count: 0,
   projections: ["umap", "tsne"],
   result: null,

@@ -29,7 +29,7 @@ For canonical entities and domain rules, see [Data model](docs/data-model.md).
 - A supported Python installation (verified on Python 3.12)
 - Approximately 32 GB RAM is comfortable for the existing datasets
 - Node.js 20+ and npm, to build the web frontend
-- No GPU is required for classical scoring
+- No GPU is required for classical scoring (a GPU is optional for ResNet and detector work: Nvidia CUDA, or AMD ROCm on Linux)
 - PyTorch is optional for ResNet scoring
 
 ## Setup
@@ -330,18 +330,33 @@ On Linux/macOS the same two installs are:
 .venv/bin/pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
 ```
 
-Choose the CPU-only build on any machine without an Nvidia GPU, including AMD
-cards. The default PyPI wheels carry CUDA libraries that add roughly 2 GB and
-cannot be used there. CPU inference is fast enough for this tool: on a 16-thread
-desktop CPU, resnet18 reaches about 157 frames/s and resnet50 about 66
-frames/s, so the classical method and the batch sizes in `config.py` remain the
-practical limits rather than the model.
+PyTorch comes in one build per machine. The same project folder works on all of
+them; only the installed wheel differs, so keep one virtual environment per
+machine (or reinstall `torch` when moving):
+
+| Machine | Build | Install |
+|---|---|---|
+| Any machine, including Windows + AMD | CPU | `pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu` |
+| Nvidia GPU (Windows or Linux) | CUDA | the matching build from <https://pytorch.org> |
+| AMD GPU on Linux | ROCm | `pip install torch torchvision --index-url https://download.pytorch.org/whl/rocmX.Y` (pick `X.Y` from pytorch.org; support depends on the card model) |
+
+PyTorch has no stable ROCm build for Windows, so a Windows machine with an AMD
+card runs the CPU build. CPU inference is fast enough for this tool: on a
+16-thread desktop CPU, resnet18 reaches about 157 frames/s and resnet50 about
+66 frames/s, so the classical method and the batch sizes in `config.py` remain
+the practical limits rather than the model. A GPU mainly helps the object
+detector on the Detector page. Measured on a Radeon RX 7800 XT with the ROCm build:
+resnet18 about 680 frames/s, resnet50 about 400 frames/s, and detection about
+95 ms per frame against 367 ms on the CPU.
+
+The default PyPI wheels carry CUDA libraries that add roughly 2 GB, so prefer
+the explicit CPU or ROCm index above on machines without an Nvidia card.
 
 Installing `umap-learn` may downgrade `numpy` slightly, because `numba` pins a
 supported range. This is expected; run `pip check` afterwards to confirm the
 environment is still consistent.
 
-The application automatically uses CUDA when a compatible PyTorch build and Nvidia GPU are available; otherwise it uses the CPU.
+The application picks the device automatically: it uses the GPU when the installed PyTorch build can see one (CUDA on Nvidia, ROCm on AMD), otherwise the CPU. The Classify and Dedup captions show the result, for example `neural device: AMD GPU (ROCm)`. If a GPU is present on `PATH` (`nvidia-smi` or `rocminfo`) but the CPU-only build is installed, the caption says so; install the matching build above to use it. To force the CPU, set `EMBEDDING_DEVICE = "cpu"` in `app/backend/config.py`.
 
 The first neural run downloads pretrained weights — about 45 MB for resnet18
 and 98 MB for resnet50 — into the PyTorch cache, once per machine.
