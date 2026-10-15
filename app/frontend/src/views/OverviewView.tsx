@@ -36,7 +36,7 @@ function CameraPicture({
   return (
     <div
       onClick={onSelect}
-      style={{ position: "relative", lineHeight: 0, cursor: "pointer", border: "1px solid var(--border)" }}
+      style={{ position: "relative", lineHeight: 0, cursor: "pointer", border: "1px solid var(--border)", maxWidth: 600 }}
     >
       <img
         src={`/api/cameras/${encodeURIComponent(cam.camera)}/frames/${encodeURIComponent(cam.picture_frame)}/image`}
@@ -122,7 +122,7 @@ export default function OverviewView({
                 {selected ? "✓ Selected" : "Select"}
               </button>
             </header>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 16, marginTop: 10 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 16, marginTop: 10, alignItems: "start" }}>
               <CameraPicture
                 cam={cam}
                 active={activeFeature(cam.camera)}

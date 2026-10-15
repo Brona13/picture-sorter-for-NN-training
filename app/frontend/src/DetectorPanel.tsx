@@ -1,4 +1,4 @@
-import { ReactNode, useEffect, useRef } from "react";
+import { ReactNode, useEffect, useRef, useState } from "react";
 import { DetectionList, DetectionRow, DetectorChoice, DetectorInfo } from "./api";
 import { thumbUrl } from "./classify/Card";
 
@@ -105,7 +105,7 @@ export function FrameStrip({
 
 export interface RunState {
   running: boolean;
-  progress?: { done?: number; total?: number };
+  progress?: { done?: number; total?: number; phase?: string };
   result?: { detected: number; needs_review: number; skipped_human: number } | null;
   error?: string | null;
 }
@@ -124,11 +124,13 @@ export function RunBar({
   onDetector: (d: DetectorChoice) => void;
   info: DetectorInfo | null;
   dirty: boolean;
-  onRun: () => void;
+  onRun: (acceptDownload: boolean) => void;
   run: RunState;
   onGoReview?: () => void;
 }) {
   const [minK, maxK] = info?.topk ?? [1, 5];
+  const [confirming, setConfirming] = useState(false);
+  const needsDownload = info?.model_cached === false;
   return (
     <div style={{ marginTop: 8 }}>
       <p style={{ margin: "4px 0" }}>
@@ -156,14 +158,60 @@ export function RunBar({
           <output>{Math.round(det.threshold * 100)}%</output>
         </label>
       </p>
+      {confirming && info && (
+        <div
+          role="alertdialog"
+          aria-label="Model download"
+          style={{
+            border: "1px solid var(--accent)",
+            background: "var(--info-bg)",
+            color: "var(--info-fg)",
+            borderRadius: "var(--radius)",
+            padding: 10,
+            margin: "6px 0",
+          }}
+        >
+          <strong>The detector model has to be downloaded first</strong>
+          <ul style={{ margin: "6px 0" }}>
+            <li>
+              Model: <code>{info.model}</code> (OWL-ViT)
+            </li>
+            <li>Size: about {info.download_mb ?? 600} MB, downloaded once</li>
+            <li>Source: {info.download_source ?? "huggingface.co"} — needs internet access (behind a proxy, set HTTPS_PROXY before starting the app)</li>
+            {info.cache_dir && (
+              <li>
+                Stored in: <code>{info.cache_dir}</code>
+              </li>
+            )}
+            <li>Afterwards detection runs locally; your frames never leave this computer.</li>
+          </ul>
+          <button
+            onClick={() => {
+              setConfirming(false);
+              onRun(true);
+            }}
+          >
+            Download and run
+          </button>{" "}
+          <button onClick={() => setConfirming(false)}>Cancel</button>
+        </div>
+      )}
       <p style={{ margin: "4px 0" }}>
-        <button onClick={onRun} disabled={det.exemplars.length === 0 || !info?.available || run.running}>
+        <button
+          onClick={() => (needsDownload ? setConfirming(true) : onRun(false))}
+          disabled={det.exemplars.length === 0 || !info?.available || run.running}
+        >
           Run detection
         </button>{" "}
+        {needsDownload && !confirming && !run.running && (
+          <em>First run downloads the model (about {info?.download_mb ?? 600} MB).</em>
+        )}{" "}
         {dirty && !run.running && <em>Unsaved settings are saved first.</em>}
         {run.running && (
           <span>
-            Detecting… {run.progress?.done ?? 0}/{run.progress?.total ?? "?"}
+            {run.progress?.phase === "downloading"
+              ? "Downloading the model…"
+              : `Detecting… ${run.progress?.done ?? 0}/${run.progress?.total ?? "?"}`}
           </span>
         )}
         {!run.running && run.result && (

@@ -144,6 +144,10 @@ export default function DetectorView({ camera, product }: { camera: string; prod
   const hasExemplars = det.exemplars.length > 0;
   const jobDone = job?.status === "done";
   useEffect(() => {
+    // The model is on disk after a successful run: stop asking for confirmation.
+    if (jobDone) api.detectorInfo().then(setInfo).catch(() => undefined);
+  }, [jobDone]);
+  useEffect(() => {
     if (!camera || !feature || !hasExemplars) {
       setList(null);
       return;
@@ -222,10 +226,10 @@ export default function DetectorView({ camera, product }: { camera: string; prod
   };
 
   const running = job?.status === "queued" || job?.status === "running";
-  const run = async () => {
+  const run = async (acceptDownload = false) => {
     if (dirty && !(await save())) return;
     try {
-      setJobId((await api.detect(camera, feature)).id);
+      setJobId((await api.detect(camera, feature, acceptDownload)).id);
     } catch (e) {
       setError(msg(e));
     }
@@ -349,7 +353,7 @@ export default function DetectorView({ camera, product }: { camera: string; prod
       onRun={run}
       run={{
         running,
-        progress: job?.progress as { done?: number; total?: number } | undefined,
+        progress: job?.progress as { done?: number; total?: number; phase?: string } | undefined,
         result: job?.status === "done" ? job.result : null,
         error: job?.status === "error" ? job.error : null,
       }}

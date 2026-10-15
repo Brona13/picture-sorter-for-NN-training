@@ -138,8 +138,18 @@ def put(camera: str, feature: str, settings: dict) -> dict:
     return clean
 
 
+_epoch = 0
+
+
+def epoch() -> int:
+    """Bumped whenever derived data is purged; in-memory results compare it to spot staleness."""
+    return _epoch
+
+
 def purge_derived(camera: str, feature: str) -> None:
     """Drop results/projections/clusters built on embeddings from the previous settings."""
+    global _epoch  # noqa: PLW0603
+    _epoch += 1
     con = db.connect()
     try:
         for table in ("scatter_cache", "cluster_snapshot", "results_cache"):

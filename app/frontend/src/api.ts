@@ -193,6 +193,11 @@ export interface DetectorInfo {
   model: string;
   max_exemplars: number;
   topk: [number, number];
+  /** False when the model weights still have to be downloaded (undefined from older servers = ready). */
+  model_cached?: boolean;
+  download_mb?: number;
+  download_source?: string;
+  cache_dir?: string;
 }
 export type DetectionState = "human" | "trusted" | "review" | "none";
 export interface DetectionRow {
@@ -438,10 +443,10 @@ export const api = {
       send("PUT", settings),
     ),
   detectorInfo: () => request<DetectorInfo>("/vision/detector"),
-  detect: (camera: string, feature: string) =>
+  detect: (camera: string, feature: string, acceptDownload = false) =>
     request<Job<DetectResult>>(
       `/cameras/${encodeURIComponent(camera)}/vision/${encodeURIComponent(feature)}/detect`,
-      post(),
+      acceptDownload ? send("POST", { accept_download: true }) : post(),
     ),
   detections: (camera: string, feature: string, reviewOnly = false) =>
     request<DetectionList>(

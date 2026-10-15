@@ -15,6 +15,7 @@ import dedup
 import embedding
 import labels
 import scatter
+import vision_settings
 from api import jobs
 from api.cameras import require_feature
 from fastapi import APIRouter, HTTPException
@@ -31,6 +32,21 @@ COLS_OPTIONS = [3, 4, 5, 6, 8]
 
 _lock = threading.Lock()
 _results: dict[tuple[str, str], dedup.ClusterResult] = {}
+_epochs: dict[tuple[str, str], int] = {}  # vision_settings.epoch() when the result was computed
+
+
+def _current_result(camera: str, feature: str) -> dedup.ClusterResult | None:
+    """The held clustering, unless filter/mask/detection settings changed since it was computed.
+
+    Its embeddings (and any projection built from them) would describe the old crops.
+    """
+    key = (camera, feature)
+    with _lock:
+        result = _results.get(key)
+        if result is not None and _epochs.get(key) != vision_settings.epoch():
+            _results.pop(key, None)
+            return None
+        return result
 
 
 def drop_deleted(camera: str, frames: list[str]) -> None:
@@ -147,8 +163,7 @@ def _validate(camera: str, p: Params) -> None:
 def state(camera: str, feature: str) -> dict:
     require_feature(camera, feature)
     backbones = embedding.backbones()
-    with _lock:
-        result = _results.get((camera, feature))
+    result = _current_result(camera, feature)
     return {
         "feature": feature,
         "reason": _availability(),
@@ -198,6 +213,8 @@ def run_cluster(camera: str, body: Params) -> dict:
         raise HTTPException(status_code=409, detail="This feature has no frames yet — ingest some first.")
 
     def work(report):
+        epoch = vision_settings.epoch()  # taken before computing: a change mid-run marks it stale
+
         def progress(done: int, total: int) -> None:
             report({"phase": "embedding", "done": done, "total": total})
 
@@ -207,6 +224,7 @@ def run_cluster(camera: str, body: Params) -> dict:
         )
         with _lock:
             _results[(camera, body.feature)] = result
+            _epochs[(camera, body.feature)] = epoch
         return _describe(camera, body.feature, result)
 
     return jobs.registry.submit("dedup_cluster", camera, work, feature=body.feature).to_dict()
@@ -220,8 +238,7 @@ class ApplyBody(BaseModel):
 @router.post("/cameras/{camera}/dedup/apply")
 def apply(camera: str, body: ApplyBody) -> dict:
     require_feature(camera, body.feature)
-    with _lock:
-        result = _results.get((camera, body.feature))
+    result = _current_result(camera, body.feature)
     if result is None:
         raise HTTPException(status_code=409, detail="Run Cluster first.")
     for cid, frame in body.picks.items():
@@ -250,8 +267,7 @@ def run_scatter(camera: str, body: ScatterBody) -> dict:
     require_feature(camera, body.feature)
     if body.projection not in scatter.SUPPORTED_METHODS:
         raise HTTPException(status_code=422, detail=f"Unknown projection: {body.projection}")
-    with _lock:
-        result = _results.get((camera, body.feature))
+    result = _current_result(camera, body.feature)
     if result is None:
         raise HTTPException(status_code=409, detail="Run Cluster first.")
     if result.embeddings.shape[0] < 2:

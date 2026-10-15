@@ -2,7 +2,8 @@
 #
 # The application works without these packages; filters, masks and manual
 # detection boxes do not need them. The first detection run downloads the
-# OWL-ViT model (about 600 MB) from Hugging Face; it then runs locally.
+# OWL-ViT model (about 600 MB) from Hugging Face, but only after the user confirms
+# it in the app; it then runs locally.
 #
 #   pip install -r requirements-detector.txt
 #

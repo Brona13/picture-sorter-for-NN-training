@@ -163,3 +163,17 @@ class DedupApiTests(ApiTestCase):
         datamodel.save_rois(CAM, [ROI(name=FEAT, x=0, y=0, w=1, h=1), ROI(name="p", x=0, y=0, w=1, h=1, role="classify", classes=["A", "B"])])
         r = self.client.post(f"/api/cameras/{CAM}/dedup/cluster", json={**self.params, "feature": "A::rod"})
         self.assertEqual(r.status_code, 404)  # unknown feature
+
+    def test_changed_vision_settings_drop_the_held_clustering(self) -> None:
+        """Embeddings (and projections built on them) describe the old filter/mask crops."""
+        self.cluster()
+        self.assertIsNotNone(self.client.get(f"{self.base}/state", params={"feature": FEAT}).json()["result"])
+        r = self.client.put(
+            f"/api/cameras/{CAM}/vision/{FEAT}",
+            json={"mask": {"enabled": True, "shape": {"shape": "rect", "x": 0, "y": 0, "w": 0.5, "h": 0.5}}},
+        )
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertIsNone(self.client.get(f"{self.base}/state", params={"feature": FEAT}).json()["result"])
+        self.assertEqual(self.client.post(f"{self.base}/scatter", json={"feature": FEAT}).status_code, 409)
+        self.cluster()  # clustering again works on the new crops
+        self.assertIsNotNone(self.client.get(f"{self.base}/state", params={"feature": FEAT}).json()["result"])

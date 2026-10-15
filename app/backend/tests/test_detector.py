@@ -260,3 +260,78 @@ class FreezeSnapshotTests(DetectorBase):
         self.assertNotEqual(vision_settings.signature("camA", "seal"), first)
         versions = self.client.get("/api/cameras/camA/versions", params={"feature": "seal"}).json()["versions"]
         self.assertEqual(versions[0]["stats"]["vision"]["signature"], first)
+
+
+class ModelDownloadTests(DetectorBase):
+    """The model is never downloaded without the user's confirmation."""
+
+    def test_info_reports_whether_the_model_is_on_disk(self) -> None:
+        with mock.patch.object(detector, "model_cached", return_value=False):
+            info = self.client.get("/api/vision/detector").json()
+        self.assertFalse(info["model_cached"])
+        self.assertEqual(info["download_mb"], detector.MODEL_DOWNLOAD_MB)
+        self.assertEqual(info["download_source"], "huggingface.co")
+        with mock.patch.object(detector, "model_cached", return_value=True):
+            self.assertTrue(self.client.get("/api/vision/detector").json()["model_cached"])
+
+    def test_detect_needs_confirmation_when_the_model_is_missing(self) -> None:
+        self.save()
+        with (
+            mock.patch.object(detector, "available", return_value=True),
+            mock.patch.object(detector, "model_cached", return_value=False),
+            mock.patch.object(detector, "run", return_value={}) as run,
+        ):
+            r = self.client.post(f"{self.url}/detect")
+            self.assertEqual(r.status_code, 409)
+            self.assertIn("not downloaded", r.json()["detail"])
+            ok = self.client.post(f"{self.url}/detect", json={"accept_download": True})
+            self.assertEqual(ok.status_code, 200)
+            wait_for_job(self.client, ok.json()["id"])
+        self.assertEqual(run.call_args.kwargs["allow_download"], True)
+
+    def test_cached_model_runs_without_confirmation(self) -> None:
+        self.save()
+        with (
+            mock.patch.object(detector, "available", return_value=True),
+            mock.patch.object(detector, "model_cached", return_value=True),
+            mock.patch.object(detector, "run", return_value={}),
+        ):
+            self.assertEqual(self.client.post(f"{self.url}/detect").status_code, 200)
+
+    def test_run_refuses_to_download_unconfirmed_and_reports_download_when_confirmed(self) -> None:
+        self.save()
+        with mock.patch.object(detector, "model_cached", return_value=False):
+            with self.assertRaisesRegex(detector.DetectorError, "not downloaded"):
+                detector.run("camA", "seal")
+            phases: list[dict] = []
+            with (
+                mock.patch.object(detector, "_load_owl") as load,
+                mock.patch.object(detector, "_owl_backend", StubBackend([[(box_at(0.4, 0.4), 0.9)]])),
+            ):
+                detector.run("camA", "seal", phases.append, allow_download=True)
+        load.assert_called_once()
+        self.assertEqual(phases[0], {"phase": "downloading"})
+
+
+class MaskReachesEmbeddingsTests(DetectorBase):
+    """Dedup, scatter and suggestions all embed through ``dedup.fetch_embeddings``."""
+
+    def test_enabled_mask_changes_the_embedded_crops(self) -> None:
+        def fake_embed(cutouts, backbone, batch_size=None):
+            yield 0, np.array([c.reshape(-1, 3).mean(axis=0) for c in cutouts], dtype=np.float32)
+
+        def embeddings():
+            with (
+                mock.patch("embedding.backbones", return_value=["fake"]),
+                mock.patch("embedding.iter_embed_batches", side_effect=fake_embed),
+            ):
+                return dedup.fetch_embeddings("camA", "seal", self.frames, "fake")[1]
+
+        import dedup  # noqa: PLC0415
+
+        self.save(mask={"enabled": False, "shape": RECT}, detector=None)
+        plain = embeddings()
+        self.save(mask={"enabled": True, "shape": RECT}, detector=None)
+        masked = embeddings()
+        self.assertEqual(plain.shape, masked.shape)
+        self.assertFalse(np.allclose(plain, masked))

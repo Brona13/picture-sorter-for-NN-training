@@ -132,13 +132,21 @@ def detector_info() -> dict:
     return {
         "available": detector.available(),
         "model": detector.MODEL_ID,
+        "model_cached": detector.model_ready(),
+        "download_mb": detector.MODEL_DOWNLOAD_MB,
+        "download_source": detector.MODEL_SOURCE,
+        "cache_dir": detector.model_cache_dir(),
         "max_exemplars": vision_settings.MAX_EXEMPLARS,
         "topk": list(vision_settings.TOPK_RANGE),
     }
 
 
+class DetectBody(BaseModel):
+    accept_download: bool = False
+
+
 @router.post("/cameras/{camera}/vision/{feature}/detect")
-def detect(camera: str, feature: str) -> dict:
+def detect(camera: str, feature: str, body: DetectBody = DetectBody()) -> dict:
     """Run the detector over the feature's frames as a background job."""
     require_feature(camera, feature)
     settings = vision_settings.get(camera, feature)
@@ -150,8 +158,17 @@ def detect(camera: str, feature: str) -> dict:
             detail="The detector needs torch and transformers (pip install -r requirements-detector.txt)",
         )
 
+    if not detector.model_ready() and not body.accept_download:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"The detector model ({detector.MODEL_ID}, about {detector.MODEL_DOWNLOAD_MB} MB from "
+                f"{detector.MODEL_SOURCE}) is not downloaded yet. Confirm the download first."
+            ),
+        )
+
     def work(report):
-        return detector.run(camera, feature, report)
+        return detector.run(camera, feature, report, allow_download=body.accept_download)
 
     return jobs.registry.submit("detect", camera, work, feature=feature).to_dict()
 

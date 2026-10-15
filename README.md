@@ -232,8 +232,8 @@ Pipeline for every frame of the feature, in this order:
    add a point, double-click or right-click a point to remove it (three stay).
 4. **Detector** (optional, needs `requirements-detector.txt`): the mask follows the object.
    Mark the object with a box on up to three frames (**exemplars**; vary lighting and screw
-   lean), save, then **Run detection**. The detector (OWL-ViT, runs locally, about 600 MB
-   download on first use) looks for the most similar object in every frame of the feature.
+   lean), save, then **Run detection**. The detector (OWL-ViT, runs locally; the model is about 600 MB
+   and is downloaded only after you confirm a dialog showing the size, source and storage folder) looks for the most similar object in every frame of the feature.
    The mask is drawn on the first exemplar's frame and shifted by how far each frame's
    detected object is from the exemplar's position (translation only, no resizing).
 

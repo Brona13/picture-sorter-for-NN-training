@@ -28,6 +28,8 @@ import vision_settings
 import curation
 
 MODEL_ID = "google/owlvit-base-patch32"
+MODEL_SOURCE = "huggingface.co"
+MODEL_DOWNLOAD_MB = 600  # approximate size of the weights, shown to the user before downloading
 NMS_IOU = 0.5
 
 Backend = Callable[[np.ndarray, list[np.ndarray], int], list[tuple[dict, float]]]
@@ -38,6 +40,7 @@ class DetectorError(RuntimeError):
 
 
 _backend: Backend | None = None
+_allow_download = False  # set by ``run`` once the user has agreed to the model download
 
 
 def set_backend(backend: Backend | None) -> None:
@@ -53,6 +56,34 @@ def available() -> bool:
     except ImportError:
         return False
     return True
+
+
+def model_cache_dir() -> str:
+    """Where Hugging Face keeps downloaded models (empty when huggingface_hub is missing)."""
+    try:
+        from huggingface_hub.constants import HF_HUB_CACHE  # noqa: PLC0415
+    except ImportError:
+        return ""
+    return str(HF_HUB_CACHE)
+
+
+def model_cached() -> bool:
+    """True when the model weights are already on disk (no network involved)."""
+    if not available():
+        return False
+    try:
+        from huggingface_hub import try_to_load_from_cache  # noqa: PLC0415
+    except ImportError:
+        return False
+    for name in ("model.safetensors", "pytorch_model.bin"):
+        if isinstance(try_to_load_from_cache(MODEL_ID, name), str):
+            return True
+    return False
+
+
+def model_ready() -> bool:
+    """The detector can run without downloading anything (a test backend counts as ready)."""
+    return _backend is not None or model_cached()
 
 
 def _iou(a: dict, b: dict) -> float:
@@ -84,8 +115,17 @@ def _load_owl():
     from transformers import OwlViTForObjectDetection, OwlViTProcessor  # noqa: PLC0415
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    processor = OwlViTProcessor.from_pretrained(MODEL_ID)
-    model = OwlViTForObjectDetection.from_pretrained(MODEL_ID).to(device).eval()
+    offline = not _allow_download  # never download behind the user's back
+    try:
+        processor = OwlViTProcessor.from_pretrained(MODEL_ID, local_files_only=offline)
+        model = OwlViTForObjectDetection.from_pretrained(MODEL_ID, local_files_only=offline)
+    except OSError as exc:
+        if offline:
+            raise DetectorError(
+                f"The detector model ({MODEL_ID}) is not downloaded yet; confirm the download first."
+            ) from exc
+        raise DetectorError(f"Could not download the detector model: {exc}") from exc
+    model = model.to(device).eval()
     return torch, processor, model, device
 
 
@@ -143,12 +183,31 @@ def exemplar_crops(camera: str, feature: str, settings: dict) -> list[np.ndarray
     return crops
 
 
-def run(camera: str, feature: str, report: Callable[[dict], None] = lambda _p: None) -> dict:
-    """Detect the object in every frame of ``feature`` that no human has decided yet."""
+def run(
+    camera: str,
+    feature: str,
+    report: Callable[[dict], None] = lambda _p: None,
+    allow_download: bool = False,
+) -> dict:
+    """Detect the object in every frame of ``feature`` that no human has decided yet.
+
+    The model is only downloaded when ``allow_download`` is set (the user confirmed it).
+    """
+    global _allow_download  # noqa: PLW0603
+    _allow_download = allow_download
     settings = vision_settings.get(camera, feature)
     det = settings["detector"]
     if not det or not det["exemplars"]:
         raise DetectorError("Add at least one exemplar first")
+    if _backend is None:
+        if not model_cached():
+            if not allow_download:
+                raise DetectorError(
+                    f"The detector model ({MODEL_ID}, about {MODEL_DOWNLOAD_MB} MB) is not downloaded; "
+                    "confirm the download first."
+                )
+            report({"phase": "downloading"})
+        _load_owl()  # loads (and, once confirmed, downloads) before the frame loop
     backend = _get_backend()
     queries = exemplar_crops(camera, feature, settings)
     sig = vision_settings.detection_signature(settings)

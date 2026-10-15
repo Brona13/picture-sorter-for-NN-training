@@ -6,6 +6,7 @@ import DetectorView from "./views/DetectorView";
 const EXEMPLAR = { frame: "f1.png", box: { x: 0.2, y: 0.2, w: 0.2, h: 0.2 } };
 let calls: { url: string; method: string; body?: any }[];
 let detections: any;
+let infoExtra: object;
 
 function install(savedDetector: any) {
   vi.stubGlobal(
@@ -15,7 +16,7 @@ function install(savedDetector: any) {
       calls.push({ url, method, body: init?.body ? JSON.parse(init.body as string) : undefined });
       if (url.endsWith("/vision/filters")) return new Response(JSON.stringify({ filters: {} }));
       if (url.endsWith("/vision/detector"))
-        return new Response(JSON.stringify({ available: true, model: "m", max_exemplars: 3, topk: [1, 5] }));
+        return new Response(JSON.stringify({ available: true, model: "m", max_exemplars: 3, topk: [1, 5], ...infoExtra }));
       if (url.includes("/detections") && method === "GET") {
         const reviewOnly = url.includes("review_only=true");
         const frames = detections.frames.filter(
@@ -53,6 +54,7 @@ function pointer(target: Element, type: string, clientX: number, clientY: number
 beforeEach(() => {
   calls = [];
   detections = { threshold: 0.3, counts: {}, frames: [] };
+  infoExtra = {};
   URL.createObjectURL = vi.fn(() => "blob:preview");
   URL.revokeObjectURL = vi.fn();
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
@@ -199,4 +201,52 @@ test("opening the Mask step shows the first exemplar's frame", async () => {
   render(<DetectorView camera="camA" />);
   await userEvent.click(await screen.findByRole("tab", { name: /Mask/ }));
   expect(await screen.findByText(/The mask follows the detected object/)).toBeInTheDocument();
+});
+
+const MISSING_MODEL = { model_cached: false, download_mb: 600, download_source: "huggingface.co", cache_dir: "/home/u/.cache/huggingface/hub" };
+
+test("a missing model asks for confirmation, with size and source, before anything is downloaded", async () => {
+  infoExtra = MISSING_MODEL;
+  install({ exemplars: [EXEMPLAR], topk: 1, threshold: 0.3 });
+  render(<DetectorView camera="camA" />);
+  await userEvent.click(await screen.findByRole("tab", { name: /Detector/ }));
+  expect(await screen.findByText(/First run downloads the model \(about 600 MB\)/)).toBeInTheDocument();
+  const run = screen.getByRole("button", { name: "Run detection" });
+  await waitFor(() => expect(run).toBeEnabled());
+  await userEvent.click(run);
+  const dialog = await screen.findByRole("alertdialog", { name: "Model download" });
+  expect(dialog).toHaveTextContent("about 600 MB");
+  expect(dialog).toHaveTextContent("huggingface.co");
+  expect(dialog).toHaveTextContent("/home/u/.cache/huggingface/hub");
+  expect(calls.some((c) => c.url.endsWith("/detect"))).toBe(false);
+  await userEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  expect(screen.queryByRole("alertdialog")).toBeNull();
+  expect(calls.some((c) => c.url.endsWith("/detect"))).toBe(false);
+});
+
+test("agreeing to the download starts detection with the confirmation flag", async () => {
+  infoExtra = MISSING_MODEL;
+  install({ exemplars: [EXEMPLAR], topk: 1, threshold: 0.3 });
+  render(<DetectorView camera="camA" />);
+  await userEvent.click(await screen.findByRole("tab", { name: /Detector/ }));
+  const run = await screen.findByRole("button", { name: "Run detection" });
+  await waitFor(() => expect(run).toBeEnabled());
+  await userEvent.click(run);
+  await userEvent.click(await screen.findByRole("button", { name: "Download and run" }));
+  await waitFor(() => {
+    const detect = calls.find((c) => c.url.endsWith("/detect"));
+    expect(detect?.body).toEqual({ accept_download: true });
+  });
+});
+
+test("a cached model runs without any prompt", async () => {
+  infoExtra = { model_cached: true };
+  install({ exemplars: [EXEMPLAR], topk: 1, threshold: 0.3 });
+  render(<DetectorView camera="camA" />);
+  await userEvent.click(await screen.findByRole("tab", { name: /Detector/ }));
+  const run = await screen.findByRole("button", { name: "Run detection" });
+  await waitFor(() => expect(run).toBeEnabled());
+  await userEvent.click(run);
+  expect(screen.queryByRole("alertdialog")).toBeNull();
+  await waitFor(() => expect(calls.some((c) => c.url.endsWith("/detect"))).toBe(true));
 });
