@@ -18,6 +18,7 @@ function mockFetch(routes: Record<string, unknown>, status = 200) {
 beforeEach(() => {
   mockFetch({
     "/api/cameras": ["camA", "camB"],
+    "/api/overview": { cameras: [] },
     "/api/cameras/camA/products": ["P1", "P2"],
     "/api/cameras/camB/products": [],
     "/api/cameras/camA/status": {
@@ -38,16 +39,16 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-test("shows cameras, products and view navigation; redirects to Status", async () => {
+test("shows cameras, products and view navigation; redirects to Overview", async () => {
   render(
     <MemoryRouter>
       <App />
     </MemoryRouter>,
   );
-  expect(await screen.findByRole("heading", { name: "Status — camA" })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: "Overview" })).toBeInTheDocument();
   await waitFor(() => expect(screen.getByLabelText("Camera")).toHaveValue("camA"));
   expect(await screen.findByLabelText("Product")).toBeInTheDocument();
-  for (const label of ["Status", "Ingest", "ROI editor", "Classify", "Insights", "Versions", "Dedup"]) {
+  for (const label of ["Overview", "Status", "Ingest", "ROI editor", "Classify", "Insights", "Versions", "Dedup"]) {
     expect(screen.getByRole("link", { name: label })).toBeInTheDocument();
   }
 });
@@ -83,5 +84,5 @@ test("shows API errors", async () => {
       <App />
     </MemoryRouter>,
   );
-  expect(await screen.findByRole("alert")).toBeInTheDocument();
+  expect((await screen.findAllByRole("alert")).length).toBeGreaterThan(0);
 });

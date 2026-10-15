@@ -8,6 +8,7 @@ import DedupView from "./views/DedupView";
 import InsightsView from "./views/InsightsView";
 import IngestView from "./views/IngestView";
 import RoiEditorView from "./views/RoiEditorView";
+import OverviewView from "./views/OverviewView";
 import StatusView from "./views/StatusView";
 import VersionsView from "./views/VersionsView";
 
@@ -86,7 +87,11 @@ export default function App() {
       <main className="main">
         {error && <p role="alert">{error}</p>}
         <Routes>
-          <Route path="/" element={<Navigate to="/status" replace />} />
+          <Route path="/" element={<Navigate to="/overview" replace />} />
+          <Route
+            path="/overview"
+            element={<OverviewView camera={camera} onSelectCamera={setCamera} />}
+          />
           <Route path="/status" element={<StatusView camera={camera} />} />
           <Route
             path="/versions"
@@ -113,7 +118,7 @@ export default function App() {
             element={<DetectorView camera={camera} product={product || undefined} />}
           />
           <Route path="/dedup" element={<DedupView camera={camera} product={product || undefined} />} />
-          <Route path="*" element={<Navigate to="/status" replace />} />
+          <Route path="*" element={<Navigate to="/overview" replace />} />
         </Routes>
       </main>
     </div>

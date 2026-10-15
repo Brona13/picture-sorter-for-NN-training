@@ -86,6 +86,7 @@ On Windows use `.\run.ps1` instead (same modes and arguments); see [Running on W
 
 The application provides seven views:
 
+- **Overview** — start page: every camera with its reference frame (ROI boxes drawn on it) and a card per ROI (cutout, products, labeled/golden counts, active version). Click a camera or ROI to make that camera the active one in the left menu; hovering an ROI card highlights its box.
 - **Status** — label, golden, version, and ROI-definition summaries
 - **Ingest** — add frames and maintain the duplicate index
 - **ROI editor** — create, edit, scope, or delete ROIs

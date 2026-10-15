@@ -121,6 +121,16 @@ export interface RoiInfo {
   active_version: number | null;
 }
 
+export interface OverviewCamera {
+  camera: string;
+  frame_count: number;
+  /** Reference frame (or the first frame); null when the camera has no frames. */
+  picture_frame: string | null;
+  products: string[];
+  classify_feature: string | null;
+  rois: RoiInfo[];
+}
+
 export interface RoisResponse {
   rois: RoiInfo[];
   classify_feature: string | null;
@@ -474,6 +484,7 @@ export const api = {
   health: () => request<{ status: string }>("/health"),
   version: () => request<{ version: string; released: string }>("/version"),
   cameras: () => request<string[]>("/cameras"),
+  overview: () => request<{ cameras: OverviewCamera[] }>("/overview"),
   products: (camera: string) =>
     request<string[]>(`/cameras/${encodeURIComponent(camera)}/products`),
   status: (camera: string) =>

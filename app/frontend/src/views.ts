@@ -1,4 +1,5 @@
 export const VIEWS = [
+  { path: "overview", label: "Overview" },
   { path: "status", label: "Status" },
   { path: "ingest", label: "Ingest" },
   { path: "roi", label: "ROI editor" },

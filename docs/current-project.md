@@ -212,13 +212,13 @@ The application is a FastAPI backend (`app/backend/`) that wraps the domain modu
 
 One thin router per area, each delegating to the domain modules above:
 `cameras`, `status`, `versions_api`, `ingest_api`, `frames_api` (frames and thumbnails),
-`roi_api`, `classify_api`, `insights_api`, `dedup_api`, `vision_api` (filter catalogue, per-feature filter/mask/detector settings, live preview, detection job and review).
+`roi_api`, `classify_api`, `insights_api`, `dedup_api`, `overview_api` (all cameras with reference frame and ROIs for the Overview page), `vision_api` (filter catalogue, per-feature filter/mask/detector settings, live preview, detection job and review).
 
 ### Frontend (`app/frontend/src/`)
 
 - `App.tsx` — sidebar (camera, product, view) and routes
 - `api.ts` — typed API client
-- `views/` — Status, Ingest, ROI editor, Detector, Dedup, Classify, Insights, Versions (sidebar order)
+- `views/` — Overview, Status, Ingest, ROI editor, Detector, Dedup, Classify, Insights, Versions (sidebar order)
 - `classify/` — card, bulk, clear-labels, auto-assign, suggested-goldens panels, SVG scatter (drag a rectangle to zoom and list the frames inside, optionally delete them with a note; right-click resets), per-day Deleted view, cluster browser (vertical cluster list, paged card grid per cluster with its own grid size per ROI; cards can be labeled, made golden, made representative or deleted, with the same hover keys as Classify, plus Delete)
 - `RoiCanvas.tsx` + `roiGeometry.ts` — pointer-driven ROI draw/move/resize in normalised coordinates
 - `DetectorPanel.tsx` — frame strip, run bar and review panel of the tabbed Detector page (`views/DetectorView.tsx`: Filter / Detector / Review / Mask tabs, sticky save bar, shared preview); `CopyButton.tsx` — copy-to-clipboard button (Versions export path)
