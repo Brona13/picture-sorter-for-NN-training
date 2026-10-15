@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, DedupParams, DedupResult, DedupState, DeletePreview, DeleteResult, ScatterPoint, ScatterResult } from "../api";
 import { thumbUrl } from "../classify/Card";
+import ClusterBrowser, { Marks } from "../classify/ClusterBrowser";
 import Scatter from "../classify/Scatter";
 import { useJob } from "../useJob";
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
-const MAX_SHOWN = 24;
 const MAX_SELECTED = 60;
 
 export function drift(existing: DedupParams, now: DedupParams): string[] {
@@ -28,6 +28,7 @@ export default function DedupView({ camera, product }: { camera: string; product
   const [projection, setProjection] = useState("umap");
   const [scatter, setScatter] = useState<ScatterResult | null>(null);
   const [selected, setSelected] = useState<ScatterPoint[] | null>(null);
+  const [marks, setMarks] = useState<Marks>({});
   // A fresh projection resets the chart's zoom and selection; the key changes in the same render, so no remount flicker.
   const genRef = useRef<{ scatter: ScatterResult | null; gen: number }>({ scatter: null, gen: 0 });
   if (genRef.current.scatter !== scatter) genRef.current = { scatter, gen: genRef.current.gen + 1 };
@@ -40,6 +41,7 @@ export default function DedupView({ camera, product }: { camera: string; product
   const projecting = scatterJob !== null && (sj === null || sj.status === "queued" || sj.status === "running");
 
   useEffect(() => setSelected(null), [scatter]);
+  useEffect(() => setMarks(result?.marks ?? {}), [result]);
 
   useEffect(() => {
     if (!camera) return;
@@ -113,7 +115,8 @@ export default function DedupView({ camera, product }: { camera: string; product
     );
 
   const bits = result && params ? drift(result.params, params) : [];
-  const currentRep = (cid: number, dflt: string) => picks[cid] ?? dflt;
+  // Picks that no longer name a member of a cluster (it changed after a delete) are dropped.
+  const validPicks = Object.fromEntries(Object.entries(picks).filter(([cid, f]) => result?.clusters.find((c) => c.id === Number(cid))?.members.includes(f)));
   const wouldMute = result ? result.clusters.reduce((n, c) => n + c.members.length - 1, 0) : 0;
   const progress = cj?.progress ?? {};
 
@@ -291,38 +294,44 @@ export default function DedupView({ camera, product }: { camera: string; product
             <>
               <h3>Clusters</h3>
               <p>The chosen representative stays visible in Classify. Every other member of the cluster will be muted on Apply.</p>
-              {result.clusters.map((c, i) => {
-                const rep = currentRep(c.id, c.representative);
-                return (
-                  <details key={c.id} open={i === 0}>
-                    <summary>
-                      Cluster {c.id} — {c.members.length} frames · rep: {rep}
-                    </summary>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                      {c.members.slice(0, MAX_SHOWN).map((f) => (
-                        <figure key={f} style={{ margin: 0, width: 110 }}>
-                          <img src={thumbUrl(camera, f, feature)} alt={f} style={{ width: "100%" }} />
-                          <figcaption style={{ fontSize: 11 }}>{f === rep ? "⭐ rep" : f}</figcaption>
-                        </figure>
-                      ))}
-                    </div>
-                    {c.members.length > MAX_SHOWN && <p>…and {c.members.length - MAX_SHOWN} more members not shown.</p>}
-                    <fieldset>
-                      <legend>Keep as representative</legend>
-                      {c.members.map((f) => (
-                        <label key={f} style={{ marginRight: 10 }}>
-                          <input type="radio" name={`rep-${c.id}`} checked={rep === f} onChange={() => setPicks((p) => ({ ...p, [c.id]: f }))} /> {f}
-                        </label>
-                      ))}
-                    </fieldset>
-                  </details>
-                );
-              })}
+            </>
+          ) : (
+            <p>
+              No clusters at the current sliders. Everything looks unique under this embedding at this radius — try a larger <em>epsilon</em>, a smaller{" "}
+              <em>min points</em>, or a different backbone.
+            </p>
+          )}
+          {st && (
+            <ClusterBrowser
+              camera={camera}
+              feature={feature}
+              result={result}
+              picks={picks}
+              marks={marks}
+              grid={st.grid}
+              onPick={(cid, frame) => setPicks((p) => ({ ...p, [cid]: frame }))}
+              onMarks={(frame, m) => setMarks((cur) => ({ ...cur, [frame]: m }))}
+              onGrid={(perPage, cols) =>
+                api
+                  .dedupGridSettings(camera, feature, perPage, cols)
+                  .then((g) => setSt((s) => (s ? { ...s, grid: g } : s)))
+                  .catch((e: unknown) => setError(msg(e)))
+              }
+              onError={setError}
+              onDeleted={(frame) => {
+                setNotice(`Deleted ${frame}. It stays on disk; see Classify → Show: Deleted.`);
+                load();
+                if (scatter) api.dedupScatter(camera, feature, projection).then((j) => setScatterJob(j.id)).catch((e: unknown) => setError(msg(e)));
+              }}
+            />
+          )}
+          {result.clusters.length > 0 && (
+            <p>
               <button
                 disabled={wouldMute === 0}
                 onClick={() =>
                   api
-                    .dedupApply(camera, feature, picks)
+                    .dedupApply(camera, feature, validPicks)
                     .then((r) => {
                       setNotice(
                         `Muted ${r.muted} frame(s)${r.unmuted ? ` · unmuted ${r.unmuted} that no longer belong to a cluster` : ""}` +
@@ -340,28 +349,7 @@ export default function DedupView({ camera, product }: { camera: string; product
               >
                 🔇 Apply — mute {wouldMute} frame(s)
               </button>
-            </>
-          ) : (
-            <p>
-              No clusters at the current sliders. Everything looks unique under this embedding at this radius — try a larger <em>epsilon</em>, a smaller{" "}
-              <em>min points</em>, or a different backbone.
             </p>
-          )}
-          {result.noise_frames.length > 0 && (
-            <details>
-              <summary>
-                Unique (noise) — {result.noise_frames.length} frames (never muted)
-              </summary>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                {result.noise_frames.slice(0, 20).map((f) => (
-                  <figure key={f} style={{ margin: 0, width: 110 }}>
-                    <img src={thumbUrl(camera, f, feature)} alt={f} style={{ width: "100%" }} />
-                    <figcaption style={{ fontSize: 11 }}>{f}</figcaption>
-                  </figure>
-                ))}
-              </div>
-              {result.noise_frames.length > 20 && <p>…and {result.noise_frames.length - 20} more.</p>}
-            </details>
           )}
         </>
       )}

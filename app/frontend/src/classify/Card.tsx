@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { CardData } from "../api";
+import { CardData, frameImageUrl } from "../api";
 import { classColor, clusterColor } from "./colors";
 
 interface Props {
@@ -13,6 +13,11 @@ interface Props {
   onGolden: (on: boolean) => void;
   onDelete: () => void;
   onRestore: () => void;
+  /** Dedup cluster browser only: marks the card the representative of its cluster. */
+  isRep?: boolean;
+  onSetRep?: () => void;
+  /** Clicking the picture opens the full image in a new tab. */
+  fullSize?: boolean;
 }
 
 export function thumbUrl(camera: string, frame: string, feature: string) {
@@ -32,7 +37,8 @@ const badge = (bg: string): React.CSSProperties => ({
 
 /**
  * Keyboard shortcuts act on the hovered card: 1-9 pick the class in that position (again to
- * remove it), 0 clears, and the key left of 1 (``Backquote``, whatever it prints) toggles golden.
+ * remove it), 0 clears, the key left of 1 (``Backquote``, whatever it prints) toggles golden, and
+ * Delete soft-deletes the frame.
  */
 export const MAX_SHORTCUT_CLASSES = 9;
 
@@ -41,22 +47,28 @@ function isTypingTarget(target: EventTarget | null): boolean {
   return !!el && (el.isContentEditable || ["INPUT", "SELECT", "TEXTAREA"].includes(el.tagName));
 }
 
-export default function Card({ camera, feature, classes, methods, card, busy, onLabel, onGolden, onDelete, onRestore }: Props) {
+export default function Card({ camera, feature, classes, methods, card, busy, onLabel, onGolden, onDelete, onRestore, isRep, onSetRep, fullSize }: Props) {
   const { frame, label, golden, deleted, bars, leanings, cluster } = card;
 
   // Number keys act on the card under the mouse. The handler is reread from a ref so the window
   // listener only comes and goes with hovering, not with every render.
   const [hovered, setHovered] = useState(false);
-  const latest = useRef({ classes, label, golden, busy, deleted, onLabel, onGolden });
-  latest.current = { classes, label, golden, busy, deleted, onLabel, onGolden };
+  const latest = useRef({ classes, label, golden, busy, deleted, onLabel, onGolden, onDelete });
+  latest.current = { classes, label, golden, busy, deleted, onLabel, onGolden, onDelete };
   useEffect(() => {
     if (!hovered) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.ctrlKey || e.metaKey || e.altKey || e.repeat || isTypingTarget(e.target)) return;
       const isGoldenKey = e.code === "Backquote";
-      if (!isGoldenKey && !/^[0-9]$/.test(e.key)) return;
+      const isDeleteKey = e.key === "Delete";
+      if (!isGoldenKey && !isDeleteKey && !/^[0-9]$/.test(e.key)) return;
       const cur = latest.current;
       if (cur.busy || cur.deleted) return;
+      if (isDeleteKey) {
+        cur.onDelete();
+        e.preventDefault();
+        return;
+      }
       if (isGoldenKey) {
         if (cur.label === null) return; // a golden is always a labeled frame
         cur.onGolden(!cur.golden);
@@ -84,12 +96,23 @@ export default function Card({ camera, feature, classes, methods, card, busy, on
       onMouseLeave={() => setHovered(false)}
       style={{ border: "1px solid #ccc", borderRadius: 8, padding: 6, listStyle: "none" }}
     >
-      <img
-        src={thumbUrl(camera, frame, feature)}
-        alt={frame}
-        loading="lazy"
-        style={{ width: "100%", display: "block", borderRadius: 4, opacity: deleted ? 0.5 : 1 }}
-      />
+      {(() => {
+        const img = (
+          <img
+            src={thumbUrl(camera, frame, feature)}
+            alt={frame}
+            loading="lazy"
+            style={{ width: "100%", display: "block", borderRadius: 4, opacity: deleted ? 0.5 : 1 }}
+          />
+        );
+        return fullSize ? (
+          <a href={frameImageUrl(camera, frame)} target="_blank" rel="noreferrer" title="Open the full image">
+            {img}
+          </a>
+        ) : (
+          img
+        );
+      })()}
 
       {golden ? (
         <div style={{ margin: "2px 0 6px", fontSize: 11 }}>
@@ -201,13 +224,25 @@ export default function Card({ camera, feature, classes, methods, card, busy, on
         >
           {golden ? "⭐" : "☆"}
         </button>
+        {onSetRep && (
+          <button
+            aria-label={isRep ? "Representative of this cluster" : "Make representative"}
+            aria-pressed={!!isRep}
+            disabled={busy || isRep}
+            title={isRep ? "This frame stays visible in Classify; the rest of the cluster is muted on Apply." : "Keep this frame as the cluster's representative."}
+            onClick={onSetRep}
+            style={isRep ? { background: "#111", color: "#fff" } : undefined}
+          >
+            {isRep ? "◉ rep" : "○ rep"}
+          </button>
+        )}
         <button
           aria-label={deleted ? "Restore frame" : "Delete frame"}
           disabled={busy}
           title={
             deleted
               ? "Restore this frame — it comes back into view across every ROI on this camera."
-              : "Soft-delete (camera-wide). The file stays on disk; switch Show to Deleted to see it again."
+              : "Soft-delete (camera-wide; shortcut: hover and press Delete). The file stays on disk; switch Show to Deleted to see it again."
           }
           onClick={deleted ? onRestore : onDelete}
         >

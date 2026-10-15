@@ -377,3 +377,14 @@ test("the Deleted view lists deleted frames per day instead of the card grid", a
   expect(within(day).getByDisplayValue("foreign object")).toBeInTheDocument();
   expect(screen.queryByTestId("card-a.png")).toBeNull();
 });
+
+test("the Delete key deletes the hovered card and does nothing otherwise", async () => {
+  render(<ClassifyView camera="camA" />);
+  const a = await cardEl("a.png");
+  await userEvent.keyboard("{Delete}"); // nothing hovered
+  expect(calls.some((c) => c.url.includes("/classify/delete"))).toBe(false);
+  await userEvent.hover(a);
+  await userEvent.keyboard("{Delete}");
+  await waitFor(() => expect(calls.some((c) => c.url.endsWith("/classify/delete"))).toBe(true));
+  expect(calls.find((c) => c.url.endsWith("/classify/delete"))!.body).toEqual({ feature: "seal", frame: "a.png" });
+});

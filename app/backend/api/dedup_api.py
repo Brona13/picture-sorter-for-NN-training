@@ -26,6 +26,8 @@ EPSILON_RANGE = (0.001, 0.20)
 MIN_POINTS_RANGE = (2, 10)
 DEFAULT_EPSILON = 0.02
 DEFAULT_MIN_POINTS = 2
+PER_PAGE_OPTIONS = [12, 24, 48, 96]
+COLS_OPTIONS = [3, 4, 5, 6, 8]
 
 _lock = threading.Lock()
 _results: dict[tuple[str, str], dedup.ClusterResult] = {}
@@ -85,7 +87,15 @@ def _require_available() -> None:
         raise HTTPException(status_code=409, detail=f"Dedup unavailable: {reason}")
 
 
-def _describe(result: dedup.ClusterResult) -> dict:
+def _describe(camera: str, feature: str, result: dedup.ClusterResult) -> dict:
+    lab = labels.current_labels(camera, feature)
+    gold = labels.current_goldens(camera, feature)
+    golden_of = {f: cls for cls, frames in gold.items() for f in frames}
+    marks = {
+        f: {"label": lab.get(f), "golden": golden_of.get(f)}
+        for f in result.frame_order
+        if f in lab or f in golden_of
+    }
     return {
         "params": {"method": result.method, "epsilon": result.epsilon, "min_points": result.min_points},
         "summary": dedup.summary(result),
@@ -95,6 +105,24 @@ def _describe(result: dedup.ClusterResult) -> dict:
             for cid in result.clusters
         ],
         "noise_frames": result.noise_frames,
+        "classes": datamodel.classes_for(camera, feature),
+        "marks": marks,
+    }
+
+
+def _grid_settings(camera: str, feature: str) -> dict:
+    def pick(kind: str, options: list[int], default: int) -> int:
+        try:
+            value = int(db.get_setting(camera, f"dedup.grid.{kind}.{feature}") or default)
+        except (TypeError, ValueError):
+            value = default
+        return value if value in options else default
+
+    return {
+        "per_page": pick("perpage", PER_PAGE_OPTIONS, 24),
+        "cols": pick("cols", COLS_OPTIONS, 4),
+        "per_page_options": PER_PAGE_OPTIONS,
+        "cols_options": COLS_OPTIONS,
     }
 
 
@@ -132,7 +160,8 @@ def state(camera: str, feature: str) -> dict:
         "device_label": embedding.device_label(),
         "muted_count": len(db.muted_frames(camera, feature)),
         "projections": list(scatter.SUPPORTED_METHODS),
-        "result": _describe(result) if result else None,
+        "result": _describe(camera, feature, result) if result else None,
+        "grid": _grid_settings(camera, feature),
     }
 
 
@@ -142,6 +171,23 @@ def save_settings(camera: str, body: Params) -> dict:
     for name, value in (("method", body.method), ("epsilon", round(body.epsilon, 6)), ("min_points", body.min_points)):
         db.set_setting(camera, f"dedup.{name}.{body.feature}", str(value))
     return {"params": _saved_params(camera, body.feature, embedding.backbones())}
+
+
+class GridSettings(BaseModel):
+    feature: str
+    per_page: int
+    cols: int
+
+
+@router.put("/cameras/{camera}/dedup/grid-settings")
+def save_grid_settings(camera: str, body: GridSettings) -> dict:
+    """Per-ROI grid size of the cluster browser (kept apart from Classify's)."""
+    require_feature(camera, body.feature)
+    if body.per_page not in PER_PAGE_OPTIONS or body.cols not in COLS_OPTIONS:
+        raise HTTPException(status_code=422, detail="Unsupported per_page or cols value.")
+    db.set_setting(camera, f"dedup.grid.perpage.{body.feature}", str(body.per_page))
+    db.set_setting(camera, f"dedup.grid.cols.{body.feature}", str(body.cols))
+    return _grid_settings(camera, body.feature)
 
 
 @router.post("/cameras/{camera}/dedup/cluster", status_code=202)
@@ -161,7 +207,7 @@ def run_cluster(camera: str, body: Params) -> dict:
         )
         with _lock:
             _results[(camera, body.feature)] = result
-        return _describe(result)
+        return _describe(camera, body.feature, result)
 
     return jobs.registry.submit("dedup_cluster", camera, work, feature=body.feature).to_dict()
 

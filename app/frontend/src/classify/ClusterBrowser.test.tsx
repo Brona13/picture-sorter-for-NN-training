@@ -1,0 +1,104 @@
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import ClusterBrowser from "./ClusterBrowser";
+
+const many = Array.from({ length: 30 }, (_, i) => `m${String(i).padStart(2, "0")}.png`);
+const result = {
+  params: { method: "resnet50", epsilon: 0.02, min_points: 2 },
+  summary: { clusters: 2, covered: 33, unique: 0, total: 33 },
+  would_mute: 31,
+  clusters: [
+    { id: 0, members: many, representative: "m00.png" },
+    { id: 1, members: ["x1.png", "x2.png", "x3.png"], representative: "x1.png" },
+  ],
+  noise_frames: [],
+  classes: ["OK", "NG"],
+  marks: {},
+};
+const grid = { per_page: 12, cols: 4, per_page_options: [12, 24, 48, 96], cols_options: [3, 4, 5, 6, 8] };
+
+let calls: { url: string; method: string; body?: any }[];
+const onPick = vi.fn();
+const onMarks = vi.fn();
+const onGrid = vi.fn();
+const onDeleted = vi.fn();
+const onError = vi.fn();
+
+beforeEach(() => {
+  calls = [];
+  [onPick, onMarks, onGrid, onDeleted, onError].forEach((f) => f.mockClear());
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string, init?: RequestInit) => {
+      const body = init?.body ? JSON.parse(init.body as string) : undefined;
+      calls.push({ url, method: init?.method ?? "GET", body });
+      const ok = (b: unknown) => new Response(JSON.stringify(b), { status: 200 });
+      if (url.endsWith("/classify/label")) return ok({ card: { frame: body.frame, label: body.cls, golden: null, deleted: false }, counts: {} });
+      if (url.endsWith("/classify/delete")) return ok({ card: { frame: body.frame, label: null, golden: null, deleted: true }, counts: {} });
+      return new Response("{}", { status: 404 });
+    }),
+  );
+});
+afterEach(() => vi.unstubAllGlobals());
+
+const renderIt = (over: Record<string, unknown> = {}) =>
+  render(
+    <ClusterBrowser
+      camera="camA"
+      feature="seal"
+      result={result}
+      picks={{}}
+      marks={{}}
+      grid={grid}
+      onPick={onPick}
+      onMarks={onMarks}
+      onGrid={onGrid}
+      onDeleted={onDeleted}
+      onError={onError}
+      {...over}
+    />,
+  );
+
+test("paging is remembered per cluster while the grid size is shared", async () => {
+  renderIt();
+  expect(screen.getAllByTestId(/^card-/)).toHaveLength(12);
+  await userEvent.click(within(screen.getByRole("navigation", { name: "Pagination top" })).getByRole("button", { name: /Next/ }));
+  expect(screen.getByTestId("card-m12.png")).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: /Cluster 1/ }));
+  expect(screen.getAllByTestId(/^card-/)).toHaveLength(3); // other cluster starts on its own page 1
+  await userEvent.click(screen.getByRole("button", { name: /Cluster 0/ }));
+  expect(screen.getByTestId("card-m12.png")).toBeInTheDocument(); // cluster 0 is still on page 2
+  await userEvent.selectOptions(screen.getByLabelText("Columns top"), "6");
+  expect(onGrid).toHaveBeenCalledWith(12, 6);
+});
+
+test("hover shortcuts work on a cluster card: a number labels, Delete deletes", async () => {
+  renderIt();
+  const card = screen.getByTestId("card-m01.png");
+  await userEvent.hover(card);
+  await userEvent.keyboard("2");
+  await waitFor(() => expect(calls.find((c) => c.url.endsWith("/classify/label"))!.body).toEqual({ feature: "seal", frame: "m01.png", cls: "NG" }));
+  await waitFor(() => expect(onMarks).toHaveBeenCalledWith("m01.png", { label: "NG", golden: null }));
+  fireEvent.keyDown(window, { key: "Delete" });
+  await waitFor(() => expect(calls.some((c) => c.url.endsWith("/classify/delete"))).toBe(true));
+  expect(calls.find((c) => c.url.endsWith("/classify/delete"))!.body).toEqual({ feature: "seal", frame: "m01.png" });
+  await waitFor(() => expect(onDeleted).toHaveBeenCalledWith("m01.png"));
+});
+
+test("Delete does nothing when no card is hovered", async () => {
+  renderIt();
+  fireEvent.keyDown(window, { key: "Delete" });
+  expect(calls).toHaveLength(0);
+});
+
+test("the representative follows the picks and a stale pick falls back to the default", () => {
+  renderIt({ picks: { 0: "m05.png", 1: "gone.png" } });
+  expect(screen.getByText(/Cluster 0 — 30 frame\(s\) · rep: m05.png/)).toBeInTheDocument();
+  expect(within(screen.getByTestId("card-m05.png")).getByRole("button", { name: "Representative of this cluster" })).toBeDisabled();
+});
+
+test("clicking a picture opens the full image", () => {
+  renderIt();
+  expect(screen.getByAltText("m00.png").closest("a")!.getAttribute("href")).toBe("/api/cameras/camA/frames/m00.png/image");
+});

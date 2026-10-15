@@ -134,6 +134,38 @@ class DeletedFramesTests(ApiTestCase):
             scatter.project(new, np.zeros((6, 6), dtype=np.float32), camera=CAM, feature=FEAT, backbone="resnet50", method="umap")
         um.assert_called_once()
 
+    def test_cluster_ids_survive_a_delete(self) -> None:
+        self.cluster()
+        self.delete_bulk([self.frames[0], self.frames[1]])  # cluster 0 shrinks to one frame, i.e. noise
+        st = self.client.get(f"{self.dd}/state", params={"feature": FEAT}).json()
+        self.assertEqual([c["id"] for c in st["result"]["clusters"]], [1])
+        self.assertEqual(st["result"]["clusters"][0]["members"], [self.frames[3], self.frames[4]])
+
+    def test_result_carries_classes_and_the_marks_of_labeled_frames(self) -> None:
+        labels.set_label(CAM, FEAT, self.frames[2], "NG")
+        labels.set_label(CAM, FEAT, self.frames[3], "OK")
+        labels.mark_golden(CAM, FEAT, self.frames[3], "OK")
+        res = self.cluster()
+        self.assertEqual(res["classes"], ["OK", "NG"])
+        self.assertEqual(res["marks"], {
+            self.frames[2]: {"label": "NG", "golden": None},
+            self.frames[3]: {"label": "OK", "golden": "OK"},
+        })
+
+    def test_grid_settings_are_per_feature_validated_and_separate_from_classify(self) -> None:
+        st = self.client.get(f"{self.dd}/state", params={"feature": FEAT}).json()
+        self.assertEqual((st["grid"]["per_page"], st["grid"]["cols"]), (24, 4))
+        r = self.client.put(f"{self.dd}/grid-settings", json={"feature": FEAT, "per_page": 48, "cols": 6})
+        self.assertEqual((r.json()["per_page"], r.json()["cols"]), (48, 6))
+        again = self.client.get(f"{self.dd}/state", params={"feature": FEAT}).json()["grid"]
+        self.assertEqual((again["per_page"], again["cols"]), (48, 6))
+        other = self.client.get(f"{self.dd}/state", params={"feature": OTHER}).json()["grid"]
+        self.assertEqual((other["per_page"], other["cols"]), (24, 4))
+        cls_grid = self.client.get(f"{self.cls}/state", params={"feature": FEAT}).json()["settings"]
+        self.assertEqual((cls_grid["per_page"], cls_grid["cols"]), (24, 4))
+        for bad in ({"per_page": 7, "cols": 4}, {"per_page": 24, "cols": 2}):
+            self.assertEqual(self.client.put(f"{self.dd}/grid-settings", json={"feature": FEAT, **bad}).status_code, 422)
+
 
 class DeletedNoteMigrationTests(ApiTestCase):
     def test_v5_database_gains_the_note_column_and_keeps_rows(self) -> None:

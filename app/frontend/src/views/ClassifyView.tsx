@@ -4,6 +4,7 @@ import AutoPanel, { AutoFilter } from "../classify/AutoPanel";
 import BulkPanel from "../classify/BulkPanel";
 import Card, { MAX_SHORTCUT_CLASSES } from "../classify/Card";
 import ClearPanel from "../classify/ClearPanel";
+import Pager from "../classify/Pager";
 import DeletedByDay from "../classify/DeletedByDay";
 import SuggestPanel from "../classify/SuggestPanel";
 import { useJob } from "../useJob";
@@ -420,63 +421,5 @@ export default function ClassifyView({ camera, product }: { camera: string; prod
         </>
       )}
     </section>
-  );
-}
-
-interface PagerProps {
-  grid: GridResponse;
-  settings: ClassifyState["settings"];
-  onPage: (p: number) => void;
-  onSettings: (perPage: number, cols: number) => void;
-  where: string;
-}
-
-function Pager({ grid, settings, onPage, onSettings, where }: PagerProps) {
-  const start = (grid.page - 1) * grid.per_page;
-  const end = Math.min(start + grid.per_page, grid.total);
-  const atStart = grid.page <= 1;
-  const atEnd = grid.page >= grid.n_pages;
-  return (
-    <div role="navigation" aria-label={`Pagination ${where}`} style={{ display: "flex", gap: 8, alignItems: "center", margin: "8px 0" }}>
-      <button disabled={atStart} onClick={() => onPage(1)}>
-        « First
-      </button>
-      <button disabled={atStart} onClick={() => onPage(grid.page - 1)}>
-        ‹ Prev
-      </button>
-      <span style={{ flex: 1, textAlign: "center" }}>
-        Page <strong>{grid.page}</strong> of {grid.n_pages} · frames <strong>{start + 1}–{end}</strong> of {grid.total}
-      </span>
-      <button disabled={atEnd} onClick={() => onPage(grid.page + 1)}>
-        Next ›
-      </button>
-      <button disabled={atEnd} onClick={() => onPage(grid.n_pages)}>
-        Last »
-      </button>
-      <label>
-        Per page{" "}
-        <select
-          aria-label={`Per page ${where}`}
-          value={settings.per_page}
-          onChange={(e) => onSettings(Number(e.target.value), settings.cols)}
-        >
-          {settings.per_page_options.map((n) => (
-            <option key={n}>{n}</option>
-          ))}
-        </select>
-      </label>
-      <label>
-        Columns{" "}
-        <select
-          aria-label={`Columns ${where}`}
-          value={settings.cols}
-          onChange={(e) => onSettings(settings.per_page, Number(e.target.value))}
-        >
-          {settings.cols_options.map((n) => (
-            <option key={n}>{n}</option>
-          ))}
-        </select>
-      </label>
-    </div>
   );
 }

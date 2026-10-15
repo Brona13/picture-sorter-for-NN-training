@@ -374,6 +374,9 @@ export interface DedupResult {
   would_mute: number;
   clusters: { id: number; members: string[]; representative: string }[];
   noise_frames: string[];
+  classes: string[];
+  /** Label/golden of the frames that have one; every other frame has neither. */
+  marks: Record<string, { label: string | null; golden: string | null }>;
 }
 
 export interface DedupState {
@@ -388,6 +391,7 @@ export interface DedupState {
   muted_count: number;
   projections: string[];
   result: DedupResult | null;
+  grid: { per_page: number; cols: number; per_page_options: number[]; cols_options: number[] };
 }
 
 export interface ScatterPoint {
@@ -635,6 +639,8 @@ export const api = {
     request<{ params: DedupParams }>(`/cameras/${encodeURIComponent(camera)}/dedup/settings`, send("PUT", { feature, ...p })),
   dedupCluster: (camera: string, feature: string, p: DedupParams) =>
     request<Job<DedupResult>>(`/cameras/${encodeURIComponent(camera)}/dedup/cluster`, post({ feature, ...p })),
+  dedupGridSettings: (camera: string, feature: string, per_page: number, cols: number) =>
+    request<DedupState["grid"]>(`/cameras/${encodeURIComponent(camera)}/dedup/grid-settings`, send("PUT", { feature, per_page, cols })),
   dedupApply: (camera: string, feature: string, picks: Record<number, string>) =>
     request<{ muted: number; unmuted: number; skipped_labeled: number; skipped_golden: number }>(
       `/cameras/${encodeURIComponent(camera)}/dedup/apply`,

@@ -192,8 +192,43 @@ def recluster_without(result: ClusterResult, removed: set[str]) -> ClusterResult
         return result
     kept = [result.frame_order[i] for i in keep]
     matrix = result.embeddings[keep] if result.embeddings.size else result.embeddings
-    return cluster_matrix(
+    fresh = cluster_matrix(
         kept, matrix, epsilon=result.epsilon, min_points=result.min_points, method=result.method,
+    )
+    return _keep_cluster_ids(result, fresh)
+
+
+def _keep_cluster_ids(old: ClusterResult, fresh: ClusterResult) -> ClusterResult:
+    """Renumber ``fresh`` so each cluster keeps the id of the old cluster it overlaps most.
+
+    DBSCAN numbers clusters by discovery order, so after a few frames disappear the ids could
+    shift and the cluster the user is looking at would turn into another one.
+    """
+    overlap: list[tuple[int, int, int]] = []  # (shared frames, old id, new id)
+    for new_id in fresh.clusters:
+        members = set(fresh.members(new_id))
+        for old_id in old.clusters:
+            shared = len(members & set(old.members(old_id)))
+            if shared:
+                overlap.append((shared, old_id, new_id))
+    mapping: dict[int, int] = {}
+    used: set[int] = set()
+    for _shared, old_id, new_id in sorted(overlap, key=lambda t: (-t[0], t[1], t[2])):
+        if new_id not in mapping and old_id not in used:
+            mapping[new_id] = old_id
+            used.add(old_id)
+    next_id = max([*old.clusters, *mapping.values(), -1]) + 1
+    for new_id in fresh.clusters:
+        if new_id not in mapping:
+            mapping[new_id] = next_id
+            next_id += 1
+    rename = lambda cid: mapping.get(cid, cid)  # noqa: E731 - NOISE (-1) is not in the mapping
+    return ClusterResult(
+        method=fresh.method, epsilon=fresh.epsilon, min_points=fresh.min_points,
+        labels_by_frame={f: rename(cid) for f, cid in fresh.labels_by_frame.items()},
+        clusters=[rename(cid) for cid in fresh.clusters],
+        representatives={rename(cid): f for cid, f in fresh.representatives.items()},
+        frame_order=fresh.frame_order, embeddings=fresh.embeddings,
     )
 
 
