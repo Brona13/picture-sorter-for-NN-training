@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { usePublishFeature, useSharedFeature } from "../SharedFeature";
 import { api, InsightsResponse } from "../api";
 import { useJob } from "../useJob";
 
@@ -7,6 +8,8 @@ const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 export default function InsightsView({ camera, product }: { camera: string; product?: string }) {
   const [features, setFeatures] = useState<{ feature: string; label: string }[]>([]);
   const [feature, setFeature] = useState("");
+  const shared = useSharedFeature();
+  usePublishFeature(feature, shared.publish);
   const [data, setData] = useState<InsightsResponse | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -20,7 +23,7 @@ export default function InsightsView({ camera, product }: { camera: string; prod
       .versionFeatures(camera, product)
       .then((f) => {
         setFeatures(f);
-        setFeature(f[0]?.feature ?? "");
+        setFeature(shared.pick(f));
       })
       .catch((e: unknown) => setError(msg(e)));
   }, [camera, product]);

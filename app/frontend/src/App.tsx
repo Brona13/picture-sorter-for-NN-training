@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
-import { NavLink, Navigate, Route, Routes } from "react-router-dom";
-import { api, ApiError } from "./api";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { NavLink, Navigate, Route, Routes, useNavigate } from "react-router-dom";
+import { api, ApiError, PipelineStage, RoiInfo } from "./api";
+import { FeatureContext } from "./SharedFeature";
+import StepBar from "./StepBar";
 import { VIEWS } from "./views";
 import ClassifyView from "./views/ClassifyView";
 import DetectorView from "./views/DetectorView";
@@ -21,6 +23,11 @@ export default function App() {
   const [product, setProduct] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<{ version: string; released: string } | null>(null);
+  // The ROI being worked on is remembered with its camera, so it is dropped when the camera changes.
+  const [selected, setSelected] = useState({ camera: "", feature: "" });
+  const feature = selected.camera === camera ? selected.feature : "";
+  const navigate = useNavigate();
+  const pendingProduct = useRef<string | null>(null);
 
   useEffect(() => {
     api
@@ -43,14 +50,26 @@ export default function App() {
 
   useEffect(() => {
     if (!camera) return;
-    setProduct("");
+    setProduct(pendingProduct.current ?? "");
+    pendingProduct.current = null;
     api
       .products(camera)
       .then(setProducts)
       .catch((e: unknown) => setError(describe(e)));
   }, [camera]);
 
+  // From the Overview: work on this ROI (and its product) on the page that does the clicked stage.
+  const openStage = (cam: string, roi: RoiInfo, stage: PipelineStage) => {
+    const owner = roi.owner_product ?? "";
+    if (cam === camera) setProduct(owner);
+    else pendingProduct.current = owner;
+    setCamera(cam);
+    setSelected({ camera: cam, feature: roi.feature });
+    navigate(`/${stage.view}`);
+  };
+
   return (
+    <FeatureContext.Provider value={{ feature, setFeature: (f) => setSelected({ camera, feature: f }) }}>
     <div className="app">
       <nav aria-label="Sidebar" className="sidebar">
         <h1>Picture Sorter</h1>
@@ -88,11 +107,12 @@ export default function App() {
       </nav>
       <main className="main">
         {error && <p role="alert">{error}</p>}
+        <StepBar camera={camera} feature={feature} />
         <Routes>
           <Route path="/" element={<Navigate to="/overview" replace />} />
           <Route
             path="/overview"
-            element={<OverviewView camera={camera} onSelectCamera={setCamera} />}
+            element={<OverviewView camera={camera} onSelectCamera={setCamera} onOpenStage={openStage} />}
           />
           <Route path="/status" element={<StatusView camera={camera} />} />
           <Route
@@ -126,6 +146,7 @@ export default function App() {
         </Routes>
       </main>
     </div>
+    </FeatureContext.Provider>
   );
 }
 

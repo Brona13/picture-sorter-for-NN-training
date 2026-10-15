@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, test, vi } from "vitest";
 import OverviewView from "./OverviewView";
@@ -61,4 +61,38 @@ test("picture size slider resizes the camera picture and is remembered", async (
   render(<OverviewView camera="camA" onSelectCamera={() => {}} />);
   expect((await screen.findByAltText("camA reference frame")).parentElement).toHaveStyle({ maxWidth: "250px" });
   localStorage.removeItem("overview.pictureSize");
+});
+
+const pipeline = (feature: string) => ({
+  feature,
+  frames: 5,
+  labeled: 3,
+  next: "goldens",
+  stages: [
+    { id: "roi", label: "ROI", view: "roi", optional: false, status: "done", detail: "" },
+    { id: "labeled", label: "Labels", view: "classify", optional: false, status: "done", detail: "3 of 5" },
+    { id: "goldens", label: "Goldens", view: "classify", optional: false, status: "partial", detail: "OK 1 · NG 0" },
+  ],
+});
+
+test("each ROI card shows its labeling progress and pipeline stages; a stage opens its page on that ROI", async () => {
+  install([{ ...CAMS[0], rois: [roi("seal", { pipeline: pipeline("seal") }), roi("label", { role: "classify", x: 0.5 })] }]);
+  const onOpen = vi.fn();
+  render(<OverviewView camera="camA" onSelectCamera={() => {}} onOpenStage={onOpen} />);
+  const strip = await screen.findByTestId("pipeline-camA-seal");
+  expect(within(strip).getByText("3 of 5 frames labeled")).toBeInTheDocument();
+  expect(within(strip).getByTestId("stage-goldens")).toHaveStyle({ fontWeight: "700" }); // the next step
+  await userEvent.click(within(strip).getByTestId("stage-goldens"));
+  expect(onOpen).toHaveBeenCalledTimes(1);
+  const [cam, clicked, stage] = onOpen.mock.calls[0];
+  expect([cam, clicked.feature, stage.id, stage.view]).toEqual(["camA", "seal", "goldens", "classify"]);
+  expect(screen.queryByTestId("pipeline-camA-label")).toBeNull(); // an ROI without pipeline data shows no strip
+});
+
+test("clicking a stage does not also select the ROI card", async () => {
+  install([{ ...CAMS[0], rois: [roi("seal", { pipeline: pipeline("seal") })] }]);
+  const onSelect = vi.fn();
+  render(<OverviewView camera="camA" onSelectCamera={onSelect} onOpenStage={() => undefined} />);
+  await userEvent.click(await screen.findByTestId("stage-labeled"));
+  expect(onSelect).not.toHaveBeenCalled();
 });

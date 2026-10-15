@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { usePublishFeature, useSharedFeature } from "../SharedFeature";
 import { api, DedupParams, DedupResult, DedupState, DeletePreview, DeleteResult, OutlierResult, ScatterPoint, ScatterResult } from "../api";
 import { thumbUrl } from "../classify/Card";
 import ClusterBrowser, { Marks } from "../classify/ClusterBrowser";
@@ -26,6 +27,8 @@ export function outlierShades(r: OutlierResult): Record<string, number> {
 export default function DedupView({ camera, product }: { camera: string; product?: string }) {
   const [features, setFeatures] = useState<{ feature: string; label: string }[]>([]);
   const [feature, setFeature] = useState("");
+  const shared = useSharedFeature();
+  usePublishFeature(feature, shared.publish);
   const [st, setSt] = useState<DedupState | null>(null);
   const [params, setParams] = useState<DedupParams | null>(null);
   const [result, setResult] = useState<DedupResult | null>(null);
@@ -59,7 +62,7 @@ export default function DedupView({ camera, product }: { camera: string; product
       .versionFeatures(camera, product)
       .then((f) => {
         setFeatures(f);
-        setFeature(f[0]?.feature ?? "");
+        setFeature(shared.pick(f));
       })
       .catch((e: unknown) => setError(msg(e)));
   }, [camera, product]);

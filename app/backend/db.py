@@ -649,6 +649,19 @@ def load_results(camera: str, feature: str, roi_key: str) -> dict | None:
     }
 
 
+def results_signatures(camera: str, feature: str, roi_key: str) -> tuple[str, str] | None:
+    """``(golden_sig, frames_sig)`` of the stored scored results without loading the payload."""
+    con = connect()
+    try:
+        row = con.execute(
+            "SELECT golden_sig,frames_sig FROM results_cache WHERE camera=? AND feature=? AND roi_key=?",
+            (camera, feature, roi_key),
+        ).fetchone()
+    finally:
+        con.close()
+    return None if row is None else (row["golden_sig"], row["frames_sig"])
+
+
 def save_results(
     camera: str,
     feature: str,

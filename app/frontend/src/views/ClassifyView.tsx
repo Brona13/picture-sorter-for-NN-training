@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { usePublishFeature, useSharedFeature } from "../SharedFeature";
 import { api, CardData, CardUpdate, ClassifyState, GridQuery, GridResponse } from "../api";
 import AutoPanel, { AutoFilter } from "../classify/AutoPanel";
 import BulkPanel from "../classify/BulkPanel";
@@ -22,6 +23,8 @@ const PHASES: Record<string, string> = {
 export default function ClassifyView({ camera, product }: { camera: string; product?: string }) {
   const [features, setFeatures] = useState<{ feature: string; label: string }[]>([]);
   const [feature, setFeature] = useState("");
+  const shared = useSharedFeature();
+  usePublishFeature(feature, shared.publish);
   const [st, setSt] = useState<ClassifyState | null>(null);
   const [view, setView] = useState("All");
   const [rank, setRank] = useState("");
@@ -66,7 +69,7 @@ export default function ClassifyView({ camera, product }: { camera: string; prod
       .versionFeatures(camera, product)
       .then((f) => {
         setFeatures(f);
-        setFeature(f[0]?.feature ?? "");
+        setFeature(shared.pick(f));
       })
       .catch((e: unknown) => setError(msg(e)));
   }, [camera, product]);

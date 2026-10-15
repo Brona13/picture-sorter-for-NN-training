@@ -86,7 +86,7 @@ On Windows use `.\run.ps1` instead (same modes and arguments); see [Running on W
 
 The application provides these views:
 
-- **Overview** — start page: every camera with its reference frame (ROI boxes drawn on it) and a card per ROI (cutout, products, labeled/golden counts, active version). Click a camera or ROI to make that camera the active one in the left menu; hovering an ROI card highlights its box.
+- **Overview** — start page: every camera with its reference frame (ROI boxes drawn on it) and a card per ROI (cutout, products, labeled/golden counts, active version). Click a camera or ROI to make that camera the active one in the left menu; hovering an ROI card highlights its box. Each card also shows its pipeline stages (see *Pipeline stages and the step bar*).
 - **Status** — label, golden, version, and ROI-definition summaries
 - **Ingest** — add frames and maintain the duplicate index
 - **ROI editor** — create, edit, scope, or delete ROIs
@@ -204,6 +204,31 @@ product classes.
 
 Deleting an ROI requires confirmation and removes its associated labels,
 goldens, cached results, versions, and deduplication state. Source frames remain unchanged.
+
+## Pipeline stages and the step bar
+
+Every ROI card on the **Overview** page shows how far that ROI has got, and the same strip appears as a
+slim **step bar** above the pages that work on one ROI. A green chip is a finished stage, an outlined
+bold chip is the next required one, a dashed chip is optional, and a warning chip is out of date.
+Click any chip to open the page that does that stage, already on that ROI (and its product):
+
+| Stage | Done when | Page |
+|---|---|---|
+| ROI | the ROI exists | ROI editor |
+| Filter & detector (optional) | a filter, a mask or detector exemplars are set | Detector |
+| Dedup (optional) | frames were muted or a clustering was applied | Dedup |
+| Labels | every class has at least one labeled frame (in progress before that) | Classify |
+| Goldens | every class has at least one golden frame | Classify |
+| Scores | the scores were refreshed and the goldens have not changed since (out of date if they have) | Classify |
+| Edge angle (optional) | a line is saved and all frames are measured for it | Edge angle |
+| Augmentation (optional) | movement ranges are saved | Augmentation |
+| Version | a version is frozen and not deleted | Versions |
+| Export | the active version (or the latest) was exported | Versions |
+
+The bar under each card also shows how many of the ROI's frames are labeled. A curated dataset keeps many
+frames unlabeled on purpose, so the bar is information, not a target. Nothing is stored for this: every
+stage is worked out from what the other pages already keep, so it cannot disagree with them. The step bar
+reloads when you change page, ROI or camera, not while you work on one page.
 
 ## Augmentation ranges
 

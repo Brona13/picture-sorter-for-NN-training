@@ -1,4 +1,5 @@
 import { ReactNode, useEffect, useMemo, useState } from "react";
+import { usePublishFeature, useSharedFeature } from "../SharedFeature";
 import { api, DetectionList, DetectorChoice, DetectorInfo, FilterChoice, FilterSpec, MaskChoice } from "../api";
 import {
   byConfidence,
@@ -72,6 +73,8 @@ export default function DetectorView({ camera, product }: { camera: string; prod
   const [catalogue, setCatalogue] = useState<Record<string, FilterSpec>>({});
   const [features, setFeatures] = useState<{ feature: string; label: string }[]>([]);
   const [feature, setFeature] = useState("");
+  const shared = useSharedFeature();
+  usePublishFeature(feature, shared.publish);
   const [frames, setFrames] = useState<string[]>([]);
   const [frame, setFrame] = useState("");
   const [filter, setFilter] = useState<FilterChoice | null>(null);
@@ -112,7 +115,7 @@ export default function DetectorView({ camera, product }: { camera: string; prod
       .versionFeatures(camera, product)
       .then((f) => {
         setFeatures(f);
-        setFeature(f[0]?.feature ?? "");
+        setFeature(shared.pick(f));
       })
       .catch((e: unknown) => setError(msg(e)));
     api

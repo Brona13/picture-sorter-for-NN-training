@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { api, OverviewCamera, RoiInfo } from "../api";
+import { api, OverviewCamera, PipelineStage, RoiInfo } from "../api";
 import { thumbUrl } from "../classify/Card";
 import PictureSizeSlider, { usePictureSize } from "../PictureSize";
+import PipelineChips, { LabelProgress } from "../PipelineChips";
 
 const SIZE_MIN = 150;
 const SIZE_MAX = 800;
@@ -70,13 +71,18 @@ function CameraPicture({
   );
 }
 
-/** Every camera with its reference frame and ROIs; clicking one makes it the active camera. */
+/**
+ * Every camera with its reference frame and ROIs; clicking one makes it the active camera. Each ROI card also
+ * shows where that ROI stands in the pipeline; clicking a stage opens the page that does it, on that ROI.
+ */
 export default function OverviewView({
   camera,
   onSelectCamera,
+  onOpenStage,
 }: {
   camera: string;
   onSelectCamera: (camera: string) => void;
+  onOpenStage?: (camera: string, roi: RoiInfo, stage: PipelineStage) => void;
 }) {
   const [cams, setCams] = useState<OverviewCamera[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -144,8 +150,8 @@ export default function OverviewView({
                 {cam.rois.map((r) => {
                   const on = focus?.camera === cam.camera && focus.feature === r.feature;
                   return (
+                    <div key={r.feature} style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
                     <button
-                      key={r.feature}
                       aria-label={`ROI ${r.feature} of ${cam.camera}`}
                       aria-pressed={on}
                       onClick={() => {
@@ -180,6 +186,13 @@ export default function OverviewView({
                         {r.active_version !== null ? ` · v${r.active_version}` : ""}
                       </div>
                     </button>
+                    {r.pipeline && (
+                      <div data-testid={`pipeline-${cam.camera}-${r.feature}`}>
+                        <LabelProgress pipeline={r.pipeline} />
+                        <PipelineChips pipeline={r.pipeline} size="small" onOpen={(stage) => onOpenStage?.(cam.camera, r, stage)} />
+                      </div>
+                    )}
+                    </div>
                   );
                 })}
               </div>

@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import datamodel
 import db
+import pipeline
+from api.cameras import require_feature
 from api.roi_api import _describe
 from fastapi import APIRouter
 
@@ -26,7 +28,14 @@ def overview() -> dict:
                     "picture_frame": ref,
                     "products": datamodel.products(camera),
                     "classify_feature": datamodel.classify_feature(camera),
-                    "rois": [_describe(camera, r, len(frames)) for r in rois],
+                    "rois": [{**_describe(camera, r, len(frames)), "pipeline": pipeline.stages(camera, r.name)} for r in rois],
                 }
             )
     return {"cameras": cameras}
+
+
+@router.get("/cameras/{camera}/pipeline")
+def feature_pipeline(camera: str, feature: str) -> dict:
+    """Where one ROI stands in the pipeline (for the step bar shown on the other pages)."""
+    require_feature(camera, feature)
+    return pipeline.stages(camera, feature)

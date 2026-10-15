@@ -245,6 +245,15 @@ def delete_version(camera: str, feature: str, version_id: int) -> None:
 
 
 # --- export ------------------------------------------------------------------
+def export_dir(camera: str, feature: str, number: int, name: str) -> Path:
+    """Where exporting version ``number`` writes: ``exports/<feature>/v<NNN>__<name>``."""
+    safe = "".join(c if c.isalnum() or c in "-_" else "-" for c in name)
+    # A product-scoped feature is "<product>::<roi>"; ":" is not a legal path
+    # character on Windows, so it becomes "<product>-<roi>" on disk.
+    safe_feature = feature.replace(datamodel.FEATURE_SEP, "-")
+    return datamodel.camera_dir(camera) / "exports" / safe_feature / f"v{number:03d}__{safe}"
+
+
 def export(camera: str, feature: str, version_id: int) -> tuple[Path, dict]:
     """Copy a version's golden frames, untouched, into class folders.
 
@@ -265,13 +274,7 @@ def export(camera: str, feature: str, version_id: int) -> tuple[Path, dict]:
         raise ValueError(f"no such version id {version_id}")
 
     hmap = labels.hash_map(camera)
-    safe = "".join(c if c.isalnum() or c in "-_" else "-" for c in v["name"])
-    # A product-scoped feature is "<product>::<roi>"; ":" is not a legal path
-    # character on Windows, so it becomes "<product>-<roi>" on disk.
-    safe_feature = feature.replace(datamodel.FEATURE_SEP, "-")
-    dest = (
-        datamodel.camera_dir(camera) / "exports" / safe_feature / f"v{v['number']:03d}__{safe}"
-    )
+    dest = export_dir(camera, feature, v["number"], v["name"])
     report = {"written": 0, "missing": [], "hash_mismatch": []}
 
     # Goldens only. A golden is always labeled, so its snapshot also holds a label

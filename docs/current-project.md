@@ -157,6 +157,13 @@ independent candidate/reference pairs. The refresh keeps decoded golden vectors
 and one bounded candidate group in memory rather than decoding the complete frame
 set at once.
 
+### Pipeline stages
+
+- Each ROI's progress through the pipeline, derived from stored state only (no new state): ROI, filter & detector (optional), dedup (optional), labels, goldens, scores, edge angle (optional), augmentation (optional), version, export. Statuses: done, partial, stale (scores older than the goldens), todo; `next` is the first required stage not done
+- Overview ROI cards show a labeled-frames progress bar and the stage chips; a chip opens the page that does the stage on that ROI and product (`App.openStage`). A step bar (`StepBar.tsx`) shows the same strip above the pages that work on one ROI and reloads on page, ROI or camera change
+- The ROI being worked on is shared between the pages through `SharedFeature.tsx` (a context with a harmless default, so a page still works on its own); the pages with an ROI selector pick the shared ROI when they offer it and publish their choice
+- `pipeline.py`, `GET /api/overview` (`pipeline` per ROI), `GET /api/cameras/{camera}/pipeline?feature=`, `PipelineChips.tsx`, `StepBar.tsx`. Overview: about 4.5 ms per ROI (80 ROIs: about 0.36 s)
+
 ### Augmentation ranges
 
 - Augmentation page: per frame, the object's shift (px of the ROI crop) and optionally rotation (degrees) against a reference frame; suggested ranges from the central N% of the distribution, editable and saved per ROI
@@ -232,6 +239,7 @@ The application is a FastAPI backend (`app/backend/`) that wraps the domain modu
 - `app/backend/classify.py` — multi-class scoring and the shared persistent feature cache
 - `app/backend/dedup.py` — near-duplicate embedding clustering using the shared cache
 - `app/backend/outliers.py` — k-nearest-neighbour isolation score over the same embeddings
+- `app/backend/pipeline.py` — the pipeline stage of each ROI, derived from stored state
 - `app/backend/motion.py` — object shift/rotation measurement against a reference frame and the suggested augmentation ranges
 - `app/backend/edge_angle.py` — edge-angle measurement, verdict, settings and per-feature results (rule-based family)
 - `app/backend/neighbors.py` — nearest unlabeled frames to a labeled seed, and the guarded batch-apply of the seed's label

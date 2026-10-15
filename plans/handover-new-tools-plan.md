@@ -41,7 +41,7 @@ The handover lists new curation tools. Cross-camera features, drift over time, U
 ## Phase 5 - Quality record form (v1.19.0) - done
 - Generic `version_results` table (schema v7): metric name, value, note, date per exported version; shown on the Versions page. Refine once the downstream metrics are known.
 
-## Phase 6 - Pipeline stages on the Overview page (v1.20.0)
+## Phase 6 - Pipeline stages on the Overview page (v1.20.0) - done
 - The Overview page (laptop session, v1.12.0-v1.14.1: every camera with its reference frame and ROI cards, click to select, picture-size sliders) is the hub. Extend its ROI cards instead of rebuilding Status: a derived stage per (camera, feature) (ROI, filter/detector, deduped, labeled, goldens, scored, version frozen, exported), labeled/unlabeled progress bars, and a persistent step indicator on the other views; clicking a stage resumes that view. No new state.
 
 ## Deferred

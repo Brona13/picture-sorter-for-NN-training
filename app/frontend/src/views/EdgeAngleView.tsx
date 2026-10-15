@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { usePublishFeature, useSharedFeature } from "../SharedFeature";
 import { api, EdgeAngleSettings, EdgeAngleState, EdgeExpected, EdgePreview } from "../api";
 import LineCanvas from "../LineCanvas";
 import { DEFAULT_HALF_WIDTH, Line } from "../lineGeometry";
@@ -44,6 +45,8 @@ const VERDICT_COLOUR = { pass: "#1a7f37", fail: "#c62828", undetermined: "#777" 
 export default function EdgeAngleView({ camera, product }: { camera: string; product?: string }) {
   const [features, setFeatures] = useState<{ feature: string; label: string }[]>([]);
   const [feature, setFeature] = useState("");
+  const shared = useSharedFeature();
+  usePublishFeature(feature, shared.publish);
   const [frames, setFrames] = useState<string[]>([]);
   const [frame, setFrame] = useState("");
   const [saved, setSaved] = useState<EdgeAngleState | null>(null);
@@ -64,7 +67,7 @@ export default function EdgeAngleView({ camera, product }: { camera: string; pro
       .versionFeatures(camera, product)
       .then((f) => {
         setFeatures(f);
-        setFeature(f[0]?.feature ?? "");
+        setFeature(shared.pick(f));
       })
       .catch((e: unknown) => setError(msg(e)));
     api

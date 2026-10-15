@@ -128,6 +128,25 @@ export interface FramesResponse {
   reference_frame: string | null;
 }
 
+export interface PipelineStage {
+  id: string;
+  label: string;
+  /** The page that does this stage (a route path without the slash). */
+  view: string;
+  optional: boolean;
+  status: "done" | "partial" | "todo" | "stale";
+  detail: string;
+}
+
+export interface PipelineInfo {
+  feature: string;
+  frames: number;
+  labeled: number;
+  /** The first required stage that is not done, or null when the pipeline is complete. */
+  next: string | null;
+  stages: PipelineStage[];
+}
+
 export interface RoiInfo {
   feature: string;
   short_name: string;
@@ -145,6 +164,8 @@ export interface RoiInfo {
   goldens: number;
   version_count: number;
   active_version: number | null;
+  /** Where this ROI stands in the pipeline (the Overview page only). */
+  pipeline?: PipelineInfo;
 }
 
 export interface OverviewCamera {
@@ -638,6 +659,8 @@ export const api = {
   health: () => request<{ status: string }>("/health"),
   version: () => request<{ version: string; released: string }>("/version"),
   cameras: () => request<string[]>("/cameras"),
+  pipeline: (camera: string, feature: string) =>
+    request<PipelineInfo>(`/cameras/${encodeURIComponent(camera)}/pipeline?feature=${encodeURIComponent(feature)}`),
   overview: () => request<{ cameras: OverviewCamera[] }>("/overview"),
   products: (camera: string) =>
     request<string[]>(`/cameras/${encodeURIComponent(camera)}/products`),

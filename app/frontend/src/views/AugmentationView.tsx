@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { usePublishFeature, useSharedFeature } from "../SharedFeature";
 import { api, MotionAnalysis, MotionAxis, MotionRanges, MotionSettings, MotionState } from "../api";
 import Histogram from "../classify/Histogram";
 import { useJob } from "../useJob";
@@ -22,6 +23,8 @@ const round1 = (v: number) => Math.round(v * 10) / 10;
 export default function AugmentationView({ camera, product }: { camera: string; product?: string }) {
   const [features, setFeatures] = useState<{ feature: string; label: string }[]>([]);
   const [feature, setFeature] = useState("");
+  const shared = useSharedFeature();
+  usePublishFeature(feature, shared.publish);
   const [frames, setFrames] = useState<string[]>([]);
   const [saved, setSaved] = useState<MotionState | null>(null);
   const [draft, setDraft] = useState<MotionSettings | null>(null);
@@ -40,7 +43,7 @@ export default function AugmentationView({ camera, product }: { camera: string; 
       .versionFeatures(camera, product)
       .then((f) => {
         setFeatures(f);
-        setFeature(f[0]?.feature ?? "");
+        setFeature(shared.pick(f));
       })
       .catch((e: unknown) => setError(msg(e)));
     api
