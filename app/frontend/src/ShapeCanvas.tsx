@@ -11,12 +11,14 @@ interface Props {
   shape: MaskShape | null;
   onChange: (shape: MaskShape) => void;
   maxWidth?: number;
+  /** Exact display width in px (the picture may be scaled up); without it the picture keeps its own size up to ``maxWidth``. */
+  width?: number;
 }
 
 const STROKE = "#ff3030";
 
 /** Image with an editable rectangle / circle / polygon overlay (normalised coordinates). */
-export default function ShapeCanvas({ imageUrl, shape, onChange, maxWidth = 700 }: Props) {
+export default function ShapeCanvas({ imageUrl, shape, onChange, maxWidth = 700, width }: Props) {
   const area = useRef<HTMLDivElement>(null);
   const drag = useRef<Drag | null>(null);
   const [aspect, setAspect] = useState(1); // image width / height in pixels
@@ -100,7 +102,7 @@ export default function ShapeCanvas({ imageUrl, shape, onChange, maxWidth = 700 
     <div
       ref={area}
       data-testid="shape-canvas"
-      style={{ position: "relative", width: "fit-content", maxWidth, lineHeight: 0, touchAction: "none", userSelect: "none" }}
+      style={{ position: "relative", width: width ?? "fit-content", maxWidth: width ? "100%" : maxWidth, lineHeight: 0, touchAction: "none", userSelect: "none" }}
       onPointerMove={onPointerMove}
       onPointerUp={end}
       onPointerCancel={end}
@@ -109,7 +111,7 @@ export default function ShapeCanvas({ imageUrl, shape, onChange, maxWidth = 700 
         src={imageUrl}
         alt="Crop to mask"
         draggable={false}
-        style={{ maxWidth: "100%", display: "block" }}
+        style={{ width: width ? "100%" : undefined, maxWidth: "100%", display: "block" }}
         onLoad={(e) => {
           const img = e.currentTarget;
           if (img.naturalWidth && img.naturalHeight) setAspect(img.naturalWidth / img.naturalHeight);

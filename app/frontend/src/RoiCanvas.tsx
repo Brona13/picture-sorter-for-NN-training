@@ -46,9 +46,11 @@ interface Props {
   /** Other ROIs, drawn as green outlines for reference. */
   others?: { name: string; box: Box }[];
   maxWidth?: number;
+  /** Exact display width in px (the picture may be scaled up); without it the picture keeps its own size up to ``maxWidth``. */
+  width?: number;
 }
 
-export default function RoiCanvas({ imageUrl, mode, box, onChange, others = [], maxWidth = 1100 }: Props) {
+export default function RoiCanvas({ imageUrl, mode, box, onChange, others = [], maxWidth = 1100, width }: Props) {
   const area = useRef<HTMLDivElement>(null);
   const drag = useRef<Drag | null>(null);
 
@@ -78,13 +80,13 @@ export default function RoiCanvas({ imageUrl, mode, box, onChange, others = [], 
     <div
       ref={area}
       data-testid="roi-canvas"
-      style={{ position: "relative", width: "fit-content", maxWidth, lineHeight: 0, touchAction: "none", userSelect: "none" }}
+      style={{ position: "relative", width: width ?? "fit-content", maxWidth: width ? "100%" : maxWidth, lineHeight: 0, touchAction: "none", userSelect: "none" }}
       onPointerDown={mode === "draw" ? (e) => begin(e, (start) => ({ kind: "draw", start })) : undefined}
       onPointerMove={onPointerMove}
       onPointerUp={end}
       onPointerCancel={end}
     >
-      <img src={imageUrl} alt="Frame to draw on" draggable={false} style={{ maxWidth: "100%", display: "block" }} />
+      <img src={imageUrl} alt="Frame to draw on" draggable={false} style={{ width: width ? "100%" : undefined, maxWidth: "100%", display: "block" }} />
       {others.map((o) => (
         <div
           key={o.name}

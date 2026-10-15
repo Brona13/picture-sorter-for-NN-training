@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import RoiEditorView from "./RoiEditorView";
@@ -146,4 +146,19 @@ test("camera with products: applies-to checkboxes save on change, hint about uns
   const patch = calls.find((c) => c.url.includes("/rois/seal/products"))!;
   expect(patch.method).toBe("PATCH");
   expect(patch.body).toEqual({ products: ["B"] });
+});
+
+test("picture size slider scales the drawing canvas and is remembered", async () => {
+  localStorage.removeItem("roi.pictureSize");
+  install(base());
+  const { unmount } = render(<RoiEditorView camera="camA" />);
+  const slider = await screen.findByLabelText("Picture size");
+  expect(screen.getByTestId("roi-canvas")).toHaveStyle({ width: "900px" });
+  fireEvent.change(slider, { target: { value: "1200" } });
+  expect(screen.getByTestId("roi-canvas")).toHaveStyle({ width: "1200px" });
+  unmount();
+  render(<RoiEditorView camera="camA" />);
+  await screen.findByLabelText("Picture size");
+  expect(screen.getByTestId("roi-canvas")).toHaveStyle({ width: "1200px" });
+  localStorage.removeItem("roi.pictureSize");
 });

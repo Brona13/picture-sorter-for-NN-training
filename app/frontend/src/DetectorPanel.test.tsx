@@ -250,3 +250,20 @@ test("a cached model runs without any prompt", async () => {
   expect(screen.queryByRole("alertdialog")).toBeNull();
   await waitFor(() => expect(calls.some((c) => c.url.endsWith("/detect"))).toBe(true));
 });
+
+test("picture size slider scales the picture on every tab", async () => {
+  localStorage.removeItem("detector.pictureSize");
+  install({ exemplars: [EXEMPLAR], topk: 1, threshold: 0.3 });
+  render(<DetectorView camera="camA" />);
+  const slider = await screen.findByLabelText("Picture size");
+  await userEvent.click(screen.getByRole("tab", { name: /Detector/ }));
+  expect(await screen.findByTestId("roi-canvas")).toHaveStyle({ width: "560px" });
+  fireEvent.change(slider, { target: { value: "900" } });
+  expect(screen.getByTestId("roi-canvas")).toHaveStyle({ width: "900px" });
+  await userEvent.click(screen.getByRole("tab", { name: /Filter/ }));
+  expect((await screen.findByAltText("Filtered preview")).parentElement).toHaveStyle({ width: "900px" });
+  await userEvent.click(screen.getByRole("tab", { name: /Mask/ }));
+  await userEvent.selectOptions(await screen.findByLabelText("Shape"), "circle");
+  expect((await screen.findByAltText("Crop to mask")).parentElement).toHaveStyle({ width: "900px" });
+  localStorage.removeItem("detector.pictureSize");
+});

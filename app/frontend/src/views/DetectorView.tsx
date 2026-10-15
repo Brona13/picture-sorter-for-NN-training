@@ -8,6 +8,7 @@ import {
   ReviewPanel,
   RunBar,
 } from "../DetectorPanel";
+import PictureSizeSlider, { usePictureSize } from "../PictureSize";
 import RoiCanvas from "../RoiCanvas";
 import { Box, roundBox } from "../roiGeometry";
 import ShapeCanvas from "../ShapeCanvas";
@@ -81,6 +82,7 @@ export default function DetectorView({ camera, product }: { camera: string; prod
   const [savedDetector, setSavedDetector] = useState<DetectorChoice | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const [size, setSize] = usePictureSize("detector.pictureSize", 560, 200, 1600);
   const [tab, setTab] = useState<Tab>("filter");
   const [viewChoice, setView] = useState<View>("filtered");
   const [info, setInfo] = useState<DetectorInfo | null>(null);
@@ -352,14 +354,14 @@ export default function DetectorView({ camera, product }: { camera: string; prod
   if (tab === "review" && queue.length === 0) tool = <p>No frame to review.</p>;
   else if (!imageUrl) tool = <p>Loading preview…</p>;
   else if (view === "masked")
-    tool = <img src={imageUrl} alt="Masked preview" style={{ maxWidth: "100%" }} />;
+    tool = <img src={imageUrl} alt="Masked preview" style={{ width: size, maxWidth: "100%" }} />;
   else if (tab === "filter")
     tool = (
-      <div style={{ position: "relative", display: "inline-block", lineHeight: 0, maxWidth: "100%" }}>
+      <div style={{ position: "relative", width: size, lineHeight: 0, maxWidth: "100%" }}>
         <img
           src={imageUrl}
           alt={view === "original" ? "Original preview" : "Filtered preview"}
-          style={{ maxWidth: "100%" }}
+          style={{ width: "100%", display: "block" }}
         />
         {detectedBox && <Overlay box={detectedBox} label="Detected object" />}
       </div>
@@ -372,7 +374,7 @@ export default function DetectorView({ camera, product }: { camera: string; prod
         box={draft}
         onChange={setDraft}
         others={[...exemplarOutlines, ...(detectedBox ? [{ name: "detected", box: detectedBox }] : [])]}
-        maxWidth={560}
+        width={size}
       />
     );
   else if (tab === "review")
@@ -382,10 +384,10 @@ export default function DetectorView({ camera, product }: { camera: string; prod
         mode={reviewBox ? "edit" : "draw"}
         box={reviewBox}
         onChange={setReviewBox}
-        maxWidth={560}
+        width={size}
       />
     );
-  else tool = <ShapeCanvas imageUrl={imageUrl} shape={mask?.shape ?? null} onChange={setShape} maxWidth={560} />;
+  else tool = <ShapeCanvas imageUrl={imageUrl} shape={mask?.shape ?? null} onChange={setShape} width={size} />;
 
   const runBar = (
     <RunBar
@@ -489,10 +491,11 @@ export default function DetectorView({ camera, product }: { camera: string; prod
           </button>
         </div>
         {viewSwitch}
+        <PictureSizeSlider value={size} onChange={setSize} min={200} max={1600} />
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(380px, 1fr))", gap: 16, alignItems: "start" }}>
-        <div role="group" aria-label="Preview" style={{ position: "sticky", top: 52, minWidth: 0 }}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "flex-start" }}>
+        <div role="group" aria-label="Preview" style={{ position: "sticky", top: 52, width: size, maxWidth: "100%", minWidth: 0 }}>
           {view === "masked" && tab !== "filter" && (
             <p style={{ margin: "4px 0" }}>
               <em>Result preview — switch to Original or Filtered to edit on the image.</em>
@@ -509,7 +512,7 @@ export default function DetectorView({ camera, product }: { camera: string; prod
           />
         </div>
 
-        <div role="tabpanel" aria-label={`${tabInfo.label} step`}>
+        <div role="tabpanel" aria-label={`${tabInfo.label} step`} style={{ flex: "1 1 320px", minWidth: 0, overflowWrap: "anywhere" }}>
           {tab === "filter" && (
             <>
               <p>Applied identically to every frame of this feature. Saved per feature.</p>
