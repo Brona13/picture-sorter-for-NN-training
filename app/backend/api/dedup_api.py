@@ -103,15 +103,16 @@ def _require_available() -> None:
         raise HTTPException(status_code=409, detail=f"Dedup unavailable: {reason}")
 
 
-def _describe(camera: str, feature: str, result: dedup.ClusterResult) -> dict:
+def marks_for(camera: str, feature: str, frames: list[str]) -> dict[str, dict]:
+    """Label and golden marks of the labeled/golden frames among ``frames``."""
     lab = labels.current_labels(camera, feature)
     gold = labels.current_goldens(camera, feature)
-    golden_of = {f: cls for cls, frames in gold.items() for f in frames}
-    marks = {
-        f: {"label": lab.get(f), "golden": golden_of.get(f)}
-        for f in result.frame_order
-        if f in lab or f in golden_of
-    }
+    golden_of = {f: cls for cls, frames_ in gold.items() for f in frames_}
+    return {f: {"label": lab.get(f), "golden": golden_of.get(f)} for f in frames if f in lab or f in golden_of}
+
+
+def _describe(camera: str, feature: str, result: dedup.ClusterResult) -> dict:
+    marks = marks_for(camera, feature, result.frame_order)
     return {
         "params": {"method": result.method, "epsilon": result.epsilon, "min_points": result.min_points},
         "summary": dedup.summary(result),

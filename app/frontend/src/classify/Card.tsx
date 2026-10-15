@@ -18,6 +18,8 @@ interface Props {
   onSetRep?: () => void;
   /** Clicking the picture opens the full image in a new tab. */
   fullSize?: boolean;
+  /** Small neutral badge under the file name, e.g. an outlier score. */
+  caption?: string;
 }
 
 export function thumbUrl(camera: string, frame: string, feature: string) {
@@ -47,7 +49,7 @@ function isTypingTarget(target: EventTarget | null): boolean {
   return !!el && (el.isContentEditable || ["INPUT", "SELECT", "TEXTAREA"].includes(el.tagName));
 }
 
-export default function Card({ camera, feature, classes, methods, card, busy, onLabel, onGolden, onDelete, onRestore, isRep, onSetRep, fullSize }: Props) {
+export default function Card({ camera, feature, classes, methods, card, busy, onLabel, onGolden, onDelete, onRestore, isRep, onSetRep, fullSize, caption }: Props) {
   const { frame, label, golden, deleted, bars, leanings, cluster } = card;
 
   // Number keys act on the card under the mouse. The handler is reread from a ref so the window
@@ -180,6 +182,12 @@ export default function Card({ camera, feature, classes, methods, card, busy, on
       )}
 
       <div style={{ fontSize: 12 }}>{frame.slice(0, 22)}</div>
+
+      {caption && (
+        <div style={{ margin: "2px 0 4px", fontSize: 10 }}>
+          <span style={badge("#555")}>{caption}</span>
+        </div>
+      )}
 
       {cluster && (
         <div style={{ margin: "2px 0 4px", fontSize: 10 }}>

@@ -298,6 +298,16 @@ Pagination and grid-column controls make larger batches manageable. The default
 remain available when reducing pagination is more important. Thumbnail caches
 are bounded and keyed by both ROI geometry and source-file modification time.
 
+### Outliers in Dedup
+
+The Dedup page has an **Outliers (most isolated frames)** panel. Choose *k* (how many nearest
+neighbours to compare with, 1-20, default 5) and click **Score outliers**. Each frame gets a score,
+its mean cosine distance to its *k* nearest other frames, computed on the same embeddings Dedup
+clusters (the feature's filter and mask apply). The most isolated frames come first as cards you can
+label, make golden or delete. When the 2D projection is shown, tick **Colour by outlier score** to
+colour its points from pale (typical) to dark red (most isolated). The score is a hint for review, not
+a verdict; it is computed on demand and nothing is stored.
+
 ## Scoring methods
 
 The application keeps scoring methods independent.

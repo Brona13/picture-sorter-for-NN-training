@@ -425,6 +425,16 @@ export interface ScatterResult {
   classes: string[];
 }
 
+export interface OutlierResult {
+  method: string;
+  k: number;
+  /** Every live frame, most isolated first. */
+  scores: { frame: string; score: number }[];
+  summary: { min: number; median: number; p95: number; max: number };
+  marks: Record<string, { label: string | null; golden: string | null }>;
+  classes: string[];
+}
+
 const post = (body?: unknown): RequestInit => ({
   method: "POST",
   headers: { "Content-Type": "application/json" },
@@ -667,6 +677,8 @@ export const api = {
       `/cameras/${encodeURIComponent(camera)}/dedup/mutes?feature=${encodeURIComponent(feature)}`,
       send("DELETE"),
     ),
+  dedupOutliers: (camera: string, feature: string, method: string, k: number) =>
+    request<Job<OutlierResult>>(`/cameras/${encodeURIComponent(camera)}/dedup/outliers`, post({ feature, method, k })),
   dedupScatter: (camera: string, feature: string, projection: string) =>
     request<Job<ScatterResult>>(`/cameras/${encodeURIComponent(camera)}/dedup/scatter`, post({ feature, projection })),
 };

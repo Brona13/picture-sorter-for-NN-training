@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ScatterPoint } from "../api";
-import { classColor, clusterColor } from "./colors";
+import { classColor, clusterColor, scoreColor } from "./colors";
 import { layoutPoints } from "./scatterLayout";
 
 const W = 720;
@@ -43,10 +43,13 @@ export default function Scatter({
   points,
   classes,
   onSelect,
+  scores,
 }: {
   points: ScatterPoint[];
   classes: string[];
   onSelect?: (selected: ScatterPoint[] | null) => void;
+  /** Outlier score per frame in [0, 1]; when given, points are coloured by it instead of by cluster. */
+  scores?: Record<string, number>;
 }) {
   const placed = useMemo(() => layoutPoints(points, W, H), [points]);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -151,7 +154,7 @@ export default function Scatter({
       >
         {placed.map((p) => (
           <g key={p.frame} data-testid={`pt-${p.frame}`} opacity={selFrames && !selFrames.has(p.frame) ? 0.2 : 1}>
-            <title>{`${p.frame} — ${p.cluster < 0 ? "unique" : `cluster ${p.cluster}`}${p.representative ? " (representative)" : ""}${p.golden ? ` — golden ${p.golden}` : ""}`}</title>
+            <title>{`${p.frame} — ${p.cluster < 0 ? "unique" : `cluster ${p.cluster}`}${p.representative ? " (representative)" : ""}${p.golden ? ` — golden ${p.golden}` : ""}${scores && p.frame in scores ? ` — outlier ${(scores[p.frame]).toFixed(2)}` : ""}`}</title>
             {p.golden ? (
               <rect
                 x={p.px - 6 * k}
@@ -164,7 +167,7 @@ export default function Scatter({
                 strokeWidth={1.5 * k}
               />
             ) : (
-              <circle cx={p.px} cy={p.py} r={(p.cluster < 0 ? 3.5 : 4.5) * k} fill={p.cluster < 0 ? "rgba(120,120,120,.6)" : clusterColor(p.cluster)} />
+              <circle cx={p.px} cy={p.py} r={(p.cluster < 0 ? 3.5 : 4.5) * k} fill={scores && p.frame in scores ? scoreColor(scores[p.frame]) : p.cluster < 0 ? "rgba(120,120,120,.6)" : clusterColor(p.cluster)} stroke={scores ? "rgba(0,0,0,.35)" : undefined} strokeWidth={scores ? 0.6 * k : undefined} />
             )}
             {p.representative && <circle cx={p.px} cy={p.py} r={8 * k} fill="none" stroke="#111" strokeWidth={2 * k} />}
           </g>

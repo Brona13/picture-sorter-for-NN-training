@@ -157,6 +157,12 @@ independent candidate/reference pairs. The refresh keeps decoded golden vectors
 and one bounded candidate group in memory rather than decoding the complete frame
 set at once.
 
+### Outlier scoring
+
+- Dedup page panel: each live frame's mean cosine distance to its k nearest other frames (k 1-20, default 5) over the Dedup embeddings, so the feature's filter and mask apply
+- Most isolated frames listed first as cards (label, golden, delete); the 2D projection can be coloured by the score
+- Derived on demand (`outliers.py`, `api/outliers_api.py`, `classify/OutlierPanel.tsx`); no stored state. A review aid, not a verdict; independent of the clustering parameters
+
 ### Insights
 
 - Method-level comparison of current scored results
@@ -201,6 +207,7 @@ The application is a FastAPI backend (`app/backend/`) that wraps the domain modu
 - `app/backend/embedding.py` — optional pretrained ResNet embeddings
 - `app/backend/classify.py` — multi-class scoring and the shared persistent feature cache
 - `app/backend/dedup.py` — near-duplicate embedding clustering using the shared cache
+- `app/backend/outliers.py` — k-nearest-neighbour isolation score over the same embeddings
 - `app/backend/classify_view.py` — presentation-neutral filtering, sorting, bars, bulk and auto-assign selection
 - `app/backend/suggest_goldens.py` — most-uncertain, diversity-spread golden suggestions
 - `app/backend/insights.py` — per-method confusion matrices
@@ -212,7 +219,7 @@ The application is a FastAPI backend (`app/backend/`) that wraps the domain modu
 
 One thin router per area, each delegating to the domain modules above:
 `cameras`, `status`, `versions_api`, `ingest_api`, `frames_api` (frames and thumbnails),
-`roi_api`, `classify_api`, `insights_api`, `dedup_api`, `overview_api` (all cameras with reference frame and ROIs for the Overview page), `vision_api` (filter catalogue, per-feature filter/mask/detector settings, live preview, detection job and review).
+`roi_api`, `classify_api`, `insights_api`, `dedup_api`, `overview_api` (all cameras with reference frame and ROIs for the Overview page), `outliers_api`, `vision_api` (filter catalogue, per-feature filter/mask/detector settings, live preview, detection job and review).
 
 ### Frontend (`app/frontend/src/`)
 

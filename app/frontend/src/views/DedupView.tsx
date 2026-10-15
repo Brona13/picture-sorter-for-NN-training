@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, DedupParams, DedupResult, DedupState, DeletePreview, DeleteResult, ScatterPoint, ScatterResult } from "../api";
+import { api, DedupParams, DedupResult, DedupState, DeletePreview, DeleteResult, OutlierResult, ScatterPoint, ScatterResult } from "../api";
 import { thumbUrl } from "../classify/Card";
 import ClusterBrowser, { Marks } from "../classify/ClusterBrowser";
+import OutlierPanel from "../classify/OutlierPanel";
 import Scatter from "../classify/Scatter";
 import { useJob } from "../useJob";
 
@@ -14,6 +15,12 @@ export function drift(existing: DedupParams, now: DedupParams): string[] {
   if (Math.abs(existing.epsilon - now.epsilon) > 1e-9) bits.push(`ε ${existing.epsilon.toFixed(3)} → ${now.epsilon.toFixed(3)}`);
   if (existing.min_points !== now.min_points) bits.push(`minPts ${existing.min_points} → ${now.min_points}`);
   return bits;
+}
+
+/** Each frame's outlier score scaled to [0, 1] against the 95th percentile, so one extreme frame cannot wash out the rest. */
+export function outlierShades(r: OutlierResult): Record<string, number> {
+  const top = Math.max(r.summary.p95, 1e-9);
+  return Object.fromEntries(r.scores.map((s) => [s.frame, Math.min(1, s.score / top)]));
 }
 
 export default function DedupView({ camera, product }: { camera: string; product?: string }) {
@@ -29,6 +36,8 @@ export default function DedupView({ camera, product }: { camera: string; product
   const [scatter, setScatter] = useState<ScatterResult | null>(null);
   const [selected, setSelected] = useState<ScatterPoint[] | null>(null);
   const [marks, setMarks] = useState<Marks>({});
+  const [outliers, setOutliers] = useState<OutlierResult | null>(null);
+  const [colourByOutlier, setColourByOutlier] = useState(true);
   // A fresh projection resets the chart's zoom and selection; the key changes in the same render, so no remount flicker.
   const genRef = useRef<{ scatter: ScatterResult | null; gen: number }>({ scatter: null, gen: 0 });
   if (genRef.current.scatter !== scatter) genRef.current = { scatter, gen: genRef.current.gen + 1 };
@@ -71,6 +80,7 @@ export default function DedupView({ camera, product }: { camera: string; product
   useEffect(() => {
     setSt(null);
     setResult(null);
+    setOutliers(null);
     setPicks({});
     setScatter(null);
     setClusterJob(null);
@@ -217,6 +227,27 @@ export default function DedupView({ camera, product }: { camera: string; product
         </>
       )}
 
+      {st && params && params.method && (
+        <OutlierPanel
+          camera={camera}
+          feature={feature}
+          method={params.method}
+          grid={st.grid}
+          onGrid={(perPage, cols) =>
+            api
+              .dedupGridSettings(camera, feature, perPage, cols)
+              .then((g) => setSt((s) => (s ? { ...s, grid: g } : s)))
+              .catch((e: unknown) => setError(msg(e)))
+          }
+          onDeleted={(frame) => {
+            setNotice(`Deleted ${frame}. It stays on disk; see Classify → Show: Deleted.`);
+            load();
+          }}
+          onResult={setOutliers}
+          onError={setError}
+        />
+      )}
+
       {result && (
         <>
           <dl style={{ display: "flex", gap: 24 }}>
@@ -262,7 +293,19 @@ export default function DedupView({ camera, product }: { camera: string; product
               )}
               {scatter && (
                 <>
-                  <Scatter key={genRef.current.gen} points={scatter.points} classes={scatter.classes} onSelect={setSelected} />
+                  {outliers && (
+                    <label>
+                      <input type="checkbox" checked={colourByOutlier} onChange={(e) => setColourByOutlier(e.target.checked)} /> Colour by outlier score (k = {outliers.k}; pale =
+                      typical, dark red = most isolated)
+                    </label>
+                  )}
+                  <Scatter
+                    key={genRef.current.gen}
+                    points={scatter.points}
+                    classes={scatter.classes}
+                    onSelect={setSelected}
+                    scores={outliers && colourByOutlier ? outlierShades(outliers) : undefined}
+                  />
                   {selected && (
                     <ScatterSelection
                       camera={camera}

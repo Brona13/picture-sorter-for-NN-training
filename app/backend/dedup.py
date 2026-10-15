@@ -118,6 +118,12 @@ def fetch_embeddings(
     return kept, np.stack(vecs).astype(np.float32)
 
 
+def live_frames(camera: str, feature: str) -> list[str]:
+    """The feature's frames minus soft-deleted ones: what clustering and outlier scoring see."""
+    deleted = db.deleted_frames_of(camera)
+    return [f for f in datamodel.frames_for_feature(camera, feature) if f not in deleted]
+
+
 # --- clustering --------------------------------------------------------------
 def cluster(
     camera: str,
@@ -134,9 +140,7 @@ def cluster(
     space the ResNet scoring family uses. ``min_points`` is DBSCAN's core-point
     threshold (typical values 2–5). Soft-deleted frames are left out entirely.
     """
-    deleted = db.deleted_frames_of(camera)
-    frames = [f for f in datamodel.frames_for_feature(camera, feature) if f not in deleted]
-    kept, matrix = fetch_embeddings(camera, feature, frames, method, progress_cb)
+    kept, matrix = fetch_embeddings(camera, feature, live_frames(camera, feature), method, progress_cb)
     return cluster_matrix(kept, matrix, epsilon=epsilon, min_points=min_points, method=method)
 
 

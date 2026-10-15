@@ -11,3 +11,10 @@ export function classColor(cls: string, classes: string[] = []): string {
 export function clusterColor(id: number): string {
   return id < 0 ? "#6b7280" : PALETTE[id % PALETTE.length];
 }
+
+/** Outlier score in [0, 1] -> pale yellow (typical) through orange to dark red (most isolated). */
+export function scoreColor(t: number): string {
+  const x = Math.min(1, Math.max(0, t));
+  const lerp = (a: number, b: number) => Math.round(a + (b - a) * x);
+  return `rgb(${lerp(250, 150)}, ${lerp(220, 20)}, ${lerp(120, 30)})`;
+}

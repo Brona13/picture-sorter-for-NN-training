@@ -1,0 +1,92 @@
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { outlierShades } from "../views/DedupView";
+import OutlierPanel from "./OutlierPanel";
+
+const result = {
+  method: "resnet50",
+  k: 5,
+  scores: [
+    { frame: "far.png", score: 0.42 },
+    { frame: "mid.png", score: 0.1 },
+    { frame: "near.png", score: 0.01 },
+  ],
+  summary: { min: 0.01, median: 0.1, p95: 0.4, max: 0.42 },
+  marks: { "mid.png": { label: "OK", golden: null } },
+  classes: ["OK", "NG"],
+};
+const grid = { per_page: 12, cols: 4, per_page_options: [12, 24, 48, 96], cols_options: [3, 4, 5, 6, 8] };
+
+let calls: { url: string; method: string; body?: any }[];
+const onGrid = vi.fn();
+const onDeleted = vi.fn();
+const onResult = vi.fn();
+const onError = vi.fn();
+
+beforeEach(() => {
+  calls = [];
+  [onGrid, onDeleted, onResult, onError].forEach((f) => f.mockClear());
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string, init?: RequestInit) => {
+      const body = init?.body ? JSON.parse(init.body as string) : undefined;
+      calls.push({ url, method: init?.method ?? "GET", body });
+      const ok = (b: unknown) => new Response(JSON.stringify(b), { status: 200 });
+      if (url.endsWith("/dedup/outliers")) return ok({ id: "o1", status: "queued", progress: {}, result: null, error: null });
+      if (url === "/api/jobs/o1") return ok({ id: "o1", status: "done", progress: {}, result, error: null });
+      if (url.endsWith("/classify/delete")) return ok({ card: { frame: body.frame, label: null, golden: null, deleted: true }, counts: {} });
+      return new Response("{}", { status: 404 });
+    }),
+  );
+});
+afterEach(() => vi.unstubAllGlobals());
+
+const renderIt = () =>
+  render(<OutlierPanel camera="camA" feature="seal" method="resnet50" grid={grid} onGrid={onGrid} onDeleted={onDeleted} onResult={onResult} onError={onError} />);
+
+async function score() {
+  const user = userEvent.setup();
+  renderIt();
+  await user.click(screen.getByText("Outliers (most isolated frames)"));
+  await user.click(screen.getByRole("button", { name: "Score outliers" }));
+  await screen.findByText(/outlier 0\.420/);
+  return user;
+}
+
+test("scoring posts feature, method and k, then lists the most isolated frame first", async () => {
+  await score();
+  const post = calls.find((c) => c.url.endsWith("/dedup/outliers"));
+  expect(post?.body).toEqual({ feature: "seal", method: "resnet50", k: 5 });
+  const caps = screen.getAllByText(/^outlier \d/).map((e) => e.textContent);
+  expect(caps).toEqual(["outlier 0.420", "outlier 0.100", "outlier 0.010"]);
+  expect(onResult).toHaveBeenLastCalledWith(result);
+  expect(screen.getByRole("status").textContent).toContain("3 frame(s)");
+});
+
+test("the k slider is sent with the request", async () => {
+  const user = userEvent.setup();
+  renderIt();
+  await user.click(screen.getByText("Outliers (most isolated frames)"));
+  const slider = screen.getByLabelText("k neighbours") as HTMLInputElement;
+  fireEvent.change(slider, { target: { value: "7" } });
+  await user.click(screen.getByRole("button", { name: "Score outliers" }));
+  await waitFor(() => expect(calls.some((c) => c.url.endsWith("/dedup/outliers"))).toBe(true));
+  expect(calls.find((c) => c.url.endsWith("/dedup/outliers"))?.body.k).toBe(7);
+});
+
+test("deleting a card removes it from the list and reports it", async () => {
+  const user = await score();
+  const cards = screen.getAllByRole("listitem");
+  await user.click(within(cards[0]).getByRole("button", { name: /delete/i }));
+  await waitFor(() => expect(onDeleted).toHaveBeenCalledWith("far.png"));
+  expect(screen.queryByText("outlier 0.420")).toBeNull();
+  expect(screen.getByRole("status").textContent).toContain("2 frame(s)");
+});
+
+test("outlier shades scale against the 95th percentile and cap at 1", () => {
+  const s = outlierShades(result);
+  expect(s["far.png"]).toBe(1);
+  expect(s["mid.png"]).toBeCloseTo(0.25);
+  expect(s["near.png"]).toBeCloseTo(0.025);
+});
