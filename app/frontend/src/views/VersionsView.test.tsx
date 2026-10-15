@@ -121,6 +121,17 @@ test("export shows the report", async () => {
   expect(screen.getByText(/1 frame\(s\) missing: a.png/)).toBeInTheDocument();
 });
 
+test("the export path can be copied to the clipboard", async () => {
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+  render(<VersionsView camera="camA" />);
+  await screen.findByText("History (2)");
+  await userEvent.click(screen.getByRole("button", { name: /Export v1/ }));
+  await userEvent.click(await screen.findByRole("button", { name: "Copy path" }));
+  expect(writeText).toHaveBeenCalledWith("/x/exports");
+  expect(await screen.findByRole("button", { name: "✓ Copied" })).toBeInTheDocument();
+});
+
 test("shows the vision settings frozen with a version", async () => {
   versions[1].stats = {
     vision: {

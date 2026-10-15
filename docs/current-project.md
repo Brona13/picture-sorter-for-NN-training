@@ -221,7 +221,7 @@ One thin router per area, each delegating to the domain modules above:
 - `views/` — Status, Ingest, ROI editor, Detector, Dedup, Classify, Insights, Versions (sidebar order)
 - `classify/` — card, bulk, clear-labels, auto-assign, suggested-goldens panels, SVG scatter (drag a rectangle to zoom and list the frames inside, optionally delete them with a note; right-click resets), per-day Deleted view, cluster browser (vertical cluster list, paged card grid per cluster with its own grid size per ROI; cards can be labeled, made golden, made representative or deleted, with the same hover keys as Classify, plus Delete)
 - `RoiCanvas.tsx` + `roiGeometry.ts` — pointer-driven ROI draw/move/resize in normalised coordinates
-- `DetectorPanel.tsx` — exemplars, detection run, review queue
+- `DetectorPanel.tsx` — frame strip, run bar and review panel of the tabbed Detector page (`views/DetectorView.tsx`: Filter / Detector / Review / Mask tabs, sticky save bar, shared preview); `CopyButton.tsx` — copy-to-clipboard button (Versions export path)
 - `ShapeCanvas.tsx` + `shapeGeometry.ts` — editable mask shape (rectangle, circle, polygon) with drag handles
 - `useJob.ts` — polls background jobs
 
@@ -300,8 +300,6 @@ The project folder is portable, but `.venv/` is machine-specific and must be rec
 ## Open work
 
 Listed in recommended priority order:
-
-0. **Detector page usability.** The page is one long form and its workflow is hard to follow (what saves what, why Run detection is disabled until saved, why the mask is drawn on the first exemplar's frame). Needs a clearer layout and step structure. See `memory/todo-detector-ux.md`.
 
 1. Add focused automated tests for product-scope, version, and export invariants.
 2. Measure and normalize classical metric scales per representative ROI.

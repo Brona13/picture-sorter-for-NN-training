@@ -2,8 +2,8 @@
 name: todo-detector-ux
 description: Deferred rework of the Detector page: workflow unclear, layout and element organisation need redesign
 session_date: 2026-10-14
-last_updated: 2026-10-14
-status: open
+last_updated: 2026-10-15
+status: done
 document_type: todo
 metadata:
   type: project
@@ -29,3 +29,7 @@ The user's words at session end: the detector functionality "is still not good",
 - Make the anchoring explicit: a single "mask follows object" switch with the first exemplar frame picked automatically.
 - Possibly a short in-page "How this works" explanation (the same text as the README section).
 - Open question from before: is the real model's confidence usable as a threshold? Check score distribution on real frames first.
+
+
+## Resolution (v1.11.0)
+Implemented as tabs in working order with status chips, sticky Save bar (Run saves first), one shared preview whose tool follows the tab, frame strip with boxes, review keyboard shortcuts, mask opening on the first exemplar's frame. See README "Detector page".

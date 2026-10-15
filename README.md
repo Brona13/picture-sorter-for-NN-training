@@ -208,7 +208,16 @@ The **Detector** page (sidebar, after the ROI editor) is optional. It changes wh
 and Dedup see for one feature (ROI): instead of the whole ROI crop they can see a filtered
 crop with everything outside the object blanked. It never changes source frames, labels or
 goldens, and the settings are saved per camera and feature. Everything on the page is one
-settings set: edit it, then press **Save settings**.
+settings set: edit it and press **Save settings** (always visible at the top; **Run detection**
+saves first, so it is never blocked).
+
+The page works in four tabs, in working order, each with a status chip (not set / unsaved /
+saved / N to review): **Filter → Detector → Review → Mask**. One shared preview sits beside the
+tab and follows the step: draw exemplars on it (Detector), adjust the detected box (Review) or
+edit the mask shape (Mask). It has a frame picker with ← →, an Original / Filtered / Masked
+switch and a frame strip with the detected box drawn on every thumbnail. In Review, **Enter**
+accepts the box, **← →** switch frame and **Delete** clears the box. Opening the Mask tab jumps
+to the first exemplar's frame, since the mask follows the detected object.
 
 Pipeline for every frame of the feature, in this order:
 
@@ -407,6 +416,8 @@ cameras/<camera>/exports/<feature>/<version>/<class>/
 ```
 
 Only the version's golden frames are exported, as unmodified copies of the source images with their original filenames. Labeled frames that are not golden are used for scoring only and are not exported. No cutouts and no extra files are written.
+
+After an export the destination folder is shown with a **Copy path** button for pasting it into another app.
 
 Before copying each frame, the exporter verifies the source-frame content hash. Missing or changed frames are reported.
 

@@ -80,10 +80,12 @@ test("saved filter is loaded and Save is disabled until changed", async () => {
 test("choosing a shape adds an editable mask; enabling it previews and saves it", async () => {
   install();
   render(<DetectorView camera="camA" />);
+  await userEvent.click(screen.getByRole("tab", { name: /Mask/ }));
   const select = await screen.findByLabelText("Shape");
   await userEvent.selectOptions(select, "circle");
   expect(await screen.findByTestId("handle-radius")).toBeInTheDocument();
   await userEvent.click(screen.getByLabelText(/Apply mask/));
+  await userEvent.click(screen.getByRole("button", { name: "Masked" }));
   await waitFor(() =>
     expect(calls.some((c) => c.url.endsWith("/preview") && c.body?.mask?.enabled === true)).toBe(true),
   );
@@ -99,6 +101,7 @@ test("choosing a shape adds an editable mask; enabling it previews and saves it"
 test("saved mask is loaded and Revert restores it", async () => {
   install(null, { enabled: true, shape: { shape: "rect", x: 0.1, y: 0.1, w: 0.5, h: 0.5 } });
   render(<DetectorView camera="camA" />);
+  await userEvent.click(screen.getByRole("tab", { name: /Mask/ }));
   const select = await screen.findByLabelText("Shape");
   await waitFor(() => expect(select).toHaveValue("rect"));
   expect(screen.getByRole("button", { name: "Save settings" })).toBeDisabled();
@@ -111,6 +114,7 @@ test("saved mask is loaded and Revert restores it", async () => {
 test("polygon: Add point adds a vertex handle; double-click removes it", async () => {
   install();
   render(<DetectorView camera="camA" />);
+  await userEvent.click(screen.getByRole("tab", { name: /Mask/ }));
   await userEvent.selectOptions(await screen.findByLabelText("Shape"), "polygon");
   expect(await screen.findByTestId("handle-v2")).toBeInTheDocument();
   expect(screen.queryByTestId("handle-v3")).toBeNull();
@@ -118,4 +122,32 @@ test("polygon: Add point adds a vertex handle; double-click removes it", async (
   expect(await screen.findByTestId("handle-v3")).toBeInTheDocument();
   await userEvent.dblClick(screen.getByTestId("handle-v3"));
   await waitFor(() => expect(screen.queryByTestId("handle-v3")).toBeNull());
+});
+
+test("tabs show a status chip each and the purpose of the active step", async () => {
+  install({ name: "gaussian", params: { sigma: 3 } });
+  render(<DetectorView camera="camA" />);
+  const tabs = await screen.findAllByRole("tab");
+  await waitFor(() => expect(tabs[0].textContent).toMatch(/saved/));
+  expect(tabs.map((t) => t.textContent)).toEqual([
+    expect.stringMatching(/Filter.*saved/),
+    expect.stringMatching(/Detector.*not set/),
+    expect.stringMatching(/Review.*not run/),
+    expect.stringMatching(/Mask.*not set/),
+  ]);
+  expect(screen.getByText(/Clean up every frame/)).toBeInTheDocument();
+  await userEvent.click(tabs[1]);
+  expect(screen.getByText(/Show the detector what the object looks like/)).toBeInTheDocument();
+  expect(screen.queryByLabelText("Filter")).toBeNull(); // one step visible at a time
+});
+
+test("the save bar stays visible on every tab and flags unsaved changes", async () => {
+  install();
+  render(<DetectorView camera="camA" />);
+  await screen.findByRole("option", { name: "Gaussian blur" });
+  await userEvent.selectOptions(screen.getByLabelText("Filter"), "gaussian");
+  expect(screen.getByRole("tab", { name: /Filter.*unsaved/ })).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("tab", { name: /Review/ }));
+  expect(screen.getByText(/Unsaved changes/)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Save settings" })).toBeEnabled();
 });
