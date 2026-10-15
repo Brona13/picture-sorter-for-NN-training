@@ -216,6 +216,25 @@ export const roiThumbUrl = (camera: string, frame: string, feature: string, size
   `/api/cameras/${encodeURIComponent(camera)}/frames/${encodeURIComponent(frame)}/thumb` +
   `?feature=${encodeURIComponent(feature)}&variant=square&size=${size}`;
 
+export interface DeletedItem {
+  frame: string;
+  /** Epoch seconds when the frame was deleted. */
+  deleted_at: number;
+  note: string;
+}
+
+export interface DeleteResult {
+  deleted: number;
+  cleared_labels: number;
+  cleared_goldens: number;
+}
+
+export interface DeletePreview {
+  total: number;
+  labeled: number;
+  golden: number;
+}
+
 export interface ClassifyState {
   feature: string;
   classes: string[];
@@ -563,6 +582,16 @@ export const api = {
     request<CardUpdate>(`/cameras/${encodeURIComponent(camera)}/classify/delete`, post({ feature, frame })),
   restoreFrame: (camera: string, feature: string, frame: string) =>
     request<CardUpdate>(`/cameras/${encodeURIComponent(camera)}/classify/restore`, post({ feature, frame })),
+  deleteFrames: (camera: string, feature: string, frames: string[], note = "") =>
+    request<DeleteResult>(`/cameras/${encodeURIComponent(camera)}/classify/delete-bulk`, post({ feature, frames, note })),
+  deletePreview: (camera: string, feature: string, frames: string[]) =>
+    request<DeletePreview>(`/cameras/${encodeURIComponent(camera)}/classify/delete-preview`, post({ feature, frames })),
+  restoreFrames: (camera: string, feature: string, frames: string[]) =>
+    request<{ restored: number }>(`/cameras/${encodeURIComponent(camera)}/classify/restore-bulk`, post({ feature, frames })),
+  deletedList: (camera: string, feature: string) =>
+    request<{ items: DeletedItem[] }>(`/cameras/${encodeURIComponent(camera)}/classify/deleted?feature=${encodeURIComponent(feature)}`),
+  setDeletedNote: (camera: string, feature: string, frame: string, note: string) =>
+    request<{ frame: string; note: string }>(`/cameras/${encodeURIComponent(camera)}/classify/deleted-note`, send("PUT", { feature, frame, note })),
   setGridSettings: (camera: string, feature: string, per_page: number, cols: number) =>
     request<{ per_page: number; cols: number }>(
       `/cameras/${encodeURIComponent(camera)}/classify/grid-settings`,

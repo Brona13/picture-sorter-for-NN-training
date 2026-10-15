@@ -4,6 +4,7 @@ import AutoPanel, { AutoFilter } from "../classify/AutoPanel";
 import BulkPanel from "../classify/BulkPanel";
 import Card, { MAX_SHORTCUT_CLASSES } from "../classify/Card";
 import ClearPanel from "../classify/ClearPanel";
+import DeletedByDay from "../classify/DeletedByDay";
 import SuggestPanel from "../classify/SuggestPanel";
 import { useJob } from "../useJob";
 
@@ -293,6 +294,10 @@ export default function ClassifyView({ camera, product }: { camera: string; prod
               </label>
             )}
           </div>
+          {view === "Deleted" ? (
+            <DeletedByDay camera={camera} feature={feature} revision={revision} onChanged={bump} onNotice={setNotice} onError={setError} />
+          ) : (
+            <>
           {!st.scored ? (
             <p>
               ℹ️ <em>Rank using</em> and <em>Order by</em> are greyed out, and no scores appear under the pictures, because <strong>nothing is scored yet</strong> —
@@ -408,6 +413,8 @@ export default function ClassifyView({ camera, product }: { camera: string; prod
                 ))}
               </ul>
               <Pager grid={grid} settings={st.settings} onPage={setPage} onSettings={changeSetting} where="bottom" />
+            </>
+          )}
             </>
           )}
         </>

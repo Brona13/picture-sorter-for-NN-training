@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
-import { api, DedupParams, DedupResult, DedupState, ScatterPoint, ScatterResult } from "../api";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { api, DedupParams, DedupResult, DedupState, DeletePreview, DeleteResult, ScatterPoint, ScatterResult } from "../api";
 import { thumbUrl } from "../classify/Card";
 import Scatter from "../classify/Scatter";
 import { useJob } from "../useJob";
@@ -28,6 +28,9 @@ export default function DedupView({ camera, product }: { camera: string; product
   const [projection, setProjection] = useState("umap");
   const [scatter, setScatter] = useState<ScatterResult | null>(null);
   const [selected, setSelected] = useState<ScatterPoint[] | null>(null);
+  // A fresh projection resets the chart's zoom and selection; the key changes in the same render, so no remount flicker.
+  const genRef = useRef<{ scatter: ScatterResult | null; gen: number }>({ scatter: null, gen: 0 });
+  if (genRef.current.scatter !== scatter) genRef.current = { scatter, gen: genRef.current.gen + 1 };
   const [confirmClear, setConfirmClear] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -256,8 +259,25 @@ export default function DedupView({ camera, product }: { camera: string; product
               )}
               {scatter && (
                 <>
-                  <Scatter points={scatter.points} classes={scatter.classes} onSelect={setSelected} />
-                  {selected && <ScatterSelection camera={camera} feature={feature} points={selected} />}
+                  <Scatter key={genRef.current.gen} points={scatter.points} classes={scatter.classes} onSelect={setSelected} />
+                  {selected && (
+                    <ScatterSelection
+                      camera={camera}
+                      feature={feature}
+                      points={selected}
+                      onError={(m) => setError(m)}
+                      onDeleted={(r) => {
+                        setNotice(
+                          `Deleted ${r.deleted} frame(s)` +
+                            (r.cleared_labels || r.cleared_goldens ? ` · cleared ${r.cleared_labels} label(s) and ${r.cleared_goldens} golden mark(s)` : "") +
+                            ". They stay on disk; see Classify → Show: Deleted.",
+                        );
+                        setSelected(null);
+                        load();
+                        api.dedupScatter(camera, feature, projection).then((j) => setScatterJob(j.id)).catch((e: unknown) => setError(msg(e)));
+                      }}
+                    />
+                  )}
                   <p>
                     <em>2D projection distorts distances — use for sanity check only.</em> Clustering decisions above stay in full-dimensional embedding
                     space. {scatter.from_cache ? "(from cache)" : "(freshly projected)"}
@@ -378,7 +398,45 @@ export default function DedupView({ camera, product }: { camera: string; product
   );
 }
 
-function ScatterSelection({ camera, feature, points }: { camera: string; feature: string; points: ScatterPoint[] }) {
+function ScatterSelection({
+  camera,
+  feature,
+  points,
+  onDeleted,
+  onError,
+}: {
+  camera: string;
+  feature: string;
+  points: ScatterPoint[];
+  onDeleted: (r: DeleteResult) => void;
+  onError: (m: string) => void;
+}) {
+  const [preview, setPreview] = useState<DeletePreview | null>(null);
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const frames = points.map((p) => p.frame);
+  // A new selection must never reuse the confirmation (and its counts) of an older one.
+  useEffect(() => setPreview(null), [points]);
+  const askDelete = () => {
+    setBusy(true);
+    api
+      .deletePreview(camera, feature, frames)
+      .then(setPreview)
+      .catch((e: unknown) => onError(msg(e)))
+      .finally(() => setBusy(false));
+  };
+  const doDelete = () => {
+    setBusy(true);
+    api
+      .deleteFrames(camera, feature, frames, note)
+      .then((r) => {
+        setPreview(null);
+        setNote("");
+        onDeleted(r);
+      })
+      .catch((e: unknown) => onError(msg(e)))
+      .finally(() => setBusy(false));
+  };
   const sorted = [...points].sort((a, b) => (a.cluster < 0 ? 1e9 : a.cluster) - (b.cluster < 0 ? 1e9 : b.cluster) || a.frame.localeCompare(b.frame));
   const counts = new Map<number, number>();
   for (const p of points) counts.set(p.cluster, (counts.get(p.cluster) ?? 0) + 1);
@@ -394,6 +452,30 @@ function ScatterSelection({ camera, feature, points }: { camera: string; feature
       ) : (
         <>
           <p style={{ fontSize: 12 }}>{summary}</p>
+          {preview === null ? (
+            <p>
+              <button type="button" disabled={busy} onClick={askDelete}>
+                🗑 Delete these {points.length} frame(s)…
+              </button>
+            </p>
+          ) : (
+            <div role="alertdialog" aria-label="Confirm delete" style={{ border: "1px solid #c33", padding: 8, margin: "6px 0" }}>
+              <p style={{ margin: "0 0 6px" }}>
+                Delete <strong>{preview.total}</strong> frame(s) on this camera, in <strong>every ROI</strong>? Of these, <strong>{preview.labeled}</strong>{" "}
+                labeled and <strong>{preview.golden}</strong> golden lose their marks (a restore does not bring the marks back). Files stay on disk.
+              </p>
+              <label>
+                Note (optional){" "}
+                <input type="text" value={note} maxLength={200} onChange={(e) => setNote(e.target.value)} placeholder="e.g. foreign object" style={{ width: 260 }} />
+              </label>{" "}
+              <button type="button" disabled={busy} onClick={doDelete}>
+                Yes — delete {preview.total}
+              </button>{" "}
+              <button type="button" disabled={busy} onClick={() => setPreview(null)}>
+                Cancel
+              </button>
+            </div>
+          )}
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
             {sorted.slice(0, MAX_SELECTED).map((p) => (
               <figure key={p.frame} style={{ margin: 0, width: 110 }}>

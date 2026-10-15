@@ -64,6 +64,8 @@ beforeEach(() => {
             ],
           },
         });
+      if (url.endsWith("/classify/delete-preview")) return ok({ total: 1, labeled: 1, golden: 0 });
+      if (url.endsWith("/classify/delete-bulk")) return ok({ deleted: 1, cleared_labels: 1, cleared_goldens: 0 });
       if (url.includes("/dedup/mutes") && method === "DELETE") return ok({ unmuted: 3 });
       return new Response("{}", { status: 404 });
     }),
@@ -179,6 +181,36 @@ test("a plain click (tiny drag) on the scatter does not change the view", async 
   fireEvent.mouseUp(window, { clientX: 52, clientY: 51 });
   expect(screen.queryByTestId("scatter-selection")).toBeNull();
   expect(svg.getAttribute("viewBox")).toBe("0 0 720 420");
+});
+
+test("deleting the frames of a scatter selection asks first, with counts, and sends the note", async () => {
+  const svg = await openScatter();
+  fireEvent.mouseDown(svg, { button: 0, clientX: 0, clientY: 0 });
+  fireEvent.mouseUp(window, { clientX: 100, clientY: 100 });
+  await userEvent.click(await screen.findByRole("button", { name: /Delete these 1 frame/ }));
+  const dlg = await screen.findByRole("alertdialog", { name: "Confirm delete" });
+  expect(dlg).toHaveTextContent("1 labeled and 0 golden lose their marks");
+  expect(calls.some((c) => c.url.endsWith("/classify/delete-bulk"))).toBe(false); // nothing deleted yet
+  await userEvent.type(within(dlg).getByRole("textbox"), "foreign object");
+  await userEvent.click(within(dlg).getByRole("button", { name: "Yes — delete 1" }));
+  await waitFor(() => expect(calls.some((c) => c.url.endsWith("/classify/delete-bulk"))).toBe(true));
+  expect(calls.find((c) => c.url.endsWith("/classify/delete-preview"))!.body).toEqual({ feature: "seal", frames: ["a.png"] });
+  expect(calls.find((c) => c.url.endsWith("/classify/delete-bulk"))!.body).toEqual({ feature: "seal", frames: ["a.png"], note: "foreign object" });
+  expect(await screen.findByText(/Deleted 1 frame\(s\) · cleared 1 label\(s\) and 0 golden mark\(s\)/)).toBeInTheDocument();
+  await waitFor(() => expect(calls.filter((c) => c.url.endsWith("/dedup/scatter")).length).toBe(2)); // projection refreshed
+});
+
+test("a new selection drops an open delete confirmation", async () => {
+  const svg = await openScatter();
+  fireEvent.mouseDown(svg, { button: 0, clientX: 0, clientY: 0 });
+  fireEvent.mouseUp(window, { clientX: 100, clientY: 100 });
+  await userEvent.click(await screen.findByRole("button", { name: /Delete these 1 frame/ }));
+  await screen.findByRole("alertdialog", { name: "Confirm delete" });
+  fireEvent.contextMenu(svg); // reset
+  fireEvent.mouseDown(svg, { button: 0, clientX: 0, clientY: 0 });
+  fireEvent.mouseUp(window, { clientX: 100, clientY: 100 });
+  await screen.findByRole("button", { name: /Delete these 1 frame/ });
+  expect(screen.queryByRole("alertdialog")).toBeNull();
 });
 
 test("unmute needs a second confirming click", async () => {

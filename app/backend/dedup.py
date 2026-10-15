@@ -132,12 +132,19 @@ def cluster(
 
     ``epsilon`` is the cosine-distance neighborhood radius; the same [0, 1]
     space the ResNet scoring family uses. ``min_points`` is DBSCAN's core-point
-    threshold (typical values 2–5).
+    threshold (typical values 2–5). Soft-deleted frames are left out entirely.
     """
-    from sklearn.cluster import DBSCAN  # noqa: PLC0415  (optional dep, import lazily)
-
-    frames = datamodel.frames_for_feature(camera, feature)
+    deleted = db.deleted_frames_of(camera)
+    frames = [f for f in datamodel.frames_for_feature(camera, feature) if f not in deleted]
     kept, matrix = fetch_embeddings(camera, feature, frames, method, progress_cb)
+    return cluster_matrix(kept, matrix, epsilon=epsilon, min_points=min_points, method=method)
+
+
+def cluster_matrix(
+    kept: list[str], matrix: np.ndarray, *, epsilon: float, min_points: int, method: str,
+) -> ClusterResult:
+    """DBSCAN over an already-fetched ``matrix`` whose rows are the frames in ``kept``."""
+    from sklearn.cluster import DBSCAN  # noqa: PLC0415  (optional dep, import lazily)
 
     if matrix.shape[0] == 0:
         return ClusterResult(
@@ -171,6 +178,22 @@ def cluster(
         method=method, epsilon=epsilon, min_points=min_points,
         labels_by_frame=labels_by_frame, clusters=clusters,
         representatives=reps, frame_order=kept, embeddings=matrix,
+    )
+
+
+def recluster_without(result: ClusterResult, removed: set[str]) -> ClusterResult:
+    """The same clustering settings over ``result``'s frames minus ``removed``.
+
+    Used when frames are soft-deleted after a clustering: the stored vectors are
+    reused, so nothing is re-embedded.
+    """
+    keep = [i for i, f in enumerate(result.frame_order) if f not in removed]
+    if len(keep) == len(result.frame_order):
+        return result
+    kept = [result.frame_order[i] for i in keep]
+    matrix = result.embeddings[keep] if result.embeddings.size else result.embeddings
+    return cluster_matrix(
+        kept, matrix, epsilon=result.epsilon, min_points=result.min_points, method=result.method,
     )
 
 

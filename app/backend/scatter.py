@@ -73,6 +73,16 @@ def project(
                 xy=cached, from_cache=True,
             )
 
+    if use_cache and n >= 4:
+        # Frames were removed (soft-deleted) since the cached layout: keep every
+        # remaining point where it was instead of re-projecting and reshuffling the map.
+        subset = _load_subset(camera, feature, method, backbone, frames)
+        if subset is not None:
+            _save_cached(camera, feature, method, backbone, fsig, frames, subset)
+            return Projection(
+                method=method, backbone=backbone, frames=frames, xy=subset, from_cache=True,
+            )
+
     if n == 0:
         xy = np.zeros((0, 2), dtype=np.float32)
     elif n < 4:
@@ -134,6 +144,27 @@ def _load_cached(
     if xy.ndim != 2 or xy.shape[1] != 2:
         return None
     return xy
+
+
+def _load_subset(
+    camera: str, feature: str, method: str, backbone: str, frames: list[str],
+) -> np.ndarray | None:
+    """Cached coordinates for ``frames`` when they are all part of the cached layout."""
+    row = db.load_scatter(camera, feature, method, backbone)
+    if row is None:
+        return None
+    try:
+        data = json.loads(row["payload"].decode("utf-8"))
+        old_frames = list(data.get("frames", []))
+        xy = np.asarray(data.get("xy", []), dtype=np.float32)
+    except Exception:  # noqa: BLE001
+        return None
+    if xy.ndim != 2 or xy.shape[1] != 2 or len(old_frames) != len(xy):
+        return None
+    index = {f: i for i, f in enumerate(old_frames)}
+    if not frames or any(f not in index for f in frames):
+        return None
+    return xy[[index[f] for f in frames]]
 
 
 def _save_cached(

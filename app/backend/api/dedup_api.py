@@ -31,6 +31,17 @@ _lock = threading.Lock()
 _results: dict[tuple[str, str], dedup.ClusterResult] = {}
 
 
+def drop_deleted(camera: str, frames: list[str]) -> None:
+    """Soft-deleted frames leave the clustering held in memory: re-cluster the rest."""
+    removed = set(frames)
+    with _lock:
+        for key in [k for k in _results if k[0] == camera]:
+            try:
+                _results[key] = dedup.recluster_without(_results[key], removed)
+            except Exception:  # noqa: BLE001 - worst case the user clusters again
+                _results.pop(key, None)
+
+
 def _sklearn_available() -> bool:
     try:
         from sklearn.cluster import DBSCAN  # noqa: F401, PLC0415

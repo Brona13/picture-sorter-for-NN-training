@@ -85,6 +85,8 @@ function install() {
           counts: { OK: 2, golden_OK: 1, NG: 0, golden_NG: 0, unlabeled: 1, total: 3 },
         });
       }
+      if (url.includes("/classify/deleted"))
+        return ok({ items: [{ frame: "x.png", deleted_at: new Date(2026, 9, 14, 10, 0).getTime() / 1000, note: "foreign object" }] });
       if (url.includes("/classify/delete"))
         return ok({ card: { frame: "a.png", label: null, golden: null, deleted: true }, counts: { OK: 0, golden_OK: 0, NG: 0, golden_NG: 0, unlabeled: 2, total: 3 } });
       if (url.includes("/classify/clear") && method === "GET") return ok({ matching: 6, labeled: 3, goldens: 2 });
@@ -364,4 +366,14 @@ test("class buttons show their shortcut number and the grid explains the shortcu
   const a = await cardEl("a.png");
   expect(within(a).getByRole("button", { name: "NG" })).toHaveAttribute("title", expect.stringContaining("press 2"));
   expect(screen.getByText(/1 = OK, 2 = NG, 0 = clear label, the key left of 1 = golden/)).toBeInTheDocument();
+});
+
+test("the Deleted view lists deleted frames per day instead of the card grid", async () => {
+  render(<ClassifyView camera="camA" />);
+  await cardEl("a.png");
+  await userEvent.selectOptions(screen.getByLabelText("Show"), "Deleted");
+  const day = await screen.findByRole("region", { name: "Deleted on 2026-10-14" });
+  expect(within(day).getByAltText("x.png")).toBeInTheDocument();
+  expect(within(day).getByDisplayValue("foreign object")).toBeInTheDocument();
+  expect(screen.queryByTestId("card-a.png")).toBeNull();
 });

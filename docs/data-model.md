@@ -97,6 +97,9 @@ Intentional history belongs in Versions, not in every edit operation.
 - Restore or unmute deletes the row.
 - Camera-wide deletion is outside feature purge.
 - Dedup mute is feature-scoped and is purged with its feature.
+- A deleted frame keeps its deletion time (`updated`) and an optional short `note` (schema v6). The Classify **Deleted** view groups deleted frames by the local day of deletion.
+- Deleting clears the frame's labels and goldens in every feature of the camera; restoring does not bring them back.
+- Deleted frames are left out of Dedup clustering and the 2D scatter. Deleting after a clustering re-clusters the held result without them, and the scatter reuses the cached layout for the remaining frames.
 
 ## Scores
 
@@ -136,7 +139,7 @@ Exports copy the version's **golden** frames only, unmodified (original filename
 
 ## Persistence
 
-The SQLite database is `data/picture_sorter.db`, schema version 4.
+The SQLite database is `data/picture_sorter.db`, schema version 6.
 
 Authoritative or indexed state:
 

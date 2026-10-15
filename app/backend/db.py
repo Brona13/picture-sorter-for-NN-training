@@ -17,7 +17,7 @@ import config
 import perf
 
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 
 class DatabaseResetRequired(RuntimeError):
@@ -81,6 +81,7 @@ CREATE TABLE IF NOT EXISTS deleted_frames (
     hash    TEXT NOT NULL DEFAULT '',
     source  TEXT NOT NULL DEFAULT 'user',
     updated REAL NOT NULL,
+    note    TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (camera, frame)
 );
 
@@ -365,10 +366,25 @@ def _migrate_v4_to_v5(con: sqlite3.Connection) -> None:
         raise
 
 
+def _migrate_v5_to_v6(con: sqlite3.Connection) -> None:
+    """Add ``deleted_frames.note``: an optional reason typed when a frame is deleted."""
+    con.execute("BEGIN IMMEDIATE")
+    try:
+        columns = {row[1] for row in con.execute("PRAGMA table_info(deleted_frames)")}
+        if columns and "note" not in columns:
+            con.execute("ALTER TABLE deleted_frames ADD COLUMN note TEXT NOT NULL DEFAULT ''")
+        con.execute("PRAGMA user_version = 6")
+        con.execute("COMMIT")
+    except Exception:
+        con.execute("ROLLBACK")
+        raise
+
+
 _MIGRATIONS = {
     2: _migrate_v2_to_v3,
     3: _migrate_v3_to_v4,
     4: _migrate_v4_to_v5,
+    5: _migrate_v5_to_v6,
 }
 
 
@@ -703,7 +719,7 @@ def save_scatter(
 
 # --- camera-wide soft deletion ---------------------------------------------
 def mark_frames_deleted(
-    camera: str, entries: list[tuple[str, str]], source: str = "user"
+    camera: str, entries: list[tuple[str, str]], source: str = "user", note: str = ""
 ) -> int:
     if not entries:
         return 0
@@ -711,10 +727,10 @@ def mark_frames_deleted(
     con = connect()
     try:
         con.executemany(
-            "INSERT INTO deleted_frames(camera,frame,hash,source,updated) VALUES(?,?,?,?,?) "
+            "INSERT INTO deleted_frames(camera,frame,hash,source,updated,note) VALUES(?,?,?,?,?,?) "
             "ON CONFLICT(camera,frame) DO UPDATE SET hash=excluded.hash,"
-            "source=excluded.source,updated=excluded.updated",
-            [(camera, frame, h, source, updated) for frame, h in entries],
+            "source=excluded.source,updated=excluded.updated,note=excluded.note",
+            [(camera, frame, h, source, updated, note) for frame, h in entries],
         )
         con.commit()
         return len(entries)
@@ -749,6 +765,33 @@ def deleted_frames_of(camera: str) -> set[str]:
         con.close()
     perf.count("db.deleted_current.rows", len(rows))
     return {row["frame"] for row in rows}
+
+
+def deleted_frames_info(camera: str) -> list[dict]:
+    """Deleted frames with deletion time (epoch seconds) and note, newest first."""
+    con = connect()
+    try:
+        rows = con.execute(
+            "SELECT frame,updated,note FROM deleted_frames WHERE camera=? "
+            "ORDER BY updated DESC, frame",
+            (camera,),
+        ).fetchall()
+    finally:
+        con.close()
+    return [{"frame": r["frame"], "deleted_at": r["updated"], "note": r["note"]} for r in rows]
+
+
+def set_deleted_note(camera: str, frame: str, note: str) -> bool:
+    """Change the note of an already-deleted frame; the deletion time stays."""
+    con = connect()
+    try:
+        count = con.execute(
+            "UPDATE deleted_frames SET note=? WHERE camera=? AND frame=?", (note, camera, frame)
+        ).rowcount
+        con.commit()
+        return count > 0
+    finally:
+        con.close()
 
 
 def is_frame_deleted(camera: str, frame: str) -> bool:
