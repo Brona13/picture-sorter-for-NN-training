@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, test, vi } from "vitest";
 import OverviewView from "./OverviewView";
@@ -30,7 +30,7 @@ test("shows each camera with its picture, ROI boxes and ROI cards", async () => 
   render(<OverviewView camera="camA" onSelectCamera={() => {}} />);
   expect(await screen.findByAltText("camA reference frame")).toHaveAttribute(
     "src", "/api/cameras/camA/frames/f1.png/image");
-  expect(screen.getByAltText("camA reference frame").parentElement).toHaveStyle({ maxWidth: "600px" });
+  expect(screen.getByAltText("camA reference frame").parentElement).toHaveStyle({ maxWidth: "400px" });
   expect(screen.getByTestId("box-camA-seal")).toHaveStyle({ left: "10%", width: "30%" });
   const card = screen.getByRole("button", { name: "ROI seal of camA" });
   expect(card).toHaveTextContent("3 labeled · 1 golden · v2");
@@ -48,4 +48,17 @@ test("clicking a camera or an ROI selects that camera", async () => {
   await userEvent.click(screen.getByRole("button", { name: "ROI seal of camA" }));
   expect(onSelect).toHaveBeenLastCalledWith("camA");
   await waitFor(() => expect(screen.getByRole("button", { name: "ROI seal of camA" })).toHaveAttribute("aria-pressed", "true"));
+});
+
+test("picture size slider resizes the camera picture and is remembered", async () => {
+  localStorage.removeItem("overview.pictureSize");
+  install(CAMS);
+  const { unmount } = render(<OverviewView camera="camA" onSelectCamera={() => {}} />);
+  const slider = await screen.findByLabelText("Picture size");
+  fireEvent.change(slider, { target: { value: "250" } });
+  expect(screen.getByAltText("camA reference frame").parentElement).toHaveStyle({ maxWidth: "250px" });
+  unmount();
+  render(<OverviewView camera="camA" onSelectCamera={() => {}} />);
+  expect((await screen.findByAltText("camA reference frame")).parentElement).toHaveStyle({ maxWidth: "250px" });
+  localStorage.removeItem("overview.pictureSize");
 });

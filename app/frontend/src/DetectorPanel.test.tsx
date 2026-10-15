@@ -139,7 +139,7 @@ test("show-all lists every frame least confident first, with the confidence rang
   expect(screen.getByText("Nothing to review.")).toBeInTheDocument();
   await userEvent.click(screen.getByLabelText(/Show all frames/));
   expect(await screen.findByText(/71% to 97% \(threshold 50%\)/)).toBeInTheDocument();
-  const options = within(screen.getByRole("combobox", { name: "Frame" })).getAllByRole("option");
+  const options = within(screen.getByRole("combobox", { name: /^Frame/ })).getAllByRole("option");
   expect(options.map((o) => o.textContent)).toEqual([expect.stringContaining("mid.png"), expect.stringContaining("hi.png")]);
 });
 
@@ -166,7 +166,7 @@ test("review keyboard: Enter accepts, Delete clears, arrows switch frame", async
   install({ exemplars: [EXEMPLAR], topk: 1, threshold: 0.3 });
   render(<DetectorView camera="camA" />);
   await userEvent.click(await screen.findByRole("tab", { name: /Review/ }));
-  const frame = await screen.findByRole("combobox", { name: "Frame" });
+  const frame = await screen.findByRole("combobox", { name: /^Frame/ });
   await waitFor(() => expect(frame).toHaveValue("a.png"));
   await userEvent.keyboard("{ArrowRight}");
   await waitFor(() => expect(frame).toHaveValue("b.png"));

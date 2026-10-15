@@ -2,6 +2,21 @@ import { useEffect, useState } from "react";
 import { api, OverviewCamera, RoiInfo } from "../api";
 import { thumbUrl } from "../classify/Card";
 
+const SIZE_KEY = "overview.pictureSize";
+const SIZE_MIN = 150;
+const SIZE_MAX = 800;
+const SIZE_DEFAULT = 400;
+
+function storedSize(): number {
+  try {
+    const v = Number(localStorage.getItem(SIZE_KEY));
+    if (v >= SIZE_MIN && v <= SIZE_MAX) return v;
+  } catch {
+    /* storage unavailable */
+  }
+  return SIZE_DEFAULT;
+}
+
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 const chip = {
@@ -26,23 +41,25 @@ type Focus = { camera: string; feature: string } | null;
 function CameraPicture({
   cam,
   active,
+  size,
   onSelect,
 }: {
   cam: OverviewCamera;
   active: string | null;
+  size: number;
   onSelect: () => void;
 }) {
   if (!cam.picture_frame) return <p style={{ color: "var(--muted)" }}>No frames yet.</p>;
   return (
     <div
       onClick={onSelect}
-      style={{ position: "relative", lineHeight: 0, cursor: "pointer", border: "1px solid var(--border)", maxWidth: 600 }}
+      style={{ position: "relative", lineHeight: 0, cursor: "pointer", border: "1px solid var(--border)", width: "fit-content", maxWidth: size }}
     >
       <img
         src={`/api/cameras/${encodeURIComponent(cam.camera)}/frames/${encodeURIComponent(cam.picture_frame)}/image`}
         alt={`${cam.camera} reference frame`}
         loading="lazy"
-        style={{ width: "100%", display: "block" }}
+        style={{ maxWidth: "100%", display: "block" }}
       />
       {cam.rois.map((r) => (
         <span
@@ -76,6 +93,15 @@ export default function OverviewView({
   const [error, setError] = useState<string | null>(null);
   const [focus, setFocus] = useState<Focus>(null);
   const [hover, setHover] = useState<Focus>(null);
+  const [size, setSize] = useState(storedSize);
+  const resize = (v: number) => {
+    setSize(v);
+    try {
+      localStorage.setItem(SIZE_KEY, String(v));
+    } catch {
+      /* storage unavailable */
+    }
+  };
 
   useEffect(() => {
     api
@@ -94,6 +120,19 @@ export default function OverviewView({
     <section>
       <h2>Overview</h2>
       <p>Every camera with its reference frame and ROIs. Click a camera or ROI to select it in the menu.</p>
+      <label>
+        Picture size{" "}
+        <input
+          type="range"
+          aria-label="Picture size"
+          min={SIZE_MIN}
+          max={SIZE_MAX}
+          step={10}
+          value={size}
+          onChange={(e) => resize(Number(e.target.value))}
+        />{" "}
+        <output>{size} px</output>
+      </label>
       {cams.length === 0 && <p>No cameras yet — create one on the Ingest page.</p>}
       {cams.map((cam) => {
         const selected = cam.camera === camera;
@@ -122,14 +161,15 @@ export default function OverviewView({
                 {selected ? "✓ Selected" : "Select"}
               </button>
             </header>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 16, marginTop: 10, alignItems: "start" }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 16, marginTop: 10, alignItems: "flex-start" }}>
               <CameraPicture
                 cam={cam}
                 active={activeFeature(cam.camera)}
+                size={size}
                 onSelect={() => onSelectCamera(cam.camera)}
               />
               <div
-                style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 10, alignContent: "start" }}
+                style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 10, alignContent: "start", flex: "1 1 320px", minWidth: 0 }}
               >
                 {cam.rois.length === 0 && <p style={{ color: "var(--muted)" }}>No ROIs yet — use the ROI editor.</p>}
                 {cam.rois.map((r) => {
@@ -160,7 +200,7 @@ export default function OverviewView({
                           src={thumbUrl(cam.camera, cam.picture_frame, r.feature)}
                           alt=""
                           loading="lazy"
-                          style={{ width: "100%", display: "block", marginBottom: 4 }}
+                          style={{ maxWidth: "100%", display: "block", marginBottom: 4 }}
                         />
                       )}
                       <strong>{r.short_name}</strong>

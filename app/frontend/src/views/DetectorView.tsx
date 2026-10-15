@@ -82,7 +82,7 @@ export default function DetectorView({ camera, product }: { camera: string; prod
   const [error, setError] = useState<string | null>(null);
 
   const [tab, setTab] = useState<Tab>("filter");
-  const [view, setView] = useState<View>("filtered");
+  const [viewChoice, setView] = useState<View>("filtered");
   const [info, setInfo] = useState<DetectorInfo | null>(null);
   const [draft, setDraft] = useState<Box | null>(null);
   const [list, setList] = useState<DetectionList | null>(null);
@@ -183,7 +183,9 @@ export default function DetectorView({ camera, product }: { camera: string; prod
     setReviewBox(top ? { x: top.x, y: top.y, w: top.w, h: top.h } : null);
   }, [rows, frame]);
 
-  const maskOn = view === "masked" && mask?.enabled ? mask : null;
+  // The Masked view only exists while the mask is applied; otherwise fall back to Filtered.
+  const view: View = viewChoice === "masked" && !mask?.enabled ? "filtered" : viewChoice;
+  const maskOn = view === "masked" ? mask : null;
   const imageUrl = usePreview(
     camera,
     feature,
@@ -279,31 +281,72 @@ export default function DetectorView({ camera, product }: { camera: string; prod
 
   const detectedBox = rows.get(frame)?.boxes[0];
   const exemplarOutlines = det.exemplars.filter((e) => e.frame === frame).map((e) => ({ name: "exemplar", box: e.box }));
-  const framePicker =
-    tab === "review" ? (
-      <label>
-        Frame{" "}
-        <select value={frame} onChange={(e) => setFrame(e.target.value)}>
-          {queue.map((f) => (
-            <option key={f.frame} value={f.frame}>
-              {f.frame} — {f.state === "none" ? "no detection" : `${Math.round((f.boxes[0]?.conf ?? 0) * 100)}%`}
-              {f.state === "human" ? " (decided)" : ""}
-            </option>
-          ))}
-        </select>
-      </label>
-    ) : (
-      <label>
-        Preview frame{" "}
-        <select value={frame} onChange={(e) => setFrame(e.target.value)}>
-          {frames.map((f) => (
-            <option key={f} value={f}>
-              {f}
-            </option>
-          ))}
-        </select>
-      </label>
-    );
+  const pickerFrames = tab === "review" ? queue.map((r) => r.frame) : frames;
+  const position = pickerFrames.indexOf(frame);
+  const caption = { fontSize: 11, color: "var(--muted)" } as const;
+  const framePicker = (
+    <label style={{ display: "flex", flexDirection: "column", flex: "1 1 0", minWidth: 0 }}>
+      <span style={caption}>
+        {tab === "review" ? "Frame" : "Preview frame"}
+        {position >= 0 ? ` · ${position + 1} / ${pickerFrames.length}` : ""}
+      </span>
+      <select
+        value={frame}
+        title={frame}
+        onChange={(e) => setFrame(e.target.value)}
+        style={{ width: "100%", minWidth: 0, textOverflow: "ellipsis" }}
+      >
+        {tab === "review"
+          ? queue.map((f) => (
+              <option key={f.frame} value={f.frame}>
+                {f.frame} — {f.state === "none" ? "no detection" : `${Math.round((f.boxes[0]?.conf ?? 0) * 100)}%`}
+                {f.state === "human" ? " (decided)" : ""}
+              </option>
+            ))
+          : frames.map((f) => (
+              <option key={f} value={f}>
+                {f}
+              </option>
+            ))}
+      </select>
+    </label>
+  );
+  const maskAvailable = !!mask?.enabled;
+  const viewSwitch = (
+    <div style={{ display: "flex", flexDirection: "column" }}>
+      <span style={caption}>Show</span>
+      <span
+        role="group"
+        aria-label="View"
+        style={{ display: "inline-flex", border: "1px solid var(--border)", borderRadius: "var(--radius)", overflow: "hidden" }}
+      >
+        {(["original", "filtered", "masked"] as View[]).map((v) => {
+          const disabled = v === "masked" && !maskAvailable;
+          const on = view === v;
+          return (
+            <button
+              key={v}
+              aria-pressed={on}
+              disabled={disabled}
+              title={disabled ? "Turn on “Apply mask” in the Mask tab first" : undefined}
+              onClick={() => setView(v)}
+              style={{
+                border: 0,
+                borderRadius: 0,
+                padding: "4px 10px",
+                background: on ? "var(--accent)" : "var(--panel)",
+                color: on ? "var(--accent-fg)" : "var(--fg)",
+                opacity: disabled ? 0.45 : 1,
+                fontWeight: on ? 600 : 400,
+              }}
+            >
+              {v[0].toUpperCase() + v.slice(1)}
+            </button>
+          );
+        })}
+      </span>
+    </div>
+  );
 
   let tool: ReactNode;
   if (tab === "review" && queue.length === 0) tool = <p>No frame to review.</p>;
@@ -431,24 +474,25 @@ export default function DetectorView({ camera, product }: { camera: string; prod
       </div>
       <p style={{ margin: "6px 0" }}>{tabInfo.purpose}</p>
 
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end", margin: "6px 0 10px" }}>
+        <div
+          role="group"
+          aria-label="Frame navigation"
+          style={{ display: "flex", gap: 6, alignItems: "flex-end", flex: "1 1 360px", minWidth: 0, maxWidth: 640 }}
+        >
+          <button onClick={() => step(-1)} aria-label="Previous frame">
+            ←
+          </button>
+          {framePicker}
+          <button onClick={() => step(1)} aria-label="Next frame">
+            →
+          </button>
+        </div>
+        {viewSwitch}
+      </div>
+
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(380px, 1fr))", gap: 16, alignItems: "start" }}>
-        <div role="group" aria-label="Preview" style={{ position: "sticky", top: 52 }}>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 6 }}>
-            <button onClick={() => step(-1)} aria-label="Previous frame">
-              ←
-            </button>
-            {framePicker}
-            <button onClick={() => step(1)} aria-label="Next frame">
-              →
-            </button>
-            <span role="group" aria-label="View">
-              {(["original", "filtered", "masked"] as View[]).map((v) => (
-                <button key={v} aria-pressed={view === v} onClick={() => setView(v)} style={{ fontWeight: view === v ? 700 : 400 }}>
-                  {v[0].toUpperCase() + v.slice(1)}
-                </button>
-              ))}
-            </span>
-          </div>
+        <div role="group" aria-label="Preview" style={{ position: "sticky", top: 52, minWidth: 0 }}>
           {view === "masked" && tab !== "filter" && (
             <p style={{ margin: "4px 0" }}>
               <em>Result preview — switch to Original or Filtered to edit on the image.</em>

@@ -100,7 +100,7 @@ export default function ShapeCanvas({ imageUrl, shape, onChange, maxWidth = 700 
     <div
       ref={area}
       data-testid="shape-canvas"
-      style={{ position: "relative", maxWidth, lineHeight: 0, touchAction: "none", userSelect: "none" }}
+      style={{ position: "relative", width: "fit-content", maxWidth, lineHeight: 0, touchAction: "none", userSelect: "none" }}
       onPointerMove={onPointerMove}
       onPointerUp={end}
       onPointerCancel={end}
@@ -109,7 +109,7 @@ export default function ShapeCanvas({ imageUrl, shape, onChange, maxWidth = 700 
         src={imageUrl}
         alt="Crop to mask"
         draggable={false}
-        style={{ width: "100%", display: "block" }}
+        style={{ maxWidth: "100%", display: "block" }}
         onLoad={(e) => {
           const img = e.currentTarget;
           if (img.naturalWidth && img.naturalHeight) setAspect(img.naturalWidth / img.naturalHeight);

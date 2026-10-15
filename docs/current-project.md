@@ -297,6 +297,8 @@ The main hierarchy is implemented, but Status and Versions presentation still ne
 
 The project folder is portable, but `.venv/` is machine-specific and must be recreated after moving the project. The camera folders and SQLite database are the valuable data that must be backed up.
 
+- Scatter projection speed: see [docs/scatter-performance.md](scatter-performance.md) (measurements, what helped and what did not).
+
 ## Open work
 
 Listed in recommended priority order:

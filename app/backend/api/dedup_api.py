@@ -162,6 +162,7 @@ def _validate(camera: str, p: Params) -> None:
 @router.get("/cameras/{camera}/dedup/state")
 def state(camera: str, feature: str) -> dict:
     require_feature(camera, feature)
+    scatter.prewarm()  # UMAP's first use imports and compiles for ~20 s: do it while the user is on this page
     backbones = embedding.backbones()
     result = _current_result(camera, feature)
     return {

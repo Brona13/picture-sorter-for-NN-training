@@ -78,13 +78,13 @@ export default function RoiCanvas({ imageUrl, mode, box, onChange, others = [], 
     <div
       ref={area}
       data-testid="roi-canvas"
-      style={{ position: "relative", maxWidth, lineHeight: 0, touchAction: "none", userSelect: "none" }}
+      style={{ position: "relative", width: "fit-content", maxWidth, lineHeight: 0, touchAction: "none", userSelect: "none" }}
       onPointerDown={mode === "draw" ? (e) => begin(e, (start) => ({ kind: "draw", start })) : undefined}
       onPointerMove={onPointerMove}
       onPointerUp={end}
       onPointerCancel={end}
     >
-      <img src={imageUrl} alt="Frame to draw on" draggable={false} style={{ width: "100%", display: "block" }} />
+      <img src={imageUrl} alt="Frame to draw on" draggable={false} style={{ maxWidth: "100%", display: "block" }} />
       {others.map((o) => (
         <div
           key={o.name}
