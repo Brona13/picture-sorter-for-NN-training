@@ -13,6 +13,9 @@
 # folder-import endpoint reads any directory path the caller names, and there is
 # no authentication.
 #
+# Environment: .venv-rocm if present, else .venv (override with
+# PICTURE_SORTER_VENV=.venv).
+#
 # Calling the venv's python by path avoids the failure where a system-wide
 # Python without cv2/skimage serves a page and then fails inside it.
 
@@ -21,12 +24,21 @@ set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$PROJECT_ROOT"
 
-VENV_PYTHON="$PROJECT_ROOT/.venv/bin/python"
+# Prefer the AMD ROCm environment when it exists (Linux GPU build); otherwise
+# the default CPU .venv. PICTURE_SORTER_VENV=.venv forces the CPU environment.
+if [ -n "${PICTURE_SORTER_VENV:-}" ]; then
+    VENV_NAME="$PICTURE_SORTER_VENV"
+elif [ -x "$PROJECT_ROOT/.venv-rocm/bin/python" ]; then
+    VENV_NAME=".venv-rocm"
+else
+    VENV_NAME=".venv"
+fi
+VENV_PYTHON="$PROJECT_ROOT/$VENV_NAME/bin/python"
 BACKEND_DIR="$PROJECT_ROOT/app/backend"
 FRONTEND_DIR="$PROJECT_ROOT/app/frontend"
 
 if [ ! -x "$VENV_PYTHON" ]; then
-    echo "No virtual environment found at .venv/" >&2
+    echo "No virtual environment found at $VENV_NAME/" >&2
     echo >&2
     echo "The environment is machine-specific and is never cloned. Create it:" >&2
     echo "    python3 -m venv .venv" >&2
@@ -54,7 +66,7 @@ if [ -n "$missing" ]; then
     echo "    $missing" >&2
     echo >&2
     echo "Install them with:" >&2
-    echo "    .venv/bin/pip install -r requirements.txt" >&2
+    echo "    $VENV_NAME/bin/pip install -r requirements.txt" >&2
     exit 1
 fi
 
@@ -93,6 +105,7 @@ case "$mode" in
             echo "Frontend not built yet - building it first..." >&2
             build_frontend
         fi
+        echo "Using $VENV_NAME" >&2
         exec "$VENV_PYTHON" -m uvicorn api.main:app --app-dir "$BACKEND_DIR" \
             --host 127.0.0.1 --port 8999 "$@"
         ;;

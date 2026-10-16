@@ -515,7 +515,7 @@ python3 -m venv .venv-rocm
 .venv-rocm/bin/pip install -r requirements.txt -r requirements-detector.txt
 ```
 
-Activate it (`source .venv-rocm/bin/activate`) before `./run.sh` to use the GPU.
+`./run.sh` uses `.venv-rocm` automatically when it exists; set `PICTURE_SORTER_VENV=.venv` to force the CPU environment.
 Check it with `.venv-rocm/bin/python -c "import torch; print(torch.version.hip, torch.cuda.is_available())"`.
 If the card is not recognised, try `HSA_OVERRIDE_GFX_VERSION` set to the nearest
 supported architecture (for RDNA3, `11.0.0`).
