@@ -3,6 +3,7 @@ import { api, CardData, OutlierResult } from "../api";
 import { useJob } from "../useJob";
 import WheelRange from "../WheelRange";
 import Card, { MAX_SHORTCUT_CLASSES } from "./Card";
+import FrameViewer from "./FrameViewer";
 import Pager, { PagerSettings } from "./Pager";
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -101,6 +102,7 @@ export function OutlierResults({
 }) {
   const { camera, feature, result, marks, setMarks, gone, setGone, page, setPage } = o;
   const [busy, setBusy] = useState<string | null>(null);
+  const [viewing, setViewing] = useState<string | null>(null);
   if (!result) return null;
 
   const rows = result.scores.filter((s) => !gone.has(s.frame));
@@ -154,6 +156,7 @@ export function OutlierResults({
             card={cardOf(s.frame)}
             busy={busy === s.frame}
             fullSize
+            onOpen={() => setViewing(s.frame)}
             caption={`outlier ${s.score.toFixed(3)}`}
             onLabel={(cls) => act(s.frame, () => api.setLabel(camera, feature, s.frame, cls), keep)}
             onGolden={(on) => act(s.frame, () => api.setGolden(camera, feature, s.frame, on), keep)}
@@ -172,6 +175,33 @@ export function OutlierResults({
         ))}
       </ul>
       <Pager grid={{ page: cur, per_page: perPage, n_pages: nPages, total: rows.length }} settings={grid} onPage={setPage} onSettings={onGrid} where="outliers bottom" />
+      {viewing && (
+        <FrameViewer
+          camera={camera}
+          frames={rows.map((r) => r.frame)}
+          start={viewing}
+          classes={result.classes}
+          marks={(f) => ({ label: marks[f]?.label ?? null, golden: marks[f]?.golden ?? null })}
+          busy={busy !== null}
+          onLabel={(f, cls) => act(f, () => api.setLabel(camera, feature, f, cls), keep)}
+          onGolden={(f, on) => act(f, () => api.setGolden(camera, feature, f, on), keep)}
+          onDelete={(f) =>
+            act(
+              f,
+              () => api.deleteFrame(camera, feature, f),
+              () => {
+                setGone((g) => new Set(g).add(f));
+                onDeleted(f);
+              },
+            )
+          }
+          onShow={(f) => {
+            const at = rows.findIndex((r) => r.frame === f);
+            if (at >= 0) setPage(Math.floor(at / perPage) + 1);
+          }}
+          onClose={() => setViewing(null)}
+        />
+      )}
     </div>
   );
 }

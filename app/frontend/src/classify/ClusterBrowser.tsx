@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api, CardData, DedupResult } from "../api";
 import Card, { MAX_SHORTCUT_CLASSES } from "./Card";
+import FrameViewer from "./FrameViewer";
 import { clusterColor } from "./colors";
 import Pager, { PagerSettings } from "./Pager";
 
@@ -43,6 +44,7 @@ export default function ClusterBrowser({
   const [selected, setSelected] = useState<string>("");
   const [pages, setPages] = useState<Record<string, number>>({});
   const [busy, setBusy] = useState<string | null>(null);
+  const [viewing, setViewing] = useState<string | null>(null);
 
   const entries = [
     ...result.clusters.map((c) => ({ key: String(c.id), id: c.id, title: `Cluster ${c.id}`, frames: c.members, rep: picks[c.id] && c.members.includes(picks[c.id]) ? picks[c.id] : c.representative })),
@@ -77,6 +79,11 @@ export default function ClusterBrowser({
     cluster: null,
   });
   const keep = (r: { card: { frame: string; label: string | null; golden: string | null } }) => onMarks(r.card.frame, { label: r.card.label, golden: r.card.golden });
+
+  const showFrame = (f: string) => {
+    const at = cur.frames.indexOf(f);
+    if (at >= 0) setPages((s) => ({ ...s, [cur.key]: Math.floor(at / perPage) + 1 }));
+  };
 
   return (
     <div data-testid="cluster-browser" style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
@@ -115,7 +122,7 @@ export default function ClusterBrowser({
         </h4>
         <p style={{ margin: "0 0 4px", fontSize: 12 }}>
           ⌨ Hover a card and press {result.classes.slice(0, MAX_SHORTCUT_CLASSES).map((c, i) => `${i + 1} = ${c}`).join(", ")}, 0 = clear label, the key left of 1 = golden,
-          Delete = delete the frame. Click a picture to open it full size.
+          Delete = delete the frame. Click a picture to look at it full size (zoom, ← → to browse, Esc to close).
         </p>
         <Pager
           grid={{ page, per_page: perPage, n_pages: nPages, total: cur.frames.length }}
@@ -135,6 +142,7 @@ export default function ClusterBrowser({
               card={cardOf(f)}
               busy={busy === f}
               fullSize
+              onOpen={() => setViewing(f)}
               isRep={cur.id >= 0 && f === cur.rep}
               onSetRep={cur.id >= 0 ? () => onPick(cur.id, f) : undefined}
               onLabel={(cls) => act(f, () => api.setLabel(camera, feature, f, cls), keep)}
@@ -152,6 +160,21 @@ export default function ClusterBrowser({
           where="bottom"
         />
       </div>
+      {viewing && (
+        <FrameViewer
+          camera={camera}
+          frames={cur.frames}
+          start={viewing}
+          classes={result.classes}
+          marks={(f) => ({ label: marks[f]?.label ?? null, golden: marks[f]?.golden ?? null })}
+          busy={busy !== null}
+          onLabel={(f, cls) => act(f, () => api.setLabel(camera, feature, f, cls), keep)}
+          onGolden={(f, on) => act(f, () => api.setGolden(camera, feature, f, on), keep)}
+          onDelete={(f) => act(f, () => api.deleteFrame(camera, feature, f), () => onDeleted(f))}
+          onShow={showFrame}
+          onClose={() => setViewing(null)}
+        />
+      )}
     </div>
   );
 }

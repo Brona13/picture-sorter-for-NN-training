@@ -43,6 +43,8 @@ interface Props {
   contentHandlers?: Handlers;
   contentCursor?: string;
   onKeyDown?: (e: ReactKeyboardEvent) => void;
+  /** The 0 key resets the zoom while the pane has focus; turn it off where 0 means something else. */
+  resetOnZero?: boolean;
   /** Extra text on the tool row (coordinates, measurements). */
   info?: ReactNode;
   /** The picture and its overlays; they fill the layer (positions in %). */
@@ -68,6 +70,7 @@ export default function ZoomPane({
   contentHandlers,
   contentCursor,
   onKeyDown,
+  resetOnZero = true,
   info,
   children,
 }: Props) {
@@ -186,7 +189,7 @@ export default function ZoomPane({
   function keys(e: ReactKeyboardEvent) {
     if (e.key === "+" || e.key === "=") zoomCentre(ZOOM_STEP);
     else if (e.key === "-" || e.key === "_") zoomCentre(1 / ZOOM_STEP);
-    else if (e.key === "0") onViewChange(FIT_VIEW);
+    else if (e.key === "0" && resetOnZero) onViewChange(FIT_VIEW);
     onKeyDown?.(e);
   }
 

@@ -18,8 +18,9 @@ interface Props {
   /** Dedup cluster browser only: marks the card the representative of its cluster. */
   isRep?: boolean;
   onSetRep?: () => void;
-  /** Clicking the picture opens the full image in a new tab. */
+  /** Clicking the picture opens the full image: in the viewer when onOpen is given, else in a new tab. */
   fullSize?: boolean;
+  onOpen?: () => void;
   /** Small neutral badge under the file name, e.g. an outlier score. */
   caption?: string;
   /** Classify only: open "Find similar" with this (labeled) frame as the seed. */
@@ -53,7 +54,7 @@ function isTypingTarget(target: EventTarget | null): boolean {
   return !!el && (el.isContentEditable || ["INPUT", "SELECT", "TEXTAREA"].includes(el.tagName));
 }
 
-export default function Card({ camera, feature, classes, methods, card, busy, onLabel, onGolden, onDelete, onRestore, isRep, onSetRep, fullSize, caption, onSimilar }: Props) {
+export default function Card({ camera, feature, classes, methods, card, busy, onLabel, onGolden, onDelete, onRestore, isRep, onSetRep, fullSize, onOpen, caption, onSimilar }: Props) {
   const { frame, label, golden, deleted, bars, leanings, cluster, edge } = card;
 
   // Number keys act on the card under the mouse. The handler is reread from a ref so the window
@@ -118,7 +119,19 @@ export default function Card({ camera, feature, classes, methods, card, busy, on
           />
         );
         return fullSize ? (
-          <a href={frameImageUrl(camera, frame)} target="_blank" rel="noreferrer" title="Open the full image">
+          <a
+            href={frameImageUrl(camera, frame)}
+            target="_blank"
+            rel="noreferrer"
+            title="Open the full image"
+            onClick={(e) => {
+              // A plain click opens the viewer; ctrl/middle click still opens a tab.
+              if (onOpen && e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+                e.preventDefault();
+                onOpen();
+              }
+            }}
+          >
             {img}
           </a>
         ) : (

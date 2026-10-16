@@ -35,6 +35,7 @@ beforeEach(() => {
       const ok = (b: unknown) => new Response(JSON.stringify(b), { status: 200 });
       if (url.endsWith("/dedup/outliers")) return ok({ id: "o1", status: "queued", progress: {}, result: null, error: null });
       if (url === "/api/jobs/o1") return ok({ id: "o1", status: "done", progress: {}, result, error: null });
+      if (url.endsWith("/classify/label")) return ok({ card: { frame: body.frame, label: body.cls, golden: null, deleted: false }, counts: {} });
       if (url.endsWith("/classify/delete")) return ok({ card: { frame: body.frame, label: null, golden: null, deleted: true }, counts: {} });
       return new Response("{}", { status: 404 });
     }),
@@ -89,4 +90,18 @@ test("outlier shades scale against the 95th percentile and cap at 1", () => {
   expect(s["far.png"]).toBe(1);
   expect(s["mid.png"]).toBeCloseTo(0.25);
   expect(s["near.png"]).toBeCloseTo(0.025);
+});
+
+test("clicking a picture opens the viewer on it, in the order of the grid, and a label set there shows on the card", async () => {
+  const user = await score();
+  await user.click(within(screen.getByTestId("card-mid.png")).getByRole("link"));
+  const viewer = screen.getByRole("dialog", { name: "Full-size picture" });
+  expect(within(viewer).getByTestId("viewer-position")).toHaveTextContent("2 / 3"); // far, mid, near
+  fireEvent.keyDown(window, { key: "ArrowRight" });
+  expect(within(viewer).getByRole("img", { name: "near.png" })).toBeInTheDocument();
+  fireEvent.keyDown(window, { key: "2" });
+  await waitFor(() => expect(calls.find((c) => c.url.endsWith("/classify/label"))?.body).toMatchObject({ frame: "near.png", cls: "NG" }));
+  await waitFor(() => expect(within(screen.getByTestId("card-near.png")).getByRole("button", { name: /NG/ })).toHaveAttribute("aria-pressed", "true"));
+  fireEvent.keyDown(window, { key: "Escape" });
+  expect(screen.queryByRole("dialog")).toBeNull();
 });
