@@ -221,7 +221,7 @@ export default function DedupView({ camera, product }: { camera: string; product
                   onClick={() => result && change({ ...result.params })}
                   title={result ? "Restore sliders to the values used by the last computed clustering." : "Nothing to revert to — run a cluster first."}
                 >
-                  ↺ Revert sliders
+                  ↺ Revert
                 </button>
               </div>
               {clustering && (
@@ -230,10 +230,40 @@ export default function DedupView({ camera, product }: { camera: string; product
                   {Number(progress.total ?? 0)}
                 </p>
               )}
+              {result && result.clusters.length > 0 && (
+                <div style={{ marginTop: 8 }}>
+                  <button
+                    disabled={wouldMute === 0 || active !== "clusters"}
+                    title={active !== "clusters" ? "Press Cluster to bring the clusters back first." : "Mute every cluster member except its representative. Nothing is deleted."}
+                    onClick={() =>
+                      api
+                        .dedupApply(camera, feature, validPicks)
+                        .then((r) => {
+                          setNotice(
+                            `Muted ${r.muted} frame(s)${r.unmuted ? ` · unmuted ${r.unmuted} that no longer belong to a cluster` : ""}` +
+                              (r.skipped_labeled || r.skipped_golden
+                                ? ` · skipped: ${[r.skipped_labeled && `${r.skipped_labeled} labeled`, r.skipped_golden && `${r.skipped_golden} golden`].filter(Boolean).join(", ")}`
+                                : "") +
+                              ".",
+                          );
+                          setResult(null);
+                          setPicks({});
+                          load();
+                        })
+                        .catch((e: unknown) => setError(msg(e)))
+                    }
+                  >
+                    🔇 Apply mute
+                  </button>
+                  <div data-testid="mute-status" style={{ fontSize: 12, marginTop: 2 }}>
+                    {wouldMute} frame(s) will be muted
+                  </div>
+                </div>
+              )}
               {result && bits.length > 0 && (
                 <p role="status" style={{ fontSize: 12 }}>
                   ⚠ <strong>Sliders changed since the last cluster</strong> — clusters below still show the previous run ({bits.join(", ")}). Click{" "}
-                  <strong>🔍 Cluster</strong> to recompute, or <strong>↺ Revert sliders</strong> to match what's shown.
+                  <strong>🔍 Cluster</strong> to recompute, or <strong>↺ Revert</strong> to match what's shown.
                 </p>
               )}
             </PanelGroup>
@@ -378,7 +408,7 @@ export default function DedupView({ camera, product }: { camera: string; product
           {result.clusters.length > 0 ? (
             <>
               <h3>Clusters</h3>
-              <p>The chosen representative stays visible in Classify. Every other member of the cluster will be muted on Apply.</p>
+              <p>The chosen representative stays visible in Classify. Every other member of the cluster will be muted on Apply mute.</p>
             </>
           ) : (
             <p>
@@ -409,32 +439,6 @@ export default function DedupView({ camera, product }: { camera: string; product
                 if (scatter) api.dedupScatter(camera, feature, projection).then((j) => setScatterJob(j.id)).catch((e: unknown) => setError(msg(e)));
               }}
             />
-          )}
-          {result.clusters.length > 0 && (
-            <p>
-              <button
-                disabled={wouldMute === 0}
-                onClick={() =>
-                  api
-                    .dedupApply(camera, feature, validPicks)
-                    .then((r) => {
-                      setNotice(
-                        `Muted ${r.muted} frame(s)${r.unmuted ? ` · unmuted ${r.unmuted} that no longer belong to a cluster` : ""}` +
-                          (r.skipped_labeled || r.skipped_golden
-                            ? ` · skipped: ${[r.skipped_labeled && `${r.skipped_labeled} labeled`, r.skipped_golden && `${r.skipped_golden} golden`].filter(Boolean).join(", ")}`
-                            : "") +
-                          ".",
-                      );
-                      setResult(null);
-                      setPicks({});
-                      load();
-                    })
-                    .catch((e: unknown) => setError(msg(e)))
-                }
-              >
-                🔇 Apply — mute {wouldMute} frame(s)
-              </button>
-            </p>
           )}
         </>
       )}

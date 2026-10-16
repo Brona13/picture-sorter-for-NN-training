@@ -134,7 +134,10 @@ test("cluster job shows summary and clusters; apply sends representative overrid
   // pick another representative for cluster 0 from its card
   await userEvent.click(within(screen.getByTestId("card-c.png")).getByRole("button", { name: "Make representative" }));
   expect(await screen.findByText("Cluster 0 — 3 frame(s) · rep: c.png")).toBeInTheDocument();
-  await userEvent.click(screen.getByRole("button", { name: /Apply — mute 3 frame/ }));
+  const group = screen.getByTestId("cluster-group");
+  expect(within(group).getByTestId("mute-status")).toHaveTextContent("3 frame(s) will be muted");
+  expect(screen.getAllByRole("button", { name: /Apply mute/ })).toHaveLength(1); // only in the Clusters group, not under the table
+  await userEvent.click(within(group).getByRole("button", { name: "🔇 Apply mute" }));
   await waitFor(() => expect(calls.some((c) => c.url.endsWith("/dedup/apply"))).toBe(true));
   expect(calls.find((c) => c.url.endsWith("/dedup/apply"))!.body).toEqual({ feature: "seal", picks: { 0: "c.png" } });
   expect(await screen.findByText(/Muted 3 frame\(s\) · skipped: 1 labeled\./)).toBeInTheDocument();
@@ -158,7 +161,7 @@ test("changed sliders warn that the shown clusters are stale and can be reverted
   expect(screen.queryByText(/Sliders changed since the last cluster/)).toBeNull();
   fireEvent.change(screen.getByLabelText("Min points"), { target: { value: "3" } });
   expect(await screen.findByRole("status")).toHaveTextContent("minPts 2 → 3");
-  await userEvent.click(screen.getByRole("button", { name: /Revert sliders/ }));
+  await userEvent.click(screen.getByRole("button", { name: /Revert/ }));
   await waitFor(() => expect(screen.queryByText(/Sliders changed since the last cluster/)).toBeNull());
 });
 
@@ -279,7 +282,7 @@ test("clustering lives in the panel's Clusters group, and the sliders answer the
   const panel = await screen.findByRole("complementary", { name: "Options" });
   const group = await within(panel).findByTestId("cluster-group");
   expect(within(group).getByRole("button", { name: /Cluster$/ })).toBeInTheDocument();
-  expect(within(group).getByRole("button", { name: /Revert sliders/ })).toBeDisabled();
+  expect(within(group).getByRole("button", { name: /Revert/ })).toBeDisabled();
   fireEvent.wheel(within(group).getByLabelText("Min points"), { deltaY: -100 });
   await waitFor(() => expect(calls.find((c) => c.url.includes("/dedup/settings"))?.body).toMatchObject({ min_points: 3 }));
 });
