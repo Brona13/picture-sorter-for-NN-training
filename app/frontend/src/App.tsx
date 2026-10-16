@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { NavLink, Navigate, Route, Routes, useNavigate } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { lastSession } from "./lastSession";
 import { api, ApiError, PipelineStage, RoiInfo } from "./api";
 import { FeatureContext } from "./SharedFeature";
 import StepBar from "./StepBar";
@@ -27,8 +28,21 @@ export default function App() {
   const [info, setInfo] = useState<{ version: string; released: string } | null>(null);
   // The ROI being worked on is remembered with its camera, so it is dropped when the camera changes.
   const [selected, setSelected] = useState({ camera: "", feature: "" });
-  const feature = selected.camera === camera ? selected.feature : "";
+  // Until the user picks one, the ROI last used on this camera (pages check it against what they offer).
+  const remembered = useMemo(() => lastSession.feature(camera), [camera]);
+  const feature = selected.camera === camera ? selected.feature : remembered;
   const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const knownPages = [...VIEWS, CONFIG_VIEW].map((v) => `/${v.path}`);
+  useEffect(() => {
+    if (knownPages.includes(pathname)) lastSession.setPage(pathname);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname]);
+  const startPage = knownPages.includes(lastSession.page()) ? lastSession.page() : "/overview";
+  const chooseProduct = (cam: string, p: string) => {
+    lastSession.setProduct(cam, p);
+    setProduct(p);
+  };
   const pendingProduct = useRef<string | null>(null);
 
   useEffect(() => {
@@ -43,7 +57,8 @@ export default function App() {
       .cameras()
       .then((list) => {
         setCameras(list);
-        setCamera((c) => select || c || list[0] || "");
+        const saved = lastSession.camera();
+        setCamera((c) => select || c || (list.includes(saved) ? saved : list[0]) || "");
       })
       .catch((e: unknown) => setError(describe(e)));
   }, []);
@@ -51,18 +66,27 @@ export default function App() {
   useEffect(() => loadCameras(), [loadCameras]);
 
   useEffect(() => {
+    if (camera) lastSession.setCamera(camera);
+  }, [camera]);
+
+  useEffect(() => {
     if (!camera) return;
-    setProduct(pendingProduct.current ?? "");
+    setProduct(pendingProduct.current ?? lastSession.product(camera));
     pendingProduct.current = null;
     api
       .products(camera)
-      .then(setProducts)
+      .then((list) => {
+        setProducts(list);
+        setProduct((p) => (list.includes(p) ? p : "")); // a remembered product may be gone
+      })
       .catch((e: unknown) => setError(describe(e)));
   }, [camera]);
 
   // From the Overview: work on this ROI (and its product) on the page that does the clicked stage.
   const openStage = (cam: string, roi: RoiInfo, stage: PipelineStage) => {
     const owner = roi.owner_product ?? "";
+    lastSession.setProduct(cam, owner);
+    lastSession.setFeature(cam, roi.feature);
     if (cam === camera) setProduct(owner);
     else pendingProduct.current = owner;
     setCamera(cam);
@@ -71,7 +95,7 @@ export default function App() {
   };
 
   return (
-    <FeatureContext.Provider value={{ feature, setFeature: (f) => setSelected({ camera, feature: f }) }}>
+    <FeatureContext.Provider value={{ feature, setFeature: (f) => { lastSession.setFeature(camera, f); setSelected({ camera, feature: f }); } }}>
     <div className="app">
       <nav aria-label="Sidebar" className="sidebar">
         <h1>Picture Sorter</h1>
@@ -91,7 +115,7 @@ export default function App() {
         {products.length > 0 && (
           <label>
             Product
-            <select value={product} onChange={(e) => setProduct(e.target.value)}>
+            <select value={product} onChange={(e) => chooseProduct(camera, e.target.value)}>
               <option value="">All</option>
               {products.map((p) => (
                 <option key={p}>{p}</option>
@@ -126,7 +150,7 @@ export default function App() {
         {error && <p role="alert">{error}</p>}
         <StepBar camera={camera} feature={feature} />
         <Routes>
-          <Route path="/" element={<Navigate to="/overview" replace />} />
+          <Route path="/" element={<Navigate to={startPage} replace />} />
           <Route
             path="/overview"
             element={

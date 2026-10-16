@@ -188,24 +188,22 @@ export default function OverviewView({
         <form
           onSubmit={createCamera}
           aria-label="New camera"
-          style={{ border: "1px solid var(--border)", borderRadius: "var(--radius)", background: "var(--panel)", padding: 12, margin: "8px 0", maxWidth: 560 }}
+          style={{ border: "1px solid var(--border)", borderRadius: "var(--radius)", background: "var(--panel)", padding: 12, margin: "8px 0", display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}
         >
-          <p style={{ margin: "0 0 8px" }}>
-            <label>
-              Camera name <input value={newName} onChange={(e) => setNewName(e.target.value)} autoFocus />
-            </label>
-          </p>
-          <p style={{ margin: "0 0 8px" }}>
+          <label>
+            Camera name <input value={newName} onChange={(e) => setNewName(e.target.value)} autoFocus />
+          </label>
+          <span style={{ flex: "1 1 280px", minWidth: 0 }}>
             Tags <TagEditor tags={newTags} suggestions={allTags} onChange={setNewTags} label="New camera tag" />
-          </p>
-          <p style={{ margin: 0 }}>
+          </span>
+          <span style={{ display: "flex", gap: 8 }}>
             <button type="submit" disabled={!newName.trim()}>
               Create and add pictures →
-            </button>{" "}
+            </button>
             <button type="button" onClick={() => setWizard(false)}>
               Cancel
             </button>
-          </p>
+          </span>
         </form>
       )}
       {tagCounts.length > 0 && (

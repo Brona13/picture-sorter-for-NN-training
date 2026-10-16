@@ -78,6 +78,8 @@ See [[data-model]] for the canonical entities and invariants.
 
 - Cameras are created on the Overview page (**New camera** wizard: name, tags, then straight to Ingest); the Ingest page no longer has a create form (v1.25.0)
 - Tags per camera (`tags.py`, `settings` key `tags`, `GET /api/tags`, `GET/PUT /api/cameras/{camera}/tags`, `tags` in `/api/overview` and in `POST /api/cameras`); case-insensitive, at most 20 tags of 40 characters; Overview filters by tags with combined logic: each chip cycles off → required (✓) → excluded (✕), and a camera is shown when it has every required tag and none of the excluded ones (v1.28.0) (`TagEditor.tsx`, `OverviewView.tsx`)
+- The **New camera** form lays name, tags and the two buttons on one line across the page (wrapping on narrow windows)
+- The app remembers what you were working on, in this browser's `localStorage` (`lastSession.ts`, keys `picturesorter.*`): the last camera, the product and ROI per camera, and the last page (the root `/` opens it instead of the Overview). A refresh or server restart therefore resumes there; a remembered camera, product or ROI that no longer exists falls back to the first one (v1.30.0). It is per browser, not per server
 
 ### Ingest
 

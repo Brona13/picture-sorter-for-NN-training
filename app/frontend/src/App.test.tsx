@@ -195,3 +195,33 @@ test("a product-owned ROI opens with its product selected, on this camera and on
   await waitFor(() => expect(screen.getByLabelText("Camera")).toHaveValue("camB"));
   await waitFor(() => expect(screen.getByLabelText("Product")).toHaveValue("Q"));
 });
+
+test("remembers the last camera and product across a reload, and lands on the last page from the root", async () => {
+  const first = render(
+    <MemoryRouter initialEntries={["/classify"]}>
+      <App />
+    </MemoryRouter>,
+  );
+  await screen.findByLabelText("Product");
+  await userEvent.selectOptions(screen.getByLabelText("Product"), "P2");
+  first.unmount();
+
+  render(
+    <MemoryRouter initialEntries={["/"]}>
+      <App />
+    </MemoryRouter>,
+  );
+  await waitFor(() => expect(screen.getByLabelText("Product")).toHaveValue("P2"));
+  expect(screen.getByLabelText("Camera")).toHaveValue("camA");
+  expect(screen.getByRole("link", { name: /Classify/ })).toHaveAttribute("aria-current", "page");
+});
+
+test("a remembered camera that no longer exists falls back to the first one", async () => {
+  localStorage.setItem("picturesorter.camera", "gone");
+  render(
+    <MemoryRouter>
+      <App />
+    </MemoryRouter>,
+  );
+  await waitFor(() => expect(screen.getByLabelText("Camera")).toHaveValue("camA"));
+});
