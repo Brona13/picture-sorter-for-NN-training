@@ -94,7 +94,6 @@ test("Delete does nothing when no card is hovered", async () => {
 
 test("the representative follows the picks and a stale pick falls back to the default", () => {
   renderIt({ picks: { 0: "m05.png", 1: "gone.png" } });
-  expect(screen.getByText(/Cluster 0 — 30 frame\(s\) · rep: m05.png/)).toBeInTheDocument();
   expect(within(screen.getByTestId("card-m05.png")).getByRole("button", { name: "Representative of this cluster" })).toBeDisabled();
 });
 

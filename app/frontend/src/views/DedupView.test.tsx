@@ -128,7 +128,7 @@ test("cluster job shows summary and clusters; apply sends representative overrid
   render(<DedupView camera="camA" />);
   await userEvent.click(await screen.findByRole("button", { name: /Cluster/ }));
   expect(calls.find((c) => c.url.endsWith("/dedup/cluster"))!.body).toEqual({ feature: "seal", ...params });
-  expect(await screen.findByText("Cluster 0 — 3 frame(s) · rep: a.png")).toBeInTheDocument();
+  expect(await within(await screen.findByTestId("card-a.png")).findByRole("button", { name: "Representative of this cluster" })).toBeInTheDocument();
   expect(screen.getByText("Would mute").nextSibling).toHaveTextContent("3");
   const nav = screen.getByRole("navigation", { name: "Clusters" });
   expect(within(nav).getByRole("button", { name: /Cluster 0/ })).toHaveTextContent("3");
@@ -138,7 +138,7 @@ test("cluster job shows summary and clusters; apply sends representative overrid
 
   // pick another representative for cluster 0 from its card
   await userEvent.click(within(screen.getByTestId("card-c.png")).getByRole("button", { name: "Make representative" }));
-  expect(await screen.findByText("Cluster 0 — 3 frame(s) · rep: c.png")).toBeInTheDocument();
+  expect(await within(screen.getByTestId("card-c.png")).findByRole("button", { name: "Representative of this cluster" })).toBeInTheDocument();
   const group = screen.getByTestId("cluster-group");
   expect(within(group).getByTestId("mute-status")).toHaveTextContent("3 frame(s) will be muted");
   expect(screen.getAllByRole("button", { name: /Apply mute/ })).toHaveLength(1); // only in the Clusters group, not under the table
@@ -146,14 +146,14 @@ test("cluster job shows summary and clusters; apply sends representative overrid
   await waitFor(() => expect(calls.some((c) => c.url.endsWith("/dedup/apply"))).toBe(true));
   expect(calls.find((c) => c.url.endsWith("/dedup/apply"))!.body).toEqual({ feature: "seal", picks: { 0: "c.png" } });
   expect(await screen.findByText(/Muted 3 frame\(s\) · skipped: 1 labeled\./)).toBeInTheDocument();
-  expect(screen.queryByText(/Cluster 0 —/)).toBeNull(); // result consumed
+  expect(screen.queryByTestId("cluster-browser")).toBeNull(); // result consumed
 });
 
 test("the unique frames get their own entry in the list and are never offered as representatives", async () => {
   state = baseState({ result });
   render(<DedupView camera="camA" />);
   await userEvent.click(await screen.findByRole("button", { name: /^Unique/ }));
-  expect(await screen.findByText("Unique — 1 frame(s) · never muted")).toBeInTheDocument();
+  expect(await screen.findByRole("button", { name: /^Unique/ })).toHaveAttribute("aria-current", "true");
   const card = screen.getByTestId("card-f.png");
   expect(within(card).queryByRole("button", { name: /representative/i })).toBeNull();
   expect(within(card).getByText(/reference/)).toBeInTheDocument(); // golden mark from the result's marks
@@ -162,7 +162,7 @@ test("the unique frames get their own entry in the list and are never offered as
 test("changed sliders warn that the shown clusters are stale and can be reverted", async () => {
   state = baseState({ result });
   render(<DedupView camera="camA" />);
-  await screen.findByText("Cluster 0 — 3 frame(s) · rep: a.png");
+  await screen.findByTestId("cluster-browser");
   expect(screen.queryByText(/Sliders changed since the last cluster/)).toBeNull();
   fireEvent.change(screen.getByLabelText("Min points"), { target: { value: "3" } });
   expect(await screen.findByRole("status")).toHaveTextContent("minPts 2 → 3");

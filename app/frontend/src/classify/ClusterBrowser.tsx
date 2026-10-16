@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { api, CardData, DedupResult } from "../api";
-import Card, { MAX_SHORTCUT_CLASSES } from "./Card";
+import Card from "./Card";
 import FrameViewer from "./FrameViewer";
 import { clusterColor } from "./colors";
 import Pager, { PagerSettings } from "./Pager";
@@ -11,7 +11,7 @@ export type Marks = DedupResult["marks"];
 const UNIQUE = "unique";
 
 /**
- * Dedup clusters as a master/detail view: a row of tabs for the clusters ("0 (12)", ... and "Unique (n)")
+ * Dedup clusters as a master/detail view: a row of equal-width tabs for the clusters ("0 (12)", ... and "Unique (n)")
  * above the selected one's pictures as a paged grid of the same cards Classify
  * uses. Each card can be labeled, made golden, made the cluster's representative, or deleted;
  * the grid size is shared by all clusters, the page is remembered per cluster.
@@ -87,37 +87,40 @@ export default function ClusterBrowser({
 
   return (
     <div data-testid="cluster-browser">
-      <nav aria-label="Clusters" style={{ display: "flex", flexWrap: "wrap", gap: 4, margin: "0 0 10px" }}>
-        {entries.map((e) => (
-          <button
-            key={e.key}
-            type="button"
-            aria-current={e.key === cur.key ? "true" : undefined}
-            aria-label={e.id < 0 ? `Unique, ${e.frames.length} frame(s)` : `Cluster ${e.id}, ${e.frames.length} frame(s)`}
-            onClick={() => setSelected(e.key)}
-            style={{
-              padding: "3px 10px",
-              borderRadius: 4,
-              border: "1px solid var(--border)",
-              borderBottom: `4px solid ${e.id < 0 ? "rgba(120,120,120,.6)" : clusterColor(e.id)}`,
-              background: e.key === cur.key ? "rgba(26,115,232,.14)" : "transparent",
-              fontWeight: e.key === cur.key ? 600 : 400,
-              cursor: "pointer",
-            }}
-          >
-            {e.id < 0 ? "Unique" : e.id} <span style={{ opacity: 0.65 }}>({e.frames.length})</span>
-          </button>
-        ))}
+      <nav aria-label="Clusters" style={{ display: "flex", gap: 4, margin: "0 0 10px", overflowX: "auto" }}>
+        {entries.map((e) => {
+          const selectedTab = e.key === cur.key;
+          return (
+            <button
+              key={e.key}
+              type="button"
+              aria-current={selectedTab ? "true" : undefined}
+              aria-label={e.id < 0 ? `Unique, ${e.frames.length} frame(s)` : `Cluster ${e.id}, ${e.frames.length} frame(s)`}
+              onClick={() => setSelected(e.key)}
+              style={{
+                // every tab is as wide as "Unique (n)"; with many clusters they shrink together, down to a floor
+                flex: "0 1 104px",
+                minWidth: 56,
+                padding: "4px 8px",
+                borderRadius: 4,
+                border: `1px solid ${selectedTab ? "var(--accent)" : "var(--border)"}`,
+                borderBottom: `4px solid ${e.id < 0 ? "rgba(120,120,120,.6)" : clusterColor(e.id)}`,
+                background: selectedTab ? "var(--accent)" : "transparent",
+                color: selectedTab ? "var(--accent-fg)" : "inherit",
+                fontWeight: selectedTab ? 700 : 400,
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                cursor: "pointer",
+              }}
+            >
+              {e.id < 0 ? "Unique" : e.id} <span style={{ opacity: selectedTab ? 0.9 : 0.65 }}>({e.frames.length})</span>
+            </button>
+          );
+        })}
       </nav>
 
       <div>
-        <h4 style={{ margin: "0 0 4px" }}>
-          {cur.title} — {cur.frames.length} frame(s){cur.id >= 0 ? ` · rep: ${cur.rep}` : " · never muted"}
-        </h4>
-        <p style={{ margin: "0 0 4px", fontSize: 12 }}>
-          ⌨ Hover a card and press {result.classes.slice(0, MAX_SHORTCUT_CLASSES).map((c, i) => `${i + 1} = ${c}`).join(", ")}, 0 = clear label, the key left of 1 = golden,
-          Delete = delete the frame. Click a picture to look at it full size (zoom, ← → to browse, Esc to close).
-        </p>
         <Pager
           grid={{ page, per_page: perPage, n_pages: nPages, total: cur.frames.length }}
           settings={grid}
