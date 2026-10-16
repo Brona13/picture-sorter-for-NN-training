@@ -101,8 +101,9 @@ body {
 .right-panel-toggle { display: block; margin-left: auto; padding: 0 8px; line-height: 1.4; }
 .right-panel-body label { display: block; color: var(--muted); font-size: 12px; margin-top: 4px; }
 .right-panel-body select { width: 100%; margin-top: 2px; }
-.panel-group { margin-top: 10px; padding-top: 6px; border-top: 1px solid var(--border); }
-.panel-group.active { background: color-mix(in srgb, var(--accent) 14%, var(--panel)); border-radius: 6px; padding: 6px; margin-left: -4px; margin-right: -4px; }
+/* Open or closed, active or not, a group has the same box, so its buttons never reflow when it becomes active. */
+.panel-group { margin: 10px -4px 0; padding: 6px; border: 0; border-top: 1px solid var(--border); border-radius: 0; background: transparent; }
+.panel-group.active { background: color-mix(in srgb, var(--accent) 14%, var(--panel)); border-radius: 6px; border-top-color: transparent; }
 .panel-group-tag { font-weight: 400; color: var(--accent); }
 .panel-group > summary { cursor: pointer; font-weight: 600; font-size: 12px; }
 .right-panel-body input[type="range"] { width: 100%; }
