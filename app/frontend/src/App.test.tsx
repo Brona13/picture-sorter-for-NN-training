@@ -48,7 +48,7 @@ test("shows cameras, products and view navigation; redirects to Overview", async
   expect(await screen.findByRole("heading", { name: "Overview" })).toBeInTheDocument();
   await waitFor(() => expect(screen.getByLabelText("Camera")).toHaveValue("camA"));
   expect(await screen.findByLabelText("Product")).toBeInTheDocument();
-  for (const label of ["Overview", "Status", "Ingest", "ROI editor", "Classify", "Insights", "Versions", "Dedup"]) {
+  for (const label of ["Overview", "Status", "Ingest", "ROI editor", "Classify", "Insights", "Versions", "Dedup", "Verdict"]) {
     expect(screen.getByRole("link", { name: label })).toBeInTheDocument();
   }
   // Configuration is the last link in the sidebar

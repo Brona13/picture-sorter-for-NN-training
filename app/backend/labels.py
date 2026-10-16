@@ -41,8 +41,24 @@ def frame_hash(camera: str, frame: str, hmap: dict[str, str] | None = None) -> s
         return ""
 
 
+# Where a label was set, shown on the Verdict page. Callers that know the page (Dedup, Outliers, ...) pass it.
+_DEFAULT_VIA = {
+    "manual": "Classify",
+    "bulk": "Classify bulk",
+    "auto": "Classify auto-assign",
+    "suggest": "Classify suggestion",
+    "similar": "Find similar",
+    "revert": "Versions revert",
+    "golden": "Classify",
+}
+
+
+def _via(source: str, via: str | None) -> str:
+    return (via or _DEFAULT_VIA.get(source, "")).strip()[:40]
+
+
 def set_label(
-    camera: str, feature: str, frame: str, cls: str, source: str = "manual"
+    camera: str, feature: str, frame: str, cls: str, source: str = "manual", via: str | None = None
 ) -> None:
     """Set current label and keep an existing golden in the same class."""
     if not cls:
@@ -54,11 +70,11 @@ def set_label(
     try:
         con.execute("BEGIN IMMEDIATE")
         con.execute(
-            "INSERT INTO labels(camera,feature,frame,hash,class,source,updated) "
-            "VALUES(?,?,?,?,?,?,?) ON CONFLICT(camera,feature,frame) DO UPDATE SET "
+            "INSERT INTO labels(camera,feature,frame,hash,class,source,updated,via) "
+            "VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(camera,feature,frame) DO UPDATE SET "
             "hash=excluded.hash,class=excluded.class,source=excluded.source,"
-            "updated=excluded.updated",
-            (camera, feature, frame, h, cls, source, updated),
+            "updated=excluded.updated,via=excluded.via",
+            (camera, feature, frame, h, cls, source, updated, _via(source, via)),
         )
         con.execute(
             "UPDATE goldens SET hash=?,class=?,updated=? "
@@ -75,7 +91,7 @@ def set_label(
 
 
 def set_labels_bulk(
-    camera: str, feature: str, frames: list[str], cls: str, source: str = "bulk"
+    camera: str, feature: str, frames: list[str], cls: str, source: str = "bulk", via: str | None = None
 ) -> int:
     if not frames:
         return 0
@@ -86,17 +102,17 @@ def set_labels_bulk(
     updated = time.time()
     hmap = hash_map(camera)
     rows = [
-        (camera, feature, frame, frame_hash(camera, frame, hmap), cls, source, updated)
+        (camera, feature, frame, frame_hash(camera, frame, hmap), cls, source, updated, _via(source, via))
         for frame in frames
     ]
     con = db.connect()
     try:
         con.execute("BEGIN IMMEDIATE")
         con.executemany(
-            "INSERT INTO labels(camera,feature,frame,hash,class,source,updated) "
-            "VALUES(?,?,?,?,?,?,?) ON CONFLICT(camera,feature,frame) DO UPDATE SET "
+            "INSERT INTO labels(camera,feature,frame,hash,class,source,updated,via) "
+            "VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(camera,feature,frame) DO UPDATE SET "
             "hash=excluded.hash,class=excluded.class,source=excluded.source,"
-            "updated=excluded.updated",
+            "updated=excluded.updated,via=excluded.via",
             rows,
         )
         con.executemany(
@@ -104,7 +120,7 @@ def set_labels_bulk(
             "WHERE camera=? AND feature=? AND frame=?",
             [
                 (h, cls, updated, camera, feature, frame)
-                for _, _, frame, h, _, _, _ in rows
+                for _, _, frame, h, _, _, _, _ in rows
             ],
         )
         con.commit()
@@ -204,10 +220,10 @@ def mark_golden(camera: str, feature: str, frame: str, cls: str) -> None:
     try:
         con.execute("BEGIN IMMEDIATE")
         con.execute(
-            "INSERT INTO labels(camera,feature,frame,hash,class,source,updated) "
-            "VALUES(?,?,?,?,?,'golden',?) ON CONFLICT(camera,feature,frame) DO UPDATE SET "
+            "INSERT INTO labels(camera,feature,frame,hash,class,source,updated,via) "
+            "VALUES(?,?,?,?,?,'golden',?,?) ON CONFLICT(camera,feature,frame) DO UPDATE SET "
             "hash=excluded.hash,class=excluded.class,updated=excluded.updated",
-            (camera, feature, frame, h, cls, updated),
+            (camera, feature, frame, h, cls, updated, _via("golden", None)),
         )
         con.execute(
             "INSERT INTO goldens(camera,feature,frame,hash,class,updated) VALUES(?,?,?,?,?,?) "

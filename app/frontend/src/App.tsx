@@ -15,6 +15,7 @@ import IngestView from "./views/IngestView";
 import RoiEditorView from "./views/RoiEditorView";
 import OverviewView from "./views/OverviewView";
 import StatusView from "./views/StatusView";
+import VerdictView from "./views/VerdictView";
 import VersionsView from "./views/VersionsView";
 
 export default function App() {
@@ -153,6 +154,7 @@ export default function App() {
             path="/roi"
             element={<RoiEditorView camera={camera} product={product || undefined} />}
           />
+          <Route path="/verdict" element={<VerdictView camera={camera} />} />
           <Route
             path="/classify"
             element={<ClassifyView camera={camera} product={product || undefined} />}

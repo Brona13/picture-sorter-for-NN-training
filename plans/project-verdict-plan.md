@@ -12,7 +12,7 @@ last_updated: 2026-10-16
 
 ## Releases
 - v1.25.0 — New camera wizard on Overview, tags per camera with filter. Done.
-- v1.26.0 — verdict model, Verdict page, progress on camera cards, label origin and page (schema v8).
+- v1.26.0 — verdict model, Verdict page, progress on camera cards, label origin and page (schema v8). Done.
 - v1.27.0 — project versions and export from verdicts.
 
 ## Verdict model

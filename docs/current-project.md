@@ -199,6 +199,14 @@ set at once.
 - Most isolated frames listed first as cards (label, golden, delete); the 2D projection can be coloured by the score
 - Derived on demand (`outliers.py`, `api/outliers_api.py`, `classify/OutlierPanel.tsx`); no stored state. A review aid, not a verdict; independent of the clustering parameters
 
+### Verdicts (v1.26.0)
+
+- One OK / NG verdict per picture (`verdicts.py`, `api/verdicts_api.py`, `views/VerdictView.tsx`, `VerdictBar.tsx`): inputs are the OK / NG labels of the quality ROIs; all equal = automatic verdict, any mix = contradiction, none = open. Derived on read; only the user's decisions are stored (`verdict_decisions`, schema v8) with a signature of the inputs, so a later label change makes the decision stale
+- Labels record where they were set (`labels.via`: Classify, Classify bulk, Classify auto-assign, Dedup, Find similar, ...; older labels show "page unknown")
+- Endpoints: `GET /api/cameras/{camera}/verdicts/summary`, `GET /api/cameras/{camera}/verdicts?status=&page=&per_page=`, `PUT /api/cameras/{camera}/verdicts/decision`; `/api/overview` carries the summary per camera
+- Overview shows the bar (OK, NG, contradictions, stale, open, duplicates = open and muted by Dedup) and the deleted count
+- Not yet: export and project versions from verdicts (v1.27.0, `plans/project-verdict-plan.md`)
+
 ### Insights
 
 - Method-level comparison of current scored results

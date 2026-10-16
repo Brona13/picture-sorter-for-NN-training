@@ -8,6 +8,7 @@ export const VIEWS = [
   { path: "dedup", label: "Dedup", icon: "🧹" },
   { path: "classify", label: "Classify", icon: "🏷️" },
   { path: "insights", label: "Insights", icon: "💡" },
+  { path: "verdict", label: "Verdict", icon: "⚖️" },
   { path: "augmentation", label: "Augmentation", icon: "🔀" },
   { path: "versions", label: "Versions", icon: "📦" },
 ] as const;

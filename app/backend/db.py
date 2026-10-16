@@ -17,7 +17,7 @@ import config
 import perf
 
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 
 class DatabaseResetRequired(RuntimeError):
@@ -60,6 +60,7 @@ CREATE TABLE IF NOT EXISTS labels (
     class   TEXT NOT NULL,
     source  TEXT NOT NULL DEFAULT 'manual',
     updated REAL NOT NULL,
+    via     TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (camera, feature, frame)
 );
 CREATE INDEX IF NOT EXISTS idx_labels_feature ON labels(camera, feature, class);
@@ -142,6 +143,16 @@ CREATE TABLE IF NOT EXISTS version_results (
     created    REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_version_results ON version_results(version_id);
+
+CREATE TABLE IF NOT EXISTS verdict_decisions (
+    camera     TEXT NOT NULL,
+    frame      TEXT NOT NULL,
+    hash       TEXT NOT NULL DEFAULT '',
+    class      TEXT NOT NULL,
+    inputs_sig TEXT NOT NULL,
+    updated    REAL NOT NULL,
+    PRIMARY KEY (camera, frame)
+);
 
 CREATE TABLE IF NOT EXISTS settings (
     camera TEXT NOT NULL,
@@ -410,12 +421,33 @@ def _migrate_v6_to_v7(con: sqlite3.Connection) -> None:
         raise
 
 
+def _migrate_v7_to_v8(con: sqlite3.Connection) -> None:
+    """Add ``labels.via`` (the page a label was set on) and ``verdict_decisions`` (the user's own verdicts)."""
+    con.execute("BEGIN IMMEDIATE")
+    try:
+        columns = {row[1] for row in con.execute("PRAGMA table_info(labels)")}
+        if columns and "via" not in columns:
+            con.execute("ALTER TABLE labels ADD COLUMN via TEXT NOT NULL DEFAULT ''")
+        con.execute(
+            "CREATE TABLE IF NOT EXISTS verdict_decisions ("
+            "camera TEXT NOT NULL, frame TEXT NOT NULL, hash TEXT NOT NULL DEFAULT '', "
+            "class TEXT NOT NULL, inputs_sig TEXT NOT NULL, updated REAL NOT NULL, "
+            "PRIMARY KEY (camera, frame))"
+        )
+        con.execute("PRAGMA user_version = 8")
+        con.execute("COMMIT")
+    except Exception:
+        con.execute("ROLLBACK")
+        raise
+
+
 _MIGRATIONS = {
     2: _migrate_v2_to_v3,
     3: _migrate_v3_to_v4,
     4: _migrate_v4_to_v5,
     5: _migrate_v5_to_v6,
     6: _migrate_v6_to_v7,
+    7: _migrate_v7_to_v8,
 }
 
 

@@ -168,12 +168,56 @@ export interface RoiInfo {
   pipeline?: PipelineInfo;
 }
 
+export interface VerdictSummary {
+  frames: number;
+  /** Pictures that are not deleted. */
+  total: number;
+  deleted: number;
+  ok: number;
+  ng: number;
+  open: number;
+  contradiction: number;
+  stale: number;
+  /** Open pictures muted by Dedup. */
+  duplicates: number;
+}
+
+export interface VerdictInput {
+  feature: string;
+  short_name: string;
+  cls: string;
+  source: string;
+  via: string;
+  updated: number;
+}
+
+export interface VerdictItem {
+  frame: string;
+  status: "ok" | "ng" | "open" | "contradiction" | "stale";
+  bucket: string;
+  verdict: "OK" | "NG" | null;
+  kind: "auto" | "manual" | null;
+  decision: "OK" | "NG" | null;
+  inputs: VerdictInput[];
+  muted_in: string[];
+}
+
+export interface VerdictList {
+  status: string;
+  page: number;
+  per_page: number;
+  n_pages: number;
+  total: number;
+  items: VerdictItem[];
+}
+
 export interface OverviewCamera {
   camera: string;
   frame_count: number;
   /** Reference frame (or the first frame); null when the camera has no frames. */
   picture_frame: string | null;
   tags?: string[];
+  verdicts?: VerdictSummary;
   products: string[];
   classify_feature: string | null;
   rois: RoiInfo[];
@@ -809,8 +853,18 @@ export const api = {
     request<CardUpdate>(`/cameras/${encodeURIComponent(camera)}/classify/restore`, post({ feature, frame })),
   deleteFrames: (camera: string, feature: string, frames: string[], note = "") =>
     request<DeleteResult>(`/cameras/${encodeURIComponent(camera)}/classify/delete-bulk`, post({ feature, frames, note })),
-  labelFrames: (camera: string, feature: string, frames: string[], cls: string) =>
-    request<{ labeled: number }>(`/cameras/${encodeURIComponent(camera)}/classify/label-bulk`, post({ feature, frames, cls })),
+  labelFrames: (camera: string, feature: string, frames: string[], cls: string, via?: string) =>
+    request<{ labeled: number }>(`/cameras/${encodeURIComponent(camera)}/classify/label-bulk`, post({ feature, frames, cls, via })),
+  verdictSummary: (camera: string) => request<VerdictSummary>(`/cameras/${encodeURIComponent(camera)}/verdicts/summary`),
+  verdicts: (camera: string, status: string, page: number, perPage: number) =>
+    request<VerdictList>(
+      `/cameras/${encodeURIComponent(camera)}/verdicts?status=${encodeURIComponent(status)}&page=${page}&per_page=${perPage}`,
+    ),
+  verdictDecide: (camera: string, frame: string, cls: "OK" | "NG" | null) =>
+    request<{ item: VerdictItem | null; summary: VerdictSummary }>(
+      `/cameras/${encodeURIComponent(camera)}/verdicts/decision`,
+      send("PUT", { frame, cls }),
+    ),
   deletePreview: (camera: string, feature: string, frames: string[]) =>
     request<DeletePreview>(`/cameras/${encodeURIComponent(camera)}/classify/delete-preview`, post({ feature, frames })),
   restoreFrames: (camera: string, feature: string, frames: string[]) =>

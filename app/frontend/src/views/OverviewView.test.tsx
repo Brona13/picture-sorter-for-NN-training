@@ -156,3 +156,15 @@ test("New camera wizard creates the camera with its tags and hands over to the a
   await waitFor(() => expect(onCreated).toHaveBeenCalledWith("cam-new"));
   expect(calls.find((c) => c.url === "/api/cameras" && c.method === "POST")!.body).toEqual({ name: "cam new", tags: ["trial"] });
 });
+
+test("each camera card shows its verdict bar with deleted and duplicate counts", async () => {
+  const verdicts = { frames: 12, total: 10, deleted: 2, ok: 4, ng: 2, open: 1, contradiction: 1, stale: 1, duplicates: 1 };
+  install([{ ...CAMS[0], verdicts }, CAMS[1]]);
+  render(<OverviewView camera="camA" onSelectCamera={() => {}} />);
+  const bar = await screen.findByTestId("verdict-bar");
+  expect(bar).toHaveTextContent("6 of 10 with a verdict");
+  expect(within(bar).getByTestId("verdict-duplicates")).toHaveTextContent("1 duplicates");
+  expect(within(bar).getByTestId("verdict-deleted")).toHaveTextContent("2 deleted");
+  expect(within(bar).getByRole("progressbar")).toHaveAttribute("aria-valuenow", "6");
+  expect(screen.getAllByTestId("verdict-bar")).toHaveLength(1); // camB has no frames
+});

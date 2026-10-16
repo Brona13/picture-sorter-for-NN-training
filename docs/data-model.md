@@ -109,6 +109,7 @@ Scores are derived data. Each scoring method can provide nearest-class distances
 - Classical and ResNet methods remain independent opinions.
 - Scores from different method families are not blended.
 - Switching a scoring method off is non-destructive: results and vectors stay cached and are only filtered out when read; switching it on needs one Refresh scores (the classify state reports `missing_methods`). At least one installed method is always active. Dedup, Outliers, Find similar and golden suggestions use only the active ResNet backbones.
+- A picture's **verdict** (OK / NG) is derived from the OK / NG labels of the camera's quality ROIs: none = open, all equal = automatic verdict, any mix = contradiction. A user decision overrides until the inputs change (stale). Deleted pictures have no verdict; Dedup-muted pictures without a verdict are counted as duplicates, with a verdict they keep it. Classify-role ROIs and classes other than OK / NG are ignored.
 - Cache validity includes frame content, feature, ROI geometry, vision settings (pre-processing filter and enabled object mask), and method.
 - A feature's pre-processing filter is metadata: it changes derived vectors only, never source frames, labels, or goldens. It is stored per (camera, feature) in `settings` under `vision.<feature>`; the cache key carries a signature of it only when a filter is set or the mask is enabled. Saving new settings drops the feature's `scatter_cache` and `cluster_snapshot`.
 - A feature's object mask (rectangle, circle or polygon, normalised to the ROI crop) is likewise metadata stored in `vision.<feature>`. When enabled, pixels outside it are blanked to dark grey (after the filter) before features and embeddings are computed, so scores describe the object only. It never alters source frames, labels, or goldens; a disabled mask is saved but has no effect and no cache impact.
@@ -147,7 +148,8 @@ The SQLite database is `data/picture_sorter.db`, schema version 7.
 Authoritative or indexed state:
 
 - `frames`: filename/content-hash ingest catalog
-- `labels`: current labels
+- `labels`: current labels (`via` records the page that set it)
+- `verdict_decisions`: the user's verdict for a picture (`class` OK/NG) with `inputs_sig`, a signature of which ROI said which class when it was decided; a decision whose signature no longer matches the current labels is stale. Automatic verdicts are never stored
 - `goldens`: current golden marks
 - `deleted_frames`: current camera-wide soft deletions
 - `dedup_mute`: current feature mute set

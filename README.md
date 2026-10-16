@@ -94,6 +94,7 @@ The application provides these views:
 - **Dedup** — cluster near-duplicate frames and mute the redundant ones (run before Classify; muted frames are hidden there)
 - **Classify** — label frames and compare scoring opinions
 - **Configuration** (⚙️, bottom of the menu) — tick which scoring methods (CPU, ResNet18, ResNet50) take part in the flow; see *Choosing the scoring methods*
+- **Verdict** (⚖️) — one OK / NG verdict per picture from all ROIs; decide contradictions and stale decisions (see *Project verdicts*)
 - **Insights** — compare method behavior against human labels; click a confusion-matrix number to review those frames as cards (false positives / negatives)
 - **Augmentation** — measure how far the object moves between frames and keep movement ranges for the training side (see *Augmentation ranges* below)
 - **Versions** — freeze, revert, and export dataset snapshots
@@ -347,6 +348,25 @@ Changing any setting or accepting a box makes cached scores for that feature rec
 the affected frames for a moved box). Freezing a version stores the settings in the version
 (Versions page, "vision" column); reverting restores labels and goldens, not these settings.
 Details: [Data model](docs/data-model.md).
+
+## Project verdicts
+
+A picture has one **verdict**, OK or NG, for the whole camera. It is built from the OK and NG labels that the
+quality ROIs gave the picture (labels from Classify, bulk and auto-assign, Dedup, Find similar and so on all count
+the same; classify-role ROIs and other classes are ignored for now):
+
+- no ROI labelled it: **open**;
+- every ROI that labelled it says the same: that verdict, **automatic and final**;
+- any other mix (some OK, some NG): **contradiction**. NG does not win on its own.
+
+The **⚖️ Verdict** page lists the pictures by state (it opens on contradictions). Each card shows what every ROI said,
+how it was labelled (manual, bulk, auto) and on which page. Press OK or NG to decide; your decision stands until a label
+of that picture changes, then it is marked **stale** and waits for **Keep** or a new decision. **Clear** drops your
+decision and the rule applies again. Deleted pictures are left out.
+
+Each camera card on Overview carries a bar with the pictures that have a verdict, open, contradictions, stale and
+**duplicates** (open pictures muted by Dedup, they need no label), plus the number of **deleted** pictures.
+Export from verdicts follows in a later release.
 
 ## Choosing the scoring methods
 

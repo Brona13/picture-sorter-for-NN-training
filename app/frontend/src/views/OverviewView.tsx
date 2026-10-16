@@ -4,6 +4,7 @@ import { thumbUrl } from "../classify/Card";
 import PictureSizeSlider, { usePictureSize } from "../PictureSize";
 import PipelineChips, { LabelProgress } from "../PipelineChips";
 import TagEditor from "../TagEditor";
+import VerdictBar from "../VerdictBar";
 
 const SIZE_MIN = 150;
 const SIZE_MAX = 800;
@@ -242,6 +243,7 @@ export default function OverviewView({
                 {selected ? "✓ Selected" : "Select"}
               </button>
             </header>
+            {cam.verdicts && cam.frame_count > 0 && <VerdictBar summary={cam.verdicts} />}
             <div style={{ display: "flex", flexWrap: "wrap", gap: 16, marginTop: 10, alignItems: "flex-start" }}>
               <CameraPicture
                 cam={cam}

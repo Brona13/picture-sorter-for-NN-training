@@ -458,6 +458,7 @@ class LabelFramesBody(BaseModel):
     feature: str
     frames: list[str]
     cls: str
+    via: str | None = None  # the page the selection came from (Dedup, ...), shown on the Verdict page
 
 
 @router.post("/cameras/{camera}/classify/label-bulk")
@@ -471,7 +472,7 @@ def label_bulk(camera: str, body: LabelFramesBody) -> dict:
         raise HTTPException(status_code=422, detail="No frames to label.")
     for f in frames:
         frame_path(camera, f)
-    return {"labeled": labels.set_labels_bulk(camera, body.feature, frames, body.cls)}
+    return {"labeled": labels.set_labels_bulk(camera, body.feature, frames, body.cls, via=body.via)}
 
 
 @router.post("/cameras/{camera}/classify/restore-bulk")

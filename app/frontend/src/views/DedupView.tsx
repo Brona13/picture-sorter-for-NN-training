@@ -478,7 +478,7 @@ function ScatterSelection({
   const doLabel = (cls: string) => {
     setBusy(true);
     api
-      .labelFrames(camera, feature, frames, cls)
+      .labelFrames(camera, feature, frames, cls, "Dedup")
       .then((r) => onLabeled(r.labeled, cls))
       .catch((e: unknown) => onError(msg(e)))
       .finally(() => setBusy(false));

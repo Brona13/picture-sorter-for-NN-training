@@ -13,3 +13,9 @@ document_type: session-note
 - Tags: `tags.py`, settings key `tags`; per camera; filter on Overview needs all selected tags.
 - Full design of verdicts, progress indicators (including deleted and duplicate counts) and verdict-based export: `plans/project-verdict-plan.md`. Key choices: all OK = OK, all NG = NG, anything else a contradiction; automatic verdicts final; user decisions go stale when inputs change; export moves from goldens to verdicts.
 - Unverified in a browser.
+
+## 1.26.0 (verdict model implemented)
+- Schema v8: `labels.via`, `verdict_decisions`. Verdicts derived on read in `verdicts.py`; decisions stored with an inputs signature (stale when it no longer matches).
+- Pages: Verdict (opens on contradictions), Overview camera cards carry `VerdictBar` (verdict / contradictions / stale / open / duplicates + deleted).
+- Dedup passes `via: "Dedup"` to label-bulk; other writers get a default page from their source.
+- Next: 1.27.0 project versions and verdict export. Unverified in a browser.

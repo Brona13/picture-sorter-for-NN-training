@@ -5,6 +5,7 @@ import datamodel
 import db
 import pipeline
 import tags as camera_tags
+import verdicts
 from api.cameras import require_feature
 from api.roi_api import _describe
 from fastapi import APIRouter
@@ -28,6 +29,7 @@ def overview() -> dict:
                     "frame_count": len(frames),
                     "picture_frame": ref,
                     "tags": camera_tags.get(camera),
+                    "verdicts": verdicts.summary(camera),
                     "products": datamodel.products(camera),
                     "classify_feature": datamodel.classify_feature(camera),
                     "rois": [{**_describe(camera, r, len(frames)), "pipeline": pipeline.stages(camera, r.name)} for r in rois],
