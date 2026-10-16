@@ -160,7 +160,7 @@ export default function DedupView({ camera, product }: { camera: string; product
       card={
         st && (
           <>
-            <strong data-testid="frames-in-scope">{st.frames}</strong>
+            <strong data-testid="frames-in-scope">{st.frames}</strong>{" "}
             <span>{st.frames === 1 ? "frame" : "frames"} in scope</span>
           </>
         )
