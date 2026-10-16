@@ -422,7 +422,7 @@ export default function ClassifyView({ camera, product }: { camera: string; prod
                 <small>
                   ⌨ Hover a card and press{" "}
                   {classes.slice(0, MAX_SHORTCUT_CLASSES).map((c, i) => `${i + 1} = ${c}`).join(", ")}
-                  {", 0 = clear label, the key left of 1 = golden on/off"} (no clicking needed).
+                  {", 0 = clear label, the key left of 1 = golden on/off"} (no clicking needed). Hold a class key (or 0) and move the mouse over cards to paint: unlabeled cards get that label (0 clears labeled ones); labeled and golden cards are otherwise left alone.
                 </small>
               </p>
               <Pager grid={grid} settings={st.settings} onPage={setPage} onSettings={changeSetting} where="top" />

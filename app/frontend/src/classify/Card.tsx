@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { CardData, frameImageUrl } from "../api";
 import { methodTag } from "../methodTags";
 import { classColor, clusterColor } from "./colors";
+import { markPainted, paintAction, trackPaintKey } from "./paint";
 
 interface Props {
   camera: string;
@@ -58,6 +59,7 @@ export default function Card({ camera, feature, classes, methods, card, busy, on
   // Number keys act on the card under the mouse. The handler is reread from a ref so the window
   // listener only comes and goes with hovering, not with every render.
   const [hovered, setHovered] = useState(false);
+  useEffect(trackPaintKey, []);
   const latest = useRef({ classes, label, golden, busy, deleted, onLabel, onGolden, onDelete });
   latest.current = { classes, label, golden, busy, deleted, onLabel, onGolden, onDelete };
   useEffect(() => {
@@ -69,6 +71,7 @@ export default function Card({ camera, feature, classes, methods, card, busy, on
       if (!isGoldenKey && !isDeleteKey && !/^[0-9]$/.test(e.key)) return;
       const cur = latest.current;
       if (cur.busy || cur.deleted) return;
+      if (!isGoldenKey && !isDeleteKey) markPainted(frame);
       if (isDeleteKey) {
         cur.onDelete();
         e.preventDefault();
@@ -99,6 +102,10 @@ export default function Card({ camera, feature, classes, methods, card, busy, on
       data-testid={`card-${frame}`}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      onMouseMove={(e) => {
+        const act = paintAction(e.nativeEvent, { frame, label, golden, deleted, busy }, classes, MAX_SHORTCUT_CLASSES);
+        if (act !== undefined) onLabel(act);
+      }}
       style={{ border: "1px solid #ccc", borderRadius: 8, padding: 6, listStyle: "none" }}
     >
       {(() => {

@@ -126,6 +126,7 @@ See [[data-model]] for the canonical entities and invariants.
 - Phase-aware refresh status covering discovery, feature preparation, comparison, persistence, and grid presentation
 - Bounded encoded thumbnail caches with ROI/file-change invalidation and hit/miss diagnostics
 - Visible grid-card preparation plus 24-card page-size guidance for responsive labeling
+- Painting (v1.29.0, `classify/paint.ts`, used by every `Card`): hold a class key 1-9 and move the mouse over cards; each unlabeled card entered gets that label. Labeled cards keep theirs (change them with a single press) and goldens never change. Holding 0 clears labeled non-golden cards instead. Golden has no paint mode. The cursor becomes a dot in the class colour (OK green, NG red; grey cross for 0). Only real pointer movement paints (a scroll under a still pointer does not), each card acts once per stroke, and a stroke ends on key release or window blur. No stroke-level undo
 
 ### Vision settings: filter, mask, detector
 
