@@ -422,14 +422,28 @@ function RoiCard({ camera, frame, roi, scopeIsCamera, allProducts, confirming, o
             style={{ borderRadius: 8, objectFit: "cover", flex: "none" }}
           />
         )}
-        <div style={{ flex: 1 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
           <strong>{roi.short_name}</strong> <small>{chip(roi)}</small>
           <div style={{ fontSize: 12, opacity: 0.7 }}>
             {frames} · {roi.goldens} golden{roi.goldens === 1 ? "" : "s"} · {roi.labeled} labeled ·{" "}
             {roi.active_version !== null ? `v${roi.active_version} active` : "no version yet"}
           </div>
         </div>
-        <button aria-label={`Delete ${roi.short_name}`} onClick={onAskDelete}>
+        {confirming && (
+          // To the right of the row's text, so asking does not push the rows below it down.
+          <div
+            role="alertdialog"
+            aria-label={`Confirm delete ${roi.short_name}`}
+            style={{ flex: "0 1 460px", display: "flex", gap: 10, alignItems: "center", border: "1px solid #c33", borderRadius: 6, padding: "4px 8px", fontSize: 13 }}
+          >
+            <span style={{ flex: 1 }}>
+              Delete <strong>{roi.short_name}</strong> and permanently remove its {roi.labeled} labels, {roi.goldens} golden marks and {roi.version_count} versions?
+            </span>
+            <button onClick={onDelete}>✅ Yes, delete</button>
+            <button onClick={onCancelDelete}>Cancel</button>
+          </div>
+        )}
+        <button aria-label={`Delete ${roi.short_name}`} onClick={onAskDelete} disabled={confirming}>
           🗑
         </button>
       </div>
@@ -447,15 +461,6 @@ function RoiCard({ camera, frame, roi, scopeIsCamera, allProducts, confirming, o
             </label>
           ))}
         </fieldset>
-      )}
-      {confirming && (
-        <div role="alertdialog" aria-label={`Confirm delete ${roi.short_name}`}>
-          <p>
-            Delete <strong>{roi.short_name}</strong> and permanently remove its {roi.labeled} labels, {roi.goldens} golden marks and{" "}
-            {roi.version_count} versions?
-          </p>
-          <button onClick={onDelete}>✅ Yes, delete</button> <button onClick={onCancelDelete}>Cancel</button>
-        </div>
       )}
     </li>
   );

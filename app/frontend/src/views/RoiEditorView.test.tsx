@@ -107,6 +107,8 @@ test("delete asks for confirmation and states what will be lost", async () => {
   await userEvent.click(await screen.findByRole("button", { name: "Delete seal" }));
   const dialog = screen.getByRole("alertdialog");
   expect(dialog).toHaveTextContent("2 labels, 1 golden marks and 1 versions");
+  // on the same row as the bin, not in a block under the card
+  expect(dialog.parentElement).toBe(screen.getByRole("button", { name: "Delete seal" }).parentElement);
   await userEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
   expect(calls.some((c) => c.method === "DELETE")).toBe(false);
 
