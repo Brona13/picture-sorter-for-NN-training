@@ -52,3 +52,11 @@ class StatusApiTests(ApiTestCase):
         self.assertEqual(by_name["prod"]["role"], "classify")
         self.assertEqual(by_name["prod"]["classes"], ["P1", "P2"])
         self.assertEqual(by_name["shared"]["shared_products"], ["P1"])
+
+
+class DeviceApiTests(ApiTestCase):
+    def test_device_endpoint_reports_kind_label_and_name(self) -> None:
+        body = self.client.get("/api/device").json()
+        self.assertIn(body["kind"], {"amd", "nvidia", "cpu"})
+        for key in ("label", "name", "api", "hint"):
+            self.assertIn(key, body)

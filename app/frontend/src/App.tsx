@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { lastSession } from "./lastSession";
-import { api, ApiError, PipelineStage, RoiInfo } from "./api";
+import { api, ApiError, DeviceInfo, PipelineStage, RoiInfo } from "./api";
+import HardwareBadge from "./HardwareBadge";
 import { FeatureContext } from "./SharedFeature";
 import StepBar from "./StepBar";
 import { CONFIG_VIEW, VIEWS } from "./views";
@@ -26,6 +27,7 @@ export default function App() {
   const [product, setProduct] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<{ version: string; released: string } | null>(null);
+  const [device, setDevice] = useState<DeviceInfo | null>(null);
   // The ROI being worked on is remembered with its camera, so it is dropped when the camera changes.
   const [selected, setSelected] = useState({ camera: "", feature: "" });
   // Until the user picks one, the ROI last used on this camera (pages check it against what they offer).
@@ -46,6 +48,10 @@ export default function App() {
   const pendingProduct = useRef<string | null>(null);
 
   useEffect(() => {
+    api
+      .device()
+      .then(setDevice)
+      .catch(() => setDevice(null)); // cosmetic as well
     api
       .version()
       .then(setInfo)
@@ -99,11 +105,6 @@ export default function App() {
     <div className="app">
       <nav aria-label="Sidebar" className="sidebar">
         <h1>Picture Sorter</h1>
-        {info && (
-          <p className="app-version" title="Application version and release date">
-            v{info.version} · {info.released}
-          </p>
-        )}
         <label>
           Camera
           <select value={camera} onChange={(e) => setCamera(e.target.value)}>
@@ -135,16 +136,19 @@ export default function App() {
             </li>
           ))}
         </ul>
-        <ul className="sidebar-bottom">
-          <li>
-            <NavLink to={`/${CONFIG_VIEW.path}`}>
-              <span className="nav-icon" aria-hidden="true">
-                {CONFIG_VIEW.icon}
-              </span>
-              {CONFIG_VIEW.label}
+        <div className="sidebar-foot">
+          {device && <HardwareBadge info={device} />}
+          <div className="sidebar-foot-row">
+            {info && (
+              <p className="app-version" title="Application version and release date">
+                v{info.version} · {info.released}
+              </p>
+            )}
+            <NavLink to={`/${CONFIG_VIEW.path}`} className="config-link" aria-label={CONFIG_VIEW.label} title={CONFIG_VIEW.label}>
+              <span aria-hidden="true">{CONFIG_VIEW.icon}</span>
             </NavLink>
-          </li>
-        </ul>
+          </div>
+        </div>
       </nav>
       <main className="main">
         {error && <p role="alert">{error}</p>}

@@ -27,6 +27,8 @@ export const lastSession = {
   page: () => get("page"),
   setPage: (v: string) => set("page", v),
   /** The right-hand options panel is open unless the user collapsed it (shared by every page that has one). */
+  hardwareStyle: () => get("hardware.style"),
+  setHardwareStyle: (v: string) => set("hardware.style", v),
   panelCollapsed: () => get("panel.collapsed") === "1",
   setPanelCollapsed: (v: boolean) => set("panel.collapsed", v ? "1" : ""),
 };

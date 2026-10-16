@@ -62,6 +62,12 @@ def create_app() -> FastAPI:
     def version() -> dict[str, str]:
         return {"version": appinfo.VERSION, "released": appinfo.RELEASED}
 
+    @app.get("/api/device")
+    def device() -> dict[str, str]:
+        import embedding  # noqa: PLC0415 - imports torch lazily on first use
+
+        return embedding.device_info()
+
     app.include_router(cameras.router, prefix="/api")
     app.include_router(status.router, prefix="/api")
     app.include_router(overview_api.router, prefix="/api")

@@ -6,6 +6,7 @@ import ClusterBrowser, { Marks } from "../classify/ClusterBrowser";
 import { OutlierControls, OutlierResults, useOutliers } from "../classify/OutlierPanel";
 import Scatter from "../classify/Scatter";
 import SidePanel, { PanelGroup } from "../SidePanel";
+import WheelRange from "../WheelRange";
 import { useJob } from "../useJob";
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -166,6 +167,64 @@ export default function DedupView({ camera, product }: { camera: string; product
               ))}
             </select>
           </label>
+          {st && st.frames > 0 && params && (
+            <PanelGroup title="Clusters" testId="cluster-group">
+              <label>
+                Epsilon (neighborhood radius)
+                <WheelRange
+                  aria-label="Epsilon"
+                  min={st.ranges.epsilon[0]}
+                  max={st.ranges.epsilon[1]}
+                  step={0.001}
+                  value={params.epsilon}
+                  onValue={(v) => change({ epsilon: v })}
+                />
+                <span>{params.epsilon.toFixed(3)}</span>
+              </label>
+              <label>
+                Min points
+                <WheelRange
+                  aria-label="Min points"
+                  min={st.ranges.min_points[0]}
+                  max={st.ranges.min_points[1]}
+                  step={1}
+                  value={params.min_points}
+                  onValue={(v) => change({ min_points: v })}
+                />
+                <span>{params.min_points}</span>
+              </label>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+                <button
+                  disabled={clustering}
+                  onClick={() => {
+                    setNotice(null);
+                    api.dedupCluster(camera, feature, params).then((j) => setClusterJob(j.id)).catch((e: unknown) => setError(msg(e)));
+                  }}
+                >
+                  🔍 Cluster
+                </button>
+                <button
+                  disabled={bits.length === 0}
+                  onClick={() => result && change({ ...result.params })}
+                  title={result ? "Restore sliders to the values used by the last computed clustering." : "Nothing to revert to — run a cluster first."}
+                >
+                  ↺ Revert sliders
+                </button>
+              </div>
+              {clustering && (
+                <p aria-live="polite">
+                  <progress value={Number(progress.done ?? 0)} max={Number(progress.total ?? 0) || undefined} /> Embedding {Number(progress.done ?? 0)}/
+                  {Number(progress.total ?? 0)}
+                </p>
+              )}
+              {result && bits.length > 0 && (
+                <p role="status" style={{ fontSize: 12 }}>
+                  ⚠ <strong>Sliders changed since the last cluster</strong> — clusters below still show the previous run ({bits.join(", ")}). Click{" "}
+                  <strong>🔍 Cluster</strong> to recompute, or <strong>↺ Revert sliders</strong> to match what's shown.
+                </p>
+              )}
+            </PanelGroup>
+          )}
           {st && params && params.method && (
             <PanelGroup title="Outliers" testId="outlier-group">
               <OutlierControls o={outlierRun} />
@@ -189,65 +248,9 @@ export default function DedupView({ camera, product }: { camera: string; product
             <strong>{st.frames} frame(s)</strong> in scope. DBSCAN groups near-identical cutouts on their ResNet embeddings; the representative of each
             cluster stays visible in Classify, the rest are muted (never deleted).
           </p>
-          <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
-            <label>
-              Epsilon (neighborhood radius){" "}
-              <input
-                type="range"
-                aria-label="Epsilon"
-                min={st.ranges.epsilon[0]}
-                max={st.ranges.epsilon[1]}
-                step={0.001}
-                value={params.epsilon}
-                onChange={(e) => change({ epsilon: Number(e.target.value) })}
-              />{" "}
-              {params.epsilon.toFixed(3)}
-            </label>
-            <label>
-              Min points{" "}
-              <input
-                type="range"
-                aria-label="Min points"
-                min={st.ranges.min_points[0]}
-                max={st.ranges.min_points[1]}
-                step={1}
-                value={params.min_points}
-                onChange={(e) => change({ min_points: Number(e.target.value) })}
-              />{" "}
-              {params.min_points}
-            </label>
-          </div>
-          <div>
-            <button
-              disabled={clustering}
-              onClick={() => {
-                setNotice(null);
-                api.dedupCluster(camera, feature, params).then((j) => setClusterJob(j.id)).catch((e: unknown) => setError(msg(e)));
-              }}
-            >
-              🔍 Cluster
-            </button>{" "}
-            <button
-              disabled={bits.length === 0}
-              onClick={() => result && change({ ...result.params })}
-              title={result ? "Restore sliders to the values used by the last computed clustering." : "Nothing to revert to — run a cluster first."}
-            >
-              ↺ Revert sliders
-            </button>{" "}
-            <small>Neural device: {st.device_label} · vectors are cached — first pass over a new batch is the slow one.</small>
-            {clustering && (
-              <p aria-live="polite">
-                <progress value={Number(progress.done ?? 0)} max={Number(progress.total ?? 0) || undefined} /> Embedding {Number(progress.done ?? 0)}/
-                {Number(progress.total ?? 0)}
-              </p>
-            )}
-          </div>
-          {result && bits.length > 0 && (
-            <p role="status">
-              ⚠ <strong>Sliders changed since the last cluster</strong> — clusters below still show the previous run ({bits.join(", ")}). Click{" "}
-              <strong>🔍 Cluster</strong> to recompute, or <strong>↺ Revert sliders</strong> to match what's shown.
-            </p>
-          )}
+          <p>
+            <small>Neural device: {st.device_label} · vectors are cached — first pass over a new batch is the slow one. Epsilon, Min points and Cluster are in the Clusters group of the panel on the right.</small>
+          </p>
         </>
       )}
 

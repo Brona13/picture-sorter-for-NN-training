@@ -257,3 +257,13 @@ test("the Embedding, Feature and Outliers controls live in the options panel, Ou
   expect(within(group).getByRole("button", { name: "Score outliers" })).toBeInTheDocument();
   expect(within(group).getByLabelText("k neighbours")).toBeInTheDocument();
 });
+
+test("clustering lives in the panel's Clusters group, and the sliders answer the mouse wheel", async () => {
+  render(<DedupView camera="camA" />);
+  const panel = await screen.findByRole("complementary", { name: "Options" });
+  const group = await within(panel).findByTestId("cluster-group");
+  expect(within(group).getByRole("button", { name: /Cluster$/ })).toBeInTheDocument();
+  expect(within(group).getByRole("button", { name: /Revert sliders/ })).toBeDisabled();
+  fireEvent.wheel(within(group).getByLabelText("Min points"), { deltaY: -100 });
+  await waitFor(() => expect(calls.find((c) => c.url.includes("/dedup/settings"))?.body).toMatchObject({ min_points: 3 }));
+});

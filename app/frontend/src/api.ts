@@ -325,6 +325,14 @@ const send = (method: string, body?: unknown): RequestInit => ({
   body: body === undefined ? undefined : JSON.stringify(body),
 });
 
+export interface DeviceInfo {
+  kind: "amd" | "nvidia" | "cpu";
+  label: string;
+  name: string;
+  api: string;
+  hint: string;
+}
+
 export const frameImageUrl = (camera: string, frame: string) =>
   `/api/cameras/${encodeURIComponent(camera)}/frames/${encodeURIComponent(frame)}/image`;
 
@@ -730,6 +738,7 @@ export const api = {
   },
   health: () => request<{ status: string }>("/health"),
   version: () => request<{ version: string; released: string }>("/version"),
+  device: () => request<DeviceInfo>("/device"),
   configMethods: () => request<MethodsConfig>("/config/methods"),
   configSetMethods: (active: string[]) => request<MethodsConfig>("/config/methods", send("PUT", { active })),
   cameras: () => request<string[]>("/cameras"),

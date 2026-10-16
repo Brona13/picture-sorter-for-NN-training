@@ -57,7 +57,6 @@ body {
   flex-direction: column;
 }
 .sidebar h1 { font-size: 17px; margin: 0 0 16px; }
-.sidebar h1:has(+ .app-version) { margin-bottom: 2px; }
 .app-version { margin: 0 0 16px; color: var(--muted); font-size: 12px; }
 .sidebar label { display: block; margin: 0 0 10px; color: var(--muted); font-size: 12px; }
 .sidebar select { width: 100%; margin-top: 2px; }
@@ -71,7 +70,17 @@ body {
   text-decoration: none;
 }
 .sidebar .nav-icon { display: inline-block; width: 1.6em; }
-.sidebar ul.sidebar-bottom { margin-top: auto; padding-top: 16px; border-top: 1px solid var(--border); }
+.sidebar-foot { margin-top: auto; padding-top: 12px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; }
+.sidebar-foot-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.sidebar-foot .app-version { margin: 0; font-size: 11px; color: var(--muted); }
+.sidebar .config-link { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 6px; text-decoration: none; font-size: 18px; }
+.sidebar .config-link:hover { background: var(--hover); }
+.sidebar .config-link.active { background: var(--accent); color: var(--accent-fg); }
+.hw-badge { display: flex; width: 100%; padding: 8px; gap: 10px; align-items: center; text-align: left; cursor: pointer; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); color: inherit; font: inherit; }
+.hw-badge:hover { border-color: var(--hw); }
+.hw-card { flex-direction: column; text-align: center; gap: 6px; border-top: 3px solid var(--hw); }
+.hw-chip { border-left: 4px solid var(--hw); }
+.hw-banner { background: linear-gradient(100deg, color-mix(in srgb, var(--hw) 22%, var(--panel)), var(--panel) 75%); }
 .sidebar li a:hover { background: var(--hover); }
 .sidebar li a.active { background: var(--accent); color: var(--accent-fg); font-weight: 600; }
 .with-panel { display: flex; gap: 16px; align-items: flex-start; }
@@ -93,6 +102,7 @@ body {
 .panel-group { margin-top: 10px; padding-top: 6px; border-top: 1px solid var(--border); }
 .panel-group > summary { cursor: pointer; font-weight: 600; font-size: 12px; }
 .right-panel-body input[type="range"] { width: 100%; }
+.right-panel-body label > span { display: block; color: var(--fg, inherit); }
 .right-panel-body progress { display: block; width: 100%; margin-bottom: 2px; }
 .right-panel-body { overflow-wrap: anywhere; }
 .main { flex: 1; min-width: 0; padding: 20px 28px 48px; max-width: 1400px; }

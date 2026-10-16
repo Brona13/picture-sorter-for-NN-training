@@ -225,3 +225,22 @@ test("a remembered camera that no longer exists falls back to the first one", as
   );
   await waitFor(() => expect(screen.getByLabelText("Camera")).toHaveValue("camA"));
 });
+
+test("the sidebar foot holds the hardware badge, the version and an icon-only Configuration link", async () => {
+  mockFetch({
+    "/api/version": { version: "1.2.3", released: "2026-10-16" },
+    "/api/device": { kind: "amd", label: "AMD GPU", name: "AMD Radeon RX 7800 XT", api: "ROCm", hint: "" },
+    "/api/cameras": [],
+  });
+  render(
+    <MemoryRouter>
+      <App />
+    </MemoryRouter>,
+  );
+  const badge = await screen.findByTestId("hardware-badge");
+  const foot = badge.closest(".sidebar-foot") as HTMLElement;
+  expect(within(foot).getByText("v1.2.3 · 2026-10-16")).toBeInTheDocument();
+  const config = within(foot).getByRole("link", { name: "Configuration" });
+  expect(config).toHaveTextContent(/^\S{1,3}$/); // the icon only, no words
+  expect(badge.compareDocumentPosition(config) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});

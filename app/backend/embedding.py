@@ -13,6 +13,7 @@ string stays ``"cuda"`` for either; ``device_label()`` says which vendor it is.
 """
 from __future__ import annotations
 
+import platform
 import shutil
 import threading
 from functools import lru_cache
@@ -98,6 +99,44 @@ def device_label() -> str:
         elif shutil.which("rocminfo"):
             label += " — AMD GPU found, but the CPU-only PyTorch build is installed"
     return label
+
+
+def _cpu_name() -> str:
+    try:
+        with open("/proc/cpuinfo", encoding="utf-8") as f:
+            for line in f:
+                if line.lower().startswith("model name"):
+                    return line.split(":", 1)[1].strip()
+    except OSError:
+        pass
+    return platform.processor() or platform.machine() or ""
+
+
+def device_info() -> dict:
+    """What the sidebar shows about the compute device.
+
+    ``kind`` is ``amd``, ``nvidia`` or ``cpu``; ``label`` the short vendor text; ``name`` the
+    card's (or processor's) own name when it can be read; ``hint`` says when a GPU seems to be
+    present but the installed PyTorch build cannot use it.
+    """
+    backend = torch_backend()
+    if active_device() == "cuda":
+        try:
+            name = str(_torch.cuda.get_device_name(0))
+        except Exception:  # noqa: BLE001 - the name is cosmetic
+            name = ""
+        if backend == "rocm":
+            return {"kind": "amd", "label": "AMD GPU", "name": name, "api": "ROCm", "hint": ""}
+        return {"kind": "nvidia", "label": "NVIDIA GPU", "name": name, "api": "CUDA", "hint": ""}
+    hint = ""
+    if backend == "cpu":
+        if shutil.which("nvidia-smi"):
+            hint = "NVIDIA GPU found, but the CPU-only PyTorch build is installed"
+        elif shutil.which("rocminfo"):
+            hint = "AMD GPU found, but the CPU-only PyTorch build is installed"
+    elif backend == "none":
+        hint = "PyTorch is not installed"
+    return {"kind": "cpu", "label": "CPU", "name": _cpu_name(), "api": "", "hint": hint}
 
 
 # --- model registry ----------------------------------------------------------
