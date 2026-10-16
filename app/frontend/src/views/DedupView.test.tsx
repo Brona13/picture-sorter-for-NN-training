@@ -49,6 +49,22 @@ beforeEach(() => {
       if (url.includes("/dedup/settings")) return ok({ params });
       if (url.endsWith("/dedup/cluster")) return ok({ id: "c1", status: "queued", progress: {} }, 202);
       if (url === "/api/jobs/c1") return ok({ id: "c1", status: "done", progress: {}, result, error: null });
+      if (url.endsWith("/dedup/outliers")) return ok({ id: "o1", status: "queued", progress: {}, result: null, error: null }, 202);
+      if (url === "/api/jobs/o1")
+        return ok({
+          id: "o1",
+          status: "done",
+          progress: {},
+          error: null,
+          result: {
+            method: "resnet50",
+            k: 5,
+            scores: [{ frame: "far.png", score: 0.42 }],
+            summary: { min: 0.42, median: 0.42, p95: 0.42, max: 0.42 },
+            marks: {},
+            classes: ["OK", "NG"],
+          },
+        });
       if (url.endsWith("/dedup/apply")) return ok({ muted: 3, unmuted: 0, skipped_labeled: 1, skipped_golden: 0 });
       if (url.endsWith("/dedup/scatter")) return ok({ id: "s1", status: "queued", progress: {} }, 202);
       if (url === "/api/jobs/s1")
@@ -253,7 +269,7 @@ test("the Embedding, Feature and Outliers controls live in the options panel, Ou
   expect(labels[0]).toMatch(/Embedding/);
   expect(labels[1]).toMatch(/Feature/);
   const group = within(panel).getByTestId("outlier-group");
-  expect(group).toHaveProperty("open", true);
+  expect(group).toHaveProperty("open", false); // Clusters is the active function at first; Outliers waits collapsed
   expect(within(group).getByRole("button", { name: "Score outliers" })).toBeInTheDocument();
   expect(within(group).getByLabelText("k neighbours")).toBeInTheDocument();
 });
@@ -266,4 +282,37 @@ test("clustering lives in the panel's Clusters group, and the sliders answer the
   expect(within(group).getByRole("button", { name: /Revert sliders/ })).toBeDisabled();
   fireEvent.wheel(within(group).getByLabelText("Min points"), { deltaY: -100 });
   await waitFor(() => expect(calls.find((c) => c.url.includes("/dedup/settings"))?.body).toMatchObject({ min_points: 3 }));
+});
+
+test("only one function owns the centre: opening a group changes nothing, its own button switches", async () => {
+  const user = userEvent.setup();
+  render(<DedupView camera="camA" />);
+  const clusters = await screen.findByTestId("cluster-group");
+  const outliers = screen.getByTestId("outlier-group");
+  expect(clusters).toHaveAttribute("data-active", "true");
+  expect(clusters).toHaveProperty("open", true);
+  expect(outliers).toHaveAttribute("data-active", "false");
+
+  await user.click(within(clusters).getByRole("button", { name: /Cluster$/ }));
+  expect(await screen.findByTestId("cluster-browser")).toBeInTheDocument();
+
+  // Score outliers: Outliers becomes active and open, Clusters inactive and collapsed, the centre switches.
+  await user.click(within(outliers).getByText("Outliers")); // open it to look at the settings
+  expect(outliers).toHaveProperty("open", true);
+  expect(clusters).toHaveAttribute("data-active", "true"); // opening does not switch
+  expect(screen.getByTestId("cluster-browser")).toBeInTheDocument();
+  await user.click(within(outliers).getByRole("button", { name: "Score outliers" }));
+  await screen.findByText(/outlier 0\.420/);
+  expect(outliers).toHaveAttribute("data-active", "true");
+  expect(clusters).toHaveAttribute("data-active", "false");
+  expect(clusters).toHaveProperty("open", false);
+  expect(screen.queryByTestId("cluster-browser")).toBeNull();
+
+  // Back to Clusters: pressing its button shows the kept result at once while the new run computes.
+  await user.click(within(clusters).getByText("Clusters")); // open
+  await user.click(within(clusters).getByRole("button", { name: /Cluster$/ }));
+  expect(await screen.findByTestId("cluster-browser")).toBeInTheDocument();
+  expect(outliers).toHaveAttribute("data-active", "false");
+  expect(outliers).toHaveProperty("open", false);
+  expect(screen.queryByText(/outlier 0\.420/)).toBeNull();
 });

@@ -54,7 +54,8 @@ export function useOutliers({ camera, feature, method, onResult, onError }: Args
 export type OutlierState = ReturnType<typeof useOutliers>;
 
 /** k slider, "Score outliers" button and progress. */
-export function OutlierControls({ o }: { o: OutlierState }) {
+/** onStart is called when "Score outliers" is pressed, before the run begins. */
+export function OutlierControls({ o, onStart }: { o: OutlierState; onStart?: () => void }) {
   return (
     <>
       <p style={{ fontSize: 12 }}>
@@ -67,12 +68,13 @@ export function OutlierControls({ o }: { o: OutlierState }) {
       </label>{" "}
       <button
         disabled={o.running || !o.feature || !o.method}
-        onClick={() =>
+        onClick={() => {
+          onStart?.();
           api
             .dedupOutliers(o.camera, o.feature, o.method, o.k)
             .then((j) => o.setJobId(j.id))
-            .catch((e: unknown) => o.onError(msg(e)))
-        }
+            .catch((e: unknown) => o.onError(msg(e)));
+        }}
       >
         Score outliers
       </button>

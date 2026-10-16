@@ -20,6 +20,9 @@ export function drift(existing: DedupParams, now: DedupParams): string[] {
   return bits;
 }
 
+/** The functions that can own the centre of the page; one at a time. */
+type Fn = "clusters" | "outliers";
+
 /** Each frame's outlier score scaled to [0, 1] against the 95th percentile, so one extreme frame cannot wash out the rest. */
 export function outlierShades(r: OutlierResult): Record<string, number> {
   const top = Math.max(r.summary.p95, 1e-9);
@@ -43,6 +46,9 @@ export default function DedupView({ camera, product }: { camera: string; product
   const [marks, setMarks] = useState<Marks>({});
   const [outliers, setOutliers] = useState<OutlierResult | null>(null);
   const [colourByOutlier, setColourByOutlier] = useState(true);
+  // One function at a time owns the centre of the page; groups can still be opened to look at their settings.
+  const [active, setActive] = useState<Fn>("clusters");
+  const [open, setOpen] = useState<Record<Fn, boolean>>({ clusters: true, outliers: false });
   // A fresh projection resets the chart's zoom and selection; the key changes in the same render, so no remount flicker.
   const genRef = useRef<{ scatter: ScatterResult | null; gen: number }>({ scatter: null, gen: 0 });
   if (genRef.current.scatter !== scatter) genRef.current = { scatter, gen: genRef.current.gen + 1 };
@@ -115,6 +121,12 @@ export default function DedupView({ camera, product }: { camera: string; product
     api.dedupSaveSettings(camera, feature, next).catch((e: unknown) => setError(msg(e)));
   }
 
+  // Pressing a function's own button makes it the active one: the previous one deactivates and collapses.
+  function activate(fn: Fn) {
+    setOpen((o) => ({ ...o, [active]: fn === active ? o[active] : false, [fn]: true }));
+    setActive(fn);
+  }
+
   const outlierRun = useOutliers({ camera, feature, method: params?.method ?? "", onResult: setOutliers, onError: setError });
 
   if (!camera) return <p>Select a camera.</p>;
@@ -168,7 +180,7 @@ export default function DedupView({ camera, product }: { camera: string; product
             </select>
           </label>
           {st && st.frames > 0 && params && (
-            <PanelGroup title="Clusters" testId="cluster-group">
+            <PanelGroup title="Clusters" testId="cluster-group" open={open.clusters} onOpenChange={(v) => setOpen((o) => ({ ...o, clusters: v }))} active={active === "clusters"}>
               <label>
                 Epsilon (neighborhood radius)
                 <WheelRange
@@ -197,6 +209,7 @@ export default function DedupView({ camera, product }: { camera: string; product
                 <button
                   disabled={clustering}
                   onClick={() => {
+                    activate("clusters");
                     setNotice(null);
                     api.dedupCluster(camera, feature, params).then((j) => setClusterJob(j.id)).catch((e: unknown) => setError(msg(e)));
                   }}
@@ -226,8 +239,8 @@ export default function DedupView({ camera, product }: { camera: string; product
             </PanelGroup>
           )}
           {st && params && params.method && (
-            <PanelGroup title="Outliers" testId="outlier-group">
-              <OutlierControls o={outlierRun} />
+            <PanelGroup title="Outliers" testId="outlier-group" open={open.outliers} onOpenChange={(v) => setOpen((o) => ({ ...o, outliers: v }))} active={active === "outliers"}>
+              <OutlierControls o={outlierRun} onStart={() => activate("outliers")} />
             </PanelGroup>
           )}
         </>
@@ -254,7 +267,7 @@ export default function DedupView({ camera, product }: { camera: string; product
         </>
       )}
 
-      {st && params && params.method && (
+      {active === "outliers" && st && params && params.method && (
         <OutlierResults
           o={outlierRun}
           grid={st.grid}
@@ -271,7 +284,7 @@ export default function DedupView({ camera, product }: { camera: string; product
         />
       )}
 
-      {result && (
+      {active === "clusters" && result && (
         <>
           <dl style={{ display: "flex", gap: 24 }}>
             <div>

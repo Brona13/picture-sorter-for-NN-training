@@ -28,11 +28,39 @@ export default function SidePanel({ panel, children }: { panel: ReactNode; child
   );
 }
 
-/** A titled, collapsible group of related controls inside the panel. */
-export function PanelGroup({ title, defaultOpen = true, children, testId }: { title: string; defaultOpen?: boolean; children: ReactNode; testId?: string }) {
+/**
+ * A titled, collapsible group of related controls inside the panel. The page owns whether it is
+ * open, and which group is the active function (shown with a tinted background and a tag).
+ */
+export function PanelGroup({
+  title,
+  open,
+  onOpenChange,
+  active = false,
+  children,
+  testId,
+}: {
+  title: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  active?: boolean;
+  children: ReactNode;
+  testId?: string;
+}) {
   return (
-    <details className="panel-group" open={defaultOpen} data-testid={testId}>
-      <summary>{title}</summary>
+    <details
+      className={`panel-group${active ? " active" : ""}`}
+      open={open}
+      data-testid={testId}
+      data-active={active ? "true" : "false"}
+      onToggle={(e) => {
+        if (e.currentTarget.open !== open) onOpenChange(e.currentTarget.open);
+      }}
+    >
+      <summary>
+        {title}
+        {active && <span className="panel-group-tag"> ● active</span>}
+      </summary>
       {children}
     </details>
   );
