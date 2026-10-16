@@ -104,6 +104,28 @@ body {
 /* Open or closed, active or not, a group has the same box, so its buttons never reflow when it becomes active. */
 .panel-group { margin: 10px -4px 0; padding: 6px; border: 0; border-top: 1px solid var(--border); border-radius: 0; background: transparent; }
 .panel-group.active { background: color-mix(in srgb, var(--accent) 14%, var(--panel)); border-radius: 6px; border-top-color: transparent; }
+.info-tip { position: relative; float: right; font-weight: 400; }
+.info-tip-icon { width: 18px; height: 18px; padding: 0; border-radius: 50%; font-size: 12px; font-style: italic; font-weight: 700; line-height: 1; font-family: Georgia, serif; color: var(--muted); }
+.info-tip-pop {
+  display: none;
+  position: absolute;
+  right: 0;
+  top: 24px;
+  z-index: 30;
+  width: 260px;
+  padding: 8px 10px;
+  background: var(--panel);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .25);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 400;
+  line-height: 1.45;
+  text-align: left;
+}
+.info-tip:hover .info-tip-pop, .info-tip:focus-within .info-tip-pop { display: block; }
 .panel-group-tag { font-weight: 400; color: var(--accent); }
 .panel-group > summary { cursor: pointer; font-weight: 600; font-size: 12px; }
 .right-panel-body input[type="range"] { width: 100%; }

@@ -22,6 +22,26 @@ export function drift(existing: DedupParams, now: DedupParams): string[] {
   return bits;
 }
 
+const CLUSTERS_INFO = (
+  <>
+    Groups near-identical pictures: DBSCAN on the ResNet embeddings. <strong>Epsilon</strong> is how close two pictures must be to count as neighbours and{" "}
+    <strong>Min points</strong> how many neighbours make a cluster. The chosen representative of each cluster stays visible in Classify; every other member of the
+    cluster is muted when you press <strong>Apply mute</strong>. Nothing is deleted, and labeled or golden frames are never muted.
+  </>
+);
+const SCATTER_INFO = (
+  <>
+    A 2D map of the frames' embeddings (UMAP or t-SNE): pictures that look alike sit close together. Drag a rectangle to zoom in and select the frames inside it,
+    right-click to reset the view. The map distorts distances, so use it as a sanity check; clustering is done on the full embeddings.
+  </>
+);
+const OUTLIERS_INFO = (
+  <>
+    Scores each frame by its mean cosine distance to its <em>k</em> nearest other frames, using the chosen embedding (filter and mask apply). A high score means few
+    similar frames: an unusual picture, or one that does not belong. It is a hint for review, not a verdict.
+  </>
+);
+
 /** The functions that can own the centre of the page; one at a time. */
 type Fn = "clusters" | "outliers" | "scatter";
 
@@ -218,7 +238,7 @@ export default function DedupView({ camera, product }: { camera: string; product
             </select>
           </label>
           {st && st.frames > 0 && params && (
-            <PanelGroup title="Clusters" testId="cluster-group" open={open.clusters} onOpenChange={(v) => setOpen((o) => ({ ...o, clusters: v }))} active={active === "clusters"}>
+            <PanelGroup title="Clusters" testId="cluster-group" info={CLUSTERS_INFO} open={open.clusters} onOpenChange={(v) => setOpen((o) => ({ ...o, clusters: v }))} active={active === "clusters"}>
               <label>
                 Epsilon (neighborhood radius)
                 <WheelRange
@@ -309,7 +329,7 @@ export default function DedupView({ camera, product }: { camera: string; product
             </PanelGroup>
           )}
           {st && params && params.method && st.frames > 1 && (
-            <PanelGroup title="Scatter" testId="scatter-group" open={open.scatter} onOpenChange={(v) => setOpen((o) => ({ ...o, scatter: v }))} active={active === "scatter"}>
+            <PanelGroup title="Scatter" testId="scatter-group" info={SCATTER_INFO} open={open.scatter} onOpenChange={(v) => setOpen((o) => ({ ...o, scatter: v }))} active={active === "scatter"}>
               <fieldset style={{ border: 0, padding: 0, margin: 0 }}>
                 <legend style={{ fontSize: 12, color: "var(--muted)", padding: 0 }}>Projection</legend>
                 {(st?.projections ?? []).map((p) => (
@@ -346,7 +366,7 @@ export default function DedupView({ camera, product }: { camera: string; product
             </PanelGroup>
           )}
           {st && params && params.method && (
-            <PanelGroup title="Outliers" testId="outlier-group" open={open.outliers} onOpenChange={(v) => setOpen((o) => ({ ...o, outliers: v }))} active={active === "outliers"}>
+            <PanelGroup title="Outliers" testId="outlier-group" info={OUTLIERS_INFO} open={open.outliers} onOpenChange={(v) => setOpen((o) => ({ ...o, outliers: v }))} active={active === "outliers"}>
               <OutlierControls o={outlierRun} onStart={() => activate("outliers")} />
             </PanelGroup>
           )}
@@ -424,10 +444,6 @@ export default function DedupView({ camera, product }: { camera: string; product
                   }}
                 />
               )}
-              <p>
-                <em>2D projection distorts distances — use it as a sanity check only.</em> Clustering stays in full-dimensional embedding space.{" "}
-                {scatter.from_cache ? "(from cache)" : "(freshly projected)"}
-              </p>
             </>
           )}
         </div>
@@ -471,12 +487,7 @@ export default function DedupView({ camera, product }: { camera: string; product
             </div>
           </dl>
 
-          {result.clusters.length > 0 ? (
-            <>
-              <h3>Clusters</h3>
-              <p>The chosen representative stays visible in Classify. Every other member of the cluster will be muted on Apply mute.</p>
-            </>
-          ) : (
+          {result.clusters.length === 0 && (
             <p>
               No clusters at the current sliders. Everything looks unique under this embedding at this radius — try a larger <em>epsilon</em>, a smaller{" "}
               <em>min points</em>, or a different backbone.

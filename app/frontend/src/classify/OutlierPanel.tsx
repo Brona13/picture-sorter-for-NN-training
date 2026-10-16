@@ -58,10 +58,6 @@ export type OutlierState = ReturnType<typeof useOutliers>;
 export function OutlierControls({ o, onStart }: { o: OutlierState; onStart?: () => void }) {
   return (
     <>
-      <p style={{ fontSize: 12 }}>
-        Scores each frame by its mean cosine distance to its <em>k</em> nearest other frames, using the {o.method} embeddings (filter and mask apply). A high score means
-        few similar frames: an unusual picture, or one that does not belong. It is a hint for review, not a verdict.
-      </p>
       <label>
         k (neighbours){" "}
         <WheelRange aria-label="k neighbours" min={K_MIN} max={K_MAX} value={o.k} onValue={o.setK} /> {o.k}

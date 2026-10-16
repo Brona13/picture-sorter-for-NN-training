@@ -190,14 +190,13 @@ export default function Scatter({
         {sel && <rect data-testid="scatter-selection-box" x={sel.x} y={sel.y} width={sel.w} height={sel.h} fill="none" stroke="#1a73e8" strokeWidth={1.5 * k} strokeDasharray={`${5 * k} ${3 * k}`} />}
         {dragBox && <rect data-testid="scatter-drag-box" x={dragBox.x} y={dragBox.y} width={dragBox.w} height={dragBox.h} fill="rgba(26,115,232,.12)" stroke="#1a73e8" strokeWidth={1.5 * k} />}
       </svg>
-      <p style={{ fontSize: 12, margin: "4px 0" }}>
-        Drag a rectangle to zoom in and list its frames · right-click to reset the view.{" "}
-        {zoomed && (
+      {zoomed && (
+        <p style={{ margin: "4px 0" }}>
           <button type="button" onClick={reset}>
             Reset view
           </button>
-        )}
-      </p>
+        </p>
+      )}
     </div>
   );
 }

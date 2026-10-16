@@ -1,4 +1,5 @@
 import { ReactNode, useState } from "react";
+import InfoTip from "./InfoTip";
 import { lastSession } from "./lastSession";
 
 /**
@@ -43,6 +44,7 @@ export function PanelGroup({
   open,
   onOpenChange,
   active = false,
+  info,
   children,
   testId,
 }: {
@@ -50,6 +52,8 @@ export function PanelGroup({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   active?: boolean;
+  /** What the function does, shown when hovering the "i" icon in the title row. */
+  info?: ReactNode;
   children: ReactNode;
   testId?: string;
 }) {
@@ -66,6 +70,7 @@ export function PanelGroup({
       <summary>
         {title}
         {active && <span className="panel-group-tag"> ● active</span>}
+        {info && <InfoTip label={title}>{info}</InfoTip>}
       </summary>
       {children}
     </details>

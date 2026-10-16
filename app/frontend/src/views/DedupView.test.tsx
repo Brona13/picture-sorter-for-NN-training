@@ -126,7 +126,7 @@ test("moving a slider persists the setting", async () => {
 
 test("cluster job shows summary and clusters; apply sends representative overrides", async () => {
   render(<DedupView camera="camA" />);
-  await userEvent.click(await screen.findByRole("button", { name: /Cluster/ }));
+  await userEvent.click(await screen.findByRole("button", { name: /Cluster$/ }));
   expect(calls.find((c) => c.url.endsWith("/dedup/cluster"))!.body).toEqual({ feature: "seal", ...params });
   expect(await within(await screen.findByTestId("card-a.png")).findByRole("button", { name: "Representative of this cluster" })).toBeInTheDocument();
   expect(screen.getByText("Would mute").nextSibling).toHaveTextContent("3");
@@ -335,8 +335,9 @@ test("the number of frames in scope is a card at the top of the right column, an
   const column = card.parentElement as HTMLElement;
   expect(within(column).getByRole("complementary", { name: "Options" })).toBeInTheDocument();
   expect(card.compareDocumentPosition(within(column).getByRole("complementary"))).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-  expect(screen.queryByText(/DBSCAN/)).toBeNull();
   expect(screen.queryByText(/Neural device/)).toBeNull();
+  // the explanation lives in the hover tip of the Clusters group, not on the page
+  expect(screen.getByText(/DBSCAN/).closest('[role="tooltip"]')).not.toBeNull();
 });
 
 test("Scatter is its own function: pressing Compute projection makes it active and puts the map in the centre", async () => {
@@ -447,4 +448,22 @@ test("Cluster, Revert and Apply mute sit on one line; the last two are icon-only
   expect(mute.parentElement).toBe(cluster.parentElement);
   expect(cluster.parentElement).toHaveStyle({ flexWrap: "nowrap" });
   expect(within(group).getByTestId("mute-status")).toHaveTextContent("3 frame(s) will be muted"); // the status stays under the row
+});
+
+test("each function explains itself in a hover tip next to its title, and the page carries no explanatory text", async () => {
+  const user = userEvent.setup();
+  state = baseState({ result });
+  render(<DedupView camera="camA" />);
+  const clusters = await screen.findByTestId("cluster-group");
+  const tip = within(clusters).getByRole("button", { name: "Info: Clusters" });
+  expect(tip).toHaveAccessibleDescription(/chosen representative of each cluster stays visible in Classify/);
+  // clicking the icon does not fold the group
+  await user.click(tip);
+  expect(clusters).toHaveProperty("open", true);
+  expect(within(screen.getByTestId("scatter-group")).getByRole("button", { name: "Info: Scatter" })).toHaveAccessibleDescription(/distorts distances/);
+  expect(within(screen.getByTestId("outlier-group")).getByRole("button", { name: "Info: Outliers" })).toHaveAccessibleDescription(/not a verdict/);
+  // none of it is left in the page body
+  await screen.findByTestId("cluster-browser");
+  expect(screen.queryByRole("heading", { name: "Clusters" })).toBeNull();
+  expect(screen.queryByText(/will be muted on Apply mute/)).toBeNull();
 });
