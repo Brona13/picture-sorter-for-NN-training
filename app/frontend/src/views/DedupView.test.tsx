@@ -467,3 +467,27 @@ test("each function explains itself in a hover tip next to its title, and the pa
   expect(screen.queryByRole("heading", { name: "Clusters" })).toBeNull();
   expect(screen.queryByText(/will be muted on Apply mute/)).toBeNull();
 });
+
+test("the product picker sits in the options panel directly above Feature (ROI) and reports the choice", async () => {
+  const onProduct = vi.fn();
+  render(<DedupView camera="camA" product="P1" products={["P1", "P2"]} onProduct={onProduct} />);
+  const panel = await screen.findByRole("complementary", { name: "Options" });
+  const product = within(panel).getByLabelText("Product");
+  expect(product).toHaveValue("P1");
+  const labels = within(panel).getAllByRole("combobox").map((s) => s.closest("label")?.textContent ?? "");
+  const at = labels.findIndex((t) => /^Product/.test(t));
+  expect(labels[at + 1]).toMatch(/^Feature/);
+  await userEvent.selectOptions(product, "P2");
+  expect(onProduct).toHaveBeenCalledWith("P2");
+});
+
+test("without products there is no product picker, and a page that can only show a message still has it", async () => {
+  const { unmount } = render(<DedupView camera="camA" />);
+  await screen.findByRole("complementary", { name: "Options" });
+  expect(screen.queryByLabelText("Product")).toBeNull();
+  unmount();
+  state = baseState({ reason: "methods_off" });
+  render(<DedupView camera="camA" products={["P1"]} onProduct={() => undefined} />);
+  expect(await screen.findByText(/No ResNet method is switched on/)).toBeInTheDocument();
+  expect(within(screen.getByRole("complementary", { name: "Options" })).getByLabelText("Product")).toBeInTheDocument();
+});

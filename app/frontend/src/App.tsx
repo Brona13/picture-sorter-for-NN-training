@@ -3,6 +3,7 @@ import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "reac
 import { lastSession } from "./lastSession";
 import { api, ApiError, DeviceInfo, PipelineStage, RoiInfo } from "./api";
 import HardwareBadge from "./HardwareBadge";
+import ProductSelect from "./ProductSelect";
 import { FeatureContext } from "./SharedFeature";
 import StepBar from "./StepBar";
 import { CONFIG_VIEW, VIEWS } from "./views";
@@ -19,6 +20,9 @@ import OverviewView from "./views/OverviewView";
 import StatusView from "./views/StatusView";
 import VerdictView from "./views/VerdictView";
 import VersionsView from "./views/VersionsView";
+
+/** Pages whose options panel (right side) holds the product picker instead of the sidebar. */
+const PRODUCT_IN_PANEL = new Set(["/dedup"]);
 
 export default function App() {
   const [cameras, setCameras] = useState<string[]>([]);
@@ -116,17 +120,8 @@ export default function App() {
             ))}
           </select>
         </label>
-        {products.length > 0 && (
-          <label>
-            Product
-            <select value={product} onChange={(e) => chooseProduct(camera, e.target.value)}>
-              <option value="">All</option>
-              {products.map((p) => (
-                <option key={p}>{p}</option>
-              ))}
-            </select>
-          </label>
-        )}
+        {/* Pages that carry the product picker in their own options panel do not show it here. */}
+        {!PRODUCT_IN_PANEL.has(pathname) && <ProductSelect products={products} value={product} onChange={(p) => chooseProduct(camera, p)} />}
         <ul>
           {VIEWS.map((v) => (
             <li key={v.path}>
@@ -209,7 +204,7 @@ export default function App() {
             path="/detector"
             element={<DetectorView camera={camera} product={product || undefined} />}
           />
-          <Route path="/dedup" element={<DedupView camera={camera} product={product || undefined} />} />
+          <Route path="/dedup" element={<DedupView camera={camera} product={product || undefined} products={products} onProduct={(p) => chooseProduct(camera, p)} />} />
           <Route path="/config" element={<ConfigurationView />} />
           <Route path="*" element={<Navigate to="/overview" replace />} />
         </Routes>

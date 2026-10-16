@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePublishFeature, useSharedFeature } from "../SharedFeature";
 import { api, CardData, DedupParams, DedupResult, DedupState, DeletePreview, DeleteResult, OutlierResult, ScatterPoint, ScatterResult } from "../api";
 import Card from "../classify/Card";
 import { classColor } from "../classify/colors";
 import FrameViewer from "../classify/FrameViewer";
 import Pager, { PagerSettings } from "../classify/Pager";
+import ProductSelect from "../ProductSelect";
 import ClusterBrowser, { Marks } from "../classify/ClusterBrowser";
 import { OutlierControls, OutlierResults, useOutliers } from "../classify/OutlierPanel";
 import Scatter, { ColourBy, ScatterLegend } from "../classify/Scatter";
@@ -51,7 +52,18 @@ export function outlierShades(r: OutlierResult): Record<string, number> {
   return Object.fromEntries(r.scores.map((s) => [s.frame, Math.min(1, s.score / top)]));
 }
 
-export default function DedupView({ camera, product }: { camera: string; product?: string }) {
+export default function DedupView({
+  camera,
+  product,
+  products = [],
+  onProduct,
+}: {
+  camera: string;
+  product?: string;
+  /** The camera's products and the way to pick one: the picker lives in this page's options panel. */
+  products?: string[];
+  onProduct?: (product: string) => void;
+}) {
   const [features, setFeatures] = useState<{ feature: string; label: string }[]>([]);
   const [feature, setFeature] = useState("");
   const shared = useSharedFeature();
@@ -170,24 +182,28 @@ export default function DedupView({ camera, product }: { camera: string; product
 
   const outlierRun = useOutliers({ camera, feature, method: params?.method ?? "", onResult: setOutliers, onError: setError });
 
+  // The product picker is in the options panel, so it must stay reachable when the page can only show a message.
+  const productSelect = <ProductSelect products={products} value={product ?? ""} onChange={(p) => onProduct?.(p)} />;
+  const blocked = (message: ReactNode) => <SidePanel panel={productSelect}>{message}</SidePanel>;
+
   if (!camera) return <p>Select a camera.</p>;
   if (st?.reason === "no_embeddings")
-    return (
+    return blocked(
       <p>
         Perceptual dedup requires ResNet embeddings. Install the neural dependencies (<code>pip install -r requirements-embedding.txt</code>), then return here.
-      </p>
+      </p>,
     );
   if (st?.reason === "methods_off")
-    return (
+    return blocked(
       <p>
         No ResNet method is switched on, and Dedup works on ResNet embeddings. Tick ResNet18 or ResNet50 on the <strong>Configuration</strong> page, then return here.
-      </p>
+      </p>,
     );
   if (st?.reason === "no_sklearn")
-    return (
+    return blocked(
       <p>
         scikit-learn isn't installed. Run <code>pip install -r requirements-embedding.txt</code> (it includes scikit-learn) and reload the app.
-      </p>
+      </p>,
     );
 
   const bits = result && params ? drift(result.params, params) : [];
@@ -227,6 +243,7 @@ export default function DedupView({ camera, product }: { camera: string; product
               </select>
             </label>
           )}
+          {productSelect}
           <label>
             Feature (ROI)
             <select value={feature} onChange={(e) => setFeature(e.target.value)}>

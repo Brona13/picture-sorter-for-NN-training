@@ -258,3 +258,21 @@ test("clicking the cogwheel again on Configuration goes back to the page you cam
   await userEvent.click(cog);
   await waitFor(() => expect(screen.getByRole("link", { name: /Classify/ })).toHaveAttribute("aria-current", "page"));
 });
+
+test("on Dedup the product picker is in the page's options panel, not the sidebar, and the choice still follows you to other pages", async () => {
+  render(
+    <MemoryRouter initialEntries={["/dedup"]}>
+      <App />
+    </MemoryRouter>,
+  );
+  const panel = await screen.findByRole("complementary", { name: "Options" });
+  const select = await within(panel).findByLabelText("Product");
+  expect(within(screen.getByRole("navigation", { name: "Sidebar" })).queryByLabelText("Product")).toBeNull();
+  await userEvent.selectOptions(select, "P2");
+  expect(within(panel).getByLabelText("Product")).toHaveValue("P2");
+
+  await userEvent.click(screen.getByRole("link", { name: "Classify" }));
+  const sidebar = screen.getByRole("navigation", { name: "Sidebar" });
+  await waitFor(() => expect(within(sidebar).getByLabelText("Product")).toHaveValue("P2")); // other pages keep the sidebar picker
+  expect(screen.queryByRole("complementary", { name: "Options" })).toBeNull();
+});
