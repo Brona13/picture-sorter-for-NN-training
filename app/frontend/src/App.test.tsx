@@ -244,3 +244,17 @@ test("the sidebar foot holds the hardware badge, the version and an icon-only Co
   expect(config).toHaveTextContent(/^\S{1,3}$/); // the icon only, no words
   expect(badge.compareDocumentPosition(config) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
+
+test("clicking the cogwheel again on Configuration goes back to the page you came from", async () => {
+  render(
+    <MemoryRouter initialEntries={["/classify"]}>
+      <App />
+    </MemoryRouter>,
+  );
+  await screen.findByLabelText("Product");
+  const cog = screen.getByRole("link", { name: "Configuration" });
+  await userEvent.click(cog);
+  expect(await screen.findByRole("heading", { name: /Configuration/ })).toBeInTheDocument();
+  await userEvent.click(cog);
+  await waitFor(() => expect(screen.getByRole("link", { name: /Classify/ })).toHaveAttribute("aria-current", "page"));
+});

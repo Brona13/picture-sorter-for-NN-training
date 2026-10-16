@@ -36,8 +36,11 @@ export default function App() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const knownPages = [...VIEWS, CONFIG_VIEW].map((v) => `/${v.path}`);
+  // The page the cogwheel returns to when it is clicked again on Configuration.
+  const beforeConfig = useRef("/overview");
   useEffect(() => {
     if (knownPages.includes(pathname)) lastSession.setPage(pathname);
+    if (pathname !== `/${CONFIG_VIEW.path}` && knownPages.includes(pathname)) beforeConfig.current = pathname;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
   const startPage = knownPages.includes(lastSession.page()) ? lastSession.page() : "/overview";
@@ -144,7 +147,16 @@ export default function App() {
                 v{info.version} · {info.released}
               </p>
             )}
-            <NavLink to={`/${CONFIG_VIEW.path}`} className="config-link" aria-label={CONFIG_VIEW.label} title={CONFIG_VIEW.label}>
+            <NavLink to={`/${CONFIG_VIEW.path}`} className="config-link"
+              aria-label={CONFIG_VIEW.label}
+              title={CONFIG_VIEW.label}
+              onClick={(e) => {
+                if (pathname === `/${CONFIG_VIEW.path}`) {
+                  e.preventDefault();
+                  navigate(beforeConfig.current);
+                }
+              }}
+            >
               <span aria-hidden="true">{CONFIG_VIEW.icon}</span>
             </NavLink>
           </div>
