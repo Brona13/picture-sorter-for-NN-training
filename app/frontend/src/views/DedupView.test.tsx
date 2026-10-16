@@ -142,7 +142,7 @@ test("cluster job shows summary and clusters; apply sends representative overrid
   const group = screen.getByTestId("cluster-group");
   expect(within(group).getByTestId("mute-status")).toHaveTextContent("3 frame(s) will be muted");
   expect(screen.getAllByRole("button", { name: /Apply mute/ })).toHaveLength(1); // only in the Clusters group, not under the table
-  await userEvent.click(within(group).getByRole("button", { name: "🔇 Apply mute" }));
+  await userEvent.click(within(group).getByRole("button", { name: "Apply mute" }));
   await waitFor(() => expect(calls.some((c) => c.url.endsWith("/dedup/apply"))).toBe(true));
   expect(calls.find((c) => c.url.endsWith("/dedup/apply"))!.body).toEqual({ feature: "seal", picks: { 0: "c.png" } });
   expect(await screen.findByText(/Muted 3 frame\(s\) · skipped: 1 labeled\./)).toBeInTheDocument();
@@ -290,6 +290,7 @@ test("clustering lives in the panel's Clusters group, and the sliders answer the
   const group = await within(panel).findByTestId("cluster-group");
   expect(within(group).getByRole("button", { name: /Cluster$/ })).toBeInTheDocument();
   expect(within(group).getByRole("button", { name: /Revert/ })).toBeDisabled();
+  // Cluster keeps its words; Revert and Apply mute are icon-only and all share one line
   fireEvent.wheel(within(group).getByLabelText("Min points"), { deltaY: -100 });
   await waitFor(() => expect(calls.find((c) => c.url.includes("/dedup/settings"))?.body).toMatchObject({ min_points: 3 }));
 });
@@ -430,4 +431,20 @@ test("the groups are ordered Clusters, Scatter, Outliers", async () => {
   await screen.findByTestId("scatter-group");
   const ids = Array.from(document.querySelectorAll("[data-testid$='-group']")).map((e) => e.getAttribute("data-testid"));
   expect(ids).toEqual(["cluster-group", "scatter-group", "outlier-group"]);
+});
+
+test("Cluster, Revert and Apply mute sit on one line; the last two are icon-only", async () => {
+  state = baseState({ result });
+  render(<DedupView camera="camA" />);
+  const group = await screen.findByTestId("cluster-group");
+  const cluster = await within(group).findByRole("button", { name: /Cluster$/ });
+  const revert = within(group).getByRole("button", { name: "Revert" });
+  const mute = await within(group).findByRole("button", { name: "Apply mute" });
+  expect(cluster).toHaveTextContent("Cluster");
+  expect(revert.textContent).toBe("↺");
+  expect(mute.textContent).toBe("🔇");
+  expect(revert.parentElement).toBe(cluster.parentElement);
+  expect(mute.parentElement).toBe(cluster.parentElement);
+  expect(cluster.parentElement).toHaveStyle({ flexWrap: "nowrap" });
+  expect(within(group).getByTestId("mute-status")).toHaveTextContent("3 frame(s) will be muted"); // the status stays under the row
 });

@@ -243,7 +243,7 @@ export default function DedupView({ camera, product }: { camera: string; product
                 />
                 <span>{params.min_points}</span>
               </label>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+              <div style={{ display: "flex", gap: 6, flexWrap: "nowrap", alignItems: "center", marginTop: 8 }}>
                 <button
                   disabled={clustering}
                   onClick={() => {
@@ -255,24 +255,18 @@ export default function DedupView({ camera, product }: { camera: string; product
                   🔍 Cluster
                 </button>
                 <button
+                  aria-label="Revert"
                   disabled={bits.length === 0}
                   onClick={() => result && change({ ...result.params })}
-                  title={result ? "Restore sliders to the values used by the last computed clustering." : "Nothing to revert to — run a cluster first."}
+                  title={result ? "Revert: restore the sliders to the values used by the last computed clustering." : "Revert: nothing to go back to — run a cluster first."}
                 >
-                  ↺ Revert
+                  ↺
                 </button>
-              </div>
-              {clustering && (
-                <p aria-live="polite">
-                  <progress value={Number(progress.done ?? 0)} max={Number(progress.total ?? 0) || undefined} /> Embedding {Number(progress.done ?? 0)}/
-                  {Number(progress.total ?? 0)}
-                </p>
-              )}
-              {result && result.clusters.length > 0 && (
-                <div style={{ marginTop: 8 }}>
+                {result && result.clusters.length > 0 && (
                   <button
+                    aria-label="Apply mute"
                     disabled={wouldMute === 0 || active !== "clusters"}
-                    title={active !== "clusters" ? "Press Cluster to bring the clusters back first." : "Mute every cluster member except its representative. Nothing is deleted."}
+                    title={active !== "clusters" ? "Apply mute: press Cluster to bring the clusters back first." : "Apply mute: mute every cluster member except its representative. Nothing is deleted."}
                     onClick={() =>
                       api
                         .dedupApply(camera, feature, validPicks)
@@ -291,11 +285,19 @@ export default function DedupView({ camera, product }: { camera: string; product
                         .catch((e: unknown) => setError(msg(e)))
                     }
                   >
-                    🔇 Apply mute
+                    🔇
                   </button>
-                  <div data-testid="mute-status" style={{ fontSize: 12, marginTop: 2 }}>
-                    {wouldMute} frame(s) will be muted
-                  </div>
+                )}
+              </div>
+              {clustering && (
+                <p aria-live="polite">
+                  <progress value={Number(progress.done ?? 0)} max={Number(progress.total ?? 0) || undefined} /> Embedding {Number(progress.done ?? 0)}/
+                  {Number(progress.total ?? 0)}
+                </p>
+              )}
+              {result && result.clusters.length > 0 && (
+                <div data-testid="mute-status" style={{ fontSize: 12, marginTop: 4 }}>
+                  {wouldMute} frame(s) will be muted
                 </div>
               )}
               {result && bits.length > 0 && (
