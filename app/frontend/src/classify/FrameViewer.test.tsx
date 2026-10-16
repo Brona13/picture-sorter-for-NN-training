@@ -124,3 +124,20 @@ test("the outline is simply absent when the ROI cannot be loaded", async () => {
   expect(screen.queryByTestId("viewer-roi")).toBeNull();
   expect(screen.queryByRole("button", { name: "Show ROI" })).toBeNull();
 });
+
+test("the zoom and pan stay when moving to another picture; Reset still fits it", async () => {
+  setup();
+  const fitted = screen.getByTestId("zoom-level").textContent!;
+  await userEvent.click(screen.getByRole("button", { name: "Zoom in" }));
+  await userEvent.click(screen.getByRole("button", { name: "Zoom in" }));
+  const zoomed = screen.getByTestId("zoom-level").textContent;
+  expect(zoomed).not.toBe(fitted);
+  fireEvent.keyDown(window, { key: "ArrowRight" });
+  expect(screen.getByRole("img", { name: "c.png" })).toBeInTheDocument();
+  expect(screen.getByTestId("zoom-level")).toHaveTextContent(zoomed!);
+  fireEvent.keyDown(window, { key: "ArrowLeft" });
+  fireEvent.keyDown(window, { key: "ArrowLeft" });
+  expect(screen.getByTestId("zoom-level")).toHaveTextContent(zoomed!);
+  await userEvent.click(screen.getByRole("button", { name: "Reset zoom" }));
+  expect(screen.getByTestId("zoom-level")).toHaveTextContent(fitted);
+});

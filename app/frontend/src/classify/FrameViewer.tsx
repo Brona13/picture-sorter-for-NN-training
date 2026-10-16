@@ -67,9 +67,9 @@ export default function FrameViewer({ camera, feature, frames, start, classes, m
     else lastIndex.current = found;
   }, [frames, found]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // The zoom and pan are kept when the frame changes, so the same spot can be compared across pictures.
   useEffect(() => {
     if (frame) onShow?.(frame);
-    setView(FIT_VIEW);
   }, [frame]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
