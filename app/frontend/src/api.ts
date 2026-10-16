@@ -548,13 +548,16 @@ export interface ScatterPoint {
   frame: string;
   x: number;
   y: number;
-  cluster: number;
+  /** Cluster of the held clustering for the same embedding; null when there is none. */
+  cluster: number | null;
   representative: boolean;
   golden: string | null;
+  label: string | null;
 }
 
 export interface ScatterResult {
   projection: string;
+  method: string;
   from_cache: boolean;
   points: ScatterPoint[];
   classes: string[];
@@ -996,6 +999,6 @@ export const api = {
     ),
   dedupOutliers: (camera: string, feature: string, method: string, k: number) =>
     request<Job<OutlierResult>>(`/cameras/${encodeURIComponent(camera)}/dedup/outliers`, post({ feature, method, k })),
-  dedupScatter: (camera: string, feature: string, projection: string) =>
-    request<Job<ScatterResult>>(`/cameras/${encodeURIComponent(camera)}/dedup/scatter`, post({ feature, projection })),
+  dedupScatter: (camera: string, feature: string, projection: string, method: string) =>
+    request<Job<ScatterResult>>(`/cameras/${encodeURIComponent(camera)}/dedup/scatter`, post({ feature, projection, method })),
 };

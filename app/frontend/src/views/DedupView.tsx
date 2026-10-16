@@ -4,7 +4,7 @@ import { api, DedupParams, DedupResult, DedupState, DeletePreview, DeleteResult,
 import { thumbUrl } from "../classify/Card";
 import ClusterBrowser, { Marks } from "../classify/ClusterBrowser";
 import { OutlierControls, OutlierResults, useOutliers } from "../classify/OutlierPanel";
-import Scatter from "../classify/Scatter";
+import Scatter, { ColourBy, ScatterLegend } from "../classify/Scatter";
 import SidePanel, { PanelGroup } from "../SidePanel";
 import WheelRange from "../WheelRange";
 import { useJob } from "../useJob";
@@ -21,7 +21,7 @@ export function drift(existing: DedupParams, now: DedupParams): string[] {
 }
 
 /** The functions that can own the centre of the page; one at a time. */
-type Fn = "clusters" | "outliers";
+type Fn = "clusters" | "outliers" | "scatter";
 
 /** Each frame's outlier score scaled to [0, 1] against the 95th percentile, so one extreme frame cannot wash out the rest. */
 export function outlierShades(r: OutlierResult): Record<string, number> {
@@ -45,10 +45,10 @@ export default function DedupView({ camera, product }: { camera: string; product
   const [selected, setSelected] = useState<ScatterPoint[] | null>(null);
   const [marks, setMarks] = useState<Marks>({});
   const [outliers, setOutliers] = useState<OutlierResult | null>(null);
-  const [colourByOutlier, setColourByOutlier] = useState(true);
+  const [colourBy, setColourBy] = useState<ColourBy>("label");
   // One function at a time owns the centre of the page; groups can still be opened to look at their settings.
   const [active, setActive] = useState<Fn>("clusters");
-  const [open, setOpen] = useState<Record<Fn, boolean>>({ clusters: true, outliers: false });
+  const [open, setOpen] = useState<Record<Fn, boolean>>({ clusters: true, outliers: false, scatter: false });
   // A fresh projection resets the chart's zoom and selection; the key changes in the same render, so no remount flicker.
   const genRef = useRef<{ scatter: ScatterResult | null; gen: number }>({ scatter: null, gen: 0 });
   if (genRef.current.scatter !== scatter) genRef.current = { scatter, gen: genRef.current.gen + 1 };
@@ -61,6 +61,10 @@ export default function DedupView({ camera, product }: { camera: string; product
   const projecting = scatterJob !== null && (sj === null || sj.status === "queued" || sj.status === "running");
 
   useEffect(() => setSelected(null), [scatter]);
+  // A map of another embedding would be stale.
+  useEffect(() => {
+    if (scatter && params && scatter.method !== params.method) setScatter(null);
+  }, [params?.method]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => setMarks(result?.marks ?? {}), [result]);
 
   useEffect(() => {
@@ -105,7 +109,7 @@ export default function DedupView({ camera, product }: { camera: string; product
     if (cj?.status === "done" && cj.result) {
       setResult(cj.result);
       setPicks({});
-      setScatter(null);
+      if (scatter) runScatter(); // its cluster colours follow the new clustering (the projection itself is cached)
     } else if (cj?.status === "error") setError(cj.error);
   }, [cj?.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -119,6 +123,12 @@ export default function DedupView({ camera, product }: { camera: string; product
     const next = { ...params, ...patch };
     setParams(next);
     api.dedupSaveSettings(camera, feature, next).catch((e: unknown) => setError(msg(e)));
+  }
+
+  // The map of the feature's frames, for the chosen embedding. No clustering is needed.
+  function runScatter() {
+    if (!params?.method) return;
+    api.dedupScatter(camera, feature, projection, params.method).then((j) => setScatterJob(j.id)).catch((e: unknown) => setError(msg(e)));
   }
 
   // Pressing a function's own button makes it the active one: the previous one deactivates and collapses.
@@ -154,6 +164,15 @@ export default function DedupView({ camera, product }: { camera: string; product
   const validPicks = Object.fromEntries(Object.entries(picks).filter(([cid, f]) => result?.clusters.find((c) => c.id === Number(cid))?.members.includes(f)));
   const wouldMute = result ? result.clusters.reduce((n, c) => n + c.members.length - 1, 0) : 0;
   const progress = cj?.progress ?? {};
+  // The map can only be coloured by what exists: say so and fall back to the labels.
+  const hasClusters = !!scatter && scatter.points.some((p) => p.cluster !== null);
+  const colourNote =
+    colourBy === "cluster" && !hasClusters
+      ? "There is no clustering for this embedding yet, so the dots are coloured by label. Press Cluster to colour by cluster."
+      : colourBy === "outlier" && !outliers
+        ? "Outliers have not been scored for this embedding, so the dots are coloured by label. Press Score outliers first."
+        : null;
+  const effectiveColour: ColourBy = colourNote ? "label" : colourBy;
 
   return (
     <SidePanel
@@ -281,6 +300,43 @@ export default function DedupView({ camera, product }: { camera: string; product
               <OutlierControls o={outlierRun} onStart={() => activate("outliers")} />
             </PanelGroup>
           )}
+          {st && params && params.method && st.frames > 1 && (
+            <PanelGroup title="Scatter" testId="scatter-group" open={open.scatter} onOpenChange={(v) => setOpen((o) => ({ ...o, scatter: v }))} active={active === "scatter"}>
+              <fieldset style={{ border: 0, padding: 0, margin: 0 }}>
+                <legend style={{ fontSize: 12, color: "var(--muted)", padding: 0 }}>Projection</legend>
+                {(st?.projections ?? []).map((p) => (
+                  <label key={p} style={{ display: "inline-block", marginRight: 12 }}>
+                    <input type="radio" name="projection" checked={projection === p} onChange={() => setProjection(p)} /> {p}
+                  </label>
+                ))}
+              </fieldset>
+              <label>
+                Colour by
+                <select value={colourBy} onChange={(e) => setColourBy(e.target.value as ColourBy)}>
+                  <option value="cluster">Cluster</option>
+                  <option value="label">Label</option>
+                  <option value="outlier">Outlier score</option>
+                  <option value="none">Nothing</option>
+                </select>
+              </label>
+              <div style={{ marginTop: 8 }}>
+                <button
+                  disabled={projecting}
+                  onClick={() => {
+                    activate("scatter");
+                    runScatter();
+                  }}
+                >
+                  Compute projection
+                </button>
+              </div>
+              {projecting && (
+                <p aria-live="polite">
+                  <progress /> Projecting…
+                </p>
+              )}
+            </PanelGroup>
+          )}
         </>
       }
     >
@@ -293,6 +349,54 @@ export default function DedupView({ camera, product }: { camera: string; product
       {notice && <p role="status">{notice}</p>}
 
       {st && st.frames === 0 && <p>This feature has no frames yet — ingest some first.</p>}
+
+      {active === "scatter" && (
+        <div data-testid="scatter-view">
+          {!scatter && !projecting && <p>Press <strong>Compute projection</strong> in the Scatter group to map this feature's frames in 2D.</p>}
+          {scatter && (
+            <>
+              {colourNote && <p role="note" style={{ fontSize: 12 }}>{colourNote}</p>}
+              <ScatterLegend colourBy={effectiveColour} classes={scatter.classes} />
+              <Scatter
+                key={genRef.current.gen}
+                points={scatter.points}
+                classes={scatter.classes}
+                onSelect={setSelected}
+                colourBy={effectiveColour}
+                scores={outliers ? outlierShades(outliers) : undefined}
+              />
+              {selected && (
+                <ScatterSelection
+                  camera={camera}
+                  feature={feature}
+                  points={selected}
+                  classes={scatter.classes}
+                  onError={(m) => setError(m)}
+                  onLabeled={(n, cls) => {
+                    setNotice(`Labeled ${n} frame(s) as ${cls}.`);
+                    load();
+                    runScatter();
+                  }}
+                  onDeleted={(r) => {
+                    setNotice(
+                      `Deleted ${r.deleted} frame(s)` +
+                        (r.cleared_labels || r.cleared_goldens ? ` · cleared ${r.cleared_labels} label(s) and ${r.cleared_goldens} golden mark(s)` : "") +
+                        ". They stay on disk; see Classify → Show: Deleted.",
+                    );
+                    setSelected(null);
+                    load();
+                    runScatter();
+                  }}
+                />
+              )}
+              <p>
+                <em>2D projection distorts distances — use it as a sanity check only.</em> Clustering stays in full-dimensional embedding space.{" "}
+                {scatter.from_cache ? "(from cache)" : "(freshly projected)"}
+              </p>
+            </>
+          )}
+        </div>
+      )}
 
       {active === "outliers" && st && params && params.method && (
         <OutlierResults
@@ -332,76 +436,6 @@ export default function DedupView({ camera, product }: { camera: string; product
             </div>
           </dl>
 
-          {result.summary.total >= 2 && (
-            <details>
-              <summary>2D scatter (sanity check)</summary>
-              <fieldset>
-                <legend>Projection</legend>
-                {(st?.projections ?? []).map((p) => (
-                  <label key={p} style={{ marginRight: 12 }}>
-                    <input type="radio" name="projection" checked={projection === p} onChange={() => setProjection(p)} /> {p}
-                  </label>
-                ))}
-              </fieldset>
-              <button
-                disabled={projecting}
-                onClick={() => api.dedupScatter(camera, feature, projection).then((j) => setScatterJob(j.id)).catch((e: unknown) => setError(msg(e)))}
-              >
-                Compute projection
-              </button>
-              {projecting && (
-                <p aria-live="polite">
-                  <progress /> Projecting…
-                </p>
-              )}
-              {scatter && (
-                <>
-                  {outliers && (
-                    <label>
-                      <input type="checkbox" checked={colourByOutlier} onChange={(e) => setColourByOutlier(e.target.checked)} /> Colour by outlier score (k = {outliers.k}; pale =
-                      typical, dark red = most isolated)
-                    </label>
-                  )}
-                  <Scatter
-                    key={genRef.current.gen}
-                    points={scatter.points}
-                    classes={scatter.classes}
-                    onSelect={setSelected}
-                    scores={outliers && colourByOutlier ? outlierShades(outliers) : undefined}
-                  />
-                  {selected && (
-                    <ScatterSelection
-                      camera={camera}
-                      feature={feature}
-                      points={selected}
-                      classes={scatter.classes}
-                      onError={(m) => setError(m)}
-                      onLabeled={(n, cls) => {
-                        setNotice(`Labeled ${n} frame(s) as ${cls}.`);
-                        load();
-                        api.dedupScatter(camera, feature, projection).then((j) => setScatterJob(j.id)).catch((e: unknown) => setError(msg(e)));
-                      }}
-                      onDeleted={(r) => {
-                        setNotice(
-                          `Deleted ${r.deleted} frame(s)` +
-                            (r.cleared_labels || r.cleared_goldens ? ` · cleared ${r.cleared_labels} label(s) and ${r.cleared_goldens} golden mark(s)` : "") +
-                            ". They stay on disk; see Classify → Show: Deleted.",
-                        );
-                        setSelected(null);
-                        load();
-                        api.dedupScatter(camera, feature, projection).then((j) => setScatterJob(j.id)).catch((e: unknown) => setError(msg(e)));
-                      }}
-                    />
-                  )}
-                  <p>
-                    <em>2D projection distorts distances — use for sanity check only.</em> Clustering decisions above stay in full-dimensional embedding
-                    space. {scatter.from_cache ? "(from cache)" : "(freshly projected)"}
-                  </p>
-                </>
-              )}
-            </details>
-          )}
-
           {result.clusters.length > 0 ? (
             <>
               <h3>Clusters</h3>
@@ -433,7 +467,7 @@ export default function DedupView({ camera, product }: { camera: string; product
               onDeleted={(frame) => {
                 setNotice(`Deleted ${frame}. It stays on disk; see Classify → Show: Deleted.`);
                 load();
-                if (scatter) api.dedupScatter(camera, feature, projection).then((j) => setScatterJob(j.id)).catch((e: unknown) => setError(msg(e)));
+                if (scatter) runScatter();
               }}
             />
           )}
@@ -524,13 +558,16 @@ function ScatterSelection({
       .catch((e: unknown) => onError(msg(e)))
       .finally(() => setBusy(false));
   };
-  const sorted = [...points].sort((a, b) => (a.cluster < 0 ? 1e9 : a.cluster) - (b.cluster < 0 ? 1e9 : b.cluster) || a.frame.localeCompare(b.frame));
-  const counts = new Map<number, number>();
-  for (const p of points) counts.set(p.cluster, (counts.get(p.cluster) ?? 0) + 1);
-  const summary = [...counts.entries()]
-    .sort((a, b) => (a[0] < 0 ? 1e9 : a[0]) - (b[0] < 0 ? 1e9 : b[0]))
-    .map(([c, n]) => `${c < 0 ? "unique" : `cluster ${c}`}: ${n}`)
-    .join(" · ");
+  const hasClusters = points.some((p) => p.cluster !== null);
+  const clusterKey = (p: ScatterPoint) => (p.cluster === null || p.cluster < 0 ? 1e9 : p.cluster);
+  const sorted = [...points].sort((a, b) => clusterKey(a) - clusterKey(b) || a.frame.localeCompare(b.frame));
+  // What the selection is made of: clusters when there is a clustering, labels otherwise.
+  const counts = new Map<string, number>();
+  for (const p of sorted) {
+    const k = hasClusters ? (p.cluster === null || p.cluster < 0 ? "unique" : `cluster ${p.cluster}`) : (p.label ?? "unlabeled");
+    counts.set(k, (counts.get(k) ?? 0) + 1);
+  }
+  const summary = [...counts.entries()].map(([k, n]) => `${k}: ${n}`).join(" · ");
   return (
     <div data-testid="scatter-selection">
       <h4>{points.length} frame(s) in the selected region</h4>
@@ -576,7 +613,7 @@ function ScatterSelection({
                   {p.representative ? "⭐ " : ""}
                   {p.frame}
                   <br />
-                  {p.cluster < 0 ? "unique" : `cluster ${p.cluster}`}
+                  {p.cluster === null ? (p.label ?? "unlabeled") : p.cluster < 0 ? "unique" : `cluster ${p.cluster}`}
                   {p.golden ? ` · golden ${p.golden}` : ""}
                 </figcaption>
               </figure>

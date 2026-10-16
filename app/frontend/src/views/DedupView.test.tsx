@@ -78,8 +78,8 @@ beforeEach(() => {
             from_cache: true,
             classes: ["OK", "NG"],
             points: [
-              { frame: "a.png", x: 0, y: 0, cluster: 0, representative: true, golden: null },
-              { frame: "f.png", x: 1, y: 1, cluster: -1, representative: false, golden: "OK" },
+              { frame: "a.png", x: 0, y: 0, cluster: state.result ? 0 : null, representative: true, golden: null, label: null },
+              { frame: "f.png", x: 1, y: 1, cluster: state.result ? -1 : null, representative: false, golden: "OK", label: "OK" },
             ],
           },
         });
@@ -167,23 +167,24 @@ test("changed sliders warn that the shown clusters are stale and can be reverted
   await waitFor(() => expect(screen.queryByText(/Sliders changed since the last cluster/)).toBeNull());
 });
 
-test("scatter is computed on demand and draws one marker per frame", async () => {
-  state = baseState({ result });
+test("scatter is computed on demand, without any clustering, and draws one marker per frame", async () => {
   render(<DedupView camera="camA" />);
-  await userEvent.click(await screen.findByText(/2D scatter/));
-  await userEvent.click(screen.getByRole("radio", { name: "tsne" }));
-  await userEvent.click(screen.getByRole("button", { name: "Compute projection" }));
+  const group = await screen.findByTestId("scatter-group");
+  await userEvent.click(within(group).getByText("Scatter"));
+  await userEvent.click(within(group).getByRole("radio", { name: "tsne" }));
+  await userEvent.click(within(group).getByRole("button", { name: "Compute projection" }));
   const svg = await screen.findByRole("img", { name: /2D scatter/ });
-  expect(calls.find((c) => c.url.endsWith("/dedup/scatter"))!.body).toEqual({ feature: "seal", projection: "tsne" });
+  expect(calls.find((c) => c.url.endsWith("/dedup/scatter"))!.body).toEqual({ feature: "seal", projection: "tsne", method: "resnet50" });
+  expect(calls.some((c) => c.url.endsWith("/dedup/cluster"))).toBe(false);
   expect(within(svg).getByTestId("pt-a.png")).toBeInTheDocument();
   expect(within(svg).getByTestId("pt-f.png").querySelector("title")!.textContent).toContain("golden OK");
 });
 
 async function openScatter() {
-  state = baseState({ result });
   render(<DedupView camera="camA" />);
-  await userEvent.click(await screen.findByText(/2D scatter/));
-  await userEvent.click(screen.getByRole("button", { name: "Compute projection" }));
+  const group = await screen.findByTestId("scatter-group");
+  await userEvent.click(within(group).getByText("Scatter"));
+  await userEvent.click(within(group).getByRole("button", { name: "Compute projection" }));
   const svg = await screen.findByRole("img", { name: /2D scatter/ });
   svg.getBoundingClientRect = () => ({ left: 0, top: 0, width: 720, height: 420, right: 720, bottom: 420, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
   return svg;
@@ -200,7 +201,7 @@ test("dragging a rectangle on the scatter zooms in and lists the frames inside i
   expect(within(panel).getByText("1 frame(s) in the selected region")).toBeInTheDocument();
   expect(within(panel).getByAltText("a.png")).toBeInTheDocument();
   expect(within(panel).queryByAltText("f.png")).toBeNull();
-  expect(within(panel).getByText("cluster 0: 1")).toBeInTheDocument();
+  expect(within(panel).getByText("unlabeled: 1")).toBeInTheDocument(); // no clustering: the selection is summed up by label
   expect(svg.getAttribute("viewBox")).not.toBe("0 0 720 420");
   expect(screen.getByTestId("pt-f.png").getAttribute("opacity")).toBe("0.2");
 });
@@ -331,4 +332,50 @@ test("the number of frames in scope is a card at the top of the right column, an
   expect(card.compareDocumentPosition(within(column).getByRole("complementary"))).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   expect(screen.queryByText(/DBSCAN/)).toBeNull();
   expect(screen.queryByText(/Neural device/)).toBeNull();
+});
+
+test("Scatter is its own function: pressing Compute projection makes it active and puts the map in the centre", async () => {
+  const user = userEvent.setup();
+  render(<DedupView camera="camA" />);
+  const clusters = await screen.findByTestId("cluster-group");
+  const group = screen.getByTestId("scatter-group");
+  await user.click(within(clusters).getByRole("button", { name: /Cluster$/ }));
+  expect(await screen.findByTestId("cluster-browser")).toBeInTheDocument();
+  await user.click(within(group).getByText("Scatter"));
+  expect(screen.getByTestId("cluster-browser")).toBeInTheDocument(); // opening changes nothing
+  await user.click(within(group).getByRole("button", { name: "Compute projection" }));
+  const view = await screen.findByTestId("scatter-view");
+  expect(await within(view).findByRole("img", { name: /2D scatter/ })).toBeInTheDocument();
+  expect(group).toHaveAttribute("data-active", "true");
+  expect(clusters).toHaveAttribute("data-active", "false");
+  expect(screen.queryByTestId("cluster-browser")).toBeNull();
+  // the old section under the cluster results is gone
+  expect(screen.queryByText(/2D scatter \(sanity check\)/)).toBeNull();
+});
+
+test("colour by: labels by default with a legend, cluster falls back with a note when there is no clustering", async () => {
+  const user = userEvent.setup();
+  render(<DedupView camera="camA" />);
+  const group = await screen.findByTestId("scatter-group");
+  await user.click(within(group).getByText("Scatter"));
+  await user.click(within(group).getByRole("button", { name: "Compute projection" }));
+  const view = await screen.findByTestId("scatter-view");
+  await within(view).findByRole("img", { name: /2D scatter/ });
+  expect(within(view).getByTestId("scatter-legend")).toHaveTextContent("unlabeled");
+  expect(within(view).queryByRole("note")).toBeNull();
+  await user.selectOptions(within(group).getByLabelText("Colour by"), "cluster");
+  expect(await within(view).findByRole("note")).toHaveTextContent(/no clustering for this embedding yet/);
+  await user.selectOptions(within(group).getByLabelText("Colour by"), "outlier");
+  expect(await within(view).findByRole("note")).toHaveTextContent(/Outliers have not been scored/);
+  await user.selectOptions(within(group).getByLabelText("Colour by"), "none");
+  expect(within(view).queryByRole("note")).toBeNull();
+});
+
+test("with a clustering held, the scatter selection is summed up by cluster", async () => {
+  state = baseState({ result });
+  const svg = await openScatter();
+  fireEvent.mouseDown(svg, { button: 0, clientX: 0, clientY: 0 });
+  fireEvent.mouseUp(window, { clientX: 100, clientY: 100 });
+  const panel = await screen.findByTestId("scatter-selection");
+  expect(within(panel).getByText("cluster 0: 1")).toBeInTheDocument();
 });

@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 import { layoutPoints } from "./scatterLayout";
 
-const pt = (frame: string, x: number, y: number) => ({ frame, x, y, cluster: 0, representative: false, golden: null });
+const pt = (frame: string, x: number, y: number) => ({ frame, x, y, cluster: 0, representative: false, golden: null, label: null });
 
 test("fits points into the padded box, preserving order and corners", () => {
   const out = layoutPoints([pt("a", -5, 10), pt("b", 5, 30)], 200, 100, 10);

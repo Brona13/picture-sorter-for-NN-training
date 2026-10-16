@@ -36,21 +36,36 @@ interface Drag {
 }
 
 /**
- * 2D scatter of the dedup clusters. Drag a rectangle to zoom into it and report the points inside
+ * 2D scatter of the feature's frames, coloured by cluster, label, outlier score or not at all. Drag a rectangle to zoom into it and report the points inside
  * (``onSelect``); right-click resets the view and clears the selection.
  */
+export type ColourBy = "cluster" | "label" | "outlier" | "none";
+
+const GREY = "rgba(120,120,120,.6)";
+const UNLABELED = "rgba(150,150,150,.55)";
+const PLAIN = "#2a78d6";
+
 export default function Scatter({
   points,
   classes,
   onSelect,
+  colourBy = "cluster",
   scores,
 }: {
   points: ScatterPoint[];
   classes: string[];
   onSelect?: (selected: ScatterPoint[] | null) => void;
-  /** Outlier score per frame in [0, 1]; when given, points are coloured by it instead of by cluster. */
+  colourBy?: ColourBy;
+  /** Outlier score per frame in [0, 1], used when colouring by outlier score. */
   scores?: Record<string, number>;
 }) {
+  const fillOf = (p: ScatterPoint): string => {
+    if (colourBy === "outlier") return scores && p.frame in scores ? scoreColor(scores[p.frame]) : GREY;
+    if (colourBy === "label") return p.label ? classColor(p.label, classes) : UNLABELED;
+    if (colourBy === "cluster") return p.cluster === null || p.cluster < 0 ? GREY : clusterColor(p.cluster);
+    return PLAIN;
+  };
+  const isUnique = (p: ScatterPoint) => colourBy === "cluster" && (p.cluster === null || p.cluster < 0);
   const placed = useMemo(() => layoutPoints(points, W, H), [points]);
   const svgRef = useRef<SVGSVGElement>(null);
   const viewRef = useRef<Box>(FULL);
@@ -143,9 +158,9 @@ export default function Scatter({
       <svg
         ref={svgRef}
         role="img"
-        aria-label="2D scatter of clusters"
+        aria-label="2D scatter of frames"
         viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`}
-        style={{ width: "100%", maxWidth: W, border: "1px solid #ddd", cursor: "crosshair", userSelect: "none" }}
+        style={{ width: "100%", height: "auto", display: "block", border: "1px solid #ddd", cursor: "crosshair", userSelect: "none" }}
         onMouseDown={onMouseDown}
         onContextMenu={(e) => {
           e.preventDefault();
@@ -154,7 +169,7 @@ export default function Scatter({
       >
         {placed.map((p) => (
           <g key={p.frame} data-testid={`pt-${p.frame}`} opacity={selFrames && !selFrames.has(p.frame) ? 0.2 : 1}>
-            <title>{`${p.frame} — ${p.cluster < 0 ? "unique" : `cluster ${p.cluster}`}${p.representative ? " (representative)" : ""}${p.golden ? ` — golden ${p.golden}` : ""}${scores && p.frame in scores ? ` — outlier ${(scores[p.frame]).toFixed(2)}` : ""}`}</title>
+            <title>{`${p.frame}${p.cluster === null ? "" : p.cluster < 0 ? " — unique" : ` — cluster ${p.cluster}`}${p.label ? ` — ${p.label}` : ""}${p.representative ? " (representative)" : ""}${p.golden ? ` — golden ${p.golden}` : ""}${scores && p.frame in scores ? ` — outlier ${(scores[p.frame]).toFixed(2)}` : ""}`}</title>
             {p.golden ? (
               <rect
                 x={p.px - 6 * k}
@@ -167,7 +182,7 @@ export default function Scatter({
                 strokeWidth={1.5 * k}
               />
             ) : (
-              <circle cx={p.px} cy={p.py} r={(p.cluster < 0 ? 3.5 : 4.5) * k} fill={scores && p.frame in scores ? scoreColor(scores[p.frame]) : p.cluster < 0 ? "rgba(120,120,120,.6)" : clusterColor(p.cluster)} stroke={scores ? "rgba(0,0,0,.35)" : undefined} strokeWidth={scores ? 0.6 * k : undefined} />
+              <circle cx={p.px} cy={p.py} r={(isUnique(p) ? 3.5 : 4.5) * k} fill={fillOf(p)} stroke={colourBy === "outlier" ? "rgba(0,0,0,.35)" : undefined} strokeWidth={colourBy === "outlier" ? 0.6 * k : undefined} />
             )}
             {p.representative && <circle cx={p.px} cy={p.py} r={8 * k} fill="none" stroke="#111" strokeWidth={2 * k} />}
           </g>
@@ -184,5 +199,23 @@ export default function Scatter({
         )}
       </p>
     </div>
+  );
+}
+
+/** What the colours mean, for the current "colour by" choice. */
+export function ScatterLegend({ colourBy, classes }: { colourBy: ColourBy; classes: string[] }) {
+  const chip = (color: string, text: string) => (
+    <span key={text} style={{ display: "inline-flex", alignItems: "center", gap: 4, marginRight: 12 }}>
+      <span style={{ width: 10, height: 10, borderRadius: "50%", background: color, display: "inline-block" }} />
+      {text}
+    </span>
+  );
+  return (
+    <p data-testid="scatter-legend" style={{ fontSize: 12, margin: "4px 0" }}>
+      {colourBy === "label" && [...classes.map((c) => chip(classColor(c, classes), c)), chip(UNLABELED, "unlabeled")]}
+      {colourBy === "cluster" && [chip(clusterColor(0), "a cluster (colour per cluster)"), chip(GREY, "unique")]}
+      {colourBy === "outlier" && [chip(scoreColor(0), "typical"), chip(scoreColor(1), "most isolated")]}
+      {colourBy === "none" && "Plain dots."} Diamonds are goldens; a ringed dot is a cluster's representative.
+    </p>
   );
 }

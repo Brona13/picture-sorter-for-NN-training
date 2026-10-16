@@ -264,26 +264,45 @@ def clear_mutes(camera: str, feature: str) -> dict:
 class ScatterBody(BaseModel):
     feature: str
     projection: str = scatter.DEFAULT_METHOD
+    #: Embedding to project; defaults to the one of the held clustering. No clustering is needed.
+    method: str | None = None
 
 
 @router.post("/cameras/{camera}/dedup/scatter", status_code=202)
 def run_scatter(camera: str, body: ScatterBody) -> dict:
-    """2D projection of the last clustering (job: UMAP/t-SNE can be slow on first use)."""
+    """2D projection of the feature's embeddings (job: UMAP/t-SNE can be slow on first use).
+
+    Points carry the current label and golden, and the cluster of the held clustering when there is
+    one for the same embedding, so the page can colour by any of them.
+    """
     require_feature(camera, body.feature)
     if body.projection not in scatter.SUPPORTED_METHODS:
         raise HTTPException(status_code=422, detail=f"Unknown projection: {body.projection}")
-    result = _current_result(camera, body.feature)
-    if result is None:
-        raise HTTPException(status_code=409, detail="Run Cluster first.")
-    if result.embeddings.shape[0] < 2:
+    held = _current_result(camera, body.feature)
+    method = body.method or (held.method if held else None)
+    if not method:
+        raise HTTPException(status_code=422, detail="Choose an embedding to project.")
+    if method not in methods_config.active_backbones():
+        raise HTTPException(status_code=422, detail=f"Embedding not available (switched off in Configuration?): {method}")
+    if len(dedup.live_frames(camera, body.feature)) < 2:
         raise HTTPException(status_code=409, detail="Not enough frames to project.")
+    result = held if held is not None and held.method == method else None
 
     def work(report):
         report({"phase": "projecting", "done": 0, "total": 1})
+        if result is not None:
+            frame_order, matrix = result.frame_order, result.embeddings
+        else:
+            def progress(done: int, total: int) -> None:
+                report({"phase": "embedding", "done": done, "total": total})
+
+            frame_order, matrix = dedup.fetch_embeddings(camera, body.feature, dedup.live_frames(camera, body.feature), method, progress)
+        if matrix.shape[0] < 2:
+            raise RuntimeError("Not enough frames to project.")
         try:
             proj = scatter.project(
-                result.frame_order, result.embeddings, camera=camera, feature=body.feature,
-                backbone=result.method, method=body.projection,
+                frame_order, matrix, camera=camera, feature=body.feature,
+                backbone=method, method=body.projection,
             )
         except ImportError as exc:
             raise RuntimeError(
@@ -292,20 +311,22 @@ def run_scatter(camera: str, body: ScatterBody) -> dict:
             ) from exc
         gold = labels.current_goldens(camera, body.feature)
         golden_of = {f: cls for cls, frames in gold.items() for f in frames}
-        reps = set(result.representatives.values())
+        label_of = labels.current_labels(camera, body.feature)
+        reps = set(result.representatives.values()) if result else set()
         coords = proj.coords
         points = [
             {
                 "frame": f,
                 "x": coords[f][0],
                 "y": coords[f][1],
-                "cluster": result.labels_by_frame.get(f, dedup.NOISE),
+                "cluster": result.labels_by_frame.get(f, dedup.NOISE) if result else None,
                 "representative": f in reps,
                 "golden": golden_of.get(f),
+                "label": label_of.get(f),
             }
             for f in proj.frames
         ]
-        return {"projection": body.projection, "from_cache": proj.from_cache, "points": points,
+        return {"projection": body.projection, "method": method, "from_cache": proj.from_cache, "points": points,
                 "classes": datamodel.classes_for(camera, body.feature)}
 
     return jobs.registry.submit("dedup_scatter", camera, work, feature=body.feature).to_dict()

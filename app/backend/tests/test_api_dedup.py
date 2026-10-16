@@ -129,16 +129,43 @@ class DedupApiTests(ApiTestCase):
         self.assertEqual(r.json()["unmuted"], 3)
         self.assertEqual(db.muted_frames(CAM, FEAT), set())
 
-    def test_scatter_needs_a_clustering_then_returns_annotated_points(self) -> None:
-        self.assertEqual(self.client.post(f"{self.base}/scatter", json={"feature": FEAT}).status_code, 409)
+    @staticmethod
+    def _fake_project(frames, matrix, **kw):
+        xy = np.stack([np.arange(len(frames), dtype=np.float32), np.zeros(len(frames), dtype=np.float32)], axis=1)
+        return scatter.Projection(method=kw["method"], backbone=kw["backbone"], frames=list(frames), xy=xy, from_cache=False)
+
+    def test_scatter_without_a_clustering_needs_an_embedding_and_has_no_clusters(self) -> None:
+        url = f"{self.base}/scatter"
+        self.assertEqual(self.client.post(url, json={"feature": FEAT}).status_code, 422)  # no clustering, no embedding named
+        self.assertEqual(self.client.post(url, json={"feature": FEAT, "method": "vgg"}).status_code, 422)
+        labels.set_label(CAM, FEAT, self.frames[0], "OK")
+        with mock.patch.object(scatter, "project", side_effect=self._fake_project):
+            r = self.client.post(url, json={"feature": FEAT, "method": "resnet50"})
+            self.assertEqual(r.status_code, 202, r.text)
+            job = wait_for_job(self.client, r.json()["id"])
+        self.assertEqual(job["status"], "done", job)
+        res = job["result"]
+        self.assertEqual(res["method"], "resnet50")
+        pts = {p["frame"]: p for p in res["points"]}
+        self.assertEqual(len(pts), 6)
+        self.assertTrue(all(p["cluster"] is None and not p["representative"] for p in pts.values()))
+        self.assertEqual(pts[self.frames[0]]["label"], "OK")
+        self.assertIsNone(pts[self.frames[1]]["label"])
+
+    def test_scatter_of_another_embedding_than_the_clustering_has_no_cluster_ids(self) -> None:
+        self.cluster()  # resnet50
+        with mock.patch.object(scatter, "project", side_effect=self._fake_project):
+            r = self.client.post(f"{self.base}/scatter", json={"feature": FEAT, "method": "resnet18"})
+            job = wait_for_job(self.client, r.json()["id"])
+        self.assertEqual(job["status"], "done", job)
+        self.assertTrue(all(p["cluster"] is None for p in job["result"]["points"]))
+
+    def test_scatter_returns_annotated_points_with_the_clusters_of_the_held_clustering(self) -> None:
         self.cluster()
         labels.set_label(CAM, FEAT, self.frames[5], "NG")
         labels.mark_golden(CAM, FEAT, self.frames[5], "NG")
 
-        def fake_project(frames, matrix, **kw):
-            xy = np.stack([np.arange(len(frames), dtype=np.float32), np.zeros(len(frames), dtype=np.float32)], axis=1)
-            return scatter.Projection(method=kw["method"], backbone=kw["backbone"], frames=list(frames), xy=xy, from_cache=False)
-
+        fake_project = self._fake_project
         with mock.patch.object(scatter, "project", side_effect=fake_project):
             r = self.client.post(f"{self.base}/scatter", json={"feature": FEAT, "projection": "tsne"})
             self.assertEqual(r.status_code, 202)
@@ -148,6 +175,7 @@ class DedupApiTests(ApiTestCase):
         self.assertEqual(len(pts), 6)
         self.assertEqual(pts[self.frames[5]]["golden"], "NG")
         self.assertEqual(pts[self.frames[5]]["cluster"], -1)
+        self.assertEqual(pts[self.frames[5]]["label"], "NG")
         self.assertEqual(sum(p["representative"] for p in pts.values()), 2)
         self.assertEqual(self.client.post(f"{self.base}/scatter", json={"feature": FEAT, "projection": "pca"}).status_code, 422)
 
@@ -174,6 +202,7 @@ class DedupApiTests(ApiTestCase):
         )
         self.assertEqual(r.status_code, 200, r.text)
         self.assertIsNone(self.client.get(f"{self.base}/state", params={"feature": FEAT}).json()["result"])
-        self.assertEqual(self.client.post(f"{self.base}/scatter", json={"feature": FEAT}).status_code, 409)
+        # the dropped clustering no longer supplies an embedding, nor cluster ids for a projection
+        self.assertEqual(self.client.post(f"{self.base}/scatter", json={"feature": FEAT}).status_code, 422)
         self.cluster()  # clustering again works on the new crops
         self.assertIsNotNone(self.client.get(f"{self.base}/state", params={"feature": FEAT}).json()["result"])
