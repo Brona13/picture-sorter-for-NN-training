@@ -1,4 +1,4 @@
-"""Versions: freeze / list / revert / export frozen snapshots of labels + goldens."""
+"""Versions: freeze / list / revert snapshots of labels + goldens per ROI; project (verdict) versions with export."""
 from __future__ import annotations
 
 import classify
@@ -10,6 +10,7 @@ import edge_angle
 import engine
 import labels
 import motion
+import verdicts
 import versions
 from api.cameras import require_camera, require_feature
 from fastapi import APIRouter, HTTPException
@@ -22,6 +23,13 @@ class FreezeRequest(BaseModel):
     feature: str
     name: str = ""
     notes: str = ""
+
+
+def _feature_or_project(camera: str, feature: str) -> str:
+    """Results and deletion work for a ROI's versions and for the project (verdict) versions."""
+    if feature == versions.PROJECT:
+        return require_camera(camera) and feature
+    return require_feature(camera, feature)
 
 
 def _selectable_features(camera: str, product: str | None) -> list[str]:
@@ -92,7 +100,7 @@ def _result_error(exc: versions.ResultError) -> HTTPException:
 @router.post("/cameras/{camera}/versions/{version_id}/results", status_code=201)
 def add_result(camera: str, version_id: int, body: ResultBody) -> dict:
     """Record a value measured downstream on a dataset exported from this version."""
-    require_feature(camera, body.feature)
+    _feature_or_project(camera, body.feature)
     try:
         return versions.add_result(camera, body.feature, version_id, body.name, body.value, body.note, body.measured)
     except versions.ResultError as exc:
@@ -101,7 +109,7 @@ def add_result(camera: str, version_id: int, body: ResultBody) -> dict:
 
 @router.put("/cameras/{camera}/versions/{version_id}/results/{result_id}")
 def update_result(camera: str, version_id: int, result_id: int, body: ResultBody) -> dict:
-    require_feature(camera, body.feature)
+    _feature_or_project(camera, body.feature)
     try:
         return versions.update_result(camera, body.feature, result_id, body.name, body.value, body.note, body.measured, version_id)
     except versions.ResultError as exc:
@@ -110,7 +118,7 @@ def update_result(camera: str, version_id: int, result_id: int, body: ResultBody
 
 @router.delete("/cameras/{camera}/versions/{version_id}/results/{result_id}")
 def delete_result(camera: str, version_id: int, result_id: int, feature: str) -> dict:
-    require_feature(camera, feature)
+    _feature_or_project(camera, feature)
     try:
         versions.delete_result(camera, feature, result_id, version_id)
     except versions.ResultError as exc:
@@ -136,6 +144,8 @@ def freeze(camera: str, body: FreezeRequest) -> dict:
 
 @router.post("/cameras/{camera}/versions/{version_id}/revert")
 def revert(camera: str, version_id: int, feature: str) -> dict:
+    if feature == versions.PROJECT:
+        raise HTTPException(status_code=422, detail="Project versions cannot be reverted: verdicts are derived from the labels.")
     require_feature(camera, feature)
     _require_version(camera, feature, version_id)
     return versions.revert(camera, feature, version_id)
@@ -143,7 +153,7 @@ def revert(camera: str, version_id: int, feature: str) -> dict:
 
 @router.delete("/cameras/{camera}/versions/{version_id}")
 def delete_version(camera: str, version_id: int, feature: str) -> dict:
-    require_feature(camera, feature)
+    _feature_or_project(camera, feature)
     _require_version(camera, feature, version_id, allow_deleted=True)
     try:
         versions.delete_version(camera, feature, version_id)
@@ -152,9 +162,37 @@ def delete_version(camera: str, version_id: int, feature: str) -> dict:
     return {"deleted": version_id}
 
 
-@router.post("/cameras/{camera}/versions/{version_id}/export")
-def export(camera: str, version_id: int, feature: str) -> dict:
-    require_feature(camera, feature)
-    _require_version(camera, feature, version_id)
-    dest, report = versions.export(camera, feature, version_id)
+@router.get("/cameras/{camera}/project-versions")
+def list_project_versions(camera: str) -> dict:
+    """The camera's verdict versions with their downstream results, plus the live verdict summary."""
+    require_camera(camera)
+    recorded = versions.results_by_version(camera, versions.PROJECT)
+    names = sorted({r["name"] for rs in recorded.values() for r in rs}, key=str.lower)
+    return {
+        "summary": verdicts.summary(camera),
+        "versions": [{**v, "results": recorded.get(v["id"], [])} for v in versions.list_versions(camera, versions.PROJECT)],
+        "result_names": names,
+    }
+
+
+class ProjectFreezeRequest(BaseModel):
+    name: str = ""
+    notes: str = ""
+
+
+@router.post("/cameras/{camera}/project-versions", status_code=201)
+def freeze_project(camera: str, body: ProjectFreezeRequest) -> dict:
+    require_camera(camera)
+    try:
+        return versions.freeze_project(camera, body.name, body.notes)
+    except versions.NothingToFreezeError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/cameras/{camera}/project-versions/{version_id}/export")
+def export_project(camera: str, version_id: int) -> dict:
+    """Copy the version's OK / NG pictures into class folders under the camera's exports folder."""
+    require_camera(camera)
+    _require_version(camera, versions.PROJECT, version_id)
+    dest, report = versions.export(camera, version_id)
     return {"destination": str(dest), **report}

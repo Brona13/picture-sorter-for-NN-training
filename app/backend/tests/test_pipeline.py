@@ -113,9 +113,13 @@ class PipelineTests(ApiTestCase):
         st = self.stages()
         self.assertEqual((st["version"]["status"], st["version"]["detail"], st["exported"]["status"]), ("done", "v1", "todo"))
         self.assertEqual(pipeline.stages(CAM, FEAT)["next"], "exported")
-        exp = self.client.post(f"/api/cameras/{CAM}/versions/{r.json()['id']}/export", params={"feature": FEAT})
+        pv = self.client.post(f"/api/cameras/{CAM}/project-versions", json={"name": "first"})
+        self.assertEqual(pv.status_code, 201, pv.text)
+        self.assertEqual(self.stages()["exported"]["status"], "todo")  # frozen, not exported yet
+        exp = self.client.post(f"/api/cameras/{CAM}/project-versions/{pv.json()['id']}/export")
         self.assertEqual(exp.status_code, 200, exp.text)
         self.assertEqual(self.stages()["exported"]["status"], "done")
+        self.assertEqual(self.stages()["exported"]["detail"], "project v1")
         self.assertIsNone(pipeline.stages(CAM, FEAT)["next"])
 
     def test_a_deleted_version_no_longer_counts(self) -> None:

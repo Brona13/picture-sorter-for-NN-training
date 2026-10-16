@@ -26,6 +26,10 @@ beforeEach(() => {
     "fetch",
     vi.fn(async (url: string, init?: RequestInit) => {
       calls.push({ url, method: init?.method ?? "GET", body: init?.body as string | undefined });
+      if (url.endsWith("/project-versions"))
+        return new Response(
+          JSON.stringify({ summary: { frames: 0, total: 0, deleted: 0, ok: 0, ng: 0, open: 0, contradiction: 0, stale: 0, duplicates: 0 }, versions: [] }),
+        );
       if (url.includes("/versions/features"))
         return new Response(JSON.stringify([{ feature: "seal", label: "seal" }]));
       if (url.includes("/revert")) return new Response(JSON.stringify({ labels: 3, goldens: 1 }));
@@ -109,27 +113,7 @@ test("a deleted version stays in the history, greyed out, without actions", asyn
   expect(row).toHaveTextContent("deleted");
   expect(row).toHaveClass("deleted-version");
   expect(screen.queryByRole("button", { name: /Revert v1/ })).toBeNull();
-  expect(screen.queryByRole("button", { name: /Export v1/ })).toBeNull();
   expect(screen.queryByRole("button", { name: /Delete v1/ })).toBeNull();
-});
-
-test("export shows the report", async () => {
-  render(<VersionsView camera="camA" />);
-  await screen.findByText("History (2)");
-  await userEvent.click(screen.getByRole("button", { name: /Export v1/ }));
-  await waitFor(() => expect(screen.getByText("/x/exports")).toBeInTheDocument());
-  expect(screen.getByText(/1 frame\(s\) missing: a.png/)).toBeInTheDocument();
-});
-
-test("the export path can be copied to the clipboard", async () => {
-  const writeText = vi.fn().mockResolvedValue(undefined);
-  Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
-  render(<VersionsView camera="camA" />);
-  await screen.findByText("History (2)");
-  await userEvent.click(screen.getByRole("button", { name: /Export v1/ }));
-  await userEvent.click(await screen.findByRole("button", { name: "Copy path" }));
-  expect(writeText).toHaveBeenCalledWith("/x/exports");
-  expect(await screen.findByRole("button", { name: "✓ Copied" })).toBeInTheDocument();
 });
 
 test("shows the vision settings frozen with a version", async () => {
@@ -160,4 +144,11 @@ test("shows the frozen edge-angle rule and augmentation ranges in one column", a
   render(<VersionsView camera="camA" />);
   expect(await screen.findByText("edge 90.0°±5 + · dx -6…8 px · rot -2…2°")).toBeInTheDocument();
   expect(screen.getByRole("columnheader", { name: "rules & ranges" })).toBeInTheDocument();
+});
+
+test("ROI versions no longer have an export button; exporting lives in the project versions", async () => {
+  render(<VersionsView camera="camA" />);
+  await screen.findByText("History (2)");
+  expect(screen.queryByRole("button", { name: /Export v/ })).toBeNull();
+  expect(screen.getByRole("region", { name: "Project versions" })).toBeInTheDocument();
 });

@@ -1,7 +1,7 @@
 ---
 name: project-verdict-plan
 description: Agreed design for camera tags, the New camera wizard, project-wide verdicts (OK/NG from all ROI labels), the Verdict page, deleted/duplicate indicators and verdict-based export
-status: active
+status: complete
 document_type: plan
 last_updated: 2026-10-16
 ---
@@ -13,7 +13,7 @@ last_updated: 2026-10-16
 ## Releases
 - v1.25.0 — New camera wizard on Overview, tags per camera with filter. Done.
 - v1.26.0 — verdict model, Verdict page, progress on camera cards, label origin and page (schema v8). Done.
-- v1.27.0 — project versions and export from verdicts.
+- v1.27.0 — project versions and export from verdicts. Done.
 
 ## Verdict model
 - One verdict per picture, camera-wide: OK or NG. Only the classes `OK` and `NG` count for now; other classes and classify-role ROIs are ignored and flagged. More complex classes may come later.

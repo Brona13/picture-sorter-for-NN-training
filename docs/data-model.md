@@ -128,22 +128,23 @@ A version is an immutable snapshot recipe for one camera and feature. It stores 
 - Exactly one version per camera and feature is active.
 - Reverting replaces working labels and goldens with the snapshot.
 - Reverting never deletes other saved versions.
-- A non-active version can be deleted. Deleting drops its snapshot items but keeps the history row, greyed out and marked deleted, so version numbers are never reused and gaps (v1 and v3 on disk, v2 deleted) stay explainable. Working labels and goldens and already exported files are untouched. The active version cannot be deleted, and a deleted version cannot be reverted to or exported.
+- A non-active version can be deleted (ROI and project versions alike). Deleting drops its snapshot items but keeps the history row, greyed out and marked deleted, so version numbers are never reused and gaps (v1 and v3 on disk, v2 deleted) stay explainable. Working labels and goldens and already exported files are untouched. The active version cannot be deleted, and a deleted version cannot be reverted to or exported.
 - Export reads the frozen snapshot and verifies hashes.
 
-## Export
+## Project versions and export
 
-Exports copy the version's **golden** frames only, unmodified (original filenames, no cutouts, no manifest), under `cameras/<camera>/exports/<feature>/<version>/<class>/`.
+A **project version** freezes the camera's verdicts. It is stored in the same tables as the ROI versions under the reserved feature name `@project` (ROI names cannot start with `@`); its items have `kind="verdict"` and class `OK` or `NG`, with the content hash. Only pictures with a valid verdict at freeze time are in it (open, contradictory, stale and deleted pictures are not; duplicates only if they have a verdict). Its counts record ok, ng, contradiction, stale, open, duplicates, deleted and total. It has numbering, active flag, soft deletion and downstream results like any version, but it cannot be reverted.
+
+Export copies a project version's pictures unmodified (original filenames, no cutouts, no manifest) under `cameras/<camera>/exports/project/v<NNN>__<name>/<OK|NG>/`. ROI versions are not exported; goldens are used for scoring only.
 
 - Source frames remain unchanged.
-- Labeled frames that are not golden are not exported; they exist for scoring and stay in the snapshot.
-- A golden is exported once, into the folder of its class.
+- A picture is exported once, into the folder of its verdict.
 - Missing sources and hash mismatches are reported.
 - Exports are generated artifacts, not authoritative metadata.
 
 ## Persistence
 
-The SQLite database is `data/picture_sorter.db`, schema version 7.
+The SQLite database is `data/picture_sorter.db`, schema version 8.
 
 Authoritative or indexed state:
 

@@ -1,4 +1,4 @@
-"""Dataset versioning per (camera, feature): freeze / list / revert / export.
+"""Dataset versioning per (camera, feature): freeze / list / revert, and project versions (verdicts) with export.
 
 A version is a **recipe snapshot** — the labels and golden marks (with content-
 hashes) at freeze time, plus counts and novelty statistics. No images are copied;
@@ -244,59 +244,94 @@ def delete_version(camera: str, feature: str, version_id: int) -> None:
         con.close()
 
 
-# --- export ------------------------------------------------------------------
-def export_dir(camera: str, feature: str, number: int, name: str) -> Path:
-    """Where exporting version ``number`` writes: ``exports/<feature>/v<NNN>__<name>``."""
+# --- project versions (verdicts) and export ----------------------------------
+# A project version freezes the camera's verdicts (one OK / NG per picture, see ``verdicts.py``). It lives in the
+# same tables as the per-ROI versions under the reserved feature name below, so numbering, deletion and the
+# downstream results work the same way. It cannot be reverted: verdicts are derived from the labels.
+PROJECT = "@project"
+
+
+class NothingToFreezeError(ValueError):
+    """No picture has a valid OK / NG verdict yet."""
+
+
+def freeze_project(camera: str, name: str, notes: str = "") -> dict:
+    """Snapshot the current verdicts as the next project version. Returns ``{id, number, counts}``."""
+    import verdicts
+
+    records = verdicts.evaluate(camera)
+    chosen = [(r["frame"], r["verdict"]) for r in records if r["verdict"] in verdicts.CLASSES]
+    if not chosen:
+        raise NothingToFreezeError("No picture has an OK or NG verdict yet.")
+    summary = verdicts.summary(camera)
+    counts = {k: summary[k] for k in ("ok", "ng", "contradiction", "stale", "open", "duplicates", "deleted", "total")}
+    hmap = labels.hash_map(camera)
+    con = db.connect()
+    try:
+        row = con.execute("SELECT COALESCE(MAX(number), 0) AS n FROM versions WHERE camera=? AND feature=?", (camera, PROJECT)).fetchone()
+        number = int(row["n"]) + 1
+        con.execute("UPDATE versions SET active=0 WHERE camera=? AND feature=?", (camera, PROJECT))
+        cur = con.execute(
+            "INSERT INTO versions(camera, feature, number, name, notes, created, counts_json, stats_json, active) "
+            "VALUES (?,?,?,?,?,?,?,?,1)",
+            (camera, PROJECT, number, name.strip() or f"v{number}", notes.strip(), time.time(), json.dumps(counts), json.dumps({})),
+        )
+        vid = cur.lastrowid
+        con.executemany(
+            "INSERT INTO version_items(version_id, frame, hash, kind, class) VALUES (?,?,?,?,?)",
+            [(vid, f, labels.frame_hash(camera, f, hmap), "verdict", cls) for f, cls in chosen],
+        )
+        con.commit()
+    finally:
+        con.close()
+    return {"id": vid, "number": number, "counts": counts}
+
+
+def export_dir(camera: str, number: int, name: str) -> Path:
+    """Where exporting project version ``number`` writes: ``exports/project/v<NNN>__<name>``."""
     safe = "".join(c if c.isalnum() or c in "-_" else "-" for c in name)
-    # A product-scoped feature is "<product>::<roi>"; ":" is not a legal path
-    # character on Windows, so it becomes "<product>-<roi>" on disk.
-    safe_feature = feature.replace(datamodel.FEATURE_SEP, "-")
-    return datamodel.camera_dir(camera) / "exports" / safe_feature / f"v{number:03d}__{safe}"
+    return datamodel.camera_dir(camera) / "exports" / "project" / f"v{number:03d}__{safe}"
 
 
-def export(camera: str, feature: str, version_id: int) -> tuple[Path, dict]:
-    """Copy a version's golden frames, untouched, into class folders.
+def export(camera: str, version_id: int) -> tuple[Path, dict]:
+    """Copy a project version's OK / NG pictures, untouched, into class folders.
 
-    Layout: ``cameras/<cam>/exports/<feature>/v<NNN>__<name>/<class>/<original filename>``.
-    Only golden frames are exported; other labeled frames exist for scoring and
-    stay in the snapshot only. No cutouts and no manifest: the original filename
-    is kept so labels in other tools map back to the source frame.
-    Hashes are verified; missing/changed frames are reported, not silently skipped.
+    Layout: ``cameras/<cam>/exports/project/v<NNN>__<name>/<OK|NG>/<original filename>``.
+    Only pictures with a valid verdict at freeze time are in the snapshot; open, contradictory and stale
+    ones were never part of it. No cutouts and no manifest: the original filename is kept so labels in
+    other tools map back to the source frame. Hashes are verified; missing or changed frames are
+    reported, not silently skipped.
     """
     import shutil
 
     con = db.connect()
     try:
-        v = con.execute("SELECT * FROM versions WHERE id=?", (version_id,)).fetchone()
+        v = con.execute(
+            "SELECT * FROM versions WHERE id=? AND camera=? AND feature=?", (version_id, camera, PROJECT)
+        ).fetchone()
     finally:
         con.close()
     if v is None:
         raise ValueError(f"no such version id {version_id}")
 
     hmap = labels.hash_map(camera)
-    dest = export_dir(camera, feature, v["number"], v["name"])
+    dest = export_dir(camera, v["number"], v["name"])
     report = {"written": 0, "missing": [], "hash_mismatch": []}
-
-    # Goldens only. A golden is always labeled, so its snapshot also holds a label
-    # item; skipping kind="label" exports each golden once.
-    seen: set[tuple[str, str]] = set()
+    seen: set[str] = set()
     for item in load_items(version_id):
-        if item["kind"] != "golden":
+        if item["kind"] != "verdict" or item["frame"] in seen:
             continue
-        frame, cls = item["frame"], item["class"]
-        if (frame, cls) in seen:
-            continue
-        seen.add((frame, cls))
-        src = datamodel.unsorted_dir(camera) / frame
+        seen.add(item["frame"])
+        src = datamodel.unsorted_dir(camera) / item["frame"]
         if not src.exists():
-            report["missing"].append(frame)
+            report["missing"].append(item["frame"])
             continue
-        if item["hash"] and labels.frame_hash(camera, frame, hmap) != item["hash"]:
-            report["hash_mismatch"].append(frame)
+        if item["hash"] and labels.frame_hash(camera, item["frame"], hmap) != item["hash"]:
+            report["hash_mismatch"].append(item["frame"])
             continue
-        out_dir = dest / cls
+        out_dir = dest / item["class"]
         out_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src, out_dir / Path(frame).name)
+        shutil.copy2(src, out_dir / Path(item["frame"]).name)
         report["written"] += 1
     return dest, report
 

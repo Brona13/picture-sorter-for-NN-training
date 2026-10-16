@@ -19,3 +19,8 @@ document_type: session-note
 - Pages: Verdict (opens on contradictions), Overview camera cards carry `VerdictBar` (verdict / contradictions / stale / open / duplicates + deleted).
 - Dedup passes `via: "Dedup"` to label-bulk; other writers get a default page from their source.
 - Next: 1.27.0 project versions and verdict export. Unverified in a browser.
+
+## 1.27.0 (project versions and verdict export)
+- Project versions freeze the verdicts (`versions.freeze_project`, feature `@project`); export copies OK/NG pictures to `exports/project/v<NNN>__<name>/<class>/`. ROI versions lost their golden export; the pipeline "Export" stage now follows the latest project version.
+- UI: `ProjectVersions.tsx` at the top of Versions (live verdict bar, warning about pictures without a verdict, history, export, delete, downstream results).
+- Unverified in a browser.

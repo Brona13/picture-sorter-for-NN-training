@@ -97,6 +97,13 @@ export interface VersionsResponse {
   result_names?: string[];
 }
 
+export interface ProjectVersionsResponse {
+  /** The live verdict counts (what a freeze would take). */
+  summary: VerdictSummary;
+  versions: VersionInfo[];
+  result_names?: string[];
+}
+
 export interface ExportReport {
   destination: string;
   written: number;
@@ -769,11 +776,14 @@ export const api = {
       `/cameras/${encodeURIComponent(camera)}/versions/${versionId}/results/${id}?feature=${encodeURIComponent(feature)}`,
       send("DELETE"),
     ),
-  exportVersion: (camera: string, feature: string, id: number) =>
-    request<ExportReport>(
-      `/cameras/${encodeURIComponent(camera)}/versions/${id}/export?feature=${encodeURIComponent(feature)}`,
-      post(),
+  projectVersions: (camera: string) => request<ProjectVersionsResponse>(`/cameras/${encodeURIComponent(camera)}/project-versions`),
+  freezeProject: (camera: string, name: string, notes: string) =>
+    request<{ id: number; number: number; counts: Record<string, number> }>(
+      `/cameras/${encodeURIComponent(camera)}/project-versions`,
+      post({ name, notes }),
     ),
+  exportProjectVersion: (camera: string, id: number) =>
+    request<ExportReport>(`/cameras/${encodeURIComponent(camera)}/project-versions/${id}/export`, post()),
   job: <R = unknown>(id: string) => request<Job<R>>(`/jobs/${encodeURIComponent(id)}`),
   createCamera: (name: string, tags: string[] = []) => request<{ name: string; tags: string[] }>("/cameras", post({ name, tags })),
   tags: () => request<{ tag: string; count: number }[]>("/tags"),

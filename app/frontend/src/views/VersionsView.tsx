@@ -1,7 +1,7 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { usePublishFeature, useSharedFeature } from "../SharedFeature";
-import { api, ExportReport, VersionInfo, VersionsResponse, VisionSnapshot } from "../api";
-import CopyButton from "../CopyButton";
+import { api, VersionInfo, VersionsResponse, VisionSnapshot } from "../api";
+import ProjectVersions from "../ProjectVersions";
 import VersionResults from "../VersionResults";
 
 const fmt = (ts: number) => new Date(ts * 1000).toISOString().slice(0, 16).replace("T", " ");
@@ -45,7 +45,6 @@ export default function VersionsView({ camera, product }: { camera: string; prod
   const [confirming, setConfirming] = useState<number | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState<number | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [exportReport, setExportReport] = useState<ExportReport | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -76,7 +75,6 @@ export default function VersionsView({ camera, product }: { camera: string; prod
     setConfirming(null);
     setConfirmingDelete(null);
     setNotice(null);
-    setExportReport(null);
     load();
   }, [load]);
 
@@ -118,14 +116,6 @@ export default function VersionsView({ camera, product }: { camera: string; prod
     }
   }
 
-  async function onExport(v: VersionInfo) {
-    try {
-      setExportReport(await api.exportVersion(camera, feature, v.id));
-    } catch (err) {
-      setError(msg(err));
-    }
-  }
-
   if (!camera) return <p>Select a camera.</p>;
   const classes = data?.classes ?? [];
 
@@ -137,6 +127,11 @@ export default function VersionsView({ camera, product }: { camera: string; prod
       </h2>
       {error && <p role="alert">{error}</p>}
       {notice && <p role="status">{notice}</p>}
+      <ProjectVersions camera={camera} />
+      <h3>ROI versions</h3>
+      <p style={{ fontSize: 13 }}>
+        A ROI version freezes the labels and goldens of one ROI so you can go back to it (revert). Pictures are exported from the project versions above.
+      </p>
       <label>
         Feature (ROI){" "}
         <select value={feature} onChange={(e) => setFeature(e.target.value)}>
@@ -238,7 +233,6 @@ export default function VersionsView({ camera, product }: { camera: string; prod
                         <button disabled={v.active} onClick={() => setConfirming(v.id)}>
                           ⏪ Revert v{v.number}
                         </button>{" "}
-                        <button onClick={() => onExport(v)}>📦 Export v{v.number}</button>{" "}
                         <button disabled={v.active} onClick={() => setConfirmingDelete(v.id)}>
                           🗑 Delete v{v.number}
                         </button>
@@ -277,26 +271,6 @@ export default function VersionsView({ camera, product }: { camera: string; prod
                 <button onClick={() => setConfirmingDelete(null)}>Cancel</button>
               </div>
             ))}
-
-          {exportReport && (
-            <div role="status">
-              <p>
-                Exported <strong>{exportReport.written}</strong> golden images → <code>{exportReport.destination}</code>{" "}
-                <CopyButton text={exportReport.destination} label="Copy path" />
-              </p>
-              {exportReport.missing.length > 0 && (
-                <p>
-                  {exportReport.missing.length} frame(s) missing: {exportReport.missing.slice(0, 5).join(", ")}
-                </p>
-              )}
-              {exportReport.hash_mismatch.length > 0 && (
-                <p role="alert">
-                  {exportReport.hash_mismatch.length} frame(s) changed since freeze:{" "}
-                  {exportReport.hash_mismatch.slice(0, 5).join(", ")}
-                </p>
-              )}
-            </div>
-          )}
 
           <VersionResults
             camera={camera}

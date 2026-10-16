@@ -108,10 +108,9 @@ class VersionsApiTests(ApiTestCase):
         self.assertEqual(n, 0)  # snapshot gone
         self.assertEqual(labels.current_goldens("camA", "seal"), {"OK": [self.frames[0]]})  # working state untouched
 
-        # A deleted version cannot be reverted to or exported.
-        for action in ("revert", "export"):
-            r = self.client.post(f"{self.base}/{v2}/{action}", params={"feature": "seal"})
-            self.assertEqual(r.status_code, 409)
+        # A deleted version cannot be reverted to.
+        r = self.client.post(f"{self.base}/{v2}/revert", params={"feature": "seal"})
+        self.assertEqual(r.status_code, 409)
 
         # Deleting the newest non-active version must not free its number.
         self.client.delete(f"{self.base}/{v1}", params={"feature": "seal"})
@@ -138,31 +137,6 @@ class VersionsApiTests(ApiTestCase):
         self.freeze(feature="cap", name="again")
         r = self.client.delete(f"{self.base}/{other}", params={"feature": "seal"})
         self.assertEqual(r.status_code, 404)
-
-    def test_export_is_reproducible_and_leaves_sources_untouched(self) -> None:
-        f = self.frames
-        labels.set_label("camA", "seal", f[0], "OK")
-        labels.set_label("camA", "seal", f[1], "NG")
-        labels.set_label("camA", "seal", f[2], "NG")
-        labels.mark_golden("camA", "seal", f[0], "OK")
-        labels.mark_golden("camA", "seal", f[1], "NG")
-        vid = self.freeze().json()["id"]
-        before = sorted(p.name for p in datamodel.list_unsorted("camA"))
-
-        r1 = self.client.post(f"{self.base}/{vid}/export", params={"feature": "seal"}).json()
-        self.assertEqual(r1["written"], 2)  # goldens only; f[2] is labeled but not golden
-        self.assertEqual(r1["missing"], [])
-        self.assertEqual(r1["hash_mismatch"], [])
-        from pathlib import Path
-
-        files1 = sorted(str(p.relative_to(r1["destination"])) for p in Path(r1["destination"]).rglob("*.png"))
-        # change working state, export again from the frozen version -> same output
-        labels.clear_label("camA", "seal", f[1])
-        r2 = self.client.post(f"{self.base}/{vid}/export", params={"feature": "seal"}).json()
-        files2 = sorted(str(p.relative_to(r2["destination"])) for p in Path(r2["destination"]).rglob("*.png"))
-        self.assertEqual(files1, files2)
-        self.assertEqual(len(files1), 2)
-        self.assertEqual(before, sorted(p.name for p in datamodel.list_unsorted("camA")))
 
     def test_freeze_uses_persisted_scores_for_stats(self) -> None:
         import classify

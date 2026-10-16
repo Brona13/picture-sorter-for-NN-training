@@ -97,7 +97,7 @@ The application provides these views:
 - **Verdict** (⚖️) — one OK / NG verdict per picture from all ROIs; decide contradictions and stale decisions (see *Project verdicts*)
 - **Insights** — compare method behavior against human labels; click a confusion-matrix number to review those frames as cards (false positives / negatives)
 - **Augmentation** — measure how far the object moves between frames and keep movement ranges for the training side (see *Augmentation ranges* below)
-- **Versions** — freeze, revert, and export dataset snapshots
+- **Versions** — freeze verdicts as project versions and export them; freeze and revert ROI snapshots
 
 The sidebar selects the camera. When a camera has a product-classification ROI, it also selects either the product-sorting stage or one product’s quality stage.
 
@@ -230,7 +230,7 @@ Click any chip to open the page that does that stage, already on that ROI (and i
 | Edge angle (optional) | a line is saved and all frames are measured for it | Edge angle |
 | Augmentation (optional) | movement ranges are saved | Augmentation |
 | Version | a version is frozen and not deleted | Versions |
-| Export | the active version (or the latest) was exported | Versions |
+| Export | the latest project version (verdicts) of the camera was exported | Versions |
 
 The bar under each card also shows how many of the ROI's frames are labeled. A curated dataset keeps many
 frames unlabeled on purpose, so the bar is information, not a target. Nothing is stored for this: every
@@ -366,7 +366,7 @@ decision and the rule applies again. Deleted pictures are left out.
 
 Each camera card on Overview carries a bar with the pictures that have a verdict, open, contradictions, stale and
 **duplicates** (open pictures muted by Dedup, they need no label), plus the number of **deleted** pictures.
-Export from verdicts follows in a later release.
+Pictures are exported from the verdicts (see *Freeze and export versions*).
 
 ## Choosing the scoring methods
 
@@ -543,9 +543,29 @@ and 98 MB for resnet50 — into the PyTorch cache, once per machine.
 
 ## Freeze and export versions
 
-Use the **Versions** view after reviewing the working labels and goldens.
+The **Versions** page has two kinds of versions.
 
-### Freeze
+### Project versions: freeze and export the verdicts
+
+At the top of the page, **Project versions (verdicts)** freezes the camera's verdicts (see *Project verdicts*):
+every picture with an OK or NG verdict at that moment is stored with its content hash. Open pictures,
+contradictions, stale decisions and Dedup duplicates have no valid verdict and are left out; a warning above the
+form says how many. Deleted pictures are never in a version. Versions are numbered p1, p2, ...; the newest is
+"latest". An older one can be deleted (confirmation); the row stays greyed out and the number is not reused.
+Project versions cannot be reverted, because verdicts are derived from the labels.
+
+**Export** copies the OK and NG pictures of a project version, unmodified and with their original filenames, into
+
+```text
+cameras/<camera>/exports/project/v<NNN>__<name>/OK/
+cameras/<camera>/exports/project/v<NNN>__<name>/NG/
+```
+
+No cutouts and no extra files are written. After an export the folder is shown with a **Copy path** button.
+Before copying each frame the exporter verifies its content hash; missing or changed frames are reported, not
+silently skipped. Exporting again from the same version gives the same result, whatever the labels are now.
+
+### ROI versions: freeze and revert
 
 Freezing creates a numbered metadata snapshot containing:
 
@@ -565,25 +585,14 @@ Other saved versions remain available.
 
 A non-active version can be deleted from the history table (with confirmation). Its snapshot is removed, but the row stays in the history greyed out as "deleted", so version numbers are never reused. Working labels and goldens and files already exported are not touched. The active version cannot be deleted.
 
-### Export
-
-Export materializes a frozen version into class folders under:
-
-```text
-cameras/<camera>/exports/<feature>/<version>/<class>/
-```
-
-Only the version's golden frames are exported, as unmodified copies of the source images with their original filenames. Labeled frames that are not golden are used for scoring only and are not exported. No cutouts and no extra files are written.
-
-After an export the destination folder is shown with a **Copy path** button for pasting it into another app.
-
-Before copying each frame, the exporter verifies the source-frame content hash. Missing or changed frames are reported.
+ROI versions are snapshots for going back; they are not exported (this changed in v1.27.0, when export moved
+from goldens to verdicts).
 
 ### Downstream results
 
 The training or inspection system that uses an exported dataset measures its own quality values (for
 example accuracy, or the recall of NG). This tool does not compute them, but the **Downstream results**
-section at the bottom of the Versions page records them against the version the dataset came from, so you
+section under the project versions records them against the project version the dataset came from, so you
 can see which curation choices led to which outcome.
 
 - **Record a result:** choose the version (the active one by default, a deleted one is possible too), type

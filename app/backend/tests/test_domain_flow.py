@@ -120,7 +120,7 @@ class EndToEndFlowTests(unittest.TestCase):
         self.assertTrue(any(result.per_method.get("cpu") for result in results if not result.golden))
         self.assertEqual("comparison", score_events[-1].phase)
 
-        # Freeze, mutate, revert, and export prove the explicit history path end to end.
+        # Freeze, mutate, revert, and project export prove the explicit history path end to end.
         frozen = versions.freeze(self.camera, self.feature, "baseline", notes="e2e")
         labels.set_label(self.camera, self.feature, frames[2], "NG", source="e2e-change")
         labels.clear_label(self.camera, self.feature, frames[3])
@@ -130,14 +130,13 @@ class EndToEndFlowTests(unittest.TestCase):
             {"OK": [frames[0]], "NG": [frames[1]]},
             labels.current_goldens(self.camera, self.feature),
         )
-        destination, export_report = versions.export(
-            self.camera, self.feature, frozen["id"]
-        )
-        golden_count = 2  # frames[0] (OK) and frames[1] (NG); only goldens are exported
-        self.assertEqual(golden_count, export_report["written"])
+        # Export is done from project (verdict) versions: the two labelled frames carry OK / NG verdicts.
+        project = versions.freeze_project(self.camera, "verdicts")
+        destination, export_report = versions.export(self.camera, project["id"])
+        self.assertEqual(len(expected_labels), export_report["written"])
         self.assertEqual([], export_report["missing"])
         self.assertEqual([], export_report["hash_mismatch"])
-        self.assertEqual(golden_count, len(list(destination.rglob("*.png"))))
+        self.assertEqual(len(expected_labels), len(list(destination.rglob("*.png"))))
 
 
 if __name__ == "__main__":

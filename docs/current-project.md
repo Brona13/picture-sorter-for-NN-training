@@ -205,7 +205,7 @@ set at once.
 - Labels record where they were set (`labels.via`: Classify, Classify bulk, Classify auto-assign, Dedup, Find similar, ...; older labels show "page unknown")
 - Endpoints: `GET /api/cameras/{camera}/verdicts/summary`, `GET /api/cameras/{camera}/verdicts?status=&page=&per_page=`, `PUT /api/cameras/{camera}/verdicts/decision`; `/api/overview` carries the summary per camera
 - Overview shows the bar (OK, NG, contradictions, stale, open, duplicates = open and muted by Dedup) and the deleted count
-- Not yet: export and project versions from verdicts (v1.27.0, `plans/project-verdict-plan.md`)
+- Export and project versions from verdicts: see Versions below (v1.27.0). The old golden-only export of ROI versions was removed; the pipeline stage "Export" now means the latest project version was exported
 
 ### Insights
 
@@ -223,7 +223,7 @@ These views evaluate the curation aid; they do not establish classifier accuracy
 - Keep one active version per camera and feature
 - Compare version counts with the preceding version
 - Replace working metadata from an earlier snapshot without deleting saved versions
-- Export a frozen version into class folders
+- Project versions (v1.27.0): freeze the verdicts (`versions.freeze_project`, reserved feature `@project`, items of kind `verdict`), export OK / NG pictures into `exports/project/v<NNN>__<name>/<class>/` (`versions.export`, `GET/POST /api/cameras/{camera}/project-versions`, `POST .../{id}/export`), `ProjectVersions.tsx`. Pictures without a valid verdict are not in a version; no revert
 - Verify hashes during export
 - Report missing or changed source frames
 - Record values measured downstream (metric name, number, day, note) against a version; compare them across versions; edit and delete entries (`version_results`, schema v7). The app only stores them: they never affect scoring, and the metrics themselves are defined by the downstream system

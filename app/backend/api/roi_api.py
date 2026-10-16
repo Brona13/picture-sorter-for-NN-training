@@ -123,6 +123,8 @@ def upsert_roi(camera: str, body: RoiUpsert) -> dict:
         raise HTTPException(status_code=422, detail="Please enter a feature name.")
     if "/" in short or "\\" in short:
         raise HTTPException(status_code=422, detail="ROI names cannot contain slashes.")
+    if short.startswith("@"):
+        raise HTTPException(status_code=422, detail="ROI names cannot start with @ (reserved).")
     if datamodel.FEATURE_SEP in short:
         raise HTTPException(status_code=422, detail=f"`{datamodel.FEATURE_SEP}` is reserved — please pick a name without it.")
     if body.product is not None and body.product not in products:
