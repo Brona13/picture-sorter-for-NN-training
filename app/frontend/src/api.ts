@@ -216,6 +216,8 @@ export interface VerdictList {
   n_pages: number;
   total: number;
   items: VerdictItem[];
+  /** Per-page and columns of this page's grid (camera-wide; Verdict has no ROI). */
+  settings?: { per_page: number; cols: number; per_page_options: number[]; cols_options: number[] };
 }
 
 export interface OverviewCamera {
@@ -866,10 +868,12 @@ export const api = {
   labelFrames: (camera: string, feature: string, frames: string[], cls: string, via?: string) =>
     request<{ labeled: number }>(`/cameras/${encodeURIComponent(camera)}/classify/label-bulk`, post({ feature, frames, cls, via })),
   verdictSummary: (camera: string) => request<VerdictSummary>(`/cameras/${encodeURIComponent(camera)}/verdicts/summary`),
-  verdicts: (camera: string, status: string, page: number, perPage: number) =>
+  verdicts: (camera: string, status: string, page: number) =>
     request<VerdictList>(
-      `/cameras/${encodeURIComponent(camera)}/verdicts?status=${encodeURIComponent(status)}&page=${page}&per_page=${perPage}`,
+      `/cameras/${encodeURIComponent(camera)}/verdicts?status=${encodeURIComponent(status)}&page=${page}`,
     ),
+  verdictGridSettings: (camera: string, per_page: number, cols: number) =>
+    request<NonNullable<VerdictList["settings"]>>(`/cameras/${encodeURIComponent(camera)}/verdicts/grid-settings`, send("PUT", { per_page, cols })),
   verdictDecide: (camera: string, frame: string, cls: "OK" | "NG" | null) =>
     request<{ item: VerdictItem | null; summary: VerdictSummary }>(
       `/cameras/${encodeURIComponent(camera)}/verdicts/decision`,

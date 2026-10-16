@@ -83,3 +83,25 @@ test("the filter changes the request and automatic verdicts are labelled", async
   expect(within(card).getByTestId("status-b.png")).toHaveTextContent("OK · automatic");
   expect(within(card).getByText(/No ROI has labelled this picture/)).toBeInTheDocument();
 });
+
+test("uses the saved grid: columns, the pager, and saving a new choice", async () => {
+  const settings = { per_page: 12, cols: 5, per_page_options: [12, 24], cols_options: [3, 5] };
+  list = () => ({ status: "contradiction", page: 1, per_page: 12, n_pages: 3, total: 30, settings, items: [item("a.png"), item("b.png")] });
+  render(<VerdictView camera="camA" />);
+  await screen.findByTestId("verdict-card-a.png");
+  expect(screen.getByTestId("verdict-card-a.png").parentElement!.style.gridTemplateColumns).toBe("repeat(5, minmax(0, 1fr))");
+  expect(screen.getAllByText(/Page/)[0]).toHaveTextContent("Page 1 of 3");
+  await userEvent.selectOptions(screen.getByLabelText("Columns top"), "3");
+  await waitFor(() => expect(calls.find((c) => c.url.includes("/verdicts/grid-settings"))?.body).toEqual({ per_page: 12, cols: 3 }));
+});
+
+test("hover keys decide: 1 = OK, 2 = NG, 0 clears an existing decision", async () => {
+  list = () => ({ status: "contradiction", page: 1, per_page: 24, n_pages: 1, total: 1, items: [item("a.png", { decision: "OK" })] });
+  render(<VerdictView camera="camA" />);
+  const card = await screen.findByTestId("verdict-card-a.png");
+  await userEvent.hover(card);
+  await userEvent.keyboard("2");
+  await waitFor(() => expect(calls.find((c) => c.url.includes("/verdicts/decision"))?.body).toEqual({ frame: "a.png", cls: "NG" }));
+  await userEvent.keyboard("0");
+  await waitFor(() => expect(calls.filter((c) => c.url.includes("/verdicts/decision")).at(-1)?.body).toEqual({ frame: "a.png", cls: null }));
+});

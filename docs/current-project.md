@@ -208,6 +208,7 @@ set at once.
 - Endpoints: `GET /api/cameras/{camera}/verdicts/summary`, `GET /api/cameras/{camera}/verdicts?status=&page=&per_page=`, `PUT /api/cameras/{camera}/verdicts/decision`; `/api/overview` carries the summary per camera
 - Overview shows the bar (OK, NG, contradictions, stale, open, duplicates = open and muted by Dedup) and the deleted count
 - Export and project versions from verdicts: see Versions below (v1.27.0). The old golden-only export of ROI versions was removed; the pipeline stage "Export" now means the latest project version was exported
+- The Verdict page shows its cards like Classify (v1.29.2): the shared pager (first/prev/next/last, per page, columns) and a column grid instead of a picture-size slider, plus hover keys (1 = OK, 2 = NG, 0 = clear my decision). Verdict has no ROI, so per-page and columns are stored camera-wide (`verdict.grid.perpage` / `verdict.grid.cols`, `PUT /verdicts/grid-settings`, returned as `settings` by the listing) rather than in Classify's per-ROI setting
 
 ### Insights
 

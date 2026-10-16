@@ -116,6 +116,18 @@ class VerdictTests(ApiTestCase):
         self.assertEqual((body["total"], body["n_pages"], len(body["items"])), (3, 2, 1))
         self.assertEqual(self.client.get("/api/cameras/camA/verdicts?status=weird").status_code, 422)
 
+    def test_grid_settings_are_stored_and_used_by_default(self) -> None:
+        for fr in self.frames[:3]:
+            self.label("roi1", fr, "OK")
+        base = "/api/cameras/camA/verdicts"
+        first = self.client.get(f"{base}?status=ok").json()
+        self.assertEqual((first["settings"]["per_page"], first["settings"]["cols"]), (24, 4))
+        r = self.client.put(f"{base}/grid-settings", json={"per_page": 12, "cols": 6})
+        self.assertEqual((r.json()["per_page"], r.json()["cols"]), (12, 6))
+        again = self.client.get(f"{base}?status=ok").json()
+        self.assertEqual((again["per_page"], again["settings"]["cols"]), (12, 6))
+        self.assertEqual(self.client.put(f"{base}/grid-settings", json={"per_page": 7, "cols": 6}).status_code, 422)
+
     def test_overview_carries_the_summary(self) -> None:
         self.label("roi1", self.frames[0], "NG")
         v = self.client.get("/api/overview").json()["cameras"][0]["verdicts"]
