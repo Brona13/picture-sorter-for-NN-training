@@ -24,6 +24,7 @@ test("opens on the chosen frame, full size, and walks the grid order with the ar
   const { onShow } = setup();
   expect(screen.getByRole("dialog", { name: "Full-size picture" })).toBeInTheDocument();
   expect(screen.getByTestId("viewer-position")).toHaveTextContent("2 / 3");
+  expect(screen.getByTestId("viewer-filename")).toHaveTextContent("b.png");
   expect(screen.getByRole("img", { name: "b.png" })).toHaveAttribute("src", "/api/cameras/camA/frames/b.png/image");
   fireEvent.keyDown(window, { key: "ArrowRight" });
   expect(screen.getByTestId("viewer-position")).toHaveTextContent("3 / 3");

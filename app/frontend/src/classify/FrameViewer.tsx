@@ -120,48 +120,52 @@ export default function FrameViewer({ camera, frames, start, classes, marks, bus
       }}
       style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,.72)", display: "flex", alignItems: "center", justifyContent: "center", overflow: "auto" }}
     >
-      <div style={{ background: "var(--panel)", color: "var(--fg, inherit)", padding: 12, borderRadius: 8, maxWidth: "100%" }}>
-        <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
-          <button type="button" style={nav} aria-label="Previous picture" title="Previous (←)" disabled={index <= 0} onClick={() => go(index - 1)}>
-            ◀
-          </button>
-          <button type="button" style={nav} aria-label="Next picture" title="Next (→)" disabled={index >= frames.length - 1} onClick={() => go(index + 1)}>
-            ▶
-          </button>
-          <strong data-testid="viewer-position">
-            {index + 1} / {frames.length}
-          </strong>
-          <span style={{ opacity: 0.8 }}>{frame}</span>
-          <span style={{ flex: 1 }} />
-          {classes.map((c, i) => (
-            <button
-              key={c}
-              type="button"
-              disabled={busy}
-              aria-pressed={mark.label === c}
-              title={i < MAX_SHORTCUT_CLASSES ? `Press ${i + 1}.` : undefined}
-              onClick={() => onLabel(frame, mark.label === c ? null : c)}
-              style={mark.label === c ? { background: classColor(c, classes), color: "#fff" } : undefined}
-            >
-              {i < MAX_SHORTCUT_CLASSES && <kbd style={{ opacity: 0.6, marginRight: 4, fontSize: 10 }}>{i + 1}</kbd>}
-              {c}
+      <div style={{ background: "var(--panel)", color: "var(--fg, inherit)", padding: 12, borderRadius: 8, width: width + 2 + 24, maxWidth: "100%" }}>
+        <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
+          <div role="group" aria-label="Browse" style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <button type="button" style={nav} aria-label="Previous picture" title="Previous (←)" disabled={index <= 0} onClick={() => go(index - 1)}>
+              ◀
             </button>
-          ))}
-          <button
-            type="button"
-            aria-label={mark.golden ? "Remove golden" : "Make golden"}
-            disabled={busy || mark.label === null}
-            title={mark.label === null ? "Label the frame first. Shortcut: the key left of 1." : "Golden reference for the label. Shortcut: the key left of 1."}
-            onClick={() => onGolden(frame, !mark.golden)}
-          >
-            {mark.golden ? "⭐" : "☆"}
-          </button>
-          <button type="button" aria-label="Delete frame" disabled={busy} title="Soft-delete (Delete)" onClick={() => onDelete(frame)}>
-            🗑
-          </button>
-          <button type="button" aria-label="Close" title="Close (Esc)" onClick={onClose}>
-            ✕
-          </button>
+            <strong data-testid="viewer-position" style={{ minWidth: 56, textAlign: "center" }}>
+              {index + 1} / {frames.length}
+            </strong>
+            <button type="button" style={nav} aria-label="Next picture" title="Next (→)" disabled={index >= frames.length - 1} onClick={() => go(index + 1)}>
+              ▶
+            </button>
+          </div>
+          <div role="group" aria-label="Label" style={{ display: "flex", gap: 6, alignItems: "center", flex: 1 }}>
+            {classes.map((c, i) => (
+              <button
+                key={c}
+                type="button"
+                disabled={busy}
+                aria-pressed={mark.label === c}
+                title={i < MAX_SHORTCUT_CLASSES ? `Press ${i + 1}.` : undefined}
+                onClick={() => onLabel(frame, mark.label === c ? null : c)}
+                style={mark.label === c ? { background: classColor(c, classes), color: "#fff" } : undefined}
+              >
+                {i < MAX_SHORTCUT_CLASSES && <kbd style={{ opacity: 0.6, marginRight: 4, fontSize: 10 }}>{i + 1}</kbd>}
+                {c}
+              </button>
+            ))}
+            <button
+              type="button"
+              aria-label={mark.golden ? "Remove golden" : "Make golden"}
+              disabled={busy || mark.label === null}
+              title={mark.label === null ? "Label the frame first. Shortcut: the key left of 1." : "Golden reference for the label. Shortcut: the key left of 1."}
+              onClick={() => onGolden(frame, !mark.golden)}
+            >
+              {mark.golden ? "⭐" : "☆"}
+            </button>
+          </div>
+          <div role="group" aria-label="Picture" style={{ display: "flex", gap: 24, alignItems: "center" }}>
+            <button type="button" aria-label="Delete frame" disabled={busy} title="Soft-delete (Delete)" onClick={() => onDelete(frame)}>
+              🗑
+            </button>
+            <button type="button" aria-label="Close" title="Close (Esc)" onClick={onClose}>
+              ✕
+            </button>
+          </div>
         </div>
         <ZoomPane
           imageSize={size}
@@ -171,7 +175,6 @@ export default function FrameViewer({ camera, frames, start, classes, marks, bus
           panOnBackground
           contentRef={contentRef}
           resetOnZero={false}
-          info="wheel zoom · drag to pan · ← → browse · Esc close"
         >
           <img
             key={frame}
@@ -182,6 +185,10 @@ export default function FrameViewer({ camera, frames, start, classes, marks, bus
             style={{ width: "100%", height: "100%", display: "block" }}
           />
         </ZoomPane>
+        <div data-testid="viewer-filename" title={frame} style={{ marginTop: 8, fontSize: 13, overflowWrap: "anywhere", userSelect: "text" }}>
+          {frame}
+        </div>
+        <div style={{ marginTop: 4, fontSize: 11, color: "var(--muted)" }}>Wheel zooms · drag pans · ← → browse · 1-9 label · 0 clear · ` golden · Delete deletes · Esc closes</div>
       </div>
     </div>
   );
