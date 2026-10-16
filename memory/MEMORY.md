@@ -37,3 +37,4 @@ Portable memory for the *Picture Sorter for NN Training* project. Kept inside th
 - [TODO: Detector page usability](todo-detector-ux.md) — done in 1.11.0 (tabbed workflow); kept for the analysis.
 - [GPU backends and ROCm (2026-10-15)](gpu-backends-rocm.md) — CPU/CUDA/ROCm per machine, RX 7800 XT verified in `.venv-rocm`, v1.7.0; helper scripts and Windows untested.
 - [Handover tools, 1.15.0-1.20.0 (2026-10-15)](handover-new-tools.md) — outliers, find similar, edge angle, augmentation ranges, downstream results, pipeline stages + the laptop's Overview integrated; unverified on real data; git/schema cautions.
+- [Review from Dedup and Insights, 1.21.0-1.22.2 (2026-10-16)](review-from-dedup-and-insights.md) — batch-label a scatter selection; clickable confusion-matrix cells open paged Classify cards for FP/FN review; rebuild/restart lesson; unverified on real data.
