@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { usePublishFeature, useSharedFeature } from "../SharedFeature";
 import { api, CardData, InsightsResponse } from "../api";
-import Card, { MAX_SHORTCUT_CLASSES } from "../classify/Card";
+import Card from "../classify/Card";
 import Pager, { PagerSettings } from "../classify/Pager";
 import { useJob } from "../useJob";
 
@@ -214,12 +214,6 @@ export default function InsightsView({ camera, product }: { camera: string; prod
                 </h4>
                 {cell.items.length > 0 && (
                   <>
-                    <p>
-                      <small>
-                        ⌨ Hover a card and press {cell.classes.slice(0, MAX_SHORTCUT_CLASSES).map((c, i) => `${i + 1} = ${c}`).join(", ")}
-                        {", 0 = clear label, the key left of 1 = golden on/off"} (no clicking needed).
-                      </small>
-                    </p>
                     <Pager grid={pager} settings={settings} onPage={setPage} onSettings={changeSettings} where="insights top" />
                     <ul style={{ display: "grid", gridTemplateColumns: `repeat(${settings.cols}, minmax(0, 1fr))`, gap: 8, padding: 0 }}>
                       {cell.items.slice((cur - 1) * perPage, cur * perPage).map((card) => (

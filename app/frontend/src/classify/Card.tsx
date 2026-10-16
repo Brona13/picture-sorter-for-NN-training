@@ -242,7 +242,7 @@ export default function Card({ camera, feature, classes, methods, card, busy, on
             aria-pressed={label === c}
             title={
               (label === c ? "Click to remove the label. " : "") +
-              (i < MAX_SHORTCUT_CLASSES ? `Hover the card and press ${i + 1}.` : "")
+              (i < MAX_SHORTCUT_CLASSES ? `Hover the card and press ${i + 1}. Hold the key and move the mouse over cards to paint it on unlabeled ones.` : "")
             }
             onClick={() => onLabel(label === c ? null : c)}
             style={label === c ? { background: classColor(c, classes), color: "#fff" } : undefined}

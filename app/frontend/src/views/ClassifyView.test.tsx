@@ -375,11 +375,12 @@ test("the key left of 1 toggles golden on a labeled card and is ignored without 
   expect(goldenCalls()[0].body).toEqual({ feature: "seal", frame: "b.png", golden: true });
 });
 
-test("class buttons show their shortcut number and the grid explains the shortcuts", async () => {
+test("class buttons show their shortcut number in their hint, and no shortcut text sits above the grid", async () => {
   render(<ClassifyView camera="camA" />);
   const a = await cardEl("a.png");
   expect(within(a).getByRole("button", { name: "NG" })).toHaveAttribute("title", expect.stringContaining("press 2"));
-  expect(screen.getByText(/1 = OK, 2 = NG, 0 = clear label, the key left of 1 = golden/)).toBeInTheDocument();
+  expect(within(a).getByRole("button", { name: "NG" })).toHaveAttribute("title", expect.stringContaining("paint"));
+  expect(screen.queryByText(/Hover a card and press/)).toBeNull();
 });
 
 test("the Deleted view lists deleted frames per day instead of the card grid", async () => {

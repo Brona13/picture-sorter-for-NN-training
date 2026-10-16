@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api, CardData, OutlierResult } from "../api";
 import { useJob } from "../useJob";
 import WheelRange from "../WheelRange";
-import Card, { MAX_SHORTCUT_CLASSES } from "./Card";
+import Card from "./Card";
 import FrameViewer from "./FrameViewer";
 import Pager, { PagerSettings } from "./Pager";
 
@@ -137,10 +137,6 @@ export function OutlierResults({
       <p role="status">
         {rows.length} frame(s) · score min {result.summary.min.toFixed(3)} · median {result.summary.median.toFixed(3)} · 95th percentile {result.summary.p95.toFixed(3)} · max{" "}
         {result.summary.max.toFixed(3)} (k = {result.k}, {result.method})
-      </p>
-      <p style={{ margin: "0 0 4px", fontSize: 12 }}>
-        ⌨ Hover a card and press {result.classes.slice(0, MAX_SHORTCUT_CLASSES).map((c, i) => `${i + 1} = ${c}`).join(", ")}, 0 = clear label, the key left of 1 = golden,
-        Delete = delete the frame.
       </p>
       <Pager grid={{ page: cur, per_page: perPage, n_pages: nPages, total: rows.length }} settings={grid} onPage={setPage} onSettings={onGrid} where="outliers top" />
       <ul style={{ display: "grid", gridTemplateColumns: `repeat(${grid.cols}, minmax(0, 1fr))`, gap: 8, padding: 0 }}>

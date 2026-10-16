@@ -91,12 +91,12 @@ function Card({ camera, item, busy, onDecide }: { camera: string; item: VerdictI
       </ul>
       <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
         {(["OK", "NG"] as const).map((c) => (
-          <button key={c} disabled={busy} aria-label={item.status === "stale" && item.decision === c ? `Keep ${c} for ${item.frame}` : `Decide ${c} for ${item.frame}`} aria-pressed={item.kind === "manual" && item.verdict === c} onClick={() => onDecide(c)}>
+          <button key={c} disabled={busy} title={`Hover the card and press ${c === "OK" ? 1 : 2}.`} aria-label={item.status === "stale" && item.decision === c ? `Keep ${c} for ${item.frame}` : `Decide ${c} for ${item.frame}`} aria-pressed={item.kind === "manual" && item.verdict === c} onClick={() => onDecide(c)}>
             {item.status === "stale" && item.decision === c ? `Keep ${c}` : c}
           </button>
         ))}
         {item.decision && (
-          <button disabled={busy} aria-label={`Clear my decision for ${item.frame}`} onClick={() => onDecide(null)}>
+          <button disabled={busy} title="Hover the card and press 0." aria-label={`Clear my decision for ${item.frame}`} onClick={() => onDecide(null)}>
             Clear
           </button>
         )}
@@ -187,7 +187,6 @@ export default function VerdictView({ camera }: { camera: string }) {
       {list && list.items.length === 0 && <p>Nothing here.</p>}
       {list && list.items.length > 0 && (
         <>
-          <p style={{ fontSize: 12, margin: "0 0 4px" }}>⌨ Hover a card and press 1 = OK, 2 = NG, 0 = clear my decision.</p>
           <Pager grid={list} settings={settings} onPage={setPage} onSettings={changeSettings} where="top" />
           <div style={{ display: "grid", gridTemplateColumns: `repeat(${settings.cols}, minmax(0, 1fr))`, gap: 8 }}>
             {list.items.map((item) => (
