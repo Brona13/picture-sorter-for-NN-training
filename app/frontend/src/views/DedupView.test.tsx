@@ -83,6 +83,9 @@ beforeEach(() => {
             ],
           },
         });
+      if (url.endsWith("/classify/label-bulk")) return ok({ labeled: 1 });
+      if (url.endsWith("/classify/label")) return ok({ card: { frame: JSON.parse(init!.body as string).frame, label: JSON.parse(init!.body as string).cls, golden: null, deleted: false }, counts: {} });
+      if (url.endsWith("/classify/delete")) return ok({ card: { frame: JSON.parse(init!.body as string).frame, label: null, golden: null, deleted: true }, counts: {} });
       if (url.endsWith("/classify/delete-preview")) return ok({ total: 1, labeled: 1, golden: 0 });
       if (url.endsWith("/classify/delete-bulk")) return ok({ deleted: 1, cleared_labels: 1, cleared_goldens: 0 });
       if (url.includes("/dedup/mutes") && method === "DELETE") return ok({ unmuted: 3 });
@@ -240,7 +243,8 @@ test("deleting the frames of a scatter selection asks first, with counts, and se
   expect(calls.find((c) => c.url.endsWith("/classify/delete-preview"))!.body).toEqual({ feature: "seal", frames: ["a.png"] });
   expect(calls.find((c) => c.url.endsWith("/classify/delete-bulk"))!.body).toEqual({ feature: "seal", frames: ["a.png"], note: "foreign object" });
   expect(await screen.findByText(/Deleted 1 frame\(s\) · cleared 1 label\(s\) and 0 golden mark\(s\)/)).toBeInTheDocument();
-  await waitFor(() => expect(calls.filter((c) => c.url.endsWith("/dedup/scatter")).length).toBe(2)); // projection refreshed
+  await waitFor(() => expect(screen.queryByTestId("pt-a.png")).toBeNull()); // gone from the map without projecting again
+  expect(calls.filter((c) => c.url.endsWith("/dedup/scatter")).length).toBe(1);
 });
 
 test("a new selection drops an open delete confirmation", async () => {
@@ -378,4 +382,52 @@ test("with a clustering held, the scatter selection is summed up by cluster", as
   fireEvent.mouseUp(window, { clientX: 100, clientY: 100 });
   const panel = await screen.findByTestId("scatter-selection");
   expect(within(panel).getByText("cluster 0: 1")).toBeInTheDocument();
+});
+
+async function selectA() {
+  const svg = await openScatter();
+  fireEvent.mouseDown(svg, { button: 0, clientX: 0, clientY: 0 });
+  fireEvent.mouseUp(window, { clientX: 100, clientY: 100 });
+  return await screen.findByTestId("scatter-selection");
+}
+
+test("the selection uses the shared pager and cards, and clicking a picture opens the viewer", async () => {
+  const panel = await selectA();
+  expect(within(panel).getAllByRole("navigation", { name: /Pagination selection/ })).toHaveLength(2);
+  const card = within(panel).getByTestId("card-a.png");
+  expect(within(card).getByRole("button", { name: /OK/ })).toBeInTheDocument(); // the usual card buttons
+  expect(within(card).getByRole("button", { name: "Delete frame" })).toBeInTheDocument();
+  await userEvent.click(within(card).getByRole("link"));
+  expect(screen.getByRole("dialog", { name: "Full-size picture" })).toBeInTheDocument();
+  fireEvent.keyDown(window, { key: "Escape" });
+  expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+test("the batch buttons sit between the map and the grid, grouped, and labelling shows on the map without projecting again", async () => {
+  const panel = await selectA();
+  const group = within(panel).getByRole("group", { name: "Label the selection" });
+  const ok = within(group).getByRole("button", { name: "Label 1 as OK" });
+  expect(ok).toHaveStyle({ background: "#1a7f37" }); // the class colour, as on the cards
+  const buttons: HTMLElement[] = Array.from(panel.querySelectorAll("button"));
+  expect(buttons.indexOf(ok)).toBeLessThan(buttons.indexOf(within(panel).getByRole("button", { name: "Delete frame" }))); // before the grid
+  await userEvent.click(ok);
+  await waitFor(() => expect(calls.find((c) => c.url.endsWith("/classify/label-bulk"))?.body).toMatchObject({ frames: ["a.png"], cls: "OK" }));
+  expect(await within(panel).findByText("OK: 1")).toBeInTheDocument();
+  expect(within(screen.getByTestId("card-a.png")).getByRole("button", { name: /OK/ })).toHaveAttribute("aria-pressed", "true");
+  expect(calls.filter((c) => c.url.endsWith("/dedup/scatter")).length).toBe(1);
+});
+
+test("labelling one card of the selection is reflected in the map's colours", async () => {
+  const panel = await selectA();
+  await userEvent.click(within(within(panel).getByTestId("card-a.png")).getByRole("button", { name: /NG/ }));
+  await waitFor(() => expect(calls.find((c) => c.url.endsWith("/classify/label"))?.body).toMatchObject({ frame: "a.png", cls: "NG" }));
+  const circle = screen.getByTestId("pt-a.png").querySelector("circle")!;
+  await waitFor(() => expect(circle.getAttribute("fill")).toBe("#c62828")); // NG red, coloured by label
+});
+
+test("the groups are ordered Clusters, Scatter, Outliers", async () => {
+  render(<DedupView camera="camA" />);
+  await screen.findByTestId("scatter-group");
+  const ids = Array.from(document.querySelectorAll("[data-testid$='-group']")).map((e) => e.getAttribute("data-testid"));
+  expect(ids).toEqual(["cluster-group", "scatter-group", "outlier-group"]);
 });

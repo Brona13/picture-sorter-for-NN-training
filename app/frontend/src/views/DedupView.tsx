@@ -1,7 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePublishFeature, useSharedFeature } from "../SharedFeature";
-import { api, DedupParams, DedupResult, DedupState, DeletePreview, DeleteResult, OutlierResult, ScatterPoint, ScatterResult } from "../api";
-import { thumbUrl } from "../classify/Card";
+import { api, CardData, DedupParams, DedupResult, DedupState, DeletePreview, DeleteResult, OutlierResult, ScatterPoint, ScatterResult } from "../api";
+import Card from "../classify/Card";
+import { classColor } from "../classify/colors";
+import FrameViewer from "../classify/FrameViewer";
+import Pager, { PagerSettings } from "../classify/Pager";
 import ClusterBrowser, { Marks } from "../classify/ClusterBrowser";
 import { OutlierControls, OutlierResults, useOutliers } from "../classify/OutlierPanel";
 import Scatter, { ColourBy, ScatterLegend } from "../classify/Scatter";
@@ -10,7 +13,6 @@ import WheelRange from "../WheelRange";
 import { useJob } from "../useJob";
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
-const MAX_SELECTED = 60;
 
 export function drift(existing: DedupParams, now: DedupParams): string[] {
   const bits: string[] = [];
@@ -43,6 +45,8 @@ export default function DedupView({ camera, product }: { camera: string; product
   const [projection, setProjection] = useState("umap");
   const [scatter, setScatter] = useState<ScatterResult | null>(null);
   const [selected, setSelected] = useState<ScatterPoint[] | null>(null);
+  // Changes made from the selection (a label, a delete) show on the map at once, without projecting again. null = deleted.
+  const [overrides, setOverrides] = useState<Record<string, Mark | null>>({});
   const [marks, setMarks] = useState<Marks>({});
   const [outliers, setOutliers] = useState<OutlierResult | null>(null);
   const [colourBy, setColourBy] = useState<ColourBy>("label");
@@ -60,7 +64,14 @@ export default function DedupView({ camera, product }: { camera: string; product
   const clustering = clusterJob !== null && (cj === null || cj.status === "queued" || cj.status === "running");
   const projecting = scatterJob !== null && (sj === null || sj.status === "queued" || sj.status === "running");
 
-  useEffect(() => setSelected(null), [scatter]);
+  useEffect(() => {
+    setSelected(null);
+    setOverrides({});
+  }, [scatter]);
+  const mapPoints = useMemo(
+    () => (scatter ? scatter.points.flatMap((p) => (p.frame in overrides ? (overrides[p.frame] === null ? [] : [{ ...p, ...overrides[p.frame] }]) : [p])) : []),
+    [scatter, overrides],
+  );
   // A map of another embedding would be stale.
   useEffect(() => {
     if (scatter && params && scatter.method !== params.method) setScatter(null);
@@ -295,11 +306,6 @@ export default function DedupView({ camera, product }: { camera: string; product
               )}
             </PanelGroup>
           )}
-          {st && params && params.method && (
-            <PanelGroup title="Outliers" testId="outlier-group" open={open.outliers} onOpenChange={(v) => setOpen((o) => ({ ...o, outliers: v }))} active={active === "outliers"}>
-              <OutlierControls o={outlierRun} onStart={() => activate("outliers")} />
-            </PanelGroup>
-          )}
           {st && params && params.method && st.frames > 1 && (
             <PanelGroup title="Scatter" testId="scatter-group" open={open.scatter} onOpenChange={(v) => setOpen((o) => ({ ...o, scatter: v }))} active={active === "scatter"}>
               <fieldset style={{ border: 0, padding: 0, margin: 0 }}>
@@ -337,6 +343,11 @@ export default function DedupView({ camera, product }: { camera: string; product
               )}
             </PanelGroup>
           )}
+          {st && params && params.method && (
+            <PanelGroup title="Outliers" testId="outlier-group" open={open.outliers} onOpenChange={(v) => setOpen((o) => ({ ...o, outliers: v }))} active={active === "outliers"}>
+              <OutlierControls o={outlierRun} onStart={() => activate("outliers")} />
+            </PanelGroup>
+          )}
         </>
       }
     >
@@ -359,33 +370,55 @@ export default function DedupView({ camera, product }: { camera: string; product
               <ScatterLegend colourBy={effectiveColour} classes={scatter.classes} />
               <Scatter
                 key={genRef.current.gen}
-                points={scatter.points}
+                points={mapPoints}
                 classes={scatter.classes}
                 onSelect={setSelected}
                 colourBy={effectiveColour}
                 scores={outliers ? outlierShades(outliers) : undefined}
               />
-              {selected && (
+              {selected && st && (
                 <ScatterSelection
                   camera={camera}
                   feature={feature}
                   points={selected}
                   classes={scatter.classes}
-                  onError={(m) => setError(m)}
-                  onLabeled={(n, cls) => {
-                    setNotice(`Labeled ${n} frame(s) as ${cls}.`);
+                  grid={st.grid}
+                  onGrid={(perPage, cols) =>
+                    api
+                      .dedupGridSettings(camera, feature, perPage, cols)
+                      .then((g) => setSt((x) => (x ? { ...x, grid: g } : x)))
+                      .catch((e: unknown) => setError(msg(e)))
+                  }
+                  onMark={(frame, m) => setOverrides((o) => ({ ...o, [frame]: m }))}
+                  onRemoved={(frame) => {
+                    setOverrides((o) => ({ ...o, [frame]: null }));
+                    setNotice(`Deleted ${frame}. It stays on disk; see Classify → Show: Deleted.`);
                     load();
-                    runScatter();
                   }}
-                  onDeleted={(r) => {
+                  onError={(m) => setError(m)}
+                  onLabeled={(frames, cls) => {
+                    setNotice(`Labeled ${frames.length} frame(s) as ${cls}.`);
+                    setOverrides((o) => ({
+                      ...o,
+                      ...Object.fromEntries(
+                        frames.map((f) => {
+                          const pt = scatter.points.find((q) => q.frame === f);
+                          const prev = o[f] ?? (pt ? { label: pt.label, golden: pt.golden } : { label: null, golden: null });
+                          return [f, { label: cls, golden: prev.golden ? cls : null }];
+                        }),
+                      ),
+                    }));
+                    load();
+                  }}
+                  onDeleted={(r, frames) => {
                     setNotice(
                       `Deleted ${r.deleted} frame(s)` +
                         (r.cleared_labels || r.cleared_goldens ? ` · cleared ${r.cleared_labels} label(s) and ${r.cleared_goldens} golden mark(s)` : "") +
                         ". They stay on disk; see Classify → Show: Deleted.",
                     );
+                    setOverrides((o) => ({ ...o, ...Object.fromEntries(frames.map((f) => [f, null])) }));
                     setSelected(null);
                     load();
-                    runScatter();
                   }}
                 />
               )}
@@ -507,11 +540,22 @@ export default function DedupView({ camera, product }: { camera: string; product
   );
 }
 
+type Mark = { label: string | null; golden: string | null };
+
+/**
+ * The frames inside the rectangle drawn on the scatter: a summary, the batch actions (label all as
+ * a class, delete all), and then the same paged card grid used everywhere else, with the picture
+ * viewer on click. Changes are reported up so the map can show them without being recomputed.
+ */
 function ScatterSelection({
   camera,
   feature,
   points,
   classes,
+  grid,
+  onGrid,
+  onMark,
+  onRemoved,
   onDeleted,
   onLabeled,
   onError,
@@ -520,16 +564,44 @@ function ScatterSelection({
   feature: string;
   points: ScatterPoint[];
   classes: string[];
-  onDeleted: (r: DeleteResult) => void;
-  onLabeled: (n: number, cls: string) => void;
+  grid: PagerSettings;
+  onGrid: (perPage: number, cols: number) => void;
+  onMark: (frame: string, mark: Mark) => void;
+  onRemoved: (frame: string) => void;
+  onDeleted: (r: DeleteResult, frames: string[]) => void;
+  onLabeled: (frames: string[], cls: string) => void;
   onError: (m: string) => void;
 }) {
   const [preview, setPreview] = useState<DeletePreview | null>(null);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
-  const frames = points.map((p) => p.frame);
-  // A new selection must never reuse the confirmation (and its counts) of an older one.
-  useEffect(() => setPreview(null), [points]);
+  const [cardBusy, setCardBusy] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [viewing, setViewing] = useState<string | null>(null);
+  const [marks, setMarks] = useState<Record<string, Mark>>({});
+  const [gone, setGone] = useState<Set<string>>(new Set());
+
+  const hasClusters = points.some((p) => p.cluster !== null);
+  const clusterKey = (p: ScatterPoint) => (p.cluster === null || p.cluster < 0 ? 1e9 : p.cluster);
+  const sorted = useMemo(() => [...points].sort((a, b) => clusterKey(a) - clusterKey(b) || a.frame.localeCompare(b.frame)), [points]);
+
+  // A new selection starts clean: no old confirmation, page, marks or removals.
+  useEffect(() => {
+    setPreview(null);
+    setPage(1);
+    setViewing(null);
+    setGone(new Set());
+    setMarks(Object.fromEntries(points.map((p) => [p.frame, { label: p.label, golden: p.golden }])));
+  }, [points]);
+
+  const rows = sorted.filter((p) => !gone.has(p.frame));
+  const frames = rows.map((p) => p.frame);
+  const markOf = (frame: string): Mark => marks[frame] ?? { label: null, golden: null };
+  const perPage = grid.per_page;
+  const nPages = Math.max(1, Math.ceil(rows.length / perPage));
+  const cur = Math.min(page, nPages);
+  const shown = rows.slice((cur - 1) * perPage, cur * perPage);
+
   const askDelete = () => {
     setBusy(true);
     api
@@ -542,7 +614,11 @@ function ScatterSelection({
     setBusy(true);
     api
       .labelFrames(camera, feature, frames, cls, "Dedup")
-      .then((r) => onLabeled(r.labeled, cls))
+      .then((r) => {
+        setMarks((m) => Object.fromEntries(Object.entries(m).map(([f, v]) => [f, { label: frames.includes(f) ? cls : v.label, golden: frames.includes(f) && v.golden ? cls : v.golden }])));
+        onLabeled(frames, cls);
+        void r;
+      })
       .catch((e: unknown) => onError(msg(e)))
       .finally(() => setBusy(false));
   };
@@ -553,40 +629,71 @@ function ScatterSelection({
       .then((r) => {
         setPreview(null);
         setNote("");
-        onDeleted(r);
+        onDeleted(r, frames);
       })
       .catch((e: unknown) => onError(msg(e)))
       .finally(() => setBusy(false));
   };
-  const hasClusters = points.some((p) => p.cluster !== null);
-  const clusterKey = (p: ScatterPoint) => (p.cluster === null || p.cluster < 0 ? 1e9 : p.cluster);
-  const sorted = [...points].sort((a, b) => clusterKey(a) - clusterKey(b) || a.frame.localeCompare(b.frame));
+
   // What the selection is made of: clusters when there is a clustering, labels otherwise.
   const counts = new Map<string, number>();
-  for (const p of sorted) {
-    const k = hasClusters ? (p.cluster === null || p.cluster < 0 ? "unique" : `cluster ${p.cluster}`) : (p.label ?? "unlabeled");
+  for (const p of rows) {
+    const k = hasClusters ? (p.cluster === null || p.cluster < 0 ? "unique" : `cluster ${p.cluster}`) : (markOf(p.frame).label ?? "unlabeled");
     counts.set(k, (counts.get(k) ?? 0) + 1);
   }
   const summary = [...counts.entries()].map(([k, n]) => `${k}: ${n}`).join(" · ");
+
+  async function act<T>(frame: string, call: () => Promise<T>, then: (r: T) => void) {
+    setCardBusy(frame);
+    try {
+      then(await call());
+    } catch (e) {
+      onError(msg(e));
+    } finally {
+      setCardBusy(null);
+    }
+  }
+  const keep = (r: { card: { frame: string; label: string | null; golden: string | null } }) => {
+    const m = { label: r.card.label, golden: r.card.golden };
+    setMarks((cur) => ({ ...cur, [r.card.frame]: m }));
+    onMark(r.card.frame, m);
+  };
+  const remove = (frame: string) => {
+    setGone((g) => new Set(g).add(frame));
+    onRemoved(frame);
+  };
+  const cardOf = (frame: string): CardData => ({ frame, ...markOf(frame), deleted: false, leanings: {}, bars: null, cluster: null });
+  const label = (frame: string, cls: string | null) => act(frame, () => api.setLabel(camera, feature, frame, cls), keep);
+  const golden = (frame: string, on: boolean) => act(frame, () => api.setGolden(camera, feature, frame, on), keep);
+  const del = (frame: string) => act(frame, () => api.deleteFrame(camera, feature, frame), () => remove(frame));
+
   return (
     <div data-testid="scatter-selection">
-      <h4>{points.length} frame(s) in the selected region</h4>
-      {points.length === 0 ? (
+      <h4>{rows.length} frame(s) in the selected region</h4>
+      {rows.length === 0 ? (
         <p>No frames inside the rectangle. Right-click to reset the view.</p>
       ) : (
         <>
           <p style={{ fontSize: 12 }}>{summary}</p>
           {preview === null ? (
-            <p>
-              {classes.map((c) => (
-                <button key={c} type="button" disabled={busy} onClick={() => doLabel(c)} style={{ marginRight: 6 }}>
-                  Label {points.length} as {c}
-                </button>
-              ))}{" "}
-              <button type="button" disabled={busy} onClick={askDelete}>
-                🗑 Delete these {points.length} frame(s)…
+            <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center", margin: "6px 0" }}>
+              <div role="group" aria-label="Label the selection" style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {classes.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    disabled={busy}
+                    onClick={() => doLabel(c)}
+                    style={{ background: classColor(c, classes), color: "#fff", borderColor: classColor(c, classes) }}
+                  >
+                    Label {rows.length} as {c}
+                  </button>
+                ))}
+              </div>
+              <button type="button" disabled={busy} onClick={askDelete} style={{ borderColor: "#c62828", color: "#c62828" }}>
+                🗑 Delete these {rows.length} frame(s)…
               </button>
-            </p>
+            </div>
           ) : (
             <div role="alertdialog" aria-label="Confirm delete" style={{ border: "1px solid #c33", padding: 8, margin: "6px 0" }}>
               <p style={{ margin: "0 0 6px" }}>
@@ -605,21 +712,46 @@ function ScatterSelection({
               </button>
             </div>
           )}
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-            {sorted.slice(0, MAX_SELECTED).map((p) => (
-              <figure key={p.frame} style={{ margin: 0, width: 110 }}>
-                <img src={thumbUrl(camera, p.frame, feature)} alt={p.frame} style={{ width: "100%" }} />
-                <figcaption style={{ fontSize: 11 }}>
-                  {p.representative ? "⭐ " : ""}
-                  {p.frame}
-                  <br />
-                  {p.cluster === null ? (p.label ?? "unlabeled") : p.cluster < 0 ? "unique" : `cluster ${p.cluster}`}
-                  {p.golden ? ` · golden ${p.golden}` : ""}
-                </figcaption>
-              </figure>
+          <Pager grid={{ page: cur, per_page: perPage, n_pages: nPages, total: rows.length }} settings={grid} onPage={setPage} onSettings={onGrid} where="selection top" />
+          <ul style={{ display: "grid", gridTemplateColumns: `repeat(${grid.cols}, minmax(0, 1fr))`, gap: 8, padding: 0 }}>
+            {shown.map((p) => (
+              <Card
+                key={p.frame}
+                camera={camera}
+                feature={feature}
+                classes={classes}
+                methods={[]}
+                card={cardOf(p.frame)}
+                busy={cardBusy === p.frame}
+                fullSize
+                onOpen={() => setViewing(p.frame)}
+                caption={p.cluster === null ? undefined : p.cluster < 0 ? "unique" : `cluster ${p.cluster}${p.representative ? " · rep" : ""}`}
+                onLabel={(cls) => label(p.frame, cls)}
+                onGolden={(on) => golden(p.frame, on)}
+                onDelete={() => del(p.frame)}
+                onRestore={() => undefined}
+              />
             ))}
-          </div>
-          {points.length > MAX_SELECTED && <p>…and {points.length - MAX_SELECTED} more — zoom in further to see them.</p>}
+          </ul>
+          <Pager grid={{ page: cur, per_page: perPage, n_pages: nPages, total: rows.length }} settings={grid} onPage={setPage} onSettings={onGrid} where="selection bottom" />
+          {viewing && (
+            <FrameViewer
+              camera={camera}
+              frames={frames}
+              start={viewing}
+              classes={classes}
+              marks={markOf}
+              busy={cardBusy !== null}
+              onLabel={label}
+              onGolden={golden}
+              onDelete={del}
+              onShow={(f) => {
+                const at = frames.indexOf(f);
+                if (at >= 0) setPage(Math.floor(at / perPage) + 1);
+              }}
+              onClose={() => setViewing(null)}
+            />
+          )}
         </>
       )}
     </div>
