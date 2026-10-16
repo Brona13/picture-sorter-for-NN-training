@@ -74,6 +74,22 @@ body {
 .sidebar ul.sidebar-bottom { margin-top: auto; padding-top: 16px; border-top: 1px solid var(--border); }
 .sidebar li a:hover { background: var(--hover); }
 .sidebar li a.active { background: var(--accent); color: var(--accent-fg); font-weight: 600; }
+.with-panel { display: flex; gap: 16px; align-items: flex-start; }
+.with-panel-main { flex: 1; min-width: 0; }
+.right-panel {
+  flex: none;
+  width: 220px;
+  position: sticky;
+  top: 12px;
+  padding: 8px 10px 10px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.right-panel.collapsed { width: auto; padding: 4px; }
+.right-panel-toggle { display: block; margin-left: auto; padding: 0 8px; line-height: 1.4; }
+.right-panel-body label { display: block; color: var(--muted); font-size: 12px; margin-top: 4px; }
+.right-panel-body select { width: 100%; margin-top: 2px; }
 .main { flex: 1; min-width: 0; padding: 20px 28px 48px; max-width: 1400px; }
 
 /* ---- headings and text ---- */

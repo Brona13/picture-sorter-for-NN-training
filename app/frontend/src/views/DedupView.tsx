@@ -5,6 +5,7 @@ import { thumbUrl } from "../classify/Card";
 import ClusterBrowser, { Marks } from "../classify/ClusterBrowser";
 import OutlierPanel from "../classify/OutlierPanel";
 import Scatter from "../classify/Scatter";
+import SidePanel from "../SidePanel";
 import { useJob } from "../useJob";
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -140,6 +141,20 @@ export default function DedupView({ camera, product }: { camera: string; product
   const progress = cj?.progress ?? {};
 
   return (
+    <SidePanel
+      panel={
+        <label>
+          Feature (ROI)
+          <select value={feature} onChange={(e) => setFeature(e.target.value)}>
+            {features.map((f) => (
+              <option key={f.feature} value={f.feature}>
+                {f.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      }
+    >
     <section>
       <h2>
         Dedup — {camera}
@@ -147,17 +162,6 @@ export default function DedupView({ camera, product }: { camera: string; product
       </h2>
       {error && <p role="alert">{error}</p>}
       {notice && <p role="status">{notice}</p>}
-
-      <label>
-        Feature (ROI){" "}
-        <select value={feature} onChange={(e) => setFeature(e.target.value)}>
-          {features.map((f) => (
-            <option key={f.feature} value={f.feature}>
-              {f.label}
-            </option>
-          ))}
-        </select>
-      </label>
 
       {st && st.frames === 0 && <p>This feature has no frames yet — ingest some first.</p>}
       {st && st.frames > 0 && params && (
@@ -441,6 +445,7 @@ export default function DedupView({ camera, product }: { camera: string; product
         </div>
       )}
     </section>
+    </SidePanel>
   );
 }
 

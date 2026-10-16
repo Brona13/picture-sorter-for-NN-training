@@ -26,4 +26,7 @@ export const lastSession = {
   setFeature: (camera: string, v: string) => set(`feature.${camera}`, v),
   page: () => get("page"),
   setPage: (v: string) => set("page", v),
+  /** The right-hand options panel is open unless the user collapsed it (shared by every page that has one). */
+  panelCollapsed: () => get("panel.collapsed") === "1",
+  setPanelCollapsed: (v: boolean) => set("panel.collapsed", v ? "1" : ""),
 };

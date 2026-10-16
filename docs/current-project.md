@@ -199,6 +199,7 @@ set at once.
 
 ### Outlier scoring
 
+- Right options panel (v1.31.0, trial on Dedup only): a collapsible panel on the right of the page (`SidePanel`) holds the Feature (ROI) dropdown; collapsed state is remembered in the browser for every page. Other pages still have the dropdown inline; the plan is to move more controls there once the layout is judged.
 - Dedup page panel: each live frame's mean cosine distance to its k nearest other frames (k 1-20, default 5) over the Dedup embeddings, so the feature's filter and mask apply
 - Most isolated frames listed first as cards (label, golden, delete); the 2D projection can be coloured by the score
 - Derived on demand (`outliers.py`, `api/outliers_api.py`, `classify/OutlierPanel.tsx`); no stored state. A review aid, not a verdict; independent of the clustering parameters
