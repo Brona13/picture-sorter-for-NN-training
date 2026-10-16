@@ -11,8 +11,8 @@ export type Marks = DedupResult["marks"];
 const UNIQUE = "unique";
 
 /**
- * Dedup clusters as a master/detail view: a vertical list of clusters (plus the unique frames)
- * on the left, the selected one's pictures on the right as a paged grid of the same cards Classify
+ * Dedup clusters as a master/detail view: a row of tabs for the clusters ("0 (12)", ... and "Unique (n)")
+ * above the selected one's pictures as a paged grid of the same cards Classify
  * uses. Each card can be labeled, made golden, made the cluster's representative, or deleted;
  * the grid size is shared by all clusters, the page is remembered per cluster.
  */
@@ -86,37 +86,31 @@ export default function ClusterBrowser({
   };
 
   return (
-    <div data-testid="cluster-browser" style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
-      <nav aria-label="Clusters" style={{ flex: "none", width: 190, maxHeight: "75vh", overflowY: "auto", border: "1px solid #ddd", borderRadius: 6 }}>
-        <ul style={{ listStyle: "none", margin: 0, padding: 4 }}>
-          {entries.map((e) => (
-            <li key={e.key}>
-              <button
-                type="button"
-                aria-current={e.key === cur.key ? "true" : undefined}
-                onClick={() => setSelected(e.key)}
-                style={{
-                  display: "block",
-                  width: "100%",
-                  textAlign: "left",
-                  margin: "2px 0",
-                  padding: "4px 8px",
-                  borderRadius: 4,
-                  border: "1px solid transparent",
-                  borderLeft: `5px solid ${e.id < 0 ? "rgba(120,120,120,.6)" : clusterColor(e.id)}`,
-                  background: e.key === cur.key ? "rgba(26,115,232,.14)" : "transparent",
-                  fontWeight: e.key === cur.key ? 600 : 400,
-                  cursor: "pointer",
-                }}
-              >
-                {e.title} <span style={{ opacity: 0.65 }}>· {e.frames.length}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
+    <div data-testid="cluster-browser">
+      <nav aria-label="Clusters" style={{ display: "flex", flexWrap: "wrap", gap: 4, margin: "0 0 10px" }}>
+        {entries.map((e) => (
+          <button
+            key={e.key}
+            type="button"
+            aria-current={e.key === cur.key ? "true" : undefined}
+            aria-label={e.id < 0 ? `Unique, ${e.frames.length} frame(s)` : `Cluster ${e.id}, ${e.frames.length} frame(s)`}
+            onClick={() => setSelected(e.key)}
+            style={{
+              padding: "3px 10px",
+              borderRadius: 4,
+              border: "1px solid var(--border)",
+              borderBottom: `4px solid ${e.id < 0 ? "rgba(120,120,120,.6)" : clusterColor(e.id)}`,
+              background: e.key === cur.key ? "rgba(26,115,232,.14)" : "transparent",
+              fontWeight: e.key === cur.key ? 600 : 400,
+              cursor: "pointer",
+            }}
+          >
+            {e.id < 0 ? "Unique" : e.id} <span style={{ opacity: 0.65 }}>({e.frames.length})</span>
+          </button>
+        ))}
       </nav>
 
-      <div style={{ flex: 1, minWidth: 0 }}>
+      <div>
         <h4 style={{ margin: "0 0 4px" }}>
           {cur.title} — {cur.frames.length} frame(s){cur.id >= 0 ? ` · rep: ${cur.rep}` : " · never muted"}
         </h4>

@@ -130,6 +130,8 @@ test("cluster job shows summary and clusters; apply sends representative overrid
   const nav = screen.getByRole("navigation", { name: "Clusters" });
   expect(within(nav).getByRole("button", { name: /Cluster 0/ })).toHaveTextContent("3");
   expect(within(nav).getByRole("button", { name: /Unique/ })).toHaveTextContent("1");
+  // a compact row of tabs: "0 (3)", "1 (2)", "Unique (1)", in that order
+  expect(within(nav).getAllByRole("button").map((b) => b.textContent)).toEqual(["0 (3)", "1 (2)", "Unique (1)"]);
 
   // pick another representative for cluster 0 from its card
   await userEvent.click(within(screen.getByTestId("card-c.png")).getByRole("button", { name: "Make representative" }));
