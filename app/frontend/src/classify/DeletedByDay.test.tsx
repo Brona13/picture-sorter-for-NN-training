@@ -41,7 +41,8 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-const renderIt = () => render(<DeletedByDay camera="camA" feature="seal" revision={0} onChanged={onChanged} onNotice={onNotice} onError={onError} />);
+const SETTINGS = { per_page: 24, cols: 4, per_page_options: [12, 24, 48], cols_options: [3, 4, 5] };
+const renderIt = () => render(<DeletedByDay camera="camA" feature="seal" revision={0} settings={SETTINGS} onSettings={() => {}} onChanged={onChanged} onNotice={onNotice} onError={onError} />);
 
 test("groupByDay uses the local calendar day, newest day first and newest frame first", () => {
   expect(dayKey(at(2026, 10, 14, 23, 59))).toBe("2026-10-14");
@@ -96,4 +97,16 @@ test("ticked frames from different days restore together", async () => {
   await userEvent.click(screen.getByRole("button", { name: "↺ Restore selected (2)" }));
   await waitFor(() => expect(calls.find((c) => c.url.endsWith("/restore-bulk"))!.body.frames.sort()).toEqual(["a.png", "b.png"]));
   expect(onNotice).toHaveBeenCalledWith(expect.stringContaining("Restored 2 frame(s)"));
+});
+
+test("follows the grid settings: the chosen columns, and paging by the chosen per-page", async () => {
+  render(
+    <DeletedByDay camera="camA" feature="seal" revision={0} settings={{ ...SETTINGS, per_page: 2, cols: 5 }} onSettings={() => {}} onChanged={onChanged} onNotice={onNotice} onError={onError} />,
+  );
+  await screen.findByTestId("deleted-by-day");
+  const grids = screen.getByTestId("deleted-by-day").querySelectorAll<HTMLElement>("section > div");
+  expect(grids[0].style.gridTemplateColumns).toBe("repeat(5, minmax(0, 1fr))");
+  expect(screen.getAllByRole("img")).toHaveLength(2); // per page = 2 of 3
+  await userEvent.click(screen.getAllByRole("button", { name: /Next/ })[0]);
+  expect(screen.getAllByRole("img")).toHaveLength(1);
 });

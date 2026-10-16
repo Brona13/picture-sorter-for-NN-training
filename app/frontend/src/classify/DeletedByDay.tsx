@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, DeletedItem, frameImageUrl } from "../api";
 import { thumbUrl } from "./Card";
+import Pager, { PagerSettings } from "./Pager";
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -58,6 +59,8 @@ export default function DeletedByDay({
   camera,
   feature,
   revision,
+  settings,
+  onSettings,
   onChanged,
   onNotice,
   onError,
@@ -65,6 +68,9 @@ export default function DeletedByDay({
   camera: string;
   feature: string;
   revision: number;
+  /** The grid choice made for Classify (per page, columns): the deleted frames follow it too. */
+  settings: PagerSettings;
+  onSettings: (perPage: number, cols: number) => void;
   onChanged: () => void;
   onNotice: (m: string) => void;
   onError: (m: string) => void;
@@ -72,6 +78,7 @@ export default function DeletedByDay({
   const [items, setItems] = useState<DeletedItem[] | null>(null);
   const [ticked, setTicked] = useState<Set<string>>(new Set());
   const [confirmDay, setConfirmDay] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
 
   const load = useCallback(() => {
     api
@@ -83,6 +90,12 @@ export default function DeletedByDay({
   useEffect(load, [load, revision]);
 
   const days = useMemo(() => groupByDay(items ?? []), [items]);
+  // Pages run over the days in order (newest first); a day can continue on the next page.
+  const flat = useMemo(() => days.flatMap((d) => d.items), [days]);
+  const perPage = settings.per_page;
+  const nPages = Math.max(1, Math.ceil(flat.length / perPage));
+  const cur = Math.min(page, nPages);
+  const onPage = new Set(flat.slice((cur - 1) * perPage, cur * perPage).map((i) => i.frame));
 
   async function restore(frames: string[], what: string) {
     try {
@@ -124,13 +137,17 @@ export default function DeletedByDay({
           </button>
         )}
       </p>
+      <Pager grid={{ page: cur, per_page: perPage, n_pages: nPages, total: flat.length }} settings={settings} onPage={setPage} onSettings={onSettings} where="deleted top" />
       {days.map(({ day, items: list }) => {
-        const frames = list.map((i) => i.frame);
+        const shown = list.filter((i) => onPage.has(i.frame));
+        if (shown.length === 0) return null;
+        const frames = list.map((i) => i.frame); // "this day" always means the whole day, not just this page
         const allTicked = frames.every((f) => ticked.has(f));
         return (
           <section key={day} aria-label={`Deleted on ${day}`} style={{ marginBottom: 16 }}>
             <h3 style={{ marginBottom: 4 }}>
               {dayTitle(list[0].deleted_at)} — {list.length} frame(s)
+              {shown.length < list.length ? ` (${shown.length} on this page)` : ""}
             </h3>
             <p style={{ margin: "0 0 6px" }}>
               <label>
@@ -151,9 +168,9 @@ export default function DeletedByDay({
                 </button>
               )}
             </p>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-              {list.map((it) => (
-                <figure key={it.frame} style={{ margin: 0, width: 140 }}>
+            <div style={{ display: "grid", gridTemplateColumns: `repeat(${settings.cols}, minmax(0, 1fr))`, gap: 8 }}>
+              {shown.map((it) => (
+                <figure key={it.frame} style={{ margin: 0, minWidth: 0 }}>
                   <a href={frameImageUrl(camera, it.frame)} target="_blank" rel="noreferrer">
                     <img src={thumbUrl(camera, it.frame, feature)} alt={it.frame} loading="lazy" style={{ width: "100%", display: "block" }} />
                   </a>
@@ -183,6 +200,7 @@ export default function DeletedByDay({
           </section>
         );
       })}
+      <Pager grid={{ page: cur, per_page: perPage, n_pages: nPages, total: flat.length }} settings={settings} onPage={setPage} onSettings={onSettings} where="deleted bottom" />
     </div>
   );
 }

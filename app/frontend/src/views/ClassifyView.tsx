@@ -316,7 +316,7 @@ export default function ClassifyView({ camera, product }: { camera: string; prod
             )}
           </div>
           {view === "Deleted" ? (
-            <DeletedByDay camera={camera} feature={feature} revision={revision} onChanged={bump} onNotice={setNotice} onError={setError} />
+            <DeletedByDay camera={camera} feature={feature} revision={revision} settings={st.settings} onSettings={changeSetting} onChanged={bump} onNotice={setNotice} onError={setError} />
           ) : (
             <>
           {similarSeed && (
