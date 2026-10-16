@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, CardData, OutlierResult } from "../api";
 import { useJob } from "../useJob";
+import WheelRange from "../WheelRange";
 import Card, { MAX_SHORTCUT_CLASSES } from "./Card";
 import Pager, { PagerSettings } from "./Pager";
 
@@ -61,7 +62,7 @@ export function OutlierControls({ o }: { o: OutlierState }) {
       </p>
       <label>
         k (neighbours){" "}
-        <input type="range" aria-label="k neighbours" min={K_MIN} max={K_MAX} value={o.k} onChange={(e) => o.setK(Number(e.target.value))} /> {o.k}
+        <WheelRange aria-label="k neighbours" min={K_MIN} max={K_MAX} value={o.k} onValue={o.setK} /> {o.k}
       </label>{" "}
       <button
         disabled={o.running || !o.feature || !o.method}
