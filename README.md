@@ -264,10 +264,19 @@ The **Edge angle** page is a rule-based tool for ROIs where one edge decides OK 
 angle **and** one direction are good, any other angle or the opposite direction is not. It gives its
 own opinion, separate from the embedding scores, and is never blended with them.
 
-1. Choose the ROI and a frame. Click once on the crop to place the first point of a line along the
-   edge (the line follows the cursor), click again for the second point. A band appears around the
-   line; drag the red ends to adjust the line and the orange handle on one long side to resize the
-   band, or use the **Band half-width** slider.
+1. Choose the ROI (first row, with the **Picture size** slider) and a frame (second row, so long file
+   names have room). Click once on the crop to place the first point of a line along the edge (the
+   line follows the cursor), click again for the second point. A band appears around the line; drag
+   the red ends to adjust the line and the orange handle on one long side to resize the band, or use
+   the **Band half-width** slider. Esc cancels a line you have started.
+   The crop sits in a bordered box you can zoom: the **mouse wheel** zooms at the cursor, the
+   **−**, **+**, **Reset** (fit) and **1:1** (one picture pixel per screen pixel) buttons or the keys
+   `-`, `+`, `0` do the same around the centre. Pan with the **middle button** or **Space + drag**,
+   or, once the line is drawn, by dragging the background. The percentage shows screen pixels per
+   picture pixel (above 300% the picture is drawn without smoothing so single pixels are visible),
+   and the tool row shows the pixel under the cursor and the line's angle and length. Zoom and
+   position stay when you change frame and start fitted again when you change ROI or camera. Drawing
+   and dragging work at any zoom.
 2. The **Band preview** shows the band straightened, with the points that were found (yellow) and the
    fitted line (green); the same points are drawn on the crop. **Points used** sets how many points
    feed the fit (the band is cut into that many slices along the line and the strongest edge in each

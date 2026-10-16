@@ -1,6 +1,8 @@
-import { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, useRef, useState } from "react";
-import { bandCorners, bandHandle, halfWidthFromPointer, Line, longEnough } from "./lineGeometry";
+import { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, useRef, useState } from "react";
+import { bandCorners, bandHandle, halfWidthFromPointer, Line, lineAngle, lineLengthPx, longEnough } from "./lineGeometry";
 import { Point, pointerToNorm } from "./roiGeometry";
+import ZoomPane from "./ZoomPane";
+import { FIT_VIEW, View } from "./zoomGeometry";
 
 type Drag = { kind: "p1" | "p2" | "band" };
 
@@ -11,23 +13,31 @@ interface Props {
   /** What the detector found in the band: the points it used and the line it fitted. */
   overlay?: { points: Point[]; fitted: Point[] } | null;
   onChange: (line: Line | null, halfWidth: number) => void;
-  maxWidth?: number;
+  /** Viewport width in px (the box is 3/4 as high). */
+  width?: number;
+  /** Zoom and position; give both to keep them across frames, leave both out to let the canvas keep its own. */
+  view?: View;
+  onViewChange?: (view: View) => void;
 }
 
 const LINE = "#ff3030";
 const FITTED = "#00c853";
 
 /**
- * The ROI crop with the edge-angle line and its band. Click once to place the first point (the line
- * follows the cursor), click again to place the second; the band appears around the line. Drag
- * either end to adjust the line and the handle on one long side of the band to resize it.
+ * The ROI crop with the edge-angle line and its band, in a zoomable box (wheel zooms at the cursor;
+ * pan with the middle button, Space + drag, or by dragging the background once the line is drawn).
+ * Click once to place the first point (the line follows the cursor), click again to place the second;
+ * the band appears around the line. Drag either end to adjust the line and the handle on one long
+ * side of the band to resize it. Points stay in the crop's normalised coordinates at any zoom.
  */
-export default function LineCanvas({ imageUrl, line, halfWidth, overlay, onChange, maxWidth = 760 }: Props) {
+export default function LineCanvas({ imageUrl, line, halfWidth, overlay, onChange, width = 700, view, onViewChange }: Props) {
   const area = useRef<HTMLDivElement>(null);
   const drag = useRef<Drag | null>(null);
-  const [size, setSize] = useState({ w: 1, h: 1 }); // image size in pixels
+  const [size, setSize] = useState({ w: 4, h: 3 }); // image size in pixels (a placeholder shape until it loads)
   const [first, setFirst] = useState<Point | null>(null);
   const [cursor, setCursor] = useState<Point | null>(null);
+  const [hover, setHover] = useState<Point | null>(null);
+  const [ownView, setOwnView] = useState<View>(FIT_VIEW);
   const drawing = line === null;
 
   const norm = (e: { clientX: number; clientY: number }) => pointerToNorm(e.clientX, e.clientY, area.current!.getBoundingClientRect());
@@ -46,13 +56,14 @@ export default function LineCanvas({ imageUrl, line, halfWidth, overlay, onChang
   }
 
   function onPointerMove(e: ReactPointerEvent) {
+    const p = norm(e);
+    setHover(p);
     if (drawing) {
-      if (first !== null) setCursor(norm(e));
+      if (first !== null) setCursor(p);
       return;
     }
     const d = drag.current;
     if (!d || !line) return;
-    const p = norm(e);
     if (d.kind === "band") onChange(line, halfWidthFromPointer(p, line, size.w, size.h));
     else {
       const next = { ...line, [d.kind]: p };
@@ -97,22 +108,42 @@ export default function LineCanvas({ imageUrl, line, halfWidth, overlay, onChang
   const live: Line | null = line ?? (first && cursor ? { p1: first, p2: cursor } : null);
   const poly = line ? bandCorners(line, halfWidth, size.w, size.h).map((p) => `${p.x},${p.y}`).join(" ") : null;
 
+  const readout = [
+    hover ? `pixel ${Math.min(Math.floor(hover.x * size.w), size.w - 1)}, ${Math.min(Math.floor(hover.y * size.h), size.h - 1)}` : null,
+    live && lineLengthPx(live, size.w, size.h) > 0
+      ? `line ${lineAngle(live, size.w, size.h).toFixed(1)}° · ${Math.round(lineLengthPx(live, size.w, size.h))} px`
+      : null,
+  ]
+    .filter(Boolean)
+    .join("  |  ");
+
+  function keys(e: ReactKeyboardEvent) {
+    if (e.key === "Escape" && first !== null) {
+      setFirst(null);
+      setCursor(null);
+    }
+  }
+
   return (
     <>
-      <div
-        ref={area}
-        data-testid="line-canvas"
-        onClick={onClick}
-        onPointerMove={onPointerMove}
-        onPointerUp={end}
-        onPointerCancel={end}
-        style={{ position: "relative", maxWidth, lineHeight: 0, touchAction: "none", userSelect: "none", cursor: drawing ? "crosshair" : "default" }}
+      <ZoomPane
+        imageSize={size}
+        width={width}
+        view={view ?? ownView}
+        onViewChange={onViewChange ?? setOwnView}
+        panOnBackground={!drawing}
+        contentRef={area}
+        contentTestId="line-canvas"
+        contentHandlers={{ onClick, onPointerMove, onPointerUp: end, onPointerCancel: end, onPointerLeave: () => setHover(null) }}
+        contentCursor={drawing ? "crosshair" : "default"}
+        onKeyDown={keys}
+        info={readout}
       >
         <img
           src={imageUrl}
           alt="Crop to measure"
           draggable={false}
-          style={{ width: "100%", display: "block" }}
+          style={{ width: "100%", height: "100%", display: "block" }}
           onLoad={(e) => {
             const img = e.currentTarget;
             if (img.naturalWidth && img.naturalHeight) setSize({ w: img.naturalWidth, h: img.naturalHeight });
@@ -166,13 +197,14 @@ export default function LineCanvas({ imageUrl, line, halfWidth, overlay, onChang
             {handle("band", bandHandle(line, halfWidth, size.w, size.h), "band", "Drag to make the band wider or narrower")}
           </>
         )}
-      </div>
+      </ZoomPane>
       <p style={{ margin: "4px 0", lineHeight: 1.4, fontSize: 13 }}>
         {drawing
           ? first
             ? "Now click the second point of the line."
             : "Click once to place the first point of the line along the edge, then click again for the second."
           : "Drag the red ends to adjust the line and the orange handle to resize the band."}{" "}
+        Wheel: zoom at the cursor. Pan: middle button or Space + drag{drawing ? "" : " (or drag the background)"}. Esc cancels a started line.{" "}
         <button
           type="button"
           disabled={drawing && first === null}

@@ -86,3 +86,32 @@ test("Draw a new line clears the line; the overlay shows the fitted line and edg
   fireEvent.click(screen.getByRole("button", { name: "Draw a new line" }));
   expect(onChange).toHaveBeenCalledWith(null, 0.1);
 });
+
+test("Escape cancels a started line", () => {
+  render(<LineCanvas imageUrl="/c.png" line={null} halfWidth={0.05} onChange={vi.fn()} />);
+  loaded();
+  click(screen.getByTestId("line-canvas"), 20, 50);
+  expect(screen.getByTestId("first-point")).toBeInTheDocument();
+  fireEvent.keyDown(screen.getByTestId("zoom-viewport"), { key: "Escape" });
+  expect(screen.queryByTestId("first-point")).toBeNull();
+});
+
+test("shows the pixel under the cursor and the line's angle and length", () => {
+  const line = { p1: { x: 0.2, y: 0.5 }, p2: { x: 0.8, y: 0.5 } };
+  render(<LineCanvas imageUrl="/c.png" line={line} halfWidth={0.05} onChange={vi.fn()} />);
+  loaded();
+  pointer(screen.getByTestId("line-canvas"), "pointerMove", 100, 50);
+  const text = document.body.textContent ?? "";
+  expect(text).toContain("pixel 100, 50");
+  expect(text).toContain("line 0.0° · 120 px");
+});
+
+test("zoom and position can be owned by the parent, so they survive a new picture", () => {
+  const view = { zoom: 2, cx: 0.5, cy: 0.5 };
+  const { rerender } = render(<LineCanvas imageUrl="/a.png" line={null} halfWidth={0.05} onChange={vi.fn()} view={view} onViewChange={vi.fn()} />);
+  const level = () => screen.getByTestId("zoom-level").textContent;
+  const before = level();
+  rerender(<LineCanvas imageUrl="/b.png" line={null} halfWidth={0.05} onChange={vi.fn()} view={view} onViewChange={vi.fn()} />);
+  expect(level()).toBe(before);
+  expect(before).not.toBe("100%");
+});

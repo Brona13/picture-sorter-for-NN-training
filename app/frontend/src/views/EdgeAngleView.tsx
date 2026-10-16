@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { usePublishFeature, useSharedFeature } from "../SharedFeature";
 import { api, EdgeAngleSettings, EdgeAngleState, EdgeExpected, EdgePreview } from "../api";
 import LineCanvas from "../LineCanvas";
+import PictureSizeSlider, { usePictureSize } from "../PictureSize";
+import { FIT_VIEW, View } from "../zoomGeometry";
 import { DEFAULT_HALF_WIDTH, Line } from "../lineGeometry";
 import { useJob } from "../useJob";
 import { usePreview } from "../usePreview";
@@ -45,6 +47,10 @@ const VERDICT_COLOUR = { pass: "#1a7f37", fail: "#c62828", undetermined: "#777" 
 export default function EdgeAngleView({ camera, product }: { camera: string; product?: string }) {
   const [features, setFeatures] = useState<{ feature: string; label: string }[]>([]);
   const [feature, setFeature] = useState("");
+  const [size, setSize] = usePictureSize("edge.pictureSize", 700, 300, 1600);
+  // Zoom and position survive a change of frame; another camera, product or ROI starts fitted.
+  const [view, setView] = useState<View>(FIT_VIEW);
+  useEffect(() => setView(FIT_VIEW), [camera, product, feature]);
   const shared = useSharedFeature();
   usePublishFeature(feature, shared.publish);
   const [frames, setFrames] = useState<string[]>([]);
@@ -175,7 +181,7 @@ export default function EdgeAngleView({ camera, product }: { camera: string; pro
         measurement on the right. Direction comes from which side of the edge is brighter, not from the order of your clicks.
       </p>
 
-      <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: 16, alignItems: "flex-end", flexWrap: "wrap" }}>
         <label>
           Feature (ROI){" "}
           <select value={feature} onChange={(e) => setFeature(e.target.value)}>
@@ -186,9 +192,12 @@ export default function EdgeAngleView({ camera, product }: { camera: string; pro
             ))}
           </select>
         </label>
-        <label>
-          Frame{" "}
-          <select value={frame} onChange={(e) => setFrame(e.target.value)}>
+        <PictureSizeSlider value={size} onChange={setSize} min={300} max={1600} />
+      </div>
+      <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 6 }}>
+        <label style={{ display: "flex", gap: 6, alignItems: "center", flex: "0 1 auto", minWidth: 0 }}>
+          Frame
+          <select value={frame} onChange={(e) => setFrame(e.target.value)} style={{ minWidth: 0, maxWidth: "min(70vw, 700px)" }}>
             {frames.map((f) => (
               <option key={f}>{f}</option>
             ))}
@@ -203,13 +212,16 @@ export default function EdgeAngleView({ camera, product }: { camera: string; pro
       </div>
 
       <div style={{ display: "flex", gap: 20, alignItems: "flex-start", flexWrap: "wrap", marginTop: 8 }}>
-        <div style={{ flex: "1 1 460px", minWidth: 0 }}>
+        <div style={{ flex: "0 1 auto", minWidth: 0 }}>
           {cropUrl ? (
             <LineCanvas
               imageUrl={cropUrl}
               line={draft.line}
               halfWidth={draft.halfWidth}
               overlay={overlay}
+              width={size}
+              view={view}
+              onViewChange={setView}
               onChange={(line, halfWidth) => setDraft((d) => ({ ...d, line, halfWidth }))}
             />
           ) : (

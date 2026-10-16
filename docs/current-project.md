@@ -3,7 +3,7 @@ name: current-project
 description: Authoritative snapshot of the current purpose, architecture, capabilities, limitations, and open work
 status: current
 document_type: project-status
-last_updated: 2026-10-15
+last_updated: 2026-10-16
 ---
 
 # Current project
@@ -178,6 +178,7 @@ set at once.
 - A separate, rule-based opinion (no PyTorch); pass/fail against an expected angle ± tolerance and polarity, taken from an OK example; frames with no usable edge are undetermined
 - Settings and per-frame results are metadata in `settings` (no schema change); results are recomputed when the line, band, points or filter change; the verdict follows the current expectation without a new run
 - Classify shows a badge per measured card and the Show filters `Edge angle: pass / fail / undetermined`; a freeze records the rule in the version statistics
+- The crop is shown in a shared zoom/pan viewport (`ZoomPane.tsx`, pure maths in `zoomGeometry.ts`; v1.23.0): wheel zoom at the cursor (0.5x-16x), middle-button / Space+drag / background pan, Reset, 1:1, keyboard `+ - 0`, pixel and line readout, picture-size slider, view kept across frames. The layer is resized, not scaled, so handles keep their size and normalised coordinates keep working; the view is stored as zoom plus the picture point at the box centre. Only Edge angle uses it so far; the ROI editor and the Detector canvases are to follow
 - `edge_angle.py`, `api/rules_api.py`, `classify_api._edge_state`, `views/EdgeAngleView.tsx`, `LineCanvas.tsx`, `lineGeometry.ts`. Checked on synthetic images with known angles only; not yet calibrated on real camera frames
 
 ### Find similar
@@ -264,6 +265,7 @@ One thin router per area, each delegating to the domain modules above:
 - `views/` — Overview, Status, Ingest, ROI editor, Detector, Edge angle, Dedup, Classify, Insights, Augmentation, Versions (sidebar order)
 - `classify/` — card, bulk, clear-labels, auto-assign, suggested-goldens panels, SVG scatter (drag a rectangle to zoom and list the frames inside, optionally delete them with a note, or label them all as one of the feature's classes with the "Label N as <class>" buttons, which overwrite existing labels and keep goldens in step; right-click resets), per-day Deleted view, cluster browser (vertical cluster list, paged card grid per cluster with its own grid size per ROI; cards can be labeled, made golden, made representative or deleted, with the same hover keys as Classify, plus Delete)
 - `RoiCanvas.tsx` + `roiGeometry.ts` — pointer-driven ROI draw/move/resize in normalised coordinates
+- `ZoomPane.tsx` + `zoomGeometry.ts` — zoomable, pannable bordered picture viewport (used by `LineCanvas`; planned for the other canvases)
 - `DetectorPanel.tsx` — frame strip, run bar and review panel of the tabbed Detector page (`views/DetectorView.tsx`: Filter / Detector / Review / Mask tabs, sticky save bar, shared preview); `CopyButton.tsx` — copy-to-clipboard button (Versions export path)
 - `ShapeCanvas.tsx` + `shapeGeometry.ts` — editable mask shape (rectangle, circle, polygon) with drag handles
 - `useJob.ts` — polls background jobs

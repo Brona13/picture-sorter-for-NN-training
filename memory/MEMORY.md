@@ -3,7 +3,7 @@ name: MEMORY
 description: Portable index of project memory files
 status: current
 document_type: index
-last_updated: 2026-10-15
+last_updated: 2026-10-16
 ---
 
 # Project Memory Index
@@ -38,3 +38,4 @@ Portable memory for the *Picture Sorter for NN Training* project. Kept inside th
 - [GPU backends and ROCm (2026-10-15)](gpu-backends-rocm.md) — CPU/CUDA/ROCm per machine, RX 7800 XT verified in `.venv-rocm`, v1.7.0; helper scripts and Windows untested.
 - [Handover tools, 1.15.0-1.20.0 (2026-10-15)](handover-new-tools.md) — outliers, find similar, edge angle, augmentation ranges, downstream results, pipeline stages + the laptop's Overview integrated; unverified on real data; git/schema cautions.
 - [Review from Dedup and Insights, 1.21.0-1.22.2 (2026-10-16)](review-from-dedup-and-insights.md) — batch-label a scatter selection; clickable confusion-matrix cells open paged Classify cards for FP/FN review; rebuild/restart lesson; unverified on real data.
+- [Zoom/pan viewport, 1.23.0 (2026-10-16)](zoom-pane.md) — shared ZoomPane on the Edge angle page: wheel zoom at cursor, pan, Reset/1:1, view kept across frames; rollout to the other canvases pending; unverified in a browser.
