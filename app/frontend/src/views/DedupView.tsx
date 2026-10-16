@@ -143,16 +143,28 @@ export default function DedupView({ camera, product }: { camera: string; product
   return (
     <SidePanel
       panel={
-        <label>
-          Feature (ROI)
-          <select value={feature} onChange={(e) => setFeature(e.target.value)}>
-            {features.map((f) => (
-              <option key={f.feature} value={f.feature}>
-                {f.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        <>
+          {st && st.frames > 0 && params && (
+            <label>
+              Embedding
+              <select value={params.method} onChange={(e) => change({ method: e.target.value })}>
+                {st.backbones.map((b) => (
+                  <option key={b}>{b}</option>
+                ))}
+              </select>
+            </label>
+          )}
+          <label>
+            Feature (ROI)
+            <select value={feature} onChange={(e) => setFeature(e.target.value)}>
+              {features.map((f) => (
+                <option key={f.feature} value={f.feature}>
+                  {f.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </>
       }
     >
     <section>
@@ -171,14 +183,6 @@ export default function DedupView({ camera, product }: { camera: string; product
             cluster stays visible in Classify, the rest are muted (never deleted).
           </p>
           <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
-            <label>
-              Embedding{" "}
-              <select value={params.method} onChange={(e) => change({ method: e.target.value })}>
-                {st.backbones.map((b) => (
-                  <option key={b}>{b}</option>
-                ))}
-              </select>
-            </label>
             <label>
               Epsilon (neighborhood radius){" "}
               <input
