@@ -3,9 +3,9 @@ import { usePublishFeature, useSharedFeature } from "../SharedFeature";
 import { api, DedupParams, DedupResult, DedupState, DeletePreview, DeleteResult, OutlierResult, ScatterPoint, ScatterResult } from "../api";
 import { thumbUrl } from "../classify/Card";
 import ClusterBrowser, { Marks } from "../classify/ClusterBrowser";
-import OutlierPanel from "../classify/OutlierPanel";
+import { OutlierControls, OutlierResults, useOutliers } from "../classify/OutlierPanel";
 import Scatter from "../classify/Scatter";
-import SidePanel from "../SidePanel";
+import SidePanel, { PanelGroup } from "../SidePanel";
 import { useJob } from "../useJob";
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -114,6 +114,8 @@ export default function DedupView({ camera, product }: { camera: string; product
     api.dedupSaveSettings(camera, feature, next).catch((e: unknown) => setError(msg(e)));
   }
 
+  const outlierRun = useOutliers({ camera, feature, method: params?.method ?? "", onResult: setOutliers, onError: setError });
+
   if (!camera) return <p>Select a camera.</p>;
   if (st?.reason === "no_embeddings")
     return (
@@ -164,6 +166,11 @@ export default function DedupView({ camera, product }: { camera: string; product
               ))}
             </select>
           </label>
+          {st && params && params.method && (
+            <PanelGroup title="Outliers" testId="outlier-group">
+              <OutlierControls o={outlierRun} />
+            </PanelGroup>
+          )}
         </>
       }
     >
@@ -245,10 +252,8 @@ export default function DedupView({ camera, product }: { camera: string; product
       )}
 
       {st && params && params.method && (
-        <OutlierPanel
-          camera={camera}
-          feature={feature}
-          method={params.method}
+        <OutlierResults
+          o={outlierRun}
           grid={st.grid}
           onGrid={(perPage, cols) =>
             api
@@ -260,8 +265,6 @@ export default function DedupView({ camera, product }: { camera: string; product
             setNotice(`Deleted ${frame}. It stays on disk; see Classify → Show: Deleted.`);
             load();
           }}
-          onResult={setOutliers}
-          onError={setError}
         />
       )}
 

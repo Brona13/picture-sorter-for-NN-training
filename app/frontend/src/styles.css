@@ -90,6 +90,9 @@ body {
 .right-panel-toggle { display: block; margin-left: auto; padding: 0 8px; line-height: 1.4; }
 .right-panel-body label { display: block; color: var(--muted); font-size: 12px; margin-top: 4px; }
 .right-panel-body select { width: 100%; margin-top: 2px; }
+.panel-group { margin-top: 10px; padding-top: 6px; border-top: 1px solid var(--border); }
+.panel-group > summary { cursor: pointer; font-weight: 600; font-size: 12px; }
+.right-panel-body input[type="range"] { width: 100%; }
 .main { flex: 1; min-width: 0; padding: 20px 28px 48px; max-width: 1400px; }
 
 /* ---- headings and text ---- */

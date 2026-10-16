@@ -27,3 +27,13 @@ export default function SidePanel({ panel, children }: { panel: ReactNode; child
     </div>
   );
 }
+
+/** A titled, collapsible group of related controls inside the panel. */
+export function PanelGroup({ title, defaultOpen = true, children, testId }: { title: string; defaultOpen?: boolean; children: ReactNode; testId?: string }) {
+  return (
+    <details className="panel-group" open={defaultOpen} data-testid={testId}>
+      <summary>{title}</summary>
+      {children}
+    </details>
+  );
+}

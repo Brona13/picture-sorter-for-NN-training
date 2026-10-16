@@ -243,3 +243,17 @@ test("unmute needs a second confirming click", async () => {
   await waitFor(() => expect(calls.some((c) => c.method === "DELETE")).toBe(true));
   expect(await screen.findByText("Unmuted 3 frame(s).")).toBeInTheDocument();
 });
+
+test("the Embedding, Feature and Outliers controls live in the options panel, Outliers in a collapsible group", async () => {
+  render(<DedupView camera="camA" />);
+  const panel = await screen.findByRole("complementary", { name: "Options" });
+  await within(panel).findByLabelText("Embedding");
+  expect(within(panel).getByLabelText("Feature (ROI)")).toBeInTheDocument();
+  const labels = within(panel).getAllByRole("combobox").map((s) => s.closest("label")?.textContent ?? "");
+  expect(labels[0]).toMatch(/Embedding/);
+  expect(labels[1]).toMatch(/Feature/);
+  const group = within(panel).getByTestId("outlier-group");
+  expect(group).toHaveProperty("open", true);
+  expect(within(group).getByRole("button", { name: "Score outliers" })).toBeInTheDocument();
+  expect(within(group).getByLabelText("k neighbours")).toBeInTheDocument();
+});
