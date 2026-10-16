@@ -319,3 +319,14 @@ test("only one function owns the centre: opening a group changes nothing, its ow
   expect(outliers).toHaveProperty("open", false);
   expect(screen.queryByText(/outlier 0\.420/)).toBeNull();
 });
+
+test("the number of frames in scope is a card at the top of the right column, and the explanatory text is gone", async () => {
+  render(<DedupView camera="camA" />);
+  const card = (await screen.findByTestId("frames-in-scope")).closest(".stat-card") as HTMLElement;
+  expect(card).toHaveTextContent("6 frames in scope");
+  const column = card.parentElement as HTMLElement;
+  expect(within(column).getByRole("complementary", { name: "Options" })).toBeInTheDocument();
+  expect(card.compareDocumentPosition(within(column).getByRole("complementary"))).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  expect(screen.queryByText(/DBSCAN/)).toBeNull();
+  expect(screen.queryByText(/Neural device/)).toBeNull();
+});

@@ -85,11 +85,13 @@ body {
 .sidebar li a.active { background: var(--accent); color: var(--accent-fg); font-weight: 600; }
 .with-panel { display: flex; gap: 16px; align-items: flex-start; }
 .with-panel-main { flex: 1; min-width: 0; }
+.right-col { flex: none; width: 220px; position: sticky; top: 12px; display: flex; flex-direction: column; gap: 10px; }
+.right-col.collapsed { width: auto; }
+.stat-card { display: flex; align-items: baseline; gap: 8px; padding: 8px 10px; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; }
+.stat-card strong { font-size: 22px; line-height: 1.1; }
+.stat-card span { color: var(--muted); font-size: 12px; }
 .right-panel {
-  flex: none;
-  width: 220px;
-  position: sticky;
-  top: 12px;
+  width: 100%;
   padding: 8px 10px 10px;
   background: var(--panel);
   border: 1px solid var(--border);

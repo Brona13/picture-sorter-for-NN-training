@@ -1,8 +1,11 @@
 import { ReactNode, useState } from "react";
 import { lastSession } from "./lastSession";
 
-/** A page body with a collapsible options panel on its right. Whether it is collapsed is remembered for every page. */
-export default function SidePanel({ panel, children }: { panel: ReactNode; children: ReactNode }) {
+/**
+ * A page body with a collapsible options panel on its right. Whether it is collapsed is remembered for every page.
+ * An optional status card sits above the panel, at the top of the right-hand column (shown while the panel is open).
+ */
+export default function SidePanel({ panel, card, children }: { panel: ReactNode; card?: ReactNode; children: ReactNode }) {
   const [collapsed, setCollapsed] = useState(lastSession.panelCollapsed);
   const toggle = () => {
     lastSession.setPanelCollapsed(!collapsed);
@@ -11,6 +14,8 @@ export default function SidePanel({ panel, children }: { panel: ReactNode; child
   return (
     <div className="with-panel">
       <div className="with-panel-main">{children}</div>
+      <div className={`right-col${collapsed ? " collapsed" : ""}`}>
+      {!collapsed && card && <div className="stat-card">{card}</div>}
       <aside aria-label="Options" className={`right-panel${collapsed ? " collapsed" : ""}`}>
         <button
           type="button"
@@ -24,6 +29,7 @@ export default function SidePanel({ panel, children }: { panel: ReactNode; child
         </button>
         {!collapsed && <div className="right-panel-body">{panel}</div>}
       </aside>
+      </div>
     </div>
   );
 }

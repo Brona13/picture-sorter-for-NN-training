@@ -157,6 +157,14 @@ export default function DedupView({ camera, product }: { camera: string; product
 
   return (
     <SidePanel
+      card={
+        st && (
+          <>
+            <strong data-testid="frames-in-scope">{st.frames}</strong>
+            <span>{st.frames === 1 ? "frame" : "frames"} in scope</span>
+          </>
+        )
+      }
       panel={
         <>
           {st && st.frames > 0 && params && (
@@ -285,17 +293,6 @@ export default function DedupView({ camera, product }: { camera: string; product
       {notice && <p role="status">{notice}</p>}
 
       {st && st.frames === 0 && <p>This feature has no frames yet — ingest some first.</p>}
-      {st && st.frames > 0 && params && (
-        <>
-          <p>
-            <strong>{st.frames} frame(s)</strong> in scope. DBSCAN groups near-identical cutouts on their ResNet embeddings; the representative of each
-            cluster stays visible in Classify, the rest are muted (never deleted).
-          </p>
-          <p>
-            <small>Neural device: {st.device_label} · vectors are cached — first pass over a new batch is the slow one. Epsilon, Min points and Cluster are in the Clusters group of the panel on the right.</small>
-          </p>
-        </>
-      )}
 
       {active === "outliers" && st && params && params.method && (
         <OutlierResults
