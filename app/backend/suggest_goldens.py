@@ -12,7 +12,7 @@ from __future__ import annotations
 import numpy as np
 
 import dedup
-import embedding
+import methods_config
 
 
 POOL_K = 100                # uncertainty pool depth before diversity thinning
@@ -22,7 +22,7 @@ N_MIN, N_MAX = 3, 20
 
 def _diversity_backbone() -> str | None:
     """Pick a backbone for farthest-point sampling; None means diversity is skipped."""
-    have = embedding.backbones()
+    have = methods_config.active_backbones()  # only the neural methods switched on in Configuration
     for pref in ("resnet50", "resnet18"):
         if pref in have:
             return pref

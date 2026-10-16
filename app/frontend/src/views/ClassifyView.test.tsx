@@ -125,8 +125,11 @@ const cardEl = (frame: string) => screen.findByTestId(`card-${frame}`);
 test("renders metrics, cards with leaning badges, bars and the golden reference tag", async () => {
   render(<ClassifyView camera="camA" />);
   const a = await cardEl("a.png");
-  expect(within(a).getByTitle("cpu")).toHaveTextContent("OK");
-  expect(within(a).getByTitle("resnet50")).toHaveTextContent("NG");
+  // the method tag sits inside the flag; the class is told by the colour and the tooltip, not by text
+  expect(within(a).getByTestId("flag-cpu")).toHaveTextContent("CPU");
+  expect(within(a).getByTestId("flag-cpu")).toHaveAttribute("title", "CPU leans OK");
+  expect(within(a).getByTestId("flag-resnet50")).toHaveTextContent("R50");
+  expect(within(a).getByTestId("flag-resnet50")).toHaveAttribute("title", "R50 leans NG");
   expect(within(a).getByText(/close call/)).toBeInTheDocument();
   expect(within(a).getByTestId("bar-NG")).toHaveStyle({ width: "50%" });
   const b = await cardEl("b.png");
@@ -431,4 +434,35 @@ test("cards show the edge-angle badge with the verdict when the rule has results
   expect(within(await cardEl("b.png")).getByTestId("edge-badge")).toHaveTextContent("no edge · undetermined");
   expect(within(await cardEl("c.png")).queryByTestId("edge-badge")).toBeNull();
   expect(screen.getByRole("option", { name: "Edge angle: fail" })).toBeInTheDocument();
+});
+
+test("a method without a leaning shows a grey tag chip", async () => {
+  grid = () => gridBody([card("a.png", { leanings: { resnet50: "NG" } })]);
+  render(<ClassifyView camera="camA" />);
+  const a = await cardEl("a.png");
+  expect(within(a).getByTestId("flag-cpu")).toHaveAttribute("title", "CPU: no leaning yet");
+  expect(within(a).getByTestId("flag-cpu")).toHaveTextContent("CPU");
+});
+
+test("only the active methods get a flag", async () => {
+  state = baseState({ methods: ["resnet50"] });
+  grid = () => gridBody([card("a.png", { leanings: { resnet50: "NG" } })]);
+  render(<ClassifyView camera="camA" />);
+  const a = await cardEl("a.png");
+  expect(within(a).getByTestId("flag-resnet50")).toBeInTheDocument();
+  expect(within(a).queryByTestId("flag-cpu")).toBeNull();
+  expect(within(a).getByTestId("bar-NG")).toBeInTheDocument();
+});
+
+test("'Methods disagree' is offered only with two or more active methods", async () => {
+  state = baseState({ methods: ["resnet50"] });
+  render(<ClassifyView camera="camA" />);
+  await cardEl("a.png");
+  expect(screen.queryByRole("option", { name: "Methods disagree" })).toBeNull();
+});
+
+test("a method switched on since the last refresh asks for a refresh", async () => {
+  state = baseState({ missing_methods: ["resnet50"] });
+  render(<ClassifyView camera="camA" />);
+  expect(await screen.findByText(/R50 switched on since the last refresh/)).toBeInTheDocument();
 });

@@ -76,12 +76,13 @@ def load_scored(camera: str, feature: str) -> tuple[list | None, str | None, str
     row = db.load_results(camera, feature, _roi_key(camera, feature))
     if row is None:
         return None, None, None
-    digest = hashlib.blake2b(row["payload"], digest_size=16).hexdigest()
+    methods = classify.methods_available()
+    digest = hashlib.blake2b(row["payload"], digest_size=16).hexdigest() + "|" + ",".join(methods)
     cached = _deserialised.get((camera, feature))
     if cached and cached[0] == digest:
         return cached[1], row["golden_sig"], row["frames_sig"]
     try:
-        results = classify.deserialise_results(row["payload"])
+        results = classify.deserialise_results(row["payload"], methods)
     except Exception:  # noqa: BLE001 - a malformed row must not wedge the view
         return None, None, None
     _deserialised[(camera, feature)] = (digest, results)
@@ -222,6 +223,8 @@ def state(camera: str, feature: str) -> dict:
             "goldens": results is not None and gsig != cv.golden_signature(gold),
             "frames": results is not None and fsig != cv.frames_signature(frames),
         },
+        # methods switched on (Configuration) since the last refresh: they have no scores yet
+        "missing_methods": classify.missing_methods(results, methods) if results else [],
         "muted_count": len(db.muted_frames(camera, feature)),
         "shared_products": datamodel.feature_products(camera, feature),
         "frames_seen": len(frames),

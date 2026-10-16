@@ -44,6 +44,7 @@ import detections
 import embedding
 import engine
 import labels
+import methods_config
 import perf
 import vision_settings
 
@@ -92,7 +93,13 @@ def _emit_progress(callback, phase: str, done=0, total=0, detail=None) -> None:
 
 
 def methods_available() -> list[str]:
-    return ["cpu"] + embedding.backbones()
+    """The scoring methods in use: the installed ones that are switched on (Configuration page)."""
+    return methods_config.active()
+
+
+def active_backbones() -> list[str]:
+    """The neural methods in use."""
+    return methods_config.active_backbones()
 
 
 # --- cached per-frame vectors ------------------------------------------------
@@ -485,8 +492,8 @@ def refresh(
         goldens = labels.current_goldens(camera, feature)
         frames = datamodel.frames_for_feature(camera, feature)
         hmap = labels.hash_map(camera)
-        backbones = embedding.backbones()
         methods = methods_available()
+        backbones = [m for m in methods if m != "cpu"]  # a method that is switched off is not computed
         any_golden = any(goldens.get(c) for c in classes)
     _emit_progress(
         phase_progress_cb, "discovery", 1, 1, detail=f"{len(frames)} frames"
@@ -528,6 +535,7 @@ def refresh(
                 frames,
                 hmap,
                 backbones,
+                include_classical="cpu" in methods,
                 progress_cb=vector_progress,
             )
 
@@ -636,14 +644,20 @@ def serialise_results(results: list[FrameScore]) -> bytes:
     return blob
 
 
-def deserialise_results(blob: bytes) -> list[FrameScore]:
-    """Inverse of ``serialise_results`` for the current cache format."""
+def deserialise_results(blob: bytes, methods: list[str] | None = None) -> list[FrameScore]:
+    """Inverse of ``serialise_results`` for the current cache format.
+
+    ``methods`` limits the result to those methods (the ones switched on); without it every stored method
+    is returned.
+    """
     with perf.span("results.deserialize"):
         data = json.loads(blob.decode("utf-8"))
         out: list[FrameScore] = []
         for r in data:
             fs = FrameScore(frame=r["frame"], golden=r["golden"])
             for m, ms in r["per_method"].items():
+                if methods is not None and m not in methods:
+                    continue
                 fs.per_method[m] = MethodScore(
                     dists=ms["dists"],
                     leaning=ms["leaning"],
@@ -653,6 +667,14 @@ def deserialise_results(blob: bytes) -> list[FrameScore]:
             out.append(fs)
     perf.count("results.payload_bytes_read", len(blob))
     return out
+
+
+def missing_methods(results: list[FrameScore], methods: list[str]) -> list[str]:
+    """Methods that are switched on but have no scores in these cached results (they need a refresh)."""
+    scored = next((r for r in results if r.per_method), None)
+    if scored is None:
+        return []
+    return [m for m in methods if m not in scored.per_method]
 
 
 def stats_for(results: list[FrameScore]) -> dict:

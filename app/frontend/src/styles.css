@@ -53,6 +53,8 @@ body {
   align-self: flex-start;
   height: 100vh;
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
 }
 .sidebar h1 { font-size: 17px; margin: 0 0 16px; }
 .sidebar h1:has(+ .app-version) { margin-bottom: 2px; }
@@ -68,6 +70,8 @@ body {
   color: var(--fg);
   text-decoration: none;
 }
+.sidebar .nav-icon { display: inline-block; width: 1.6em; }
+.sidebar ul.sidebar-bottom { margin-top: auto; padding-top: 16px; border-top: 1px solid var(--border); }
 .sidebar li a:hover { background: var(--hover); }
 .sidebar li a.active { background: var(--accent); color: var(--accent-fg); font-weight: 600; }
 .main { flex: 1; min-width: 0; padding: 20px 28px 48px; max-width: 1400px; }

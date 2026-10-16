@@ -243,6 +243,7 @@ The application is a FastAPI backend (`app/backend/`) that wraps the domain modu
 - `app/backend/outliers.py` — k-nearest-neighbour isolation score over the same embeddings
 - `app/backend/pipeline.py` — the pipeline stage of each ROI, derived from stored state
 - `app/backend/motion.py` — object shift/rotation measurement against a reference frame and the suggested augmentation ranges
+- `app/backend/methods_config.py` — which scoring methods are active (global setting `methods.active` in `settings`, pseudo-camera `_global`); `classify.methods_available()` follows it; `api/config_api.py` serves `GET/PUT /api/config/methods` (v1.24.0)
 - `app/backend/edge_angle.py` — edge-angle measurement, verdict, settings and per-feature results (rule-based family)
 - `app/backend/neighbors.py` — nearest unlabeled frames to a labeled seed, and the guarded batch-apply of the seed's label
 - `app/backend/classify_view.py` — presentation-neutral filtering, sorting, bars, bulk and auto-assign selection
@@ -256,7 +257,7 @@ The application is a FastAPI backend (`app/backend/`) that wraps the domain modu
 
 One thin router per area, each delegating to the domain modules above:
 `cameras`, `status`, `versions_api`, `ingest_api`, `frames_api` (frames and thumbnails),
-`roi_api`, `classify_api`, `insights_api`, `dedup_api`, `overview_api` (all cameras with reference frame and ROIs for the Overview page), `outliers_api`, `similar_api`, `rules_api`, `motion_api`, `vision_api` (filter catalogue, per-feature filter/mask/detector settings, live preview, detection job and review).
+`roi_api`, `classify_api`, `insights_api`, `dedup_api`, `overview_api` (all cameras with reference frame and ROIs for the Overview page), `outliers_api`, `similar_api`, `config_api` (active scoring methods), `rules_api`, `motion_api`, `vision_api` (filter catalogue, per-feature filter/mask/detector settings, live preview, detection job and review).
 
 ### Frontend (`app/frontend/src/`)
 
@@ -265,6 +266,7 @@ One thin router per area, each delegating to the domain modules above:
 - `views/` — Overview, Status, Ingest, ROI editor, Detector, Edge angle, Dedup, Classify, Insights, Augmentation, Versions (sidebar order)
 - `classify/` — card, bulk, clear-labels, auto-assign, suggested-goldens panels, SVG scatter (drag a rectangle to zoom and list the frames inside, optionally delete them with a note, or label them all as one of the feature's classes with the "Label N as <class>" buttons, which overwrite existing labels and keep goldens in step; right-click resets), per-day Deleted view, cluster browser (vertical cluster list, paged card grid per cluster with its own grid size per ROI; cards can be labeled, made golden, made representative or deleted, with the same hover keys as Classify, plus Delete)
 - `RoiCanvas.tsx` + `roiGeometry.ts` — pointer-driven ROI draw/move/resize in normalised coordinates
+- `views/ConfigurationView.tsx` (method checkboxes), `methodTags.ts` (CPU/R18/R50), `views.ts` (menu icons, `CONFIG_VIEW` pinned at the bottom of the sidebar)
 - `ZoomPane.tsx` + `zoomGeometry.ts` — zoomable, pannable bordered picture viewport (used by `LineCanvas`; planned for the other canvases)
 - `DetectorPanel.tsx` — frame strip, run bar and review panel of the tabbed Detector page (`views/DetectorView.tsx`: Filter / Detector / Review / Mask tabs, sticky save bar, shared preview); `CopyButton.tsx` — copy-to-clipboard button (Versions export path)
 - `ShapeCanvas.tsx` + `shapeGeometry.ts` — editable mask shape (rectangle, circle, polygon) with drag handles

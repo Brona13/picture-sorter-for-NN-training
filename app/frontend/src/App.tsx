@@ -3,8 +3,9 @@ import { NavLink, Navigate, Route, Routes, useNavigate } from "react-router-dom"
 import { api, ApiError, PipelineStage, RoiInfo } from "./api";
 import { FeatureContext } from "./SharedFeature";
 import StepBar from "./StepBar";
-import { VIEWS } from "./views";
+import { CONFIG_VIEW, VIEWS } from "./views";
 import ClassifyView from "./views/ClassifyView";
+import ConfigurationView from "./views/ConfigurationView";
 import DetectorView from "./views/DetectorView";
 import AugmentationView from "./views/AugmentationView";
 import EdgeAngleView from "./views/EdgeAngleView";
@@ -100,9 +101,24 @@ export default function App() {
         <ul>
           {VIEWS.map((v) => (
             <li key={v.path}>
-              <NavLink to={`/${v.path}`}>{v.label}</NavLink>
+              <NavLink to={`/${v.path}`}>
+                <span className="nav-icon" aria-hidden="true">
+                  {v.icon}
+                </span>
+                {v.label}
+              </NavLink>
             </li>
           ))}
+        </ul>
+        <ul className="sidebar-bottom">
+          <li>
+            <NavLink to={`/${CONFIG_VIEW.path}`}>
+              <span className="nav-icon" aria-hidden="true">
+                {CONFIG_VIEW.icon}
+              </span>
+              {CONFIG_VIEW.label}
+            </NavLink>
+          </li>
         </ul>
       </nav>
       <main className="main">
@@ -142,6 +158,7 @@ export default function App() {
             element={<DetectorView camera={camera} product={product || undefined} />}
           />
           <Route path="/dedup" element={<DedupView camera={camera} product={product || undefined} />} />
+          <Route path="/config" element={<ConfigurationView />} />
           <Route path="*" element={<Navigate to="/overview" replace />} />
         </Routes>
       </main>

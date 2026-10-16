@@ -297,6 +297,22 @@ export interface DeletePreview {
   golden: number;
 }
 
+export interface MethodInfo {
+  id: string;
+  label: string;
+  tag: string;
+  description: string;
+  installed: boolean;
+  active: boolean;
+  reason: string | null;
+}
+
+export interface MethodsConfig {
+  methods: MethodInfo[];
+  device: string;
+  device_label: string;
+}
+
 export interface ClassifyState {
   feature: string;
   classes: string[];
@@ -311,6 +327,8 @@ export interface ClassifyState {
   scored: boolean;
   cold_start: boolean;
   stale: { goldens: boolean; frames: boolean };
+  /** Methods switched on since the last refresh: they have no scores until the next one. */
+  missing_methods?: string[];
   muted_count: number;
   shared_products: string[] | null;
   frames_seen: number;
@@ -445,7 +463,7 @@ export interface DedupResult {
 
 export interface DedupState {
   feature: string;
-  reason: "no_embeddings" | "no_sklearn" | null;
+  reason: "no_embeddings" | "no_sklearn" | "methods_off" | null;
   backbones: string[];
   params: DedupParams;
   ranges: { epsilon: [number, number]; min_points: [number, number] };
@@ -658,6 +676,8 @@ export const api = {
   },
   health: () => request<{ status: string }>("/health"),
   version: () => request<{ version: string; released: string }>("/version"),
+  configMethods: () => request<MethodsConfig>("/config/methods"),
+  configSetMethods: (active: string[]) => request<MethodsConfig>("/config/methods", send("PUT", { active })),
   cameras: () => request<string[]>("/cameras"),
   pipeline: (camera: string, feature: string) =>
     request<PipelineInfo>(`/cameras/${encodeURIComponent(camera)}/pipeline?feature=${encodeURIComponent(feature)}`),

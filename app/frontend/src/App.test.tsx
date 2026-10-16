@@ -51,6 +51,9 @@ test("shows cameras, products and view navigation; redirects to Overview", async
   for (const label of ["Overview", "Status", "Ingest", "ROI editor", "Classify", "Insights", "Versions", "Dedup"]) {
     expect(screen.getByRole("link", { name: label })).toBeInTheDocument();
   }
+  // Configuration is the last link in the sidebar
+  const links = screen.getAllByRole("link");
+  expect(links[links.length - 1]).toHaveAccessibleName("Configuration");
 });
 
 test("shows the app version and release date", async () => {

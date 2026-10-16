@@ -5,6 +5,7 @@ import AutoPanel, { AutoFilter } from "../classify/AutoPanel";
 import BulkPanel from "../classify/BulkPanel";
 import Card, { MAX_SHORTCUT_CLASSES } from "../classify/Card";
 import SimilarPanel from "../classify/SimilarPanel";
+import { methodTag } from "../methodTags";
 import ClearPanel from "../classify/ClearPanel";
 import Pager from "../classify/Pager";
 import DeletedByDay from "../classify/DeletedByDay";
@@ -57,6 +58,10 @@ export default function ClassifyView({ camera, product }: { camera: string; prod
   );
 
   useEffect(() => setSimilarSeed(null), [feature]);
+  // With a single method switched on there is nothing to disagree about: leave that filter.
+  useEffect(() => {
+    if (st && st.methods.length < 2 && view === "Methods disagree") setView("All");
+  }, [st, view]);
 
   // --- load feature list ---
   useEffect(() => {
@@ -264,6 +269,11 @@ export default function ClassifyView({ camera, product }: { camera: string; prod
           ⭐ Goldens changed since the last refresh — mark as many as you like, then hit <strong>Refresh scores</strong> to re-evaluate everything against them.
         </p>
       )}
+      {st && st.missing_methods && st.missing_methods.length > 0 && (
+        <p role="status">
+          ⚙️ {st.missing_methods.map(methodTag).join(", ")} switched on since the last refresh — hit <strong>Refresh scores</strong> so {st.missing_methods.length > 1 ? "they get" : "it gets"} scores.
+        </p>
+      )}
       {st && !st.stale.goldens && st.stale.frames && (
         <p role="status">
           🆕 The frame set changed since the last refresh (ingest or delete) — hit <strong>Refresh scores</strong> to score the new set.
@@ -276,9 +286,11 @@ export default function ClassifyView({ camera, product }: { camera: string; prod
             <label>
               Show{" "}
               <select value={view} onChange={(e) => setView(e.target.value)}>
-                {st.views.map((v) => (
-                  <option key={v}>{v}</option>
-                ))}
+                {st.views
+                  .filter((v) => v !== "Methods disagree" || st.methods.length > 1) // one method cannot disagree with itself
+                  .map((v) => (
+                    <option key={v}>{v}</option>
+                  ))}
               </select>
             </label>
             <label>

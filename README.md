@@ -93,6 +93,7 @@ The application provides these views:
 - **Edge angle** — a rule-based check of one edge's angle and direction (see *Edge angle rule* below)
 - **Dedup** — cluster near-duplicate frames and mute the redundant ones (run before Classify; muted frames are hidden there)
 - **Classify** — label frames and compare scoring opinions
+- **Configuration** (⚙️, bottom of the menu) — tick which scoring methods (CPU, ResNet18, ResNet50) take part in the flow; see *Choosing the scoring methods*
 - **Insights** — compare method behavior against human labels; click a confusion-matrix number to review those frames as cards (false positives / negatives)
 - **Augmentation** — measure how far the object moves between frames and keep movement ranges for the training side (see *Augmentation ranges* below)
 - **Versions** — freeze, revert, and export dataset snapshots
@@ -341,6 +342,21 @@ Changing any setting or accepting a box makes cached scores for that feature rec
 the affected frames for a moved box). Freezing a version stores the settings in the version
 (Versions page, "vision" column); reverting restores labels and goldens, not these settings.
 Details: [Data model](docs/data-model.md).
+
+## Choosing the scoring methods
+
+The **⚙️ Configuration** page (last item of the left menu) has one checkbox per scoring method: CPU,
+ResNet18, ResNet50. The choice is global (all cameras) and saved at once. A method that is off:
+
+- is not computed, so **Refresh scores** is faster (no ResNet pass at all if both ResNets are off);
+- has no flag on the Classify cards (the bars per class stay), and disappears from Insights and the
+  ranking choices; the ResNets also drive Dedup, Outliers and Find similar, which use only the ones that are on;
+- loses nothing: cached vectors and scores stay, so switching it back on needs one **Refresh scores**
+  (Classify says so).
+
+At least one method must stay on. On the cards each method shows as a coloured flag containing its tag
+(**CPU**, **R18**, **R50**); the colour is the class that method leans to, and a grey flag means no leaning yet.
+The "Methods disagree" view needs two or more active methods.
 
 ## Classify frames
 

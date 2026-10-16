@@ -4,6 +4,7 @@ from __future__ import annotations
 import datamodel
 import db
 import embedding
+import methods_config
 import labels
 import neighbors
 from api import jobs
@@ -28,8 +29,8 @@ def find_similar(camera: str, body: SimilarBody) -> dict:
     frame_path(camera, body.frame)
     if not embedding.backbones():
         raise HTTPException(status_code=409, detail="Find similar unavailable: no_embeddings")
-    if body.method not in embedding.backbones():
-        raise HTTPException(status_code=422, detail=f"Unknown embedding: {body.method}")
+    if body.method not in methods_config.active_backbones():
+        raise HTTPException(status_code=422, detail=f"Embedding not available (switched off in Configuration?): {body.method}")
     if not neighbors.LIMIT_RANGE[0] <= body.limit <= neighbors.LIMIT_RANGE[1]:
         raise HTTPException(status_code=422, detail="limit is out of range.")
     seed_label = labels.current_labels(camera, body.feature).get(body.frame)

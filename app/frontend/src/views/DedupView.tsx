@@ -120,6 +120,12 @@ export default function DedupView({ camera, product }: { camera: string; product
         Perceptual dedup requires ResNet embeddings. Install the neural dependencies (<code>pip install -r requirements-embedding.txt</code>), then return here.
       </p>
     );
+  if (st?.reason === "methods_off")
+    return (
+      <p>
+        No ResNet method is switched on, and Dedup works on ResNet embeddings. Tick ResNet18 or ResNet50 on the <strong>Configuration</strong> page, then return here.
+      </p>
+    );
   if (st?.reason === "no_sklearn")
     return (
       <p>

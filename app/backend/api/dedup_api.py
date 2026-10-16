@@ -13,6 +13,7 @@ import datamodel
 import db
 import dedup
 import embedding
+import methods_config
 import labels
 import scatter
 import vision_settings
@@ -92,6 +93,8 @@ def _saved_params(camera: str, feature: str, backbones: list[str]) -> dict:
 def _availability() -> str | None:
     if not embedding.backbones():
         return "no_embeddings"
+    if not methods_config.active_backbones():
+        return "methods_off"
     if not _sklearn_available():
         return "no_sklearn"
     return None
@@ -152,8 +155,8 @@ class Params(BaseModel):
 
 def _validate(camera: str, p: Params) -> None:
     require_feature(camera, p.feature)
-    if p.method not in embedding.backbones():
-        raise HTTPException(status_code=422, detail=f"Unknown embedding: {p.method}")
+    if p.method not in methods_config.active_backbones():
+        raise HTTPException(status_code=422, detail=f"Embedding not available (switched off in Configuration?): {p.method}")
     if not EPSILON_RANGE[0] <= p.epsilon <= EPSILON_RANGE[1]:
         raise HTTPException(status_code=422, detail="epsilon is out of range.")
     if not MIN_POINTS_RANGE[0] <= p.min_points <= MIN_POINTS_RANGE[1]:
@@ -164,7 +167,7 @@ def _validate(camera: str, p: Params) -> None:
 def state(camera: str, feature: str) -> dict:
     require_feature(camera, feature)
     scatter.prewarm()  # UMAP's first use imports and compiles for ~20 s: do it while the user is on this page
-    backbones = embedding.backbones()
+    backbones = methods_config.active_backbones()
     result = _current_result(camera, feature)
     return {
         "feature": feature,
@@ -187,7 +190,7 @@ def save_settings(camera: str, body: Params) -> dict:
     _validate(camera, body)
     for name, value in (("method", body.method), ("epsilon", round(body.epsilon, 6)), ("min_points", body.min_points)):
         db.set_setting(camera, f"dedup.{name}.{body.feature}", str(value))
-    return {"params": _saved_params(camera, body.feature, embedding.backbones())}
+    return {"params": _saved_params(camera, body.feature, methods_config.active_backbones())}
 
 
 class GridSettings(BaseModel):

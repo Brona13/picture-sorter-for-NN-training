@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { CardData, frameImageUrl } from "../api";
+import { methodTag } from "../methodTags";
 import { classColor, clusterColor } from "./colors";
 
 interface Props {
@@ -129,13 +130,15 @@ export default function Card({ camera, feature, classes, methods, card, busy, on
             <div style={{ display: "flex", flexWrap: "wrap", gap: 4, margin: "2px 0" }}>
               {methods.map((m) => {
                 const l = leanings[m];
+                const tag = methodTag(m);
+                // The tag says which method it is; the colour is the class it leans to (see the bars below).
                 return l ? (
-                  <span key={m} title={m} style={badge(classColor(l, classes))}>
-                    {l}
+                  <span key={m} data-testid={`flag-${m}`} title={`${tag} leans ${l}`} aria-label={`${tag} leans ${l}`} style={badge(classColor(l, classes))}>
+                    {tag}
                   </span>
                 ) : (
-                  <span key={m} title={m} style={{ opacity: 0.45 }}>
-                    –
+                  <span key={m} data-testid={`flag-${m}`} title={`${tag}: no leaning yet`} aria-label={`${tag}: no leaning yet`} style={{ ...badge("#777"), opacity: 0.45 }}>
+                    {tag}
                   </span>
                 );
               })}

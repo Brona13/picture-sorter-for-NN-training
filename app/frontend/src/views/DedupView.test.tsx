@@ -91,6 +91,12 @@ test("explains missing optional dependencies", async () => {
   expect(await screen.findByText(/requires ResNet embeddings/)).toBeInTheDocument();
 });
 
+test("points to Configuration when no ResNet method is switched on", async () => {
+  state = baseState({ reason: "methods_off" });
+  render(<DedupView camera="camA" />);
+  expect(await screen.findByText(/No ResNet method is switched on/)).toBeInTheDocument();
+});
+
 test("moving a slider persists the setting", async () => {
   render(<DedupView camera="camA" />);
   await screen.findByLabelText("Min points");

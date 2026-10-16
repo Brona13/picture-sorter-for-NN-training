@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import datamodel
 import embedding
+import methods_config
 import outliers
 from api import jobs
 from api.cameras import require_feature
@@ -24,8 +25,8 @@ def run_outliers(camera: str, body: OutlierBody) -> dict:
     require_feature(camera, body.feature)
     if not embedding.backbones():
         raise HTTPException(status_code=409, detail="Outlier scoring unavailable: no_embeddings")
-    if body.method not in embedding.backbones():
-        raise HTTPException(status_code=422, detail=f"Unknown embedding: {body.method}")
+    if body.method not in methods_config.active_backbones():
+        raise HTTPException(status_code=422, detail=f"Embedding not available (switched off in Configuration?): {body.method}")
     if not outliers.K_RANGE[0] <= body.k <= outliers.K_RANGE[1]:
         raise HTTPException(status_code=422, detail="k is out of range.")
 
