@@ -101,3 +101,21 @@ test("clicking a picture opens the full image", () => {
   renderIt();
   expect(screen.getByAltText("m00.png").closest("a")!.getAttribute("href")).toBe("/api/cameras/camA/frames/m00.png/image");
 });
+
+test("each tab keeps its coloured bottom line however often the selection moves", async () => {
+  renderIt();
+  const nav = screen.getByRole("navigation", { name: "Clusters" });
+  const tabs = within(nav).getAllByRole("button");
+  const bottoms = tabs.map((t) => t.style.borderBottomColor);
+  expect(bottoms.every(Boolean)).toBe(true);
+  expect(new Set(bottoms).size).toBe(tabs.length); // one colour per cluster
+  for (const i of [1, 0, 1, 1, 0, 0, 1]) {
+    await userEvent.click(tabs[i]);
+    expect(tabs.map((t) => t.style.borderBottomColor)).toEqual(bottoms);
+    expect(tabs[i]).toHaveAttribute("aria-current", "true");
+  }
+  // the selected tab takes its own colour on the sides too; the others keep the neutral border
+  await userEvent.click(tabs[0]);
+  expect(tabs[0].style.borderLeftColor).toBe(bottoms[0]);
+  expect(tabs[1].style.borderLeftColor).not.toBe(bottoms[1]);
+});

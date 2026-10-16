@@ -90,6 +90,8 @@ export default function ClusterBrowser({
       <nav aria-label="Clusters" style={{ display: "flex", gap: 4, margin: "0 0 10px", overflowX: "auto" }}>
         {entries.map((e) => {
           const selectedTab = e.key === cur.key;
+          const tint = e.id < 0 ? "#6b7280" : clusterColor(e.id);
+          const side = selectedTab ? tint : "var(--border)";
           return (
             <button
               key={e.key}
@@ -103,10 +105,17 @@ export default function ClusterBrowser({
                 minWidth: 56,
                 padding: "4px 8px",
                 borderRadius: 4,
-                border: `1px solid ${selectedTab ? "var(--accent)" : "var(--border)"}`,
-                borderBottom: `4px solid ${e.id < 0 ? "rgba(120,120,120,.6)" : clusterColor(e.id)}`,
-                background: selectedTab ? "var(--accent)" : "transparent",
-                color: selectedTab ? "var(--accent-fg)" : "inherit",
+                // longhands only: mixing `border` with `borderBottom` lets React lose the coloured bottom line on re-render
+                borderStyle: "solid",
+                borderTopWidth: 1,
+                borderRightWidth: 1,
+                borderLeftWidth: 1,
+                borderBottomWidth: 4,
+                borderTopColor: side,
+                borderRightColor: side,
+                borderLeftColor: side,
+                borderBottomColor: tint,
+                background: selectedTab ? `color-mix(in srgb, ${tint} 28%, transparent)` : "transparent",
                 fontWeight: selectedTab ? 700 : 400,
                 whiteSpace: "nowrap",
                 overflow: "hidden",
@@ -114,7 +123,7 @@ export default function ClusterBrowser({
                 cursor: "pointer",
               }}
             >
-              {e.id < 0 ? "Unique" : e.id} <span style={{ opacity: selectedTab ? 0.9 : 0.65 }}>({e.frames.length})</span>
+              {e.id < 0 ? "Unique" : e.id} <span style={{ opacity: selectedTab ? 0.85 : 0.65 }}>({e.frames.length})</span>
             </button>
           );
         })}
