@@ -71,3 +71,15 @@ test("draw mode shows no handles; other ROIs are outlined", () => {
   expect(screen.queryByTestId("handle-se")).toBeNull();
   expect(screen.getByTitle("cap")).toBeInTheDocument();
 });
+
+test("sits in a zoom box, and a middle-button press pans instead of drawing", () => {
+  const onChange = vi.fn();
+  render(<RoiCanvas imageUrl="/f.png" mode="draw" box={null} onChange={onChange} />);
+  expect(screen.getByTestId("zoom-viewport")).toBeInTheDocument();
+  expect(screen.getByLabelText("Zoom in")).toBeInTheDocument();
+  const area = screen.getByTestId("roi-canvas");
+  const ev = createEvent.pointerDown(area, { clientX: 40, clientY: 40, pointerId: 1, button: 1, bubbles: true });
+  fireEvent(area, ev);
+  pointer(area, "pointerMove", 10 + 120, 20 + 60);
+  expect(onChange).not.toHaveBeenCalled();
+});

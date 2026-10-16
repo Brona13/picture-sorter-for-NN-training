@@ -44,12 +44,13 @@ def _cached(request: Request, etag: str, content: bytes, media_type: str) -> Res
 
 @router.get("/cameras/{camera}/frames")
 def list_frames(camera: str, product: str | None = None) -> dict:
-    """Frames offered as drawing backgrounds; falls back to all frames when a product has none."""
+    """Frames offered as drawing backgrounds (deleted ones excluded); falls back to all frames when a product has none."""
     require_camera(camera)
     if product is not None and product not in datamodel.products(camera):
         raise HTTPException(status_code=404, detail=f"Unknown product: {product}")
-    all_names = [p.name for p in datamodel.list_unsorted(camera)]
-    names = datamodel.frames_of_product(camera, product)
+    deleted = db.deleted_frames_of(camera)  # deleted frames are never offered as a drawing background
+    all_names = [p.name for p in datamodel.list_unsorted(camera) if p.name not in deleted]
+    names = [n for n in datamodel.frames_of_product(camera, product) if n not in deleted]
     showing_all = not names
     return {
         "frames": all_names if showing_all else names,

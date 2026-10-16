@@ -96,7 +96,9 @@ export default function OverviewView({
   const [size, resize] = usePictureSize("overview.pictureSize", 400, SIZE_MIN, SIZE_MAX);
 
   const [allTags, setAllTags] = useState<string[]>([]);
-  const [filter, setFilter] = useState<string[]>([]);
+  // Tag filter: a camera must have every included tag and none of the excluded ones.
+  const [include, setInclude] = useState<string[]>([]);
+  const [exclude, setExclude] = useState<string[]>([]);
   const [wizard, setWizard] = useState(false);
   const [newName, setNewName] = useState("");
   const [newTags, setNewTags] = useState<string[]>([]);
@@ -152,11 +154,19 @@ export default function OverviewView({
     }
   }
 
-  const toggleFilter = (tag: string) =>
-    setFilter((f) => (f.some((t) => t.toLowerCase() === tag.toLowerCase()) ? f.filter((t) => t.toLowerCase() !== tag.toLowerCase()) : [...f, tag]));
-  const shown = (cams ?? []).filter((c) =>
-    filter.every((f) => (c.tags ?? []).some((t) => t.toLowerCase() === f.toLowerCase())),
-  );
+  const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+  const tagState = (tag: string): "include" | "exclude" | "off" =>
+    include.some((t) => same(t, tag)) ? "include" : exclude.some((t) => same(t, tag)) ? "exclude" : "off";
+  // Each click moves a tag on: off → include → exclude → off.
+  const cycleFilter = (tag: string) => {
+    const st = tagState(tag);
+    setInclude((f) => (st === "include" ? f.filter((t) => !same(t, tag)) : st === "off" ? [...f, tag] : f));
+    setExclude((f) => (st === "include" ? [...f, tag] : st === "exclude" ? f.filter((t) => !same(t, tag)) : f));
+  };
+  const shown = (cams ?? []).filter((c) => {
+    const has = (f: string) => (c.tags ?? []).some((t) => same(t, f));
+    return include.every(has) && !exclude.some(has);
+  });
 
   if (error) return <p role="alert">{error}</p>;
   if (!cams) return <p>Loading…</p>;
@@ -202,19 +212,43 @@ export default function OverviewView({
         <p aria-label="Filter by tag" style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
           <span>Tags:</span>
           {tagCounts.map(({ tag, count }) => {
-            const on = filter.some((f) => f.toLowerCase() === tag.toLowerCase());
+            const st = tagState(tag);
             return (
-              <button key={tag} aria-pressed={on} onClick={() => toggleFilter(tag)} style={on ? { background: "var(--info-bg)", borderColor: "var(--accent)" } : undefined}>
+              <button
+                key={tag}
+                aria-pressed={st !== "off"}
+                aria-label={st === "exclude" ? `not ${tag} (${count})` : `${tag} (${count})`}
+                title={st === "off" ? "Click to require this tag" : st === "include" ? "Required — click to exclude it instead" : "Excluded — click to clear"}
+                onClick={() => cycleFilter(tag)}
+                style={
+                  st === "include"
+                    ? { background: "var(--info-bg)", borderColor: "var(--accent)" }
+                    : st === "exclude"
+                      ? { background: "var(--danger-bg, #f7c1c1)", borderColor: "var(--danger, #c33)", textDecoration: "line-through" }
+                      : undefined
+                }
+              >
+                {st === "include" ? "✓ " : st === "exclude" ? "✕ " : ""}
                 {tag} ({count})
               </button>
             );
           })}
-          {filter.length > 0 && <button onClick={() => setFilter([])}>Clear filter</button>}
+          {(include.length > 0 || exclude.length > 0) && (
+            <button
+              onClick={() => {
+                setInclude([]);
+                setExclude([]);
+              }}
+            >
+              Clear filter
+            </button>
+          )}
+          <small style={{ opacity: 0.7 }}>click: require ✓ → exclude ✕ → off</small>
         </p>
       )}
       <PictureSizeSlider value={size} onChange={resize} min={SIZE_MIN} max={SIZE_MAX} />
       {cams.length === 0 && <p>No cameras yet — use “New camera” above.</p>}
-      {cams.length > 0 && shown.length === 0 && <p>No camera has all of the selected tags.</p>}
+      {cams.length > 0 && shown.length === 0 && <p>No camera matches the tag filter.</p>}
       {shown.map((cam) => {
         const selected = cam.camera === camera;
         return (

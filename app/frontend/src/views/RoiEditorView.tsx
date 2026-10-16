@@ -2,6 +2,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { api, frameImageUrl, FramesResponse, RoiInfo, RoisResponse, roiThumbUrl } from "../api";
 import PictureSizeSlider, { usePictureSize } from "../PictureSize";
 import RoiCanvas from "../RoiCanvas";
+import { FIT_VIEW, View } from "../zoomGeometry";
 import { Box, round4, roundBox, sameBox } from "../roiGeometry";
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -10,6 +11,7 @@ const NUM_FIELDS: (keyof Box)[] = ["x", "y", "w", "h"];
 export default function RoiEditorView({ camera, product }: { camera: string; product?: string }) {
   const [size, setSize] = usePictureSize("roi.pictureSize", 900, 200, 1600);
   const [frames, setFrames] = useState<FramesResponse | null>(null);
+  const [view, setView] = useState<View>(FIT_VIEW);
   const [data, setData] = useState<RoisResponse | null>(null);
   const [frame, setFrame] = useState("");
   const [mode, setMode] = useState<"draw" | "edit">("draw");
@@ -23,6 +25,8 @@ export default function RoiEditorView({ camera, product }: { camera: string; pro
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => setView(FIT_VIEW), [camera, product]);
 
   const reload = useCallback(async () => {
     if (!camera) return;
@@ -212,13 +216,15 @@ export default function RoiEditorView({ camera, product }: { camera: string; pro
             onChange={setBox}
             others={others}
             width={size}
+            view={view}
+            onViewChange={setView}
           />
         </>
       )}
       <p>
         {editing
-          ? "Drag the box to move it, or pull a corner/edge handle to resize. Other ROIs stay drawn in green for reference."
-          : "Existing ROIs are drawn in green. Drag on the image to draw a new rectangle, name it, and add it."}
+          ? "Drag the box to move it, or pull a corner/edge handle to resize. Other ROIs stay drawn in green for reference. Wheel: zoom at the cursor. Pan: middle button or Space + drag (or drag the background)."
+          : "Existing ROIs are drawn in green. Drag on the image to draw a new rectangle, name it, and add it. Wheel: zoom at the cursor. Pan: middle button or Space + drag."}
       </p>
 
       <div>

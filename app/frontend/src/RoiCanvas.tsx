@@ -1,4 +1,4 @@
-import { PointerEvent as ReactPointerEvent, useRef } from "react";
+import { PointerEvent as ReactPointerEvent, useRef, useState } from "react";
 import {
   Box,
   boxFromDrag,
@@ -9,6 +9,8 @@ import {
   pointerToNorm,
   resizeBox,
 } from "./roiGeometry";
+import ZoomPane from "./ZoomPane";
+import { FIT_VIEW, View } from "./zoomGeometry";
 
 const HANDLES: Handle[] = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
 const HANDLE_POS: Record<Handle, [string, string]> = {
@@ -48,15 +50,27 @@ interface Props {
   maxWidth?: number;
   /** Exact display width in px (the picture may be scaled up); without it the picture keeps its own size up to ``maxWidth``. */
   width?: number;
+  /** Zoom and position; give both to keep them across frames, leave both out to let the canvas keep its own. */
+  view?: View;
+  onViewChange?: (view: View) => void;
 }
 
-export default function RoiCanvas({ imageUrl, mode, box, onChange, others = [], maxWidth = 1100, width }: Props) {
+/**
+ * The frame in a zoomable box (wheel zooms at the cursor; pan with the middle button or Space + drag, and in
+ * edit mode also by dragging the background). Draw mode: drag to create a rectangle. Edit mode: drag the box
+ * to move it or a handle to resize it. The box stays in normalised coordinates at any zoom.
+ */
+export default function RoiCanvas({ imageUrl, mode, box, onChange, others = [], maxWidth = 1100, width, view, onViewChange }: Props) {
   const area = useRef<HTMLDivElement>(null);
   const drag = useRef<Drag | null>(null);
+  const [size, setSize] = useState({ w: 4, h: 3 }); // picture size in pixels (a placeholder shape until it loads)
+  const [hover, setHover] = useState<Point | null>(null);
+  const [ownView, setOwnView] = useState<View>(FIT_VIEW);
 
   const norm = (e: ReactPointerEvent) => pointerToNorm(e.clientX, e.clientY, area.current!.getBoundingClientRect());
 
   function begin(e: ReactPointerEvent, d: (p: Point) => Drag) {
+    if (e.button !== 0) return;
     e.stopPropagation();
     e.preventDefault();
     drag.current = d(norm(e));
@@ -64,9 +78,10 @@ export default function RoiCanvas({ imageUrl, mode, box, onChange, others = [], 
   }
 
   function onPointerMove(e: ReactPointerEvent) {
+    const p = norm(e);
+    setHover(p);
     const d = drag.current;
     if (!d) return;
-    const p = norm(e);
     if (d.kind === "draw") onChange(boxFromDrag(d.start, p));
     else if (d.kind === "move") onChange(moveBox(d.origin, p.x - d.start.x, p.y - d.start.y));
     else onChange(resizeBox(d.origin, d.handle, p.x - d.start.x, p.y - d.start.y));
@@ -76,17 +91,42 @@ export default function RoiCanvas({ imageUrl, mode, box, onChange, others = [], 
     drag.current = null;
   };
 
+  const readout = [
+    hover ? `pixel ${Math.min(Math.floor(hover.x * size.w), size.w - 1)}, ${Math.min(Math.floor(hover.y * size.h), size.h - 1)}` : null,
+    box ? `box ${Math.round(box.w * size.w)} × ${Math.round(box.h * size.h)} px` : null,
+  ]
+    .filter(Boolean)
+    .join("  |  ");
+
   return (
-    <div
-      ref={area}
-      data-testid="roi-canvas"
-      style={{ position: "relative", width: width ?? "fit-content", maxWidth: width ? "100%" : maxWidth, lineHeight: 0, touchAction: "none", userSelect: "none" }}
-      onPointerDown={mode === "draw" ? (e) => begin(e, (start) => ({ kind: "draw", start })) : undefined}
-      onPointerMove={onPointerMove}
-      onPointerUp={end}
-      onPointerCancel={end}
+    <ZoomPane
+      imageSize={size}
+      width={width ?? maxWidth}
+      view={view ?? ownView}
+      onViewChange={onViewChange ?? setOwnView}
+      panOnBackground={mode === "edit"}
+      contentRef={area}
+      contentTestId="roi-canvas"
+      contentHandlers={{
+        onPointerDown: mode === "draw" ? (e) => begin(e, (start) => ({ kind: "draw", start })) : undefined,
+        onPointerMove,
+        onPointerUp: end,
+        onPointerCancel: end,
+        onPointerLeave: () => setHover(null),
+      }}
+      contentCursor={mode === "draw" ? "crosshair" : "default"}
+      info={readout}
     >
-      <img src={imageUrl} alt="Frame to draw on" draggable={false} style={{ width: width ? "100%" : undefined, maxWidth: "100%", display: "block" }} />
+      <img
+        src={imageUrl}
+        alt="Frame to draw on"
+        draggable={false}
+        style={{ width: "100%", height: "100%", display: "block" }}
+        onLoad={(e) => {
+          const img = e.currentTarget;
+          if (img.naturalWidth && img.naturalHeight) setSize({ w: img.naturalWidth, h: img.naturalHeight });
+        }}
+      />
       {others.map((o) => (
         <div
           key={o.name}
@@ -131,6 +171,6 @@ export default function RoiCanvas({ imageUrl, mode, box, onChange, others = [], 
             ))}
         </div>
       )}
-    </div>
+    </ZoomPane>
   );
 }

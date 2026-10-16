@@ -131,6 +131,21 @@ test("tag chips filter the cameras and need all selected tags", async () => {
   expect(screen.getByRole("region", { name: "Camera camB" })).toBeInTheDocument();
 });
 
+test("a tag chip can also exclude: off, require, exclude, off", async () => {
+  installTags(TAGGED);
+  render(<OverviewView camera="camA" onSelectCamera={() => {}} />);
+  await screen.findByRole("region", { name: "Camera camA" });
+  await userEvent.click(screen.getByRole("button", { name: "trial (2)" })); // require trial: both stay
+  expect(screen.getByRole("region", { name: "Camera camB" })).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Line 1 (1)" })); // and Line 1: only camA
+  expect(screen.queryByRole("region", { name: "Camera camB" })).toBeNull();
+  await userEvent.click(screen.getByRole("button", { name: "Line 1 (1)" })); // Line 1 now excluded: only camB
+  expect(screen.queryByRole("region", { name: "Camera camA" })).toBeNull();
+  expect(screen.getByRole("region", { name: "Camera camB" })).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "not Line 1 (1)" })); // off again
+  expect(screen.getByRole("region", { name: "Camera camA" })).toBeInTheDocument();
+});
+
 test("removing and adding a tag on a camera saves it for that camera", async () => {
   const calls = installTags(TAGGED, { "/api/cameras/camB/tags": () => ["trial", "night"] });
   render(<OverviewView camera="camA" onSelectCamera={() => {}} />);

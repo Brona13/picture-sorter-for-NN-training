@@ -25,7 +25,7 @@ import {
   zoomAt,
 } from "./zoomGeometry";
 
-type Handlers = Pick<HTMLAttributes<HTMLDivElement>, "onClick" | "onPointerMove" | "onPointerUp" | "onPointerCancel" | "onPointerLeave">;
+type Handlers = Pick<HTMLAttributes<HTMLDivElement>, "onClick" | "onPointerDown" | "onPointerMove" | "onPointerUp" | "onPointerCancel" | "onPointerLeave">;
 
 interface Props {
   /** The picture's own size in pixels (for the aspect ratio, the zoom percentage and 1:1). */
@@ -137,14 +137,26 @@ export default function ZoomPane({
     zoomCentre(oneToOneZoom(imageSize.w, base) / view.zoom);
   }
 
-  function onPointerDown(e: ReactPointerEvent) {
-    box.current?.focus({ preventScroll: true });
-    const wants = e.button === 1 || (e.button === 0 && (space.current || panOnBackground));
-    if (!wants) return;
+  function startPan(e: ReactPointerEvent) {
     e.preventDefault();
     pan.current = { sx: e.clientX, sy: e.clientY, origin: view, moved: false, button: e.button };
     setPanning(true);
     box.current?.setPointerCapture?.(e.pointerId);
+  }
+
+  // Middle button and Space + drag win over whatever the layer inside does with a press (drawing a
+  // rectangle, say), so they are taken in the capture phase.
+  function onPointerDownCapture(e: ReactPointerEvent) {
+    box.current?.focus({ preventScroll: true });
+    if (e.button === 1 || (e.button === 0 && space.current)) {
+      e.stopPropagation();
+      startPan(e);
+    }
+  }
+
+  // A plain left press that nothing inside claimed pans, when the caller allows it.
+  function onPointerDown(e: ReactPointerEvent) {
+    if (e.button === 0 && panOnBackground) startPan(e);
   }
 
   function onPointerMove(e: ReactPointerEvent) {
@@ -217,6 +229,7 @@ export default function ZoomPane({
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
           onKeyDown={keys}
+          onPointerDownCapture={onPointerDownCapture}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={endPan}

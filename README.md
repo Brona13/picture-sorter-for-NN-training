@@ -89,9 +89,9 @@ The application provides these views:
 - **Overview** — start page: every camera with its reference frame (ROI boxes drawn on it) and a card per ROI (cutout, products, labeled/golden counts, active version). Click a camera or ROI to make that camera the active one in the left menu; hovering an ROI card highlights its box. Each card also shows its pipeline stages (see *Pipeline stages and the step bar*).
 - **Status** — label, golden, version, and ROI-definition summaries
 - **Ingest** — add frames and maintain the duplicate index
-- **ROI editor** — create, edit, scope, or delete ROIs
+- **Dedup** — cluster near-duplicate frames and mute the redundant ones (right after Ingest, before Classify; muted frames are hidden there)
+- **ROI editor** — create, edit, scope, or delete ROIs (zoom with the wheel, pan with the middle button or Space + drag; deleted frames are not offered)
 - **Edge angle** — a rule-based check of one edge's angle and direction (see *Edge angle rule* below)
-- **Dedup** — cluster near-duplicate frames and mute the redundant ones (run before Classify; muted frames are hidden there)
 - **Classify** — label frames and compare scoring opinions
 - **Configuration** (⚙️, bottom of the menu) — tick which scoring methods (CPU, ResNet18, ResNet50) take part in the flow; see *Choosing the scoring methods*
 - **Verdict** (⚖️) — one OK / NG verdict per picture from all ROIs; decide contradictions and stale decisions (see *Project verdicts*)
@@ -166,7 +166,7 @@ Notes:
 On the **Overview** page press **➕ New camera**: give it a name and optional tags, then **Create and add pictures →**
 opens Ingest on the new camera. Tags are free text and belong to one camera (a project); typing suggests tags already
 used on any camera, **×** removes a tag from that camera only, and the tag buttons above the camera cards filter
-the Overview (a camera must carry all selected tags). Tags only describe and filter cameras.
+the Overview (click a tag once to require it, again to exclude it, a third time to clear: a camera must carry every required tag and none of the excluded ones). Tags only describe and filter cameras.
 
 ## Add images
 

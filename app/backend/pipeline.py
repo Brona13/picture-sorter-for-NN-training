@@ -21,9 +21,9 @@ import vision_settings
 
 # id, label, page that does it, optional. The order is the usual order of work.
 STAGES = [
+    ("dedup", "Dedup", "dedup", True),
     ("roi", "ROI", "roi", False),
     ("vision", "Filter & detector", "detector", True),
-    ("dedup", "Dedup", "dedup", True),
     ("labeled", "Labels", "classify", False),
     ("goldens", "Goldens", "classify", False),
     ("scored", "Scores", "classify", False),

@@ -26,6 +26,12 @@ class FramesApiTests(ApiTestCase):
         self.assertEqual(self.client.get(self.base).json()["reference_frame"], self.frames[1])
         self.assertEqual(db.get_setting("camA", "reference_frame"), self.frames[1])
 
+    def test_deleted_frames_are_not_offered(self) -> None:
+        db.mark_frames_deleted("camA", [(self.frames[0], "h")])
+        body = self.client.get(self.base).json()
+        self.assertEqual(body["frames"], self.frames[1:])
+        self.assertEqual(body["total"], 2)
+
     def test_reference_must_be_a_real_frame(self) -> None:
         r = self.client.put("/api/cameras/camA/reference-frame", json={"frame": "nope.png"})
         self.assertEqual(r.status_code, 404)

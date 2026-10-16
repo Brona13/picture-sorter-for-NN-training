@@ -77,7 +77,7 @@ See [[data-model]] for the canonical entities and invariants.
 ### Cameras and tags
 
 - Cameras are created on the Overview page (**New camera** wizard: name, tags, then straight to Ingest); the Ingest page no longer has a create form (v1.25.0)
-- Tags per camera (`tags.py`, `settings` key `tags`, `GET /api/tags`, `GET/PUT /api/cameras/{camera}/tags`, `tags` in `/api/overview` and in `POST /api/cameras`); case-insensitive, at most 20 tags of 40 characters; Overview filters by all selected tags (`TagEditor.tsx`, `OverviewView.tsx`)
+- Tags per camera (`tags.py`, `settings` key `tags`, `GET /api/tags`, `GET/PUT /api/cameras/{camera}/tags`, `tags` in `/api/overview` and in `POST /api/cameras`); case-insensitive, at most 20 tags of 40 characters; Overview filters by tags with combined logic: each chip cycles off → required (✓) → excluded (✕), and a camera is shown when it has every required tag and none of the excluded ones (v1.28.0) (`TagEditor.tsx`, `OverviewView.tsx`)
 
 ### Ingest
 
@@ -101,6 +101,7 @@ See [[data-model]] for the canonical entities and invariants.
 - Define product-specific ROIs
 - Share a camera-level quality ROI across selected products
 - Delete an ROI with confirmation and purge its associated state
+- The frame picker leaves out soft-deleted frames (`GET /cameras/{camera}/frames` drops them from `frames` and `total`; v1.28.0)
 
 ### Classification
 
@@ -164,7 +165,7 @@ set at once.
 
 ### Pipeline stages
 
-- Each ROI's progress through the pipeline, derived from stored state only (no new state): ROI, filter & detector (optional), dedup (optional), labels, goldens, scores, edge angle (optional), augmentation (optional), version, export. Statuses: done, partial, stale (scores older than the goldens), todo; `next` is the first required stage not done
+- Each ROI's progress through the pipeline, derived from stored state only (no new state): dedup (optional; listed right after Ingest since v1.28.0, but it still embeds an ROI crop, so it needs an ROI), ROI, filter & detector (optional), labels, goldens, scores, edge angle (optional), augmentation (optional), version, export. Statuses: done, partial, stale (scores older than the goldens), todo; `next` is the first required stage not done
 - Overview ROI cards show a labeled-frames progress bar and the stage chips; a chip opens the page that does the stage on that ROI and product (`App.openStage`). A step bar (`StepBar.tsx`) shows the same strip above the pages that work on one ROI and reloads on page, ROI or camera change
 - The ROI being worked on is shared between the pages through `SharedFeature.tsx` (a context with a harmless default, so a page still works on its own); the pages with an ROI selector pick the shared ROI when they offer it and publish their choice
 - `pipeline.py`, `GET /api/overview` (`pipeline` per ROI), `GET /api/cameras/{camera}/pipeline?feature=`, `PipelineChips.tsx`, `StepBar.tsx`. Overview: about 4.5 ms per ROI (80 ROIs: about 0.36 s)
@@ -183,7 +184,7 @@ set at once.
 - A separate, rule-based opinion (no PyTorch); pass/fail against an expected angle ± tolerance and polarity, taken from an OK example; frames with no usable edge are undetermined
 - Settings and per-frame results are metadata in `settings` (no schema change); results are recomputed when the line, band, points or filter change; the verdict follows the current expectation without a new run
 - Classify shows a badge per measured card and the Show filters `Edge angle: pass / fail / undetermined`; a freeze records the rule in the version statistics
-- The crop is shown in a shared zoom/pan viewport (`ZoomPane.tsx`, pure maths in `zoomGeometry.ts`; v1.23.0): wheel zoom at the cursor (0.5x-16x), middle-button / Space+drag / background pan, Reset, 1:1, keyboard `+ - 0`, pixel and line readout, picture-size slider, view kept across frames. The layer is resized, not scaled, so handles keep their size and normalised coordinates keep working; the view is stored as zoom plus the picture point at the box centre. Only Edge angle uses it so far; the ROI editor and the Detector canvases are to follow
+- The crop is shown in a shared zoom/pan viewport (`ZoomPane.tsx`, pure maths in `zoomGeometry.ts`; v1.23.0): wheel zoom at the cursor (0.5x-16x), middle-button / Space+drag / background pan, Reset, 1:1, keyboard `+ - 0`, pixel and line readout, picture-size slider, view kept across frames. The layer is resized, not scaled, so handles keep their size and normalised coordinates keep working; the view is stored as zoom plus the picture point at the box centre. Edge angle (`LineCanvas`) and every `RoiCanvas` (ROI editor and Detector) use it; in draw mode a left drag draws, so panning there is middle button or Space+drag (Space/middle are taken in the capture phase, ahead of the layer's own handlers), in edit mode dragging the background pans too. The ROI editor view is kept across frames and reset on camera/product change (v1.28.0)
 - `edge_angle.py`, `api/rules_api.py`, `classify_api._edge_state`, `views/EdgeAngleView.tsx`, `LineCanvas.tsx`, `lineGeometry.ts`. Checked on synthetic images with known angles only; not yet calibrated on real camera frames
 
 ### Find similar
@@ -276,7 +277,7 @@ One thin router per area, each delegating to the domain modules above:
 
 - `App.tsx` — sidebar (camera, product, view) and routes
 - `api.ts` — typed API client
-- `views/` — Overview, Status, Ingest, ROI editor, Detector, Edge angle, Dedup, Classify, Insights, Augmentation, Versions (sidebar order)
+- `views/` — Overview, Status, Ingest, Dedup, ROI editor, Detector, Edge angle, Classify, Insights, Augmentation, Versions (sidebar order)
 - `classify/` — card, bulk, clear-labels, auto-assign, suggested-goldens panels, SVG scatter (drag a rectangle to zoom and list the frames inside, optionally delete them with a note, or label them all as one of the feature's classes with the "Label N as <class>" buttons, which overwrite existing labels and keep goldens in step; right-click resets), per-day Deleted view, cluster browser (vertical cluster list, paged card grid per cluster with its own grid size per ROI; cards can be labeled, made golden, made representative or deleted, with the same hover keys as Classify, plus Delete)
 - `RoiCanvas.tsx` + `roiGeometry.ts` — pointer-driven ROI draw/move/resize in normalised coordinates
 - `views/ConfigurationView.tsx` (method checkboxes), `methodTags.ts` (CPU/R18/R50), `views.ts` (menu icons, `CONFIG_VIEW` pinned at the bottom of the sidebar)
