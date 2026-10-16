@@ -314,7 +314,13 @@ export default function DedupView({ camera, product }: { camera: string; product
                       camera={camera}
                       feature={feature}
                       points={selected}
+                      classes={scatter.classes}
                       onError={(m) => setError(m)}
+                      onLabeled={(n, cls) => {
+                        setNotice(`Labeled ${n} frame(s) as ${cls}.`);
+                        load();
+                        api.dedupScatter(camera, feature, projection).then((j) => setScatterJob(j.id)).catch((e: unknown) => setError(msg(e)));
+                      }}
                       onDeleted={(r) => {
                         setNotice(
                           `Deleted ${r.deleted} frame(s)` +
@@ -436,13 +442,17 @@ function ScatterSelection({
   camera,
   feature,
   points,
+  classes,
   onDeleted,
+  onLabeled,
   onError,
 }: {
   camera: string;
   feature: string;
   points: ScatterPoint[];
+  classes: string[];
   onDeleted: (r: DeleteResult) => void;
+  onLabeled: (n: number, cls: string) => void;
   onError: (m: string) => void;
 }) {
   const [preview, setPreview] = useState<DeletePreview | null>(null);
@@ -456,6 +466,14 @@ function ScatterSelection({
     api
       .deletePreview(camera, feature, frames)
       .then(setPreview)
+      .catch((e: unknown) => onError(msg(e)))
+      .finally(() => setBusy(false));
+  };
+  const doLabel = (cls: string) => {
+    setBusy(true);
+    api
+      .labelFrames(camera, feature, frames, cls)
+      .then((r) => onLabeled(r.labeled, cls))
       .catch((e: unknown) => onError(msg(e)))
       .finally(() => setBusy(false));
   };
@@ -488,6 +506,11 @@ function ScatterSelection({
           <p style={{ fontSize: 12 }}>{summary}</p>
           {preview === null ? (
             <p>
+              {classes.map((c) => (
+                <button key={c} type="button" disabled={busy} onClick={() => doLabel(c)} style={{ marginRight: 6 }}>
+                  Label {points.length} as {c}
+                </button>
+              ))}{" "}
               <button type="button" disabled={busy} onClick={askDelete}>
                 🗑 Delete these {points.length} frame(s)…
               </button>

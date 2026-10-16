@@ -451,6 +451,26 @@ def delete_bulk(camera: str, body: FramesBody) -> dict:
     return _delete_frames(camera, frames, body.note)
 
 
+class LabelFramesBody(BaseModel):
+    feature: str
+    frames: list[str]
+    cls: str
+
+
+@router.post("/cameras/{camera}/classify/label-bulk")
+def label_bulk(camera: str, body: LabelFramesBody) -> dict:
+    """Label an explicit list of frames (e.g. a 2D-scatter selection) with one class."""
+    require_feature(camera, body.feature)
+    if body.cls not in datamodel.classes_for(camera, body.feature):
+        raise HTTPException(status_code=422, detail=f"Unknown class: {body.cls}")
+    frames = list(dict.fromkeys(body.frames))
+    if not frames:
+        raise HTTPException(status_code=422, detail="No frames to label.")
+    for f in frames:
+        frame_path(camera, f)
+    return {"labeled": labels.set_labels_bulk(camera, body.feature, frames, body.cls)}
+
+
 @router.post("/cameras/{camera}/classify/restore-bulk")
 def restore_bulk(camera: str, body: FramesBody) -> dict:
     require_feature(camera, body.feature)

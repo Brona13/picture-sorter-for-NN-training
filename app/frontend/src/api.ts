@@ -785,6 +785,8 @@ export const api = {
     request<CardUpdate>(`/cameras/${encodeURIComponent(camera)}/classify/restore`, post({ feature, frame })),
   deleteFrames: (camera: string, feature: string, frames: string[], note = "") =>
     request<DeleteResult>(`/cameras/${encodeURIComponent(camera)}/classify/delete-bulk`, post({ feature, frames, note })),
+  labelFrames: (camera: string, feature: string, frames: string[], cls: string) =>
+    request<{ labeled: number }>(`/cameras/${encodeURIComponent(camera)}/classify/label-bulk`, post({ feature, frames, cls })),
   deletePreview: (camera: string, feature: string, frames: string[]) =>
     request<DeletePreview>(`/cameras/${encodeURIComponent(camera)}/classify/delete-preview`, post({ feature, frames })),
   restoreFrames: (camera: string, feature: string, frames: string[]) =>

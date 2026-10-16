@@ -96,6 +96,18 @@ class DeletedFramesTests(ApiTestCase):
         self.assertEqual(labels.current_goldens(CAM, OTHER).get("OK", []), [])
         self.assertEqual(self.client.post(f"{self.cls}/delete-bulk", json={"feature": FEAT, "frames": []}).status_code, 422)
 
+    def test_label_bulk_labels_a_selection_and_keeps_goldens_in_step(self) -> None:
+        f0, f1 = self.frames[0], self.frames[1]
+        labels.set_label(CAM, FEAT, f0, "NG")
+        labels.mark_golden(CAM, FEAT, f0, "NG")
+        r = self.client.post(f"{self.cls}/label-bulk", json={"feature": FEAT, "frames": [f0, f1], "cls": "OK"})
+        self.assertEqual(r.json(), {"labeled": 2})
+        self.assertEqual(labels.current_labels(CAM, FEAT), {f0: "OK", f1: "OK"})
+        self.assertEqual(labels.current_goldens(CAM, FEAT).get("OK"), [f0])
+        bad = self.client.post(f"{self.cls}/label-bulk", json={"feature": FEAT, "frames": [f0], "cls": "nope"})
+        self.assertEqual(bad.status_code, 422)
+        self.assertEqual(self.client.post(f"{self.cls}/label-bulk", json={"feature": FEAT, "frames": [], "cls": "OK"}).status_code, 422)
+
     def test_restore_bulk_brings_frames_back_clean(self) -> None:
         self.delete_bulk(self.frames[:3])
         r = self.client.post(f"{self.cls}/restore-bulk", json={"feature": FEAT, "frames": self.frames[:2]})
