@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { usePublishFeature, useSharedFeature } from "../SharedFeature";
-import { api, InsightsResponse } from "../api";
+import { api, CardData, InsightsResponse } from "../api";
+import Card, { MAX_SHORTCUT_CLASSES } from "../classify/Card";
+import Pager, { PagerSettings } from "../classify/Pager";
 import { useJob } from "../useJob";
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -13,6 +15,10 @@ export default function InsightsView({ camera, product }: { camera: string; prod
   const [data, setData] = useState<InsightsResponse | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [cell, setCell] = useState<{ method: string; t: string; p: string; items: CardData[]; classes: string[]; methods: string[]; cols: number } | null>(null);
+  const [settings, setSettings] = useState<PagerSettings | null>(null);
+  const [page, setPage] = useState(1);
+  const [busy, setBusy] = useState<string | null>(null);
   const job = useJob<{ frames: number }>(jobId);
   const computing = jobId !== null && (job === null || job.status === "queued" || job.status === "running");
 
@@ -28,6 +34,26 @@ export default function InsightsView({ camera, product }: { camera: string; prod
       .catch((e: unknown) => setError(msg(e)));
   }, [camera, product]);
 
+  // The same per-page / column choice as Classify (stored per camera and feature).
+  useEffect(() => {
+    setSettings(null);
+    if (camera && feature)
+      api
+        .classifyState(camera, feature)
+        .then((st) => setSettings(st.settings))
+        .catch((e: unknown) => setError(msg(e)));
+  }, [camera, feature]);
+
+  function changeSettings(per_page: number, cols: number) {
+    api
+      .setGridSettings(camera, feature, per_page, cols)
+      .then(() => {
+        setSettings((s) => (s ? { ...s, per_page, cols } : s));
+        setPage(1);
+      })
+      .catch((e: unknown) => setError(msg(e)));
+  }
+
   const load = useCallback(() => {
     if (!camera || !feature) return;
     api
@@ -42,13 +68,31 @@ export default function InsightsView({ camera, product }: { camera: string; prod
   useEffect(() => {
     setData(null);
     setJobId(null);
+    setCell(null);
     load();
   }, [load]);
 
   useEffect(() => {
-    if (job?.status === "done") load();
+    if (job?.status === "done") {
+      setCell(null);
+      load();
+    }
     if (job?.status === "error") setError(job.error);
   }, [job?.status]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Marks change in place; the matrix counts refresh, the open list keeps its cards until closed.
+  async function act(frame: string, call: () => Promise<{ card: { label: string | null; golden: string | null; deleted: boolean } }>) {
+    setBusy(frame);
+    try {
+      const r = await call();
+      setCell((c) => (c ? { ...c, items: c.items.map((x) => (x.frame === frame ? { ...x, ...r.card } : x)) } : c));
+      load();
+    } catch (e) {
+      setError(msg(e));
+    } finally {
+      setBusy(null);
+    }
+  }
 
   if (!camera) return <p>Select a camera.</p>;
 
@@ -122,8 +166,24 @@ export default function InsightsView({ camera, product }: { camera: string; prod
                               const bg = v === 0 ? "transparent" : t === p ? "#C0DD97" : "#F7C1C1";
                               const fg = v === 0 ? "#888" : t === p ? "#173404" : "#501313";
                               return (
-                                <td key={p} style={{ background: bg, color: fg, padding: "4px 8px", textAlign: "center", minWidth: 32 }}>
-                                  {v}
+                                <td key={p} style={{ background: bg, padding: 0, minWidth: 32, outline: cell?.method === m && cell.t === t && cell.p === p ? "2px solid #333" : "none" }}>
+                                  <button
+                                    type="button"
+                                    disabled={v === 0}
+                                    title={`Show the ${v} frame(s) labeled ${t} that the method leans ${p}`}
+                                    onClick={() =>
+                                      api
+                                        .insightsCell(camera, feature, m, t, p)
+                                        .then((r) => {
+                                          setCell({ method: m, t, p, ...r });
+                                          setPage(1);
+                                        })
+                                        .catch((e: unknown) => setError(msg(e)))
+                                    }
+                                    style={{ all: "unset", display: "block", padding: "4px 8px", textAlign: "center", color: fg, cursor: v === 0 ? "default" : "pointer", textDecoration: v === 0 ? "none" : "underline" }}
+                                  >
+                                    {v}
+                                  </button>
                                 </td>
                               );
                             })}
@@ -139,6 +199,51 @@ export default function InsightsView({ camera, product }: { camera: string; prod
               })}
             </div>
           )}
+          {cell && settings && (() => {
+            const perPage = settings.per_page;
+            const nPages = Math.max(1, Math.ceil(cell.items.length / perPage));
+            const cur = Math.min(page, nPages);
+            const pager = { page: cur, per_page: perPage, n_pages: nPages, total: cell.items.length };
+            return (
+              <div data-testid="matrix-cell-frames">
+                <h4>
+                  {cell.method}: true {cell.t} → predicted {cell.p} — {cell.items.length} frame(s){" "}
+                  <button type="button" onClick={() => setCell(null)}>
+                    Close
+                  </button>
+                </h4>
+                {cell.items.length > 0 && (
+                  <>
+                    <p>
+                      <small>
+                        ⌨ Hover a card and press {cell.classes.slice(0, MAX_SHORTCUT_CLASSES).map((c, i) => `${i + 1} = ${c}`).join(", ")}
+                        {", 0 = clear label, the key left of 1 = golden on/off"} (no clicking needed).
+                      </small>
+                    </p>
+                    <Pager grid={pager} settings={settings} onPage={setPage} onSettings={changeSettings} where="insights top" />
+                    <ul style={{ display: "grid", gridTemplateColumns: `repeat(${settings.cols}, minmax(0, 1fr))`, gap: 8, padding: 0 }}>
+                      {cell.items.slice((cur - 1) * perPage, cur * perPage).map((card) => (
+                        <Card
+                          key={card.frame}
+                          camera={camera}
+                          feature={feature}
+                          classes={cell.classes}
+                          methods={cell.methods}
+                          card={card}
+                          busy={busy === card.frame}
+                          onLabel={(cls) => act(card.frame, () => api.setLabel(camera, feature, card.frame, cls))}
+                          onGolden={(on) => act(card.frame, () => api.setGolden(camera, feature, card.frame, on))}
+                          onDelete={() => act(card.frame, () => api.deleteFrame(camera, feature, card.frame))}
+                          onRestore={() => act(card.frame, () => api.restoreFrame(camera, feature, card.frame))}
+                        />
+                      ))}
+                    </ul>
+                    <Pager grid={pager} settings={settings} onPage={setPage} onSettings={changeSettings} where="insights bottom" />
+                  </>
+                )}
+              </div>
+            );
+          })()}
         </>
       )}
     </section>

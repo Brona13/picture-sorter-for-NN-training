@@ -33,6 +33,18 @@ def build_matrix(results, evaluable: dict[str, str], classes: list[str], method:
     return matrix, skipped
 
 
+def cell_frames(results, evaluable: dict[str, str], method: str, true_c: str, pred_c: str) -> list[str]:
+    """Frames counted in one matrix cell (same rule as ``build_matrix``), sorted by name."""
+    out = []
+    for fs in results:
+        if evaluable.get(fs.frame) != true_c:
+            continue
+        ms = fs.per_method.get(method)
+        if ms is not None and ms.leaning == pred_c:
+            out.append(fs.frame)
+    return sorted(out)
+
+
 def summarize(matrix: dict[str, dict[str, int]], classes: list[str]) -> dict:
     correct = sum(matrix[c][c] for c in classes)
     total = sum(matrix[t][p] for t in classes for p in classes)

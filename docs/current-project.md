@@ -198,6 +198,7 @@ set at once.
 - Method-level comparison of current scored results
 - Confusion-style summaries against existing human labels
 - Visibility into agreement and disagreement between methods
+- Every non-zero matrix cell is clickable (rows = your label, columns = the method's leaning), so false positives and false negatives can be reviewed: `GET /cameras/{camera}/insights/cell` returns the held-out frames behind the cell (same rule as the count; goldens excluded) as Classify card data. They are shown as the same cards with the same hover keys, and the same paged grid and per-page / column setting as Classify. Labeling, golden or deleting a card refreshes the counts; the open list keeps its cards until closed
 
 These views evaluate the curation aid; they do not establish classifier accuracy.
 
@@ -261,7 +262,7 @@ One thin router per area, each delegating to the domain modules above:
 - `App.tsx` — sidebar (camera, product, view) and routes
 - `api.ts` — typed API client
 - `views/` — Overview, Status, Ingest, ROI editor, Detector, Edge angle, Dedup, Classify, Insights, Augmentation, Versions (sidebar order)
-- `classify/` — card, bulk, clear-labels, auto-assign, suggested-goldens panels, SVG scatter (drag a rectangle to zoom and list the frames inside, optionally delete them with a note; right-click resets), per-day Deleted view, cluster browser (vertical cluster list, paged card grid per cluster with its own grid size per ROI; cards can be labeled, made golden, made representative or deleted, with the same hover keys as Classify, plus Delete)
+- `classify/` — card, bulk, clear-labels, auto-assign, suggested-goldens panels, SVG scatter (drag a rectangle to zoom and list the frames inside, optionally delete them with a note, or label them all as one of the feature's classes with the "Label N as <class>" buttons, which overwrite existing labels and keep goldens in step; right-click resets), per-day Deleted view, cluster browser (vertical cluster list, paged card grid per cluster with its own grid size per ROI; cards can be labeled, made golden, made representative or deleted, with the same hover keys as Classify, plus Delete)
 - `RoiCanvas.tsx` + `roiGeometry.ts` — pointer-driven ROI draw/move/resize in normalised coordinates
 - `DetectorPanel.tsx` — frame strip, run bar and review panel of the tabbed Detector page (`views/DetectorView.tsx`: Filter / Detector / Review / Mask tabs, sticky save bar, shared preview); `CopyButton.tsx` — copy-to-clipboard button (Versions export path)
 - `ShapeCanvas.tsx` + `shapeGeometry.ts` — editable mask shape (rectangle, circle, polygon) with drag handles

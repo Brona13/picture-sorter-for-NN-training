@@ -830,6 +830,11 @@ export const api = {
     request<SuggestResponse>(`/cameras/${encodeURIComponent(camera)}/classify/suggest?${gridParams(q, { n })}`),
   promote: (camera: string, feature: string, frame: string, cls: string) =>
     request<CardUpdate>(`/cameras/${encodeURIComponent(camera)}/classify/promote`, post({ feature, frame, cls })),
+  insightsCell: (camera: string, feature: string, method: string, true_cls: string, pred_cls: string) =>
+    request<{ items: CardData[]; classes: string[]; methods: string[]; cols: number }>(
+      `/cameras/${encodeURIComponent(camera)}/insights/cell?feature=${encodeURIComponent(feature)}&method=${encodeURIComponent(method)}` +
+        `&true_cls=${encodeURIComponent(true_cls)}&pred_cls=${encodeURIComponent(pred_cls)}`,
+    ),
   insights: (camera: string, feature: string) =>
     request<InsightsResponse>(`/cameras/${encodeURIComponent(camera)}/insights?feature=${encodeURIComponent(feature)}`),
   dedupState: (camera: string, feature: string) =>

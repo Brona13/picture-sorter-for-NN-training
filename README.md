@@ -93,7 +93,7 @@ The application provides these views:
 - **Edge angle** — a rule-based check of one edge's angle and direction (see *Edge angle rule* below)
 - **Dedup** — cluster near-duplicate frames and mute the redundant ones (run before Classify; muted frames are hidden there)
 - **Classify** — label frames and compare scoring opinions
-- **Insights** — compare method behavior against human labels
+- **Insights** — compare method behavior against human labels; click a confusion-matrix number to review those frames as cards (false positives / negatives)
 - **Augmentation** — measure how far the object moves between frames and keep movement ranges for the training side (see *Augmentation ranges* below)
 - **Versions** — freeze, revert, and export dataset snapshots
 

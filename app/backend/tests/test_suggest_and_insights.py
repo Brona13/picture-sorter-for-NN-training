@@ -73,6 +73,15 @@ class InsightsTests(unittest.TestCase):
         self.assertAlmostEqual(s["accuracy"], 66.666, places=2)
         self.assertEqual(insights.summarize({"OK": {"OK": 0}}, ["OK"])["accuracy"], 0.0)
 
+    def test_cell_frames_match_matrix_cells(self) -> None:
+        results = [A, B, C, fs("d.png", cpu={"dists": {"OK": 0.1}, "leaning": None, "margin": None, "novelty": 0.1})]
+        evaluable = {"a.png": "OK", "b.png": "NG", "c.png": "NG", "d.png": "OK", "zz.png": "OK"}
+        matrix, _ = insights.build_matrix(results, evaluable, ["OK", "NG"], "cpu")
+        for t in ("OK", "NG"):
+            for p in ("OK", "NG"):
+                self.assertEqual(len(insights.cell_frames(results, evaluable, "cpu", t, p)), matrix[t][p])
+        self.assertEqual(insights.cell_frames(results, evaluable, "cpu", "OK", "NG"), [])
+
     def test_goldens_are_excluded_from_evaluation(self) -> None:
         ev = insights.evaluable_labels({"a": "OK", "g": "OK"}, {"OK": ["g"]})
         self.assertEqual(ev, {"a": "OK"})
@@ -154,3 +163,12 @@ class SuggestInsightsApiTests(ApiTestCase):
         self.assertEqual(cpu["correct"], 6)  # well-separated synthetic groups
         self.assertEqual(cpu["matrix"], {"OK": {"OK": 3, "NG": 0}, "NG": {"OK": 0, "NG": 3}})
         self.assertEqual(cpu["accuracy"], 100.0)
+
+        cell = self.client.get(f"{url}/cell", params={"feature": FEAT, "method": "cpu", "true_cls": "OK", "pred_cls": "OK"}).json()
+        self.assertEqual(sorted(c["frame"] for c in cell["items"]), sorted(self.blue[1:]))
+        self.assertEqual({c["label"] for c in cell["items"]}, {"OK"})
+        self.assertIn("bars", cell["items"][0])
+        self.assertEqual(cell["classes"], ["OK", "NG"])
+        empty = self.client.get(f"{url}/cell", params={"feature": FEAT, "method": "cpu", "true_cls": "OK", "pred_cls": "NG"}).json()
+        self.assertEqual(empty["items"], [])
+        self.assertEqual(self.client.get(f"{url}/cell", params={"feature": FEAT, "method": "x", "true_cls": "OK", "pred_cls": "OK"}).status_code, 422)
