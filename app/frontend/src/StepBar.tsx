@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { api, PipelineInfo } from "./api";
+import { api, DATA_CHANGED, PipelineInfo } from "./api";
 import PipelineChips, { LabelProgress } from "./PipelineChips";
 
 /** Pages that work on one ROI, so the step bar belongs on them. */
@@ -9,7 +9,7 @@ const FEATURE_PAGES = new Set(["roi", "detector", "edge-angle", "dedup", "classi
 /**
  * A slim bar above the page showing where the ROI being worked on stands in the pipeline. Click a stage to
  * go to the page that does it; the stages of the page you are on are marked. It reloads when you change page,
- * ROI or camera, so it catches up with what you just did.
+ * ROI or camera, and shortly after anything is labeled, deleted or otherwise changed, so the counts stay current.
  */
 export default function StepBar({ camera, feature }: { camera: string; feature: string }) {
   const { pathname } = useLocation();
@@ -17,6 +17,22 @@ export default function StepBar({ camera, feature }: { camera: string; feature: 
   const page = pathname.split("/")[1] ?? "";
   const [info, setInfo] = useState<PipelineInfo | null>(null);
   const show = Boolean(camera && feature && FEATURE_PAGES.has(page));
+
+  const [changes, setChanges] = useState(0);
+  useEffect(() => {
+    if (!show) return;
+    // Labeling is a burst of requests; look again once it settles.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const onChange = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => setChanges((n) => n + 1), 300);
+    };
+    window.addEventListener(DATA_CHANGED, onChange);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener(DATA_CHANGED, onChange);
+    };
+  }, [show]);
 
   useEffect(() => {
     if (!show) return;
@@ -28,7 +44,7 @@ export default function StepBar({ camera, feature }: { camera: string; feature: 
     return () => {
       cancelled = true;
     };
-  }, [show, camera, feature, page]);
+  }, [show, camera, feature, page, changes]);
 
   if (!show || !info || info.feature !== feature) return null;
   return (

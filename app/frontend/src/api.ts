@@ -11,6 +11,9 @@ export class ApiError extends Error {
   }
 }
 
+/** Fired on window after every successful request that is not a GET. */
+export const DATA_CHANGED = "picturesorter:changed";
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, init);
   if (!res.ok) {
@@ -25,6 +28,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     }
     throw new ApiError(res.status, code, String(detail));
   }
+  // Anything that changed data (a label, a delete, a mute ...) tells the parts of the page that show
+  // totals, such as the step bar, to look again.
+  if ((init?.method ?? "GET") !== "GET") window.dispatchEvent(new Event(DATA_CHANGED));
   return (await res.json()) as T;
 }
 

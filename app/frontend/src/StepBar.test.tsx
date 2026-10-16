@@ -86,3 +86,33 @@ test("a failed request just hides the bar", async () => {
   await waitFor(() => expect(screen.getByTestId("where")).toBeInTheDocument());
   expect(screen.queryByTestId("step-bar")).toBeNull();
 });
+
+test("labeling something refreshes the counts without a page change", async () => {
+  let labeled = 2;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.includes("/classify/label")) {
+        labeled = 9;
+        return new Response(JSON.stringify({ card: { frame: "a.png", label: "OK", golden: null, deleted: false }, counts: {} }));
+      }
+      const p = pipeline("seal");
+      return new Response(JSON.stringify({ ...p, labeled, stages: p.stages.map((s) => (s.id === "labeled" ? { ...s, detail: `${labeled} of 8` } : s)) }));
+    }),
+  );
+  renderAt("/dedup");
+  expect(await screen.findByText(/2 of 8/)).toBeInTheDocument();
+  const { api } = await import("./api");
+  await api.setLabel("camA", "seal", "a.png", "OK");
+  expect(await screen.findByText(/9 of 8/)).toBeInTheDocument();
+});
+
+test("plain reads do not trigger a refresh", async () => {
+  renderAt("/dedup");
+  await screen.findByTestId("step-bar");
+  const n = calls.length;
+  const { api } = await import("./api");
+  await api.pipeline("camA", "seal");
+  await new Promise((r) => setTimeout(r, 450));
+  expect(calls.length).toBe(n + 1); // the read itself, nothing more
+});
