@@ -1,7 +1,9 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, test, vi } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 import FrameViewer from "./FrameViewer";
+
+afterEach(() => vi.unstubAllGlobals());
 
 function setup(over: Partial<React.ComponentProps<typeof FrameViewer>> = {}) {
   const fns = { onLabel: vi.fn(), onGolden: vi.fn(), onDelete: vi.fn(), onClose: vi.fn(), onShow: vi.fn() };
@@ -85,4 +87,40 @@ test("when the shown frame is deleted it carries on with its neighbour, and clos
   expect(screen.getByRole("img", { name: "c.png" })).toBeInTheDocument();
   rerender(<FrameViewer {...base} frames={[]} />);
   expect(onClose).toHaveBeenCalled();
+});
+
+const roiBody = (feature: string) => ({
+  rois: [{ feature, short_name: feature.split("::").pop(), owner_product: null, role: "quality", classes: ["OK", "NG"], shared_products: null, x: 0.25, y: 0.1, w: 0.5, h: 0.4, frames_seen: 1, inbox_total: 1, labeled: 0, goldens: 0, version_count: 0, active_version: null }],
+  classify_feature: null,
+});
+
+test("the feature's ROI is outlined on the full frame, and the toggle hides it", async () => {
+  const urls: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => (urls.push(url), new Response(JSON.stringify(roiBody("seal"))))));
+  setup({ feature: "seal" });
+  const box = await screen.findByTestId("viewer-roi");
+  expect(box).toHaveStyle({ left: "25%", top: "10%", width: "50%", height: "40%" });
+  expect(urls).toEqual(["/api/cameras/camA/rois"]);
+  const toggle = screen.getByRole("button", { name: "Show ROI" });
+  expect(toggle).toHaveAttribute("aria-pressed", "true");
+  await userEvent.click(toggle);
+  expect(screen.queryByTestId("viewer-roi")).toBeNull();
+  expect(toggle).toHaveAttribute("aria-pressed", "false");
+});
+
+test("a product's ROI is looked up in that product's scope; without a ROI there is no outline or toggle", async () => {
+  const urls: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => (urls.push(url), new Response(JSON.stringify(roiBody("P1::seal"))))));
+  setup({ feature: "P1::seal" });
+  await screen.findByTestId("viewer-roi");
+  expect(urls).toEqual(["/api/cameras/camA/rois?product=P1"]);
+  vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 404 })));
+});
+
+test("the outline is simply absent when the ROI cannot be loaded", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 404 })));
+  setup({ feature: "seal" });
+  await new Promise((r) => setTimeout(r, 20));
+  expect(screen.queryByTestId("viewer-roi")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Show ROI" })).toBeNull();
 });

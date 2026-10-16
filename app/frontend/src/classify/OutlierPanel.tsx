@@ -172,6 +172,7 @@ export function OutlierResults({
       {viewing && (
         <FrameViewer
           camera={camera}
+          feature={feature}
           frames={rows.map((r) => r.frame)}
           start={viewing}
           classes={result.classes}

@@ -750,6 +750,7 @@ function ScatterSelection({
           {viewing && (
             <FrameViewer
               camera={camera}
+              feature={feature}
               frames={frames}
               start={viewing}
               classes={classes}

@@ -169,6 +169,7 @@ export default function ClusterBrowser({
       {viewing && (
         <FrameViewer
           camera={camera}
+          feature={feature}
           frames={cur.frames}
           start={viewing}
           classes={result.classes}

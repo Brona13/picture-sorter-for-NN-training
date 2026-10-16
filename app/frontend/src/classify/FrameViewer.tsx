@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { frameImageUrl } from "../api";
+import { api, frameImageUrl, RoiInfo } from "../api";
 import { FIT_VIEW, View } from "../zoomGeometry";
 import ZoomPane from "../ZoomPane";
 import { classColor } from "./colors";
@@ -7,6 +7,8 @@ import { MAX_SHORTCUT_CLASSES } from "./Card";
 
 interface Props {
   camera: string;
+  /** The feature (ROI) the grid shows; its rectangle is drawn on the full frame. */
+  feature?: string;
   /** The frames in the order of the grid underneath; the arrows walk this list. */
   frames: string[];
   /** The frame to start on. */
@@ -33,12 +35,26 @@ const isTypingTarget = (t: EventTarget | null) => {
  * card's own actions for the frame on screen (1-9 label, 0 clear, the key left of 1 golden, Delete).
  * Escape closes. Keys are taken before the page sees them, so a card under the overlay never acts too.
  */
-export default function FrameViewer({ camera, frames, start, classes, marks, busy, onLabel, onGolden, onDelete, onShow, onClose }: Props) {
+export default function FrameViewer({ camera, feature, frames, start, classes, marks, busy, onLabel, onGolden, onDelete, onShow, onClose }: Props) {
   const [current, setCurrent] = useState(start);
   const [size, setSize] = useState({ w: 4, h: 3 });
   const [view, setView] = useState<View>(FIT_VIEW);
   const [win, setWin] = useState({ w: window.innerWidth, h: window.innerHeight });
   const contentRef = useRef<HTMLDivElement>(null);
+  const [roi, setRoi] = useState<RoiInfo | null>(null);
+  const [showRoi, setShowRoi] = useState(true);
+  useEffect(() => {
+    if (!feature) return;
+    let cancelled = false;
+    const product = feature.includes("::") ? feature.split("::")[0] : undefined;
+    api
+      .rois(camera, product)
+      .then((r) => !cancelled && setRoi(r.rois.find((x) => x.feature === feature) ?? null))
+      .catch(() => !cancelled && setRoi(null)); // cosmetic: the picture is useful without the outline
+    return () => {
+      cancelled = true;
+    };
+  }, [camera, feature]);
   const lastIndex = useRef(Math.max(0, frames.indexOf(start)));
 
   // A deleted frame leaves the list: carry on with the one now in its place, or close when none is left.
@@ -159,6 +175,18 @@ export default function FrameViewer({ camera, frames, start, classes, marks, bus
             </button>
           </div>
           <div role="group" aria-label="Picture" style={{ display: "flex", gap: 24, alignItems: "center" }}>
+            {roi && (
+              <button
+                type="button"
+                aria-label="Show ROI"
+                aria-pressed={showRoi}
+                title={`${showRoi ? "Hide" : "Show"} the ${roi.short_name} ROI outline on the frame`}
+                onClick={() => setShowRoi((v) => !v)}
+                style={showRoi ? { background: "rgba(255,212,0,.25)", borderColor: "#d9b300" } : undefined}
+              >
+                ▭
+              </button>
+            )}
             <button type="button" aria-label="Delete frame" disabled={busy} title="Soft-delete (Delete)" onClick={() => onDelete(frame)}>
               🗑
             </button>
@@ -184,6 +212,23 @@ export default function FrameViewer({ camera, frames, start, classes, marks, bus
             onLoad={(e) => setSize({ w: e.currentTarget.naturalWidth || 4, h: e.currentTarget.naturalHeight || 3 })}
             style={{ width: "100%", height: "100%", display: "block" }}
           />
+          {roi && showRoi && (
+            <div
+              data-testid="viewer-roi"
+              aria-hidden="true"
+              style={{
+                position: "absolute",
+                left: `${roi.x * 100}%`,
+                top: `${roi.y * 100}%`,
+                width: `${roi.w * 100}%`,
+                height: `${roi.h * 100}%`,
+                boxSizing: "border-box",
+                border: "2px solid #ffd400",
+                boxShadow: "0 0 0 1px rgba(0,0,0,.65), inset 0 0 0 1px rgba(0,0,0,.65)",
+                pointerEvents: "none",
+              }}
+            />
+          )}
         </ZoomPane>
         <div data-testid="viewer-filename" title={frame} style={{ marginTop: 8, fontSize: 13, overflowWrap: "anywhere", userSelect: "text" }}>
           {frame}
