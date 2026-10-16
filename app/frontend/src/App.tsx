@@ -128,7 +128,17 @@ export default function App() {
           <Route path="/" element={<Navigate to="/overview" replace />} />
           <Route
             path="/overview"
-            element={<OverviewView camera={camera} onSelectCamera={setCamera} onOpenStage={openStage} />}
+            element={
+              <OverviewView
+                camera={camera}
+                onSelectCamera={setCamera}
+                onOpenStage={openStage}
+                onCameraCreated={(name) => {
+                  loadCameras(name);
+                  navigate("/ingest");
+                }}
+              />
+            }
           />
           <Route path="/status" element={<StatusView camera={camera} />} />
           <Route
@@ -137,7 +147,7 @@ export default function App() {
           />
           <Route
             path="/ingest"
-            element={<IngestView camera={camera} onCameraCreated={loadCameras} />}
+            element={<IngestView camera={camera} />}
           />
           <Route
             path="/roi"

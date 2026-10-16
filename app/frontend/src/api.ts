@@ -173,6 +173,7 @@ export interface OverviewCamera {
   frame_count: number;
   /** Reference frame (or the first frame); null when the camera has no frames. */
   picture_frame: string | null;
+  tags?: string[];
   products: string[];
   classify_feature: string | null;
   rois: RoiInfo[];
@@ -730,7 +731,10 @@ export const api = {
       post(),
     ),
   job: <R = unknown>(id: string) => request<Job<R>>(`/jobs/${encodeURIComponent(id)}`),
-  createCamera: (name: string) => request<{ name: string }>("/cameras", post({ name })),
+  createCamera: (name: string, tags: string[] = []) => request<{ name: string; tags: string[] }>("/cameras", post({ name, tags })),
+  tags: () => request<{ tag: string; count: number }[]>("/tags"),
+  setCameraTags: (camera: string, tags: string[]) =>
+    request<string[]>(`/cameras/${encodeURIComponent(camera)}/tags`, send("PUT", { tags })),
   uploadFrames: (camera: string, files: File[]) => {
     const form = new FormData();
     files.forEach((f) => form.append("files", f));

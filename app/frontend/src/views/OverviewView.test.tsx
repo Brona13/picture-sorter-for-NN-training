@@ -96,3 +96,63 @@ test("clicking a stage does not also select the ROI card", async () => {
   await userEvent.click(await screen.findByTestId("stage-labeled"));
   expect(onSelect).not.toHaveBeenCalled();
 });
+
+function installTags(cameras: unknown[], over: Record<string, (init?: RequestInit) => unknown> = {}) {
+  const calls: { url: string; method: string; body?: any }[] = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push({ url, method: init?.method ?? "GET", body: init?.body ? JSON.parse(init.body as string) : undefined });
+      if (over[url]) return new Response(JSON.stringify(over[url](init)), { status: 200 });
+      if (url === "/api/overview") return new Response(JSON.stringify({ cameras }));
+      if (url === "/api/tags") return new Response(JSON.stringify([{ tag: "trial", count: 1 }, { tag: "Line 1", count: 1 }]));
+      return new Response("{}", { status: 404 });
+    }),
+  );
+  return calls;
+}
+
+const TAGGED = [
+  { ...CAMS[0], tags: ["trial", "Line 1"] },
+  { ...CAMS[1], tags: ["trial"] },
+];
+
+test("tag chips filter the cameras and need all selected tags", async () => {
+  installTags(TAGGED);
+  render(<OverviewView camera="camA" onSelectCamera={() => {}} />);
+  await screen.findByRole("region", { name: "Camera camA" });
+  expect(screen.getByRole("region", { name: "Camera camB" })).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Line 1 (1)" }));
+  expect(screen.queryByRole("region", { name: "Camera camB" })).toBeNull();
+  expect(screen.getByRole("region", { name: "Camera camA" })).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "trial (2)" }));
+  expect(screen.getByRole("region", { name: "Camera camA" })).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Clear filter" }));
+  expect(screen.getByRole("region", { name: "Camera camB" })).toBeInTheDocument();
+});
+
+test("removing and adding a tag on a camera saves it for that camera", async () => {
+  const calls = installTags(TAGGED, { "/api/cameras/camB/tags": () => ["trial", "night"] });
+  render(<OverviewView camera="camA" onSelectCamera={() => {}} />);
+  const b = await screen.findByRole("region", { name: "Camera camB" });
+  await userEvent.type(within(b).getByLabelText("Add tag to camB"), "night{Enter}");
+  await waitFor(() => expect(calls.find((c) => c.url === "/api/cameras/camB/tags")?.body).toEqual({ tags: ["trial", "night"] }));
+  await waitFor(() => expect(within(b).getByTestId("tag-night")).toBeInTheDocument());
+  await userEvent.click(within(screen.getByRole("region", { name: "Camera camA" })).getByRole("button", { name: "Remove tag trial" }));
+  await waitFor(() => expect(calls.filter((c) => c.url === "/api/cameras/camA/tags" && c.method === "PUT")[0].body).toEqual({ tags: ["Line 1"] }));
+});
+
+test("New camera wizard creates the camera with its tags and hands over to the app", async () => {
+  const onCreated = vi.fn();
+  const calls = installTags([], { "/api/cameras": () => ({ name: "cam-new", tags: ["trial"] }) });
+  render(<OverviewView camera="" onSelectCamera={() => {}} onCameraCreated={onCreated} />);
+  expect(await screen.findByText(/No cameras yet/)).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "➕ New camera" }));
+  const create = screen.getByRole("button", { name: /Create and add pictures/ });
+  expect(create).toBeDisabled();
+  await userEvent.type(screen.getByLabelText("Camera name"), "cam new");
+  await userEvent.type(screen.getByLabelText("New camera tag"), "trial,");
+  await userEvent.click(create);
+  await waitFor(() => expect(onCreated).toHaveBeenCalledWith("cam-new"));
+  expect(calls.find((c) => c.url === "/api/cameras" && c.method === "POST")!.body).toEqual({ name: "cam new", tags: ["trial"] });
+});

@@ -74,6 +74,11 @@ See [[data-model]] for the canonical entities and invariants.
 
 ## Implemented capabilities
 
+### Cameras and tags
+
+- Cameras are created on the Overview page (**New camera** wizard: name, tags, then straight to Ingest); the Ingest page no longer has a create form (v1.25.0)
+- Tags per camera (`tags.py`, `settings` key `tags`, `GET /api/tags`, `GET/PUT /api/cameras/{camera}/tags`, `tags` in `/api/overview` and in `POST /api/cameras`); case-insensitive, at most 20 tags of 40 characters; Overview filters by all selected tags (`TagEditor.tsx`, `OverviewView.tsx`)
+
 ### Ingest
 
 - Multi-file upload through the web UI (staged to disk, ingested by a background job)

@@ -66,15 +66,11 @@ test("folder import posts the path; empty path is refused client-side", async ()
   expect(JSON.parse(calls.find((c) => c.url.includes("/ingest/folder"))!.body as string)).toEqual({ path: "/data/in" });
 });
 
-test("rebuild catalog reports tracked images; create camera notifies parent", async () => {
-  const onCreated = vi.fn();
-  render(<IngestView camera="camA" onCameraCreated={onCreated} />);
+test("rebuild catalog reports tracked images; camera creation lives on the Overview page", async () => {
+  render(<IngestView camera="camA" />);
   await screen.findByText("Frames in this camera: 7");
   await userEvent.click(screen.getByText("Maintenance"));
   await userEvent.click(screen.getByRole("button", { name: /Rebuild frame catalog/ }));
   expect(await screen.findByText(/Rebuilt catalog: 5 unique image/)).toBeInTheDocument();
-
-  await userEvent.type(screen.getByLabelText(/Create a new camera/), "cam new");
-  await userEvent.click(screen.getByRole("button", { name: "Create camera" }));
-  await waitFor(() => expect(onCreated).toHaveBeenCalledWith("cam-new"));
+  expect(screen.queryByRole("button", { name: "Create camera" })).toBeNull();
 });

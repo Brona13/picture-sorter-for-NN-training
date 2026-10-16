@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { api, OverviewCamera, PipelineStage, RoiInfo } from "../api";
 import { thumbUrl } from "../classify/Card";
 import PictureSizeSlider, { usePictureSize } from "../PictureSize";
 import PipelineChips, { LabelProgress } from "../PipelineChips";
+import TagEditor from "../TagEditor";
 
 const SIZE_MIN = 150;
 const SIZE_MAX = 800;
@@ -79,10 +80,13 @@ export default function OverviewView({
   camera,
   onSelectCamera,
   onOpenStage,
+  onCameraCreated,
 }: {
   camera: string;
   onSelectCamera: (camera: string) => void;
   onOpenStage?: (camera: string, roi: RoiInfo, stage: PipelineStage) => void;
+  /** Called after a camera was created from the wizard (select it and go and add pictures). */
+  onCameraCreated?: (name: string) => void;
 }) {
   const [cams, setCams] = useState<OverviewCamera[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -90,12 +94,68 @@ export default function OverviewView({
   const [hover, setHover] = useState<Focus>(null);
   const [size, resize] = usePictureSize("overview.pictureSize", 400, SIZE_MIN, SIZE_MAX);
 
+  const [allTags, setAllTags] = useState<string[]>([]);
+  const [filter, setFilter] = useState<string[]>([]);
+  const [wizard, setWizard] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newTags, setNewTags] = useState<string[]>([]);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  const loadTags = useCallback(() => {
+    api
+      .tags()
+      .then((t) => setAllTags(t.map((x) => x.tag)))
+      .catch(() => setAllTags([])); // suggestions are a convenience
+  }, []);
+
   useEffect(() => {
     api
       .overview()
       .then((r) => setCams(r.cameras))
       .catch((e: unknown) => setError(msg(e)));
-  }, []);
+    loadTags();
+  }, [loadTags]);
+
+  const tagCounts = useMemo(() => {
+    const counts = new Map<string, { tag: string; count: number }>();
+    for (const c of cams ?? [])
+      for (const t of c.tags ?? []) {
+        const k = t.toLowerCase();
+        counts.set(k, { tag: counts.get(k)?.tag ?? t, count: (counts.get(k)?.count ?? 0) + 1 });
+      }
+    return [...counts.values()].sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
+  }, [cams]);
+
+  async function saveTags(cam: string, tags: string[]) {
+    setFormError(null);
+    try {
+      const saved = await api.setCameraTags(cam, tags);
+      setCams((list) => (list ?? []).map((c) => (c.camera === cam ? { ...c, tags: saved } : c)));
+      loadTags();
+    } catch (e) {
+      setFormError(msg(e));
+    }
+  }
+
+  async function createCamera(e: FormEvent) {
+    e.preventDefault();
+    setFormError(null);
+    try {
+      const created = await api.createCamera(newName, newTags);
+      setWizard(false);
+      setNewName("");
+      setNewTags([]);
+      onCameraCreated?.(created.name);
+    } catch (err) {
+      setFormError(msg(err));
+    }
+  }
+
+  const toggleFilter = (tag: string) =>
+    setFilter((f) => (f.some((t) => t.toLowerCase() === tag.toLowerCase()) ? f.filter((t) => t.toLowerCase() !== tag.toLowerCase()) : [...f, tag]));
+  const shown = (cams ?? []).filter((c) =>
+    filter.every((f) => (c.tags ?? []).some((t) => t.toLowerCase() === f.toLowerCase())),
+  );
 
   if (error) return <p role="alert">{error}</p>;
   if (!cams) return <p>Loading…</p>;
@@ -107,9 +167,54 @@ export default function OverviewView({
     <section>
       <h2>Overview</h2>
       <p>Every camera with its reference frame and ROIs. Click a camera or ROI to select it in the menu.</p>
+      {formError && <p role="alert">{formError}</p>}
+      <p>
+        <button aria-expanded={wizard} onClick={() => setWizard((w) => !w)}>
+          ➕ New camera
+        </button>
+      </p>
+      {wizard && (
+        <form
+          onSubmit={createCamera}
+          aria-label="New camera"
+          style={{ border: "1px solid var(--border)", borderRadius: "var(--radius)", background: "var(--panel)", padding: 12, margin: "8px 0", maxWidth: 560 }}
+        >
+          <p style={{ margin: "0 0 8px" }}>
+            <label>
+              Camera name <input value={newName} onChange={(e) => setNewName(e.target.value)} autoFocus />
+            </label>
+          </p>
+          <p style={{ margin: "0 0 8px" }}>
+            Tags <TagEditor tags={newTags} suggestions={allTags} onChange={setNewTags} label="New camera tag" />
+          </p>
+          <p style={{ margin: 0 }}>
+            <button type="submit" disabled={!newName.trim()}>
+              Create and add pictures →
+            </button>{" "}
+            <button type="button" onClick={() => setWizard(false)}>
+              Cancel
+            </button>
+          </p>
+        </form>
+      )}
+      {tagCounts.length > 0 && (
+        <p aria-label="Filter by tag" style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+          <span>Tags:</span>
+          {tagCounts.map(({ tag, count }) => {
+            const on = filter.some((f) => f.toLowerCase() === tag.toLowerCase());
+            return (
+              <button key={tag} aria-pressed={on} onClick={() => toggleFilter(tag)} style={on ? { background: "var(--info-bg)", borderColor: "var(--accent)" } : undefined}>
+                {tag} ({count})
+              </button>
+            );
+          })}
+          {filter.length > 0 && <button onClick={() => setFilter([])}>Clear filter</button>}
+        </p>
+      )}
       <PictureSizeSlider value={size} onChange={resize} min={SIZE_MIN} max={SIZE_MAX} />
-      {cams.length === 0 && <p>No cameras yet — create one on the Ingest page.</p>}
-      {cams.map((cam) => {
+      {cams.length === 0 && <p>No cameras yet — use “New camera” above.</p>}
+      {cams.length > 0 && shown.length === 0 && <p>No camera has all of the selected tags.</p>}
+      {shown.map((cam) => {
         const selected = cam.camera === camera;
         return (
           <section
@@ -127,6 +232,7 @@ export default function OverviewView({
               <h3 style={{ margin: 0 }}>{cam.camera}</h3>
               <span style={chip}>{cam.frame_count} frames</span>
               {cam.products.length > 0 && <span style={chip}>products: {cam.products.join(", ")}</span>}
+              <TagEditor tags={cam.tags ?? []} suggestions={allTags} onChange={(t) => void saveTags(cam.camera, t)} label={`Add tag to ${cam.camera}`} />
               <span style={{ flex: 1 }} />
               <button
                 aria-pressed={selected}

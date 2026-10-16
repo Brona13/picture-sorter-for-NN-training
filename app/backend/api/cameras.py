@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import config
 import datamodel
+import tags as camera_tags
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 
 router = APIRouter()
 
@@ -45,3 +47,29 @@ def list_features(camera: str, product: str | None = None) -> list[str]:
     if product is not None and product not in datamodel.products(camera):
         raise HTTPException(status_code=404, detail=f"Unknown product: {product}")
     return datamodel.list_features_for(camera, product)
+
+
+class TagsRequest(BaseModel):
+    tags: list[str]
+
+
+@router.get("/tags")
+def list_tags() -> list[dict]:
+    """Every tag in use across all cameras, for autotype."""
+    return camera_tags.all_tags(datamodel.list_cameras())
+
+
+@router.get("/cameras/{camera}/tags")
+def get_tags(camera: str) -> list[str]:
+    require_camera(camera)
+    return camera_tags.get(camera)
+
+
+@router.put("/cameras/{camera}/tags")
+def put_tags(camera: str, body: TagsRequest) -> list[str]:
+    """Replace this camera's tags (removing a tag only affects this camera)."""
+    require_camera(camera)
+    try:
+        return camera_tags.set_tags(camera, body.tags)
+    except camera_tags.TagError as e:
+        raise HTTPException(status_code=422, detail=str(e))

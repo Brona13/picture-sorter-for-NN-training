@@ -160,9 +160,16 @@ Notes:
   `requirements-embedding.txt`.
 - The server binds `127.0.0.1` only and has no authentication, as on Linux.
 
+## Create a camera and tag it
+
+On the **Overview** page press **➕ New camera**: give it a name and optional tags, then **Create and add pictures →**
+opens Ingest on the new camera. Tags are free text and belong to one camera (a project); typing suggests tags already
+used on any camera, **×** removes a tag from that camera only, and the tag buttons above the camera cards filter
+the Overview (a camera must carry all selected tags). Tags only describe and filter cameras.
+
 ## Add images
 
-Use the **Ingest** view.
+Use the **Ingest** view (select a camera first; new ones are created on the Overview page).
 
 Images can be added through:
 
@@ -184,8 +191,6 @@ are hashed and staged incrementally, so import memory does not grow with the sum
 of all file bytes. The live status identifies scanning, hash/stage, commit, and
 index-persistence work, including duplicate and error counts. If files were added
 or changed outside the application, use **Maintenance → Rebuild duplicate index**.
-
-The Maintenance section can also create a new camera.
 
 ## Define ROIs
 

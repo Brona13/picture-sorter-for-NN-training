@@ -10,6 +10,7 @@ from pathlib import Path
 import config
 import datamodel
 import ingest
+import tags as camera_tags
 from api import jobs
 from api.cameras import require_camera
 from fastapi import APIRouter, HTTPException, UploadFile
@@ -24,6 +25,7 @@ class FolderRequest(BaseModel):
 
 class CameraRequest(BaseModel):
     name: str
+    tags: list[str] = []
 
 
 def _ingest_job(camera: str, run, cleanup=None) -> dict:
@@ -49,8 +51,14 @@ def create_camera(body: CameraRequest) -> dict:
     name = re.sub(r"[^A-Za-z0-9._-]+", "-", body.name.strip()).strip("-.")
     if not name:
         raise HTTPException(status_code=422, detail="Enter a valid camera name.")
+    try:
+        cleaned = camera_tags.clean(body.tags)
+    except camera_tags.TagError as e:
+        raise HTTPException(status_code=422, detail=str(e))
     datamodel.ensure_camera_dirs(name)
-    return {"name": name}
+    if cleaned:
+        camera_tags.set_tags(name, cleaned)
+    return {"name": name, "tags": cleaned}
 
 
 @router.post("/cameras/{camera}/ingest/upload", status_code=202)

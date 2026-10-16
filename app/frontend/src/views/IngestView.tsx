@@ -16,14 +16,12 @@ const ACCEPT = ".jpg,.jpeg,.png,.bmp,.tif,.tiff,.webp";
 
 interface Props {
   camera: string;
-  onCameraCreated?: (name: string) => void;
 }
 
-export default function IngestView({ camera, onCameraCreated }: Props) {
+export default function IngestView({ camera }: Props) {
   const [frameCount, setFrameCount] = useState<number | null>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [folder, setFolder] = useState("");
-  const [newCamera, setNewCamera] = useState("");
   const [jobId, setJobId] = useState<string | null>(null);
   const [jobKind, setJobKind] = useState<"ingest" | "rebuild">("ingest");
   const [notice, setNotice] = useState<string | null>(null);
@@ -76,19 +74,7 @@ export default function IngestView({ camera, onCameraCreated }: Props) {
     start("ingest", () => api.importFolder(camera, folder.trim()));
   }
 
-  async function onCreateCamera(e: FormEvent) {
-    e.preventDefault();
-    try {
-      const created = await api.createCamera(newCamera);
-      setNotice(`Created camera '${created.name}'.`);
-      setNewCamera("");
-      onCameraCreated?.(created.name);
-    } catch (err) {
-      setError(msg(err));
-    }
-  }
-
-  if (!camera) return <p>Select a camera, or create one below.</p>;
+  if (!camera) return <p>Select a camera, or create one with “New camera” on the Overview page.</p>;
 
   const p = job?.progress ?? {};
   const phase = String(p.phase ?? "");
@@ -106,6 +92,7 @@ export default function IngestView({ camera, onCameraCreated }: Props) {
       {error && <p role="alert">{error}</p>}
       {notice && <p role="status">{notice}</p>}
       <p>Frames in this camera: {frameCount ?? "…"}</p>
+      {frameCount === 0 && <p>No pictures yet — add some below.</p>}
 
       <form onSubmit={onUpload}>
         <label>
@@ -191,14 +178,6 @@ export default function IngestView({ camera, onCameraCreated }: Props) {
         <button disabled={running} onClick={() => start("rebuild", () => api.rebuildCatalog(camera))}>
           Rebuild frame catalog from disk
         </button>
-        <hr />
-        <form onSubmit={onCreateCamera}>
-          <label>
-            Create a new camera (folder name){" "}
-            <input value={newCamera} onChange={(e) => setNewCamera(e.target.value)} />
-          </label>{" "}
-          <button type="submit">Create camera</button>
-        </form>
       </details>
     </section>
   );

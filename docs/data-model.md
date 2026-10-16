@@ -154,7 +154,7 @@ Authoritative or indexed state:
 - `detections`: per-frame object boxes for a feature (see Detector below)
 - `versions` and `version_items`: explicit snapshots
 - `version_results`: values measured downstream on a dataset exported from a version (`name`, numeric `value`, `note`, the `measured` day as `YYYY-MM-DD`, `created`). Several rows per version and name are allowed; the newest `measured` (then `created`) is the latest. They belong to the version row, which is only ever soft-deleted, so they outlive a deleted version. They are records, not inputs: nothing in scoring, ranking or export reads them
-- `settings`: per-camera UI settings and per-feature vision settings (`vision.<feature>`); app-wide settings use the pseudo-camera `_global`, e.g. `methods.active` (JSON list of the scoring methods that take part: `cpu`, `resnet18`, `resnet50`)
+- `settings`: per-camera UI settings and per-feature vision settings (`vision.<feature>`); a camera's tags are `tags` (JSON list); app-wide settings use the pseudo-camera `_global`, e.g. `methods.active` (JSON list of the scoring methods that take part: `cpu`, `resnet18`, `resnet50`)
 
 Derived caches:
 
