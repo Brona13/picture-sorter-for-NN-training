@@ -2,9 +2,8 @@ import { useEffect, useState } from "react";
 import { api, CardData, OutlierResult } from "../api";
 import { useJob } from "../useJob";
 import WheelRange from "../WheelRange";
-import Card from "./Card";
-import FrameViewer from "./FrameViewer";
-import Pager, { PagerSettings } from "./Pager";
+import { PagerSettings } from "./Pager";
+import PictureGrid from "./PictureGrid";
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const K_MIN = 1;
@@ -99,27 +98,10 @@ export function OutlierResults({
   onDeleted: (frame: string) => void;
 }) {
   const { camera, feature, result, marks, setMarks, gone, setGone, page, setPage } = o;
-  const [busy, setBusy] = useState<string | null>(null);
-  const [viewing, setViewing] = useState<string | null>(null);
   if (!result) return null;
 
   const rows = result.scores.filter((s) => !gone.has(s.frame));
-  const perPage = grid.per_page;
-  const nPages = Math.max(1, Math.ceil(rows.length / perPage));
-  const cur = Math.min(page, nPages);
-  const shown = rows.slice((cur - 1) * perPage, cur * perPage);
-
-  async function act<T>(frame: string, call: () => Promise<T>, then: (r: T) => void) {
-    setBusy(frame);
-    try {
-      then(await call());
-    } catch (e) {
-      o.onError(msg(e));
-    } finally {
-      setBusy(null);
-    }
-  }
-
+  const score = new Map(rows.map((r) => [r.frame, r.score]));
   const cardOf = (frame: string): CardData => ({
     frame,
     label: marks[frame]?.label ?? null,
@@ -129,8 +111,6 @@ export function OutlierResults({
     bars: null,
     cluster: null,
   });
-  const keep = (r: { card: { frame: string; label: string | null; golden: string | null } }) =>
-    setMarks((m) => ({ ...m, [r.card.frame]: { label: r.card.label, golden: r.card.golden } }));
 
   return (
     <div data-testid="outlier-results">
@@ -138,65 +118,26 @@ export function OutlierResults({
         {rows.length} frame(s) · score min {result.summary.min.toFixed(3)} · median {result.summary.median.toFixed(3)} · 95th percentile {result.summary.p95.toFixed(3)} · max{" "}
         {result.summary.max.toFixed(3)} (k = {result.k}, {result.method})
       </p>
-      <Pager grid={{ page: cur, per_page: perPage, n_pages: nPages, total: rows.length }} settings={grid} onPage={setPage} onSettings={onGrid} where="outliers top" />
-      <ul style={{ display: "grid", gridTemplateColumns: `repeat(${grid.cols}, minmax(0, 1fr))`, gap: 8, padding: 0 }}>
-        {shown.map((s) => (
-          <Card
-            key={s.frame}
-            camera={camera}
-            feature={feature}
-            classes={result.classes}
-            methods={[]}
-            card={cardOf(s.frame)}
-            busy={busy === s.frame}
-            fullSize
-            onOpen={() => setViewing(s.frame)}
-            caption={`outlier ${s.score.toFixed(3)}`}
-            onLabel={(cls) => act(s.frame, () => api.setLabel(camera, feature, s.frame, cls), keep)}
-            onGolden={(on) => act(s.frame, () => api.setGolden(camera, feature, s.frame, on), keep)}
-            onDelete={() =>
-              act(
-                s.frame,
-                () => api.deleteFrame(camera, feature, s.frame),
-                () => {
-                  setGone((g) => new Set(g).add(s.frame));
-                  onDeleted(s.frame);
-                },
-              )
-            }
-            onRestore={() => undefined}
-          />
-        ))}
-      </ul>
-      <Pager grid={{ page: cur, per_page: perPage, n_pages: nPages, total: rows.length }} settings={grid} onPage={setPage} onSettings={onGrid} where="outliers bottom" />
-      {viewing && (
-        <FrameViewer
-          camera={camera}
-          feature={feature}
-          frames={rows.map((r) => r.frame)}
-          start={viewing}
-          classes={result.classes}
-          marks={(f) => ({ label: marks[f]?.label ?? null, golden: marks[f]?.golden ?? null })}
-          busy={busy !== null}
-          onLabel={(f, cls) => act(f, () => api.setLabel(camera, feature, f, cls), keep)}
-          onGolden={(f, on) => act(f, () => api.setGolden(camera, feature, f, on), keep)}
-          onDelete={(f) =>
-            act(
-              f,
-              () => api.deleteFrame(camera, feature, f),
-              () => {
-                setGone((g) => new Set(g).add(f));
-                onDeleted(f);
-              },
-            )
-          }
-          onShow={(f) => {
-            const at = rows.findIndex((r) => r.frame === f);
-            if (at >= 0) setPage(Math.floor(at / perPage) + 1);
-          }}
-          onClose={() => setViewing(null)}
-        />
-      )}
+      <PictureGrid
+        camera={camera}
+        feature={feature}
+        classes={result.classes}
+        frames={rows.map((r) => r.frame)}
+        cardOf={cardOf}
+        via="Outliers"
+        grid={grid}
+        onGrid={onGrid}
+        page={page}
+        onPage={setPage}
+        where="outliers"
+        extras={(f) => ({ caption: `outlier ${(score.get(f) ?? 0).toFixed(3)}` })}
+        onChanged={(f, c) => setMarks((m) => ({ ...m, [f]: { label: c.label, golden: c.golden } }))}
+        onDeleted={(f) => {
+          setGone((g) => new Set(g).add(f));
+          onDeleted(f);
+        }}
+        onError={o.onError}
+      />
     </div>
   );
 }

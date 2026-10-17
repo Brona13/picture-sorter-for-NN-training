@@ -81,6 +81,7 @@ test("deleting a card removes it from the list and reports it", async () => {
   const cards = screen.getAllByRole("listitem");
   await user.click(within(cards[0]).getByRole("button", { name: /delete/i }));
   await waitFor(() => expect(onDeleted).toHaveBeenCalledWith("far.png"));
+  expect(calls.find((c) => c.url.endsWith("/classify/delete"))?.body).toMatchObject({ frame: "far.png", via: "Outliers" }); // stamped with the tool
   expect(screen.queryByText("outlier 0.420")).toBeNull();
   expect(screen.getByRole("status").textContent).toContain("2 frame(s)");
 });
@@ -100,7 +101,7 @@ test("clicking a picture opens the viewer on it, in the order of the grid, and a
   fireEvent.keyDown(window, { key: "ArrowRight" });
   expect(within(viewer).getByRole("img", { name: "near.png" })).toBeInTheDocument();
   fireEvent.keyDown(window, { key: "2" });
-  await waitFor(() => expect(calls.find((c) => c.url.endsWith("/classify/label"))?.body).toMatchObject({ frame: "near.png", cls: "NG" }));
+  await waitFor(() => expect(calls.find((c) => c.url.endsWith("/classify/label"))?.body).toMatchObject({ frame: "near.png", cls: "NG", via: "Outliers" }));
   await waitFor(() => expect(within(screen.getByTestId("card-near.png")).getByRole("button", { name: /NG/ })).toHaveAttribute("aria-pressed", "true"));
   fireEvent.keyDown(window, { key: "Escape" });
   expect(screen.queryByRole("dialog")).toBeNull();

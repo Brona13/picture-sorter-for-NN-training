@@ -41,56 +41,61 @@ body {
 }
 
 /* ---- layout ---- */
-.app { display: flex; min-height: 100vh; }
-.sidebar {
-  width: 230px;
-  flex: none;
-  padding: 16px;
-  background: var(--panel);
-  border-right: 1px solid var(--border);
-  position: sticky;
-  top: 0;
-  align-self: flex-start;
-  height: 100vh;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-}
-.sidebar h1 { font-size: 17px; margin: 0 0 16px; }
-.app-version { margin: 0 0 16px; color: var(--muted); font-size: 12px; }
-.sidebar label { display: block; margin: 0 0 10px; color: var(--muted); font-size: 12px; }
-.sidebar select { width: 100%; margin-top: 2px; }
-.sidebar ul { list-style: none; padding: 0; margin: 16px 0 0; }
-.sidebar li a {
+.app { min-height: 100vh; --status-h: 28px; --top-h: 96px; }
+.topbar { position: sticky; top: 0; z-index: 20; background: var(--panel); border-bottom: 1px solid var(--border); }
+.topbar-row { display: flex; align-items: center; gap: 14px; padding: 6px 16px; }
+.topbar h1 { font-size: 16px; margin: 0; white-space: nowrap; }
+.topbar label { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--muted); font-size: 12px; }
+.topbar select { margin: 0; }
+.sections { list-style: none; display: flex; gap: 4px; padding: 0; margin: 0; }
+.sections a, .toolbar a {
   display: block;
-  padding: 7px 10px;
-  margin-bottom: 2px;
+  padding: 6px 12px;
   border-radius: var(--radius);
   color: var(--fg);
   text-decoration: none;
+  white-space: nowrap;
 }
-.sidebar .nav-icon { display: inline-block; width: 1.6em; }
-.sidebar-foot { margin-top: auto; padding-top: 12px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; }
-.sidebar-foot-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.sidebar-foot .app-version { margin: 0; font-size: 11px; color: var(--muted); }
-.sidebar .config-link { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 6px; text-decoration: none; font-size: 18px; }
-.sidebar .config-link:hover { background: var(--hover); }
-.sidebar .config-link.active { background: var(--accent); color: var(--accent-fg); }
+.sections a:hover, .toolbar a:hover { background: var(--hover); }
+.sections a.active, .toolbar a.active { background: var(--accent); color: var(--accent-fg); font-weight: 600; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 2px; padding: 4px 16px; border-top: 1px solid var(--border); }
+.toolbar a { padding: 4px 10px; font-size: 13px; }
+.tool-icon { display: inline-flex; vertical-align: -4px; margin-right: 6px; }
+.tool-icon.used { --ti-a: hsl(var(--hue) 62% 46%); --ti-b: hsl(var(--hue) 85% 68%); }
+.tool-icon.unused { --ti-a: var(--muted); --ti-b: color-mix(in srgb, var(--muted) 45%, var(--panel)); }
+.toolbar a.active .tool-icon { --ti-a: var(--accent-fg); --ti-b: color-mix(in srgb, var(--accent-fg) 60%, var(--accent)); }
+.app-version { margin: 0; color: var(--muted); font-size: 11px; white-space: nowrap; }
+.topbar-foot { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.statusbar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; height: var(--status-h);
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 16px;
+  background: var(--panel); border-top: 1px solid var(--border); font-size: 12px; color: var(--muted);
+}
+.statusbar-right { display: flex; align-items: center; gap: 10px; }
+.statusbar .hw-badge { width: auto; padding: 0 8px; flex-direction: row; text-align: left; gap: 8px; border-top-width: 1px; max-height: calc(var(--status-h) - 4px); overflow: hidden; }
+.statusbar .hw-badge svg { max-height: 20px; width: auto; }
+.toolbar-group { align-self: center; margin: 0 4px 0 10px; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+.toolbar-group:first-child { margin-left: 0; }
+.config-link { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 6px; text-decoration: none; font-size: 18px; }
+.config-link:hover { background: var(--hover); }
+.config-link.active { background: var(--accent); color: var(--accent-fg); }
 .hw-badge { display: flex; width: 100%; padding: 8px; gap: 10px; align-items: center; text-align: left; cursor: pointer; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); color: inherit; font: inherit; }
 .hw-badge:hover { border-color: var(--hw); }
 .hw-card { flex-direction: column; text-align: center; gap: 6px; border-top: 3px solid var(--hw); }
 .hw-chip { border-left: 4px solid var(--hw); }
 .hw-banner { background: linear-gradient(100deg, color-mix(in srgb, var(--hw) 22%, var(--panel)), var(--panel) 75%); }
-.sidebar li a:hover { background: var(--hover); }
-.sidebar li a.active { background: var(--accent); color: var(--accent-fg); font-weight: 600; }
 .with-panel { display: flex; gap: 16px; align-items: flex-start; }
 .with-panel-main { flex: 1; min-width: 0; }
-.right-col { flex: none; width: 220px; position: sticky; top: 12px; display: flex; flex-direction: column; gap: 10px; }
+/* The column sticks under the top bar and is as tall as the space between the bars; only the panel body scrolls. */
+.right-col { flex: none; width: 220px; position: sticky; top: calc(var(--top-h) + 12px); max-height: calc(100vh - var(--top-h) - var(--status-h) - 24px); display: flex; flex-direction: column; gap: 10px; }
 .right-col.collapsed { width: auto; }
 .stat-card { display: flex; align-items: baseline; gap: 8px; padding: 8px 10px; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; }
 .stat-card strong { font-size: 22px; line-height: 1.1; }
 .stat-card span { color: var(--muted); font-size: 12px; }
 .right-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   width: 100%;
   padding: 8px 10px 10px;
   background: var(--panel);
@@ -131,8 +136,9 @@ body {
 .right-panel-body input[type="range"] { width: 100%; }
 .right-panel-body label > span { display: block; color: var(--fg, inherit); }
 .right-panel-body progress { display: block; width: 100%; margin-bottom: 2px; }
-.right-panel-body { overflow-wrap: anywhere; }
-.main { flex: 1; min-width: 0; padding: 20px 28px 48px; max-width: 1400px; }
+.right-panel-body { overflow-wrap: anywhere; overflow-y: auto; min-height: 0; }
+.tool-controls-title { font-size: 13px; margin: 12px 0 4px; padding-top: 8px; border-top: 1px solid var(--border); }
+.main { flex: 1; min-width: 0; padding: 20px 28px calc(var(--status-h) + 24px); max-width: 1400px; }
 
 /* ---- headings and text ---- */
 h2 { font-size: 20px; margin: 0 0 14px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }

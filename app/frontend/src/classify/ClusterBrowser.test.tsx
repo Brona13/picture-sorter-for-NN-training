@@ -78,11 +78,11 @@ test("hover shortcuts work on a cluster card: a number labels, Delete deletes", 
   const card = screen.getByTestId("card-m01.png");
   await userEvent.hover(card);
   await userEvent.keyboard("2");
-  await waitFor(() => expect(calls.find((c) => c.url.endsWith("/classify/label"))!.body).toEqual({ feature: "seal", frame: "m01.png", cls: "NG" }));
+  await waitFor(() => expect(calls.find((c) => c.url.endsWith("/classify/label"))!.body).toEqual({ feature: "seal", frame: "m01.png", cls: "NG", via: "Clusters" }));
   await waitFor(() => expect(onMarks).toHaveBeenCalledWith("m01.png", { label: "NG", golden: null }));
   fireEvent.keyDown(window, { key: "Delete" });
   await waitFor(() => expect(calls.some((c) => c.url.endsWith("/classify/delete"))).toBe(true));
-  expect(calls.find((c) => c.url.endsWith("/classify/delete"))!.body).toEqual({ feature: "seal", frame: "m01.png" });
+  expect(calls.find((c) => c.url.endsWith("/classify/delete"))!.body).toEqual({ feature: "seal", frame: "m01.png", via: "Clusters" });
   await waitFor(() => expect(onDeleted).toHaveBeenCalledWith("m01.png"));
 });
 

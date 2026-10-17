@@ -327,6 +327,7 @@ class LabelBody(BaseModel):
     feature: str
     frame: str
     cls: str | None = None  # null clears the label (and any golden)
+    via: str | None = None  # the tool the label was set from (Scatter, Outliers, ...); Classify when omitted
 
 
 class GoldenBody(BaseModel):
@@ -339,6 +340,7 @@ class DeleteBody(BaseModel):
     feature: str
     frame: str
     note: str = ""
+    via: str | None = None  # the tool the delete was made from; stored as the deletion's source
 
 
 def _result(camera: str, feature: str, frame: str, classes: list[str]) -> dict:
@@ -358,7 +360,7 @@ def set_label(camera: str, body: LabelBody) -> dict:
     elif body.cls not in classes:
         raise HTTPException(status_code=422, detail=f"Unknown class: {body.cls}")
     else:
-        labels.set_label(camera, body.feature, body.frame, body.cls)  # a golden follows the label
+        labels.set_label(camera, body.feature, body.frame, body.cls, via=body.via)  # a golden follows the label
     return _result(camera, body.feature, body.frame, classes)
 
 
@@ -382,11 +384,16 @@ def set_golden(camera: str, body: GoldenBody) -> dict:
 MAX_NOTE = 200
 
 
+def _clean_via(via: str | None) -> str:
+    """The tool a delete came from, kept as the deletion's source; ``user`` (the default) when it is not named."""
+    return " ".join((via or "").split())[:40] or "user"
+
+
 def _clean_note(note: str) -> str:
     return " ".join(note.split())[:MAX_NOTE]
 
 
-def _delete_frames(camera: str, frames: list[str], note: str) -> dict:
+def _delete_frames(camera: str, frames: list[str], note: str, via: str | None = None) -> dict:
     """Soft-delete (camera-wide). Clears the frames' labels and goldens in every feature of
     the camera first, so a deleted frame can't act as a reference; a restored frame comes
     back with a clean slate. The dedup clustering held in memory drops them too."""
@@ -403,7 +410,7 @@ def _delete_frames(camera: str, frames: list[str], note: str) -> dict:
         cleared_labels += sum(1 for f in frames if f in lab)
         labels.clear_labels_bulk(camera, feat, [f for f in frames if f in lab or f in on_gold])
     db.mark_frames_deleted(
-        camera, [(f, labels.frame_hash(camera, f, hmap)) for f in frames], note=_clean_note(note)
+        camera, [(f, labels.frame_hash(camera, f, hmap)) for f in frames], source=_clean_via(via), note=_clean_note(note)
     )
     dedup_api.drop_deleted(camera, frames)
     return {"deleted": len(frames), "cleared_labels": cleared_labels, "cleared_goldens": cleared_goldens}
@@ -413,7 +420,7 @@ def _delete_frames(camera: str, frames: list[str], note: str) -> dict:
 def delete_frame(camera: str, body: DeleteBody) -> dict:
     require_feature(camera, body.feature)
     classes = datamodel.classes_for(camera, body.feature)
-    _delete_frames(camera, [body.frame], body.note)
+    _delete_frames(camera, [body.frame], body.note, body.via)
     return _result(camera, body.feature, body.frame, classes)
 
 
@@ -430,6 +437,7 @@ class FramesBody(BaseModel):
     feature: str
     frames: list[str]
     note: str = ""
+    via: str | None = None  # the tool the delete was made from
 
 
 @router.post("/cameras/{camera}/classify/delete-preview")
@@ -451,7 +459,7 @@ def delete_bulk(camera: str, body: FramesBody) -> dict:
     frames = list(dict.fromkeys(body.frames))
     if not frames:
         raise HTTPException(status_code=422, detail="No frames to delete.")
-    return _delete_frames(camera, frames, body.note)
+    return _delete_frames(camera, frames, body.note, body.via)
 
 
 class LabelFramesBody(BaseModel):

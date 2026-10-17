@@ -99,7 +99,7 @@ The application provides these views:
 - **Augmentation** — measure how far the object moves between frames and keep movement ranges for the training side (see *Augmentation ranges* below)
 - **Versions** — freeze verdicts as project versions and export them; freeze and revert ROI snapshots
 
-The sidebar selects the camera. When a camera has a product-classification ROI, it also selects either the product-sorting stage or one product’s quality stage.
+The top bar selects the camera. When a camera has a product-classification ROI, it also selects either the product-sorting stage or one product’s quality stage.
 
 ## Running on Windows
 
@@ -306,7 +306,7 @@ the images.
 
 ## Detector page: filters, mask and object detection
 
-The **Detector** page (sidebar, after the ROI editor) is optional. It changes what the scoring
+The **Detector** page (Manipulation tools, after the ROI editor) is optional. It changes what the scoring
 and Dedup see for one feature (ROI): instead of the whole ROI crop they can see a filtered
 crop with everything outside the object blanked. It never changes source frames, labels or
 goldens, and the settings are saved per camera and feature. Everything on the page is one
@@ -447,18 +447,15 @@ by leaning, margin or novelty against the goldens.
 
 ### The Dedup page
 
-The page body shows the result of whichever **function** is active; the controls live in a collapsible
-**options panel** on the right (the `»` button hides it; the choice is remembered). At its top a card
-shows how many frames are in scope.
+Dedup is three tools in the **Manipulation** bar, under the label **Duplicates**: **Scatter**, **Clusters**
+and **Outliers**. Pick one at the top; the centre shows its results and the **options panel** on the right
+shows its controls (the `»` button hides the panel; the choice is remembered). When the panel is long it
+scrolls on its own, independently of the centre. At its top a card shows how many frames are in scope.
 
-- **Panel, top to bottom:** Embedding, Product (when the camera has products), Feature (ROI), then three
-  function groups: **Clusters**, **Scatter** and **Outliers**. Hover the small **i** icon in a group's title
-  row for what the function does.
-- **One active function at a time.** The active group has a tinted background and a "● active" tag. Opening
-  or closing a group only shows or hides its settings. Pressing the group's own button (**Cluster**,
-  **Compute projection**, **Score outliers**) makes it the active one: the previous one deactivates and
-  collapses, and the centre switches to the new function's results. The results of the deactivated function are
-  kept (they show again at once when you press its button) unless the ROI or the embedding changed.
+- **Panel, top to bottom:** Embedding, Feature (ROI), then the selected tool's controls. Hover the small
+  **i** icon in the tool's title row for what it does. The product is chosen in the top bar.
+- **One tool at a time.** Switching tools does not lose results: they show again at once when you come back,
+  unless the ROI or the embedding changed.
 - **Clusters:** Epsilon and Min points sliders (they also move with the mouse wheel), **Cluster**, **↺**
   (revert the sliders to the last clustering) and **🔇** (apply mute: mute every cluster member except its
   representative; nothing is deleted, labeled and golden frames are never muted), with a line telling how many
@@ -847,4 +844,4 @@ workflows and should be consulted as historical rationale rather than current op
 
 ## Version
 
-The app version and release date are shown at the bottom left of the sidebar and served at `GET /api/version`. Above them a small badge says which device the neural parts run on (AMD GPU, NVIDIA GPU or CPU only, with the card's name; `GET /api/device`); click it to change its look. The application remembers the last camera, product, ROI and page in the browser. Bump `VERSION` and `RELEASED` in `app/backend/appinfo.py` with every code change (ISO date; last number for small changes, middle number for new features). Scheme: `0.x.y` was the Streamlit generation, `1.x.y` is the current FastAPI + React application.
+The app version and release date are shown at the right of the status bar at the bottom and served at `GET /api/version`. Above them a small badge says which device the neural parts run on (AMD GPU, NVIDIA GPU or CPU only, with the card's name; `GET /api/device`); click it to change its look. The application remembers the last camera, product, ROI and page in the browser. Bump `VERSION` and `RELEASED` in `app/backend/appinfo.py` with every code change (ISO date; last number for small changes, middle number for new features). Scheme: `0.x.y` was the Streamlit generation, `1.x.y` is the current FastAPI + React application.

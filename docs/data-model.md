@@ -149,10 +149,10 @@ The SQLite database is `data/picture_sorter.db`, schema version 8.
 Authoritative or indexed state:
 
 - `frames`: filename/content-hash ingest catalog
-- `labels`: current labels (`via` records the page that set it)
+- `labels`: current labels (`via` records the page or tool that set it: Classify..., Find similar, Scatter, Clusters, Outliers, Insights; the Scatter selection used to write "Dedup", which still counts as Scatter)
 - `verdict_decisions`: the user's verdict for a picture (`class` OK/NG) with `inputs_sig`, a signature of which ROI said which class when it was decided; a decision whose signature no longer matches the current labels is stale. Automatic verdicts are never stored
 - `goldens`: current golden marks
-- `deleted_frames`: current camera-wide soft deletions
+- `deleted_frames`: current camera-wide soft deletions (`source` is `user` for Classify, or the tool the delete was made from: Scatter, Clusters, Outliers, Insights)
 - `dedup_mute`: current feature mute set
 - `detections`: per-frame object boxes for a feature (see Detector below)
 - `versions` and `version_items`: explicit snapshots

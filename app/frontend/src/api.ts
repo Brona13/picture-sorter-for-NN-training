@@ -873,16 +873,19 @@ export const api = {
       `/cameras/${encodeURIComponent(camera)}/classify/refresh`,
       post({ feature }),
     ),
-  setLabel: (camera: string, feature: string, frame: string, cls: string | null) =>
-    request<CardUpdate>(`/cameras/${encodeURIComponent(camera)}/classify/label`, send("PUT", { feature, frame, cls })),
+  /** `via` names the tool the action is made from (Scatter, Outliers, ...); it is stored with the label. */
+  setLabel: (camera: string, feature: string, frame: string, cls: string | null, via?: string) =>
+    request<CardUpdate>(`/cameras/${encodeURIComponent(camera)}/classify/label`, send("PUT", { feature, frame, cls, via })),
   setGolden: (camera: string, feature: string, frame: string, golden: boolean) =>
     request<CardUpdate>(`/cameras/${encodeURIComponent(camera)}/classify/golden`, send("PUT", { feature, frame, golden })),
-  deleteFrame: (camera: string, feature: string, frame: string) =>
-    request<CardUpdate>(`/cameras/${encodeURIComponent(camera)}/classify/delete`, post({ feature, frame })),
+  deleteFrame: (camera: string, feature: string, frame: string, via?: string) =>
+    request<CardUpdate>(`/cameras/${encodeURIComponent(camera)}/classify/delete`, post({ feature, frame, via })),
   restoreFrame: (camera: string, feature: string, frame: string) =>
     request<CardUpdate>(`/cameras/${encodeURIComponent(camera)}/classify/restore`, post({ feature, frame })),
-  deleteFrames: (camera: string, feature: string, frames: string[], note = "") =>
-    request<DeleteResult>(`/cameras/${encodeURIComponent(camera)}/classify/delete-bulk`, post({ feature, frames, note })),
+  deleteFrames: (camera: string, feature: string, frames: string[], note = "", via?: string) =>
+    request<DeleteResult>(`/cameras/${encodeURIComponent(camera)}/classify/delete-bulk`, post({ feature, frames, note, via })),
+  /** Which tools have left a trace on this camera: `{ "dedup/clusters": true, ... }`. */
+  toolsUsed: (camera: string) => request<Record<string, boolean>>(`/cameras/${encodeURIComponent(camera)}/tools-used`),
   labelFrames: (camera: string, feature: string, frames: string[], cls: string, via?: string) =>
     request<{ labeled: number }>(`/cameras/${encodeURIComponent(camera)}/classify/label-bulk`, post({ feature, frames, cls, via })),
   verdictSummary: (camera: string) => request<VerdictSummary>(`/cameras/${encodeURIComponent(camera)}/verdicts/summary`),

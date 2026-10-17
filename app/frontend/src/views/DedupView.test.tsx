@@ -117,7 +117,7 @@ test("points to Configuration when no ResNet method is switched on", async () =>
 });
 
 test("moving a slider persists the setting", async () => {
-  render(<DedupView camera="camA" />);
+  render(<DedupView camera="camA" tool="clusters" />);
   await screen.findByLabelText("Min points");
   fireEvent.change(screen.getByLabelText("Min points"), { target: { value: "3" } });
   await waitFor(() => expect(calls.some((c) => c.url.includes("/dedup/settings"))).toBe(true));
@@ -125,7 +125,7 @@ test("moving a slider persists the setting", async () => {
 });
 
 test("cluster job shows summary and clusters; apply sends representative overrides", async () => {
-  render(<DedupView camera="camA" />);
+  render(<DedupView camera="camA" tool="clusters" />);
   await userEvent.click(await screen.findByRole("button", { name: /Cluster$/ }));
   expect(calls.find((c) => c.url.endsWith("/dedup/cluster"))!.body).toEqual({ feature: "seal", ...params });
   expect(await within(await screen.findByTestId("card-a.png")).findByRole("button", { name: "Representative of this cluster" })).toBeInTheDocument();
@@ -139,7 +139,7 @@ test("cluster job shows summary and clusters; apply sends representative overrid
   // pick another representative for cluster 0 from its card
   await userEvent.click(within(screen.getByTestId("card-c.png")).getByRole("button", { name: "Make representative" }));
   expect(await within(screen.getByTestId("card-c.png")).findByRole("button", { name: "Representative of this cluster" })).toBeInTheDocument();
-  const group = screen.getByTestId("cluster-group");
+  const group = screen.getByTestId("clusters-controls");
   expect(within(group).getByTestId("mute-status")).toHaveTextContent("3 frame(s) will be muted");
   expect(screen.getAllByRole("button", { name: /Apply mute/ })).toHaveLength(1); // only in the Clusters group, not under the table
   await userEvent.click(within(group).getByRole("button", { name: "Apply mute" }));
@@ -151,7 +151,7 @@ test("cluster job shows summary and clusters; apply sends representative overrid
 
 test("the unique frames get their own entry in the list and are never offered as representatives", async () => {
   state = baseState({ result });
-  render(<DedupView camera="camA" />);
+  render(<DedupView camera="camA" tool="clusters" />);
   await userEvent.click(await screen.findByRole("button", { name: /^Unique/ }));
   expect(await screen.findByRole("button", { name: /^Unique/ })).toHaveAttribute("aria-current", "true");
   const card = screen.getByTestId("card-f.png");
@@ -161,7 +161,7 @@ test("the unique frames get their own entry in the list and are never offered as
 
 test("changed sliders warn that the shown clusters are stale and can be reverted", async () => {
   state = baseState({ result });
-  render(<DedupView camera="camA" />);
+  render(<DedupView camera="camA" tool="clusters" />);
   await screen.findByTestId("cluster-browser");
   expect(screen.queryByText(/Sliders changed since the last cluster/)).toBeNull();
   fireEvent.change(screen.getByLabelText("Min points"), { target: { value: "3" } });
@@ -172,8 +172,7 @@ test("changed sliders warn that the shown clusters are stale and can be reverted
 
 test("scatter is computed on demand, without any clustering, and draws one marker per frame", async () => {
   render(<DedupView camera="camA" />);
-  const group = await screen.findByTestId("scatter-group");
-  await userEvent.click(within(group).getByText("Scatter"));
+  const group = await screen.findByTestId("scatter-controls");
   await userEvent.click(within(group).getByRole("radio", { name: "tsne" }));
   await userEvent.click(within(group).getByRole("button", { name: "Compute projection" }));
   const svg = await screen.findByRole("img", { name: /2D scatter/ });
@@ -185,8 +184,7 @@ test("scatter is computed on demand, without any clustering, and draws one marke
 
 async function openScatter() {
   render(<DedupView camera="camA" />);
-  const group = await screen.findByTestId("scatter-group");
-  await userEvent.click(within(group).getByText("Scatter"));
+  const group = await screen.findByTestId("scatter-controls");
   await userEvent.click(within(group).getByRole("button", { name: "Compute projection" }));
   const svg = await screen.findByRole("img", { name: /2D scatter/ });
   svg.getBoundingClientRect = () => ({ left: 0, top: 0, width: 720, height: 420, right: 720, bottom: 420, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
@@ -241,7 +239,7 @@ test("deleting the frames of a scatter selection asks first, with counts, and se
   await userEvent.click(within(dlg).getByRole("button", { name: "Yes — delete 1" }));
   await waitFor(() => expect(calls.some((c) => c.url.endsWith("/classify/delete-bulk"))).toBe(true));
   expect(calls.find((c) => c.url.endsWith("/classify/delete-preview"))!.body).toEqual({ feature: "seal", frames: ["a.png"] });
-  expect(calls.find((c) => c.url.endsWith("/classify/delete-bulk"))!.body).toEqual({ feature: "seal", frames: ["a.png"], note: "foreign object" });
+  expect(calls.find((c) => c.url.endsWith("/classify/delete-bulk"))!.body).toEqual({ feature: "seal", frames: ["a.png"], note: "foreign object", via: "Scatter" });
   expect(await screen.findByText(/Deleted 1 frame\(s\) · cleared 1 label\(s\) and 0 golden mark\(s\)/)).toBeInTheDocument();
   await waitFor(() => expect(screen.queryByTestId("pt-a.png")).toBeNull()); // gone from the map without projecting again
   expect(calls.filter((c) => c.url.endsWith("/dedup/scatter")).length).toBe(1);
@@ -270,24 +268,23 @@ test("unmute needs a second confirming click", async () => {
   expect(await screen.findByText("Unmuted 3 frame(s).")).toBeInTheDocument();
 });
 
-test("the Embedding, Feature and Outliers controls live in the options panel, Outliers in a collapsible group", async () => {
-  render(<DedupView camera="camA" />);
+test("the Embedding and Feature controls and the selected tool's controls are in the options panel", async () => {
+  render(<DedupView camera="camA" tool="outliers" />);
   const panel = await screen.findByRole("complementary", { name: "Options" });
   await within(panel).findByLabelText("Embedding");
   expect(within(panel).getByLabelText("Feature (ROI)")).toBeInTheDocument();
   const labels = within(panel).getAllByRole("combobox").map((s) => s.closest("label")?.textContent ?? "");
   expect(labels[0]).toMatch(/Embedding/);
   expect(labels[1]).toMatch(/Feature/);
-  const group = within(panel).getByTestId("outlier-group");
-  expect(group).toHaveProperty("open", false); // Clusters is the active function at first; Outliers waits collapsed
-  expect(within(group).getByRole("button", { name: "Score outliers" })).toBeInTheDocument();
-  expect(within(group).getByLabelText("k neighbours")).toBeInTheDocument();
+  const controls = within(panel).getByTestId("outliers-controls");
+  expect(within(controls).getByRole("button", { name: "Score outliers" })).toBeInTheDocument();
+  expect(within(controls).getByLabelText("k neighbours")).toBeInTheDocument();
 });
 
-test("clustering lives in the panel's Clusters group, and the sliders answer the mouse wheel", async () => {
-  render(<DedupView camera="camA" />);
+test("clustering lives in the panel's Clusters controls, and the sliders answer the mouse wheel", async () => {
+  render(<DedupView camera="camA" tool="clusters" />);
   const panel = await screen.findByRole("complementary", { name: "Options" });
-  const group = await within(panel).findByTestId("cluster-group");
+  const group = await within(panel).findByTestId("clusters-controls");
   expect(within(group).getByRole("button", { name: /Cluster$/ })).toBeInTheDocument();
   expect(within(group).getByRole("button", { name: /Revert/ })).toBeDisabled();
   // Cluster keeps its words; Revert and Apply mute are icon-only and all share one line
@@ -295,41 +292,30 @@ test("clustering lives in the panel's Clusters group, and the sliders answer the
   await waitFor(() => expect(calls.find((c) => c.url.includes("/dedup/settings"))?.body).toMatchObject({ min_points: 3 }));
 });
 
-test("only one function owns the centre: opening a group changes nothing, its own button switches", async () => {
+test("switching tools keeps each tool's results; only the selected tool's controls and results show", async () => {
   const user = userEvent.setup();
-  render(<DedupView camera="camA" />);
-  const clusters = await screen.findByTestId("cluster-group");
-  const outliers = screen.getByTestId("outlier-group");
-  expect(clusters).toHaveAttribute("data-active", "true");
-  expect(clusters).toHaveProperty("open", true);
-  expect(outliers).toHaveAttribute("data-active", "false");
-
-  await user.click(within(clusters).getByRole("button", { name: /Cluster$/ }));
+  const { rerender } = render(<DedupView camera="camA" tool="clusters" />);
+  const panel = await screen.findByRole("complementary", { name: "Options" });
+  await user.click(await within(panel).findByRole("button", { name: /Cluster$/ }));
   expect(await screen.findByTestId("cluster-browser")).toBeInTheDocument();
+  expect(within(panel).queryByTestId("outliers-controls")).toBeNull();
 
-  // Score outliers: Outliers becomes active and open, Clusters inactive and collapsed, the centre switches.
-  await user.click(within(outliers).getByText("Outliers")); // open it to look at the settings
-  expect(outliers).toHaveProperty("open", true);
-  expect(clusters).toHaveAttribute("data-active", "true"); // opening does not switch
-  expect(screen.getByTestId("cluster-browser")).toBeInTheDocument();
-  await user.click(within(outliers).getByRole("button", { name: "Score outliers" }));
-  await screen.findByText(/outlier 0\.420/);
-  expect(outliers).toHaveAttribute("data-active", "true");
-  expect(clusters).toHaveAttribute("data-active", "false");
-  expect(clusters).toHaveProperty("open", false);
+  rerender(<DedupView camera="camA" tool="outliers" />);
   expect(screen.queryByTestId("cluster-browser")).toBeNull();
+  expect(within(panel).queryByTestId("clusters-controls")).toBeNull();
+  await user.click(await within(panel).findByRole("button", { name: "Score outliers" }));
+  await screen.findByText(/outlier 0\.420/);
 
-  // Back to Clusters: pressing its button shows the kept result at once while the new run computes.
-  await user.click(within(clusters).getByText("Clusters")); // open
-  await user.click(within(clusters).getByRole("button", { name: /Cluster$/ }));
+  // back on Clusters the kept result is there at once; the outlier cards are not
+  rerender(<DedupView camera="camA" tool="clusters" />);
   expect(await screen.findByTestId("cluster-browser")).toBeInTheDocument();
-  expect(outliers).toHaveAttribute("data-active", "false");
-  expect(outliers).toHaveProperty("open", false);
   expect(screen.queryByText(/outlier 0\.420/)).toBeNull();
+  rerender(<DedupView camera="camA" tool="outliers" />);
+  expect(await screen.findByText(/outlier 0\.420/)).toBeInTheDocument();
 });
 
 test("the number of frames in scope is a card at the top of the right column, and the explanatory text is gone", async () => {
-  render(<DedupView camera="camA" />);
+  render(<DedupView camera="camA" tool="clusters" />);
   const card = (await screen.findByTestId("frames-in-scope")).closest(".stat-card") as HTMLElement;
   expect(card).toHaveTextContent("6 frames in scope");
   const column = card.parentElement as HTMLElement;
@@ -340,30 +326,21 @@ test("the number of frames in scope is a card at the top of the right column, an
   expect(screen.getByText(/DBSCAN/).closest('[role="tooltip"]')).not.toBeNull();
 });
 
-test("Scatter is its own function: pressing Compute projection makes it active and puts the map in the centre", async () => {
+test("Scatter is its own tool: Compute projection puts the map in the centre", async () => {
   const user = userEvent.setup();
-  render(<DedupView camera="camA" />);
-  const clusters = await screen.findByTestId("cluster-group");
-  const group = screen.getByTestId("scatter-group");
-  await user.click(within(clusters).getByRole("button", { name: /Cluster$/ }));
-  expect(await screen.findByTestId("cluster-browser")).toBeInTheDocument();
-  await user.click(within(group).getByText("Scatter"));
-  expect(screen.getByTestId("cluster-browser")).toBeInTheDocument(); // opening changes nothing
-  await user.click(within(group).getByRole("button", { name: "Compute projection" }));
+  render(<DedupView camera="camA" tool="scatter" />);
+  const controls = await screen.findByTestId("scatter-controls");
+  expect(screen.queryByTestId("cluster-browser")).toBeNull();
+  await user.click(within(controls).getByRole("button", { name: "Compute projection" }));
   const view = await screen.findByTestId("scatter-view");
   expect(await within(view).findByRole("img", { name: /2D scatter/ })).toBeInTheDocument();
-  expect(group).toHaveAttribute("data-active", "true");
-  expect(clusters).toHaveAttribute("data-active", "false");
-  expect(screen.queryByTestId("cluster-browser")).toBeNull();
-  // the old section under the cluster results is gone
   expect(screen.queryByText(/2D scatter \(sanity check\)/)).toBeNull();
 });
 
 test("colour by: labels by default with a legend, cluster falls back with a note when there is no clustering", async () => {
   const user = userEvent.setup();
   render(<DedupView camera="camA" />);
-  const group = await screen.findByTestId("scatter-group");
-  await user.click(within(group).getByText("Scatter"));
+  const group = await screen.findByTestId("scatter-controls");
   await user.click(within(group).getByRole("button", { name: "Compute projection" }));
   const view = await screen.findByTestId("scatter-view");
   await within(view).findByRole("img", { name: /2D scatter/ });
@@ -413,7 +390,7 @@ test("the batch buttons sit between the map and the grid, grouped, and labelling
   const buttons: HTMLElement[] = Array.from(panel.querySelectorAll("button"));
   expect(buttons.indexOf(ok)).toBeLessThan(buttons.indexOf(within(panel).getByRole("button", { name: "Delete frame" }))); // before the grid
   await userEvent.click(ok);
-  await waitFor(() => expect(calls.find((c) => c.url.endsWith("/classify/label-bulk"))?.body).toMatchObject({ frames: ["a.png"], cls: "OK" }));
+  await waitFor(() => expect(calls.find((c) => c.url.endsWith("/classify/label-bulk"))?.body).toMatchObject({ frames: ["a.png"], cls: "OK", via: "Scatter" }));
   expect(await within(panel).findByText("OK: 1")).toBeInTheDocument();
   expect(within(screen.getByTestId("card-a.png")).getByRole("button", { name: /OK/ })).toHaveAttribute("aria-pressed", "true");
   expect(calls.filter((c) => c.url.endsWith("/dedup/scatter")).length).toBe(1);
@@ -422,22 +399,21 @@ test("the batch buttons sit between the map and the grid, grouped, and labelling
 test("labelling one card of the selection is reflected in the map's colours", async () => {
   const panel = await selectA();
   await userEvent.click(within(within(panel).getByTestId("card-a.png")).getByRole("button", { name: /NG/ }));
-  await waitFor(() => expect(calls.find((c) => c.url.endsWith("/classify/label"))?.body).toMatchObject({ frame: "a.png", cls: "NG" }));
+  await waitFor(() => expect(calls.find((c) => c.url.endsWith("/classify/label"))?.body).toMatchObject({ frame: "a.png", cls: "NG", via: "Scatter" }));
   const circle = screen.getByTestId("pt-a.png").querySelector("circle")!;
   await waitFor(() => expect(circle.getAttribute("fill")).toBe("#c62828")); // NG red, coloured by label
 });
 
-test("the groups are ordered Clusters, Scatter, Outliers", async () => {
+test("Scatter is the default tool, and no tool shows another tool's controls", async () => {
   render(<DedupView camera="camA" />);
-  await screen.findByTestId("scatter-group");
-  const ids = Array.from(document.querySelectorAll("[data-testid$='-group']")).map((e) => e.getAttribute("data-testid"));
-  expect(ids).toEqual(["cluster-group", "scatter-group", "outlier-group"]);
+  await screen.findByTestId("scatter-controls");
+  expect(document.querySelectorAll("[data-testid$='-controls']")).toHaveLength(1);
 });
 
 test("Cluster, Revert and Apply mute sit on one line; the last two are icon-only", async () => {
   state = baseState({ result });
-  render(<DedupView camera="camA" />);
-  const group = await screen.findByTestId("cluster-group");
+  render(<DedupView camera="camA" tool="clusters" />);
+  const group = await screen.findByTestId("clusters-controls");
   const cluster = await within(group).findByRole("button", { name: /Cluster$/ });
   const revert = within(group).getByRole("button", { name: "Revert" });
   const mute = await within(group).findByRole("button", { name: "Apply mute" });
@@ -450,44 +426,23 @@ test("Cluster, Revert and Apply mute sit on one line; the last two are icon-only
   expect(within(group).getByTestId("mute-status")).toHaveTextContent("3 frame(s) will be muted"); // the status stays under the row
 });
 
-test("each function explains itself in a hover tip next to its title, and the page carries no explanatory text", async () => {
-  const user = userEvent.setup();
+test("each tool explains itself in a hover tip next to its title, and the page carries no explanatory text", async () => {
   state = baseState({ result });
-  render(<DedupView camera="camA" />);
-  const clusters = await screen.findByTestId("cluster-group");
-  const tip = within(clusters).getByRole("button", { name: "Info: Clusters" });
-  expect(tip).toHaveAccessibleDescription(/chosen representative of each cluster stays visible in Classify/);
-  // clicking the icon does not fold the group
-  await user.click(tip);
-  expect(clusters).toHaveProperty("open", true);
-  expect(within(screen.getByTestId("scatter-group")).getByRole("button", { name: "Info: Scatter" })).toHaveAccessibleDescription(/distorts distances/);
-  expect(within(screen.getByTestId("outlier-group")).getByRole("button", { name: "Info: Outliers" })).toHaveAccessibleDescription(/not a verdict/);
-  // none of it is left in the page body
+  const { rerender } = render(<DedupView camera="camA" tool="clusters" />);
+  const clusters = await screen.findByTestId("clusters-controls");
+  expect(within(clusters).getByRole("button", { name: "Info: Clusters" })).toHaveAccessibleDescription(/chosen representative of each cluster stays visible in Classify/);
+  rerender(<DedupView camera="camA" tool="scatter" />);
+  expect(within(await screen.findByTestId("scatter-controls")).getByRole("button", { name: "Info: Scatter" })).toHaveAccessibleDescription(/distorts distances/);
+  rerender(<DedupView camera="camA" tool="outliers" />);
+  expect(within(await screen.findByTestId("outliers-controls")).getByRole("button", { name: "Info: Outliers" })).toHaveAccessibleDescription(/not a verdict/);
+  rerender(<DedupView camera="camA" tool="clusters" />);
   await screen.findByTestId("cluster-browser");
-  expect(screen.queryByRole("heading", { name: "Clusters" })).toBeNull();
   expect(screen.queryByText(/will be muted on Apply mute/)).toBeNull();
 });
 
-test("the product picker sits in the options panel directly above Feature (ROI) and reports the choice", async () => {
-  const onProduct = vi.fn();
-  render(<DedupView camera="camA" product="P1" products={["P1", "P2"]} onProduct={onProduct} />);
+test("the options panel has no product picker: the product is chosen in the top bar", async () => {
+  render(<DedupView camera="camA" product="P1" />);
   const panel = await screen.findByRole("complementary", { name: "Options" });
-  const product = within(panel).getByLabelText("Product");
-  expect(product).toHaveValue("P1");
-  const labels = within(panel).getAllByRole("combobox").map((s) => s.closest("label")?.textContent ?? "");
-  const at = labels.findIndex((t) => /^Product/.test(t));
-  expect(labels[at + 1]).toMatch(/^Feature/);
-  await userEvent.selectOptions(product, "P2");
-  expect(onProduct).toHaveBeenCalledWith("P2");
-});
-
-test("without products there is no product picker, and a page that can only show a message still has it", async () => {
-  const { unmount } = render(<DedupView camera="camA" />);
-  await screen.findByRole("complementary", { name: "Options" });
-  expect(screen.queryByLabelText("Product")).toBeNull();
-  unmount();
-  state = baseState({ reason: "methods_off" });
-  render(<DedupView camera="camA" products={["P1"]} onProduct={() => undefined} />);
-  expect(await screen.findByText(/No ResNet method is switched on/)).toBeInTheDocument();
-  expect(within(screen.getByRole("complementary", { name: "Options" })).getByLabelText("Product")).toBeInTheDocument();
+  expect(within(panel).getByLabelText("Feature (ROI)")).toBeInTheDocument();
+  expect(within(panel).queryByLabelText("Product")).toBeNull();
 });

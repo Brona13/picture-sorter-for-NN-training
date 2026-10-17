@@ -1,11 +1,8 @@
 import { useState } from "react";
-import { api, CardData, DedupResult } from "../api";
-import Card from "./Card";
-import FrameViewer from "./FrameViewer";
+import { CardData, DedupResult } from "../api";
 import { clusterColor } from "./colors";
-import Pager, { PagerSettings } from "./Pager";
-
-const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
+import { PagerSettings } from "./Pager";
+import PictureGrid from "./PictureGrid";
 
 export type Marks = DedupResult["marks"];
 const UNIQUE = "unique";
@@ -43,8 +40,6 @@ export default function ClusterBrowser({
 }) {
   const [selected, setSelected] = useState<string>("");
   const [pages, setPages] = useState<Record<string, number>>({});
-  const [busy, setBusy] = useState<string | null>(null);
-  const [viewing, setViewing] = useState<string | null>(null);
 
   const entries = [
     ...result.clusters.map((c) => ({ key: String(c.id), id: c.id, title: `Cluster ${c.id}`, frames: c.members, rep: picks[c.id] && c.members.includes(picks[c.id]) ? picks[c.id] : c.representative })),
@@ -53,21 +48,7 @@ export default function ClusterBrowser({
   if (entries.length === 0) return null;
   const cur = entries.find((e) => e.key === selected) ?? entries[0];
 
-  const perPage = grid.per_page;
-  const nPages = Math.max(1, Math.ceil(cur.frames.length / perPage));
-  const page = Math.min(Math.max(pages[cur.key] ?? 1, 1), nPages);
-  const shown = cur.frames.slice((page - 1) * perPage, page * perPage);
-
-  async function act<T>(frame: string, call: () => Promise<T>, then: (r: T) => void) {
-    setBusy(frame);
-    try {
-      then(await call());
-    } catch (e) {
-      onError(msg(e));
-    } finally {
-      setBusy(null);
-    }
-  }
+  const page = pages[cur.key] ?? 1;
 
   const cardOf = (frame: string): CardData => ({
     frame,
@@ -78,12 +59,6 @@ export default function ClusterBrowser({
     bars: null,
     cluster: null,
   });
-  const keep = (r: { card: { frame: string; label: string | null; golden: string | null } }) => onMarks(r.card.frame, { label: r.card.label, golden: r.card.golden });
-
-  const showFrame = (f: string) => {
-    const at = cur.frames.indexOf(f);
-    if (at >= 0) setPages((s) => ({ ...s, [cur.key]: Math.floor(at / perPage) + 1 }));
-  };
 
   return (
     <div data-testid="cluster-browser">
@@ -130,58 +105,23 @@ export default function ClusterBrowser({
       </nav>
 
       <div>
-        <Pager
-          grid={{ page, per_page: perPage, n_pages: nPages, total: cur.frames.length }}
-          settings={grid}
-          onPage={(p) => setPages((s) => ({ ...s, [cur.key]: p }))}
-          onSettings={onGrid}
-          where="top"
-        />
-        <ul style={{ display: "grid", gridTemplateColumns: `repeat(${grid.cols}, minmax(0, 1fr))`, gap: 8, padding: 0 }}>
-          {shown.map((f) => (
-            <Card
-              key={f}
-              camera={camera}
-              feature={feature}
-              classes={result.classes}
-              methods={[]}
-              card={cardOf(f)}
-              busy={busy === f}
-              fullSize
-              onOpen={() => setViewing(f)}
-              isRep={cur.id >= 0 && f === cur.rep}
-              onSetRep={cur.id >= 0 ? () => onPick(cur.id, f) : undefined}
-              onLabel={(cls) => act(f, () => api.setLabel(camera, feature, f, cls), keep)}
-              onGolden={(on) => act(f, () => api.setGolden(camera, feature, f, on), keep)}
-              onDelete={() => act(f, () => api.deleteFrame(camera, feature, f), () => onDeleted(f))}
-              onRestore={() => undefined}
-            />
-          ))}
-        </ul>
-        <Pager
-          grid={{ page, per_page: perPage, n_pages: nPages, total: cur.frames.length }}
-          settings={grid}
-          onPage={(p) => setPages((s) => ({ ...s, [cur.key]: p }))}
-          onSettings={onGrid}
-          where="bottom"
-        />
-      </div>
-      {viewing && (
-        <FrameViewer
+        <PictureGrid
           camera={camera}
           feature={feature}
-          frames={cur.frames}
-          start={viewing}
           classes={result.classes}
-          marks={(f) => ({ label: marks[f]?.label ?? null, golden: marks[f]?.golden ?? null })}
-          busy={busy !== null}
-          onLabel={(f, cls) => act(f, () => api.setLabel(camera, feature, f, cls), keep)}
-          onGolden={(f, on) => act(f, () => api.setGolden(camera, feature, f, on), keep)}
-          onDelete={(f) => act(f, () => api.deleteFrame(camera, feature, f), () => onDeleted(f))}
-          onShow={showFrame}
-          onClose={() => setViewing(null)}
+          frames={cur.frames}
+          cardOf={cardOf}
+          via="Clusters"
+          grid={grid}
+          onGrid={onGrid}
+          page={page}
+          onPage={(p) => setPages((s) => ({ ...s, [cur.key]: p }))}
+          extras={(f) => ({ isRep: cur.id >= 0 && f === cur.rep, onSetRep: cur.id >= 0 ? () => onPick(cur.id, f) : undefined })}
+          onChanged={(f, c) => onMarks(f, { label: c.label, golden: c.golden })}
+          onDeleted={(f) => onDeleted(f)}
+          onError={onError}
         />
-      )}
+      </div>
     </div>
   );
 }

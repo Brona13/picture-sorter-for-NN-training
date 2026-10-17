@@ -5,8 +5,9 @@ import datamodel
 import db
 import pipeline
 import tags as camera_tags
+import tools_used
 import verdicts
-from api.cameras import require_feature
+from api.cameras import require_camera, require_feature
 from api.roi_api import _describe
 from fastapi import APIRouter
 
@@ -43,3 +44,10 @@ def feature_pipeline(camera: str, feature: str) -> dict:
     """Where one ROI stands in the pipeline (for the step bar shown on the other pages)."""
     require_feature(camera, feature)
     return pipeline.stages(camera, feature)
+
+
+@router.get("/cameras/{camera}/tools-used")
+def camera_tools_used(camera: str) -> dict[str, bool]:
+    """Which tools have left a trace on this camera (for the muted / colorful icons in the tool bar)."""
+    require_camera(camera)
+    return tools_used.used(camera)

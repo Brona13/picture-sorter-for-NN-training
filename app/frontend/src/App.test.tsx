@@ -48,12 +48,40 @@ test("shows cameras, products and view navigation; redirects to Overview", async
   expect(await screen.findByRole("heading", { name: "Overview" })).toBeInTheDocument();
   await waitFor(() => expect(screen.getByLabelText("Camera")).toHaveValue("camA"));
   expect(await screen.findByLabelText("Product")).toBeInTheDocument();
-  for (const label of ["Overview", "Status", "Ingest", "ROI editor", "Classify", "Insights", "Versions", "Dedup", "Verdict"]) {
-    expect(screen.getByRole("link", { name: label })).toBeInTheDocument();
+  const sections = within(screen.getByRole("navigation", { name: "Sections" }));
+  for (const label of ["Overview", "Management", "Manipulation", "Export"]) {
+    expect(sections.getByRole("link", { name: label })).toBeInTheDocument();
   }
-  // Configuration is the last link in the sidebar
-  const links = screen.getAllByRole("link");
+  // Configuration is a separate button after the four sections
+  const links = sections.getAllByRole("link");
   expect(links[links.length - 1]).toHaveAccessibleName("Configuration");
+  // the Overview section has its own second-level bar: Overview and Status
+  const overviewTools = within(screen.getByRole("navigation", { name: "Overview tools" }));
+  expect(overviewTools.getByRole("link", { name: /Status/ })).toBeInTheDocument();
+});
+
+test("Manipulation opens a second-level bar with the tools, ROI editor among them, and remembers the last tool", async () => {
+  render(
+    <MemoryRouter>
+      <App />
+    </MemoryRouter>,
+  );
+  await screen.findByRole("heading", { name: "Overview" });
+  const sections = within(screen.getByRole("navigation", { name: "Sections" }));
+  expect(screen.queryByRole("navigation", { name: "Manipulation tools" })).toBeNull();
+  await userEvent.click(sections.getByRole("link", { name: "Manipulation" }));
+  const tools = within(await screen.findByRole("navigation", { name: "Manipulation tools" }));
+  for (const label of ["Scatter", "Clusters", "Outliers", "ROI editor", "Detector", "Edge angle", "Classify", "Insights", "Verdict", "Augmentation"]) {
+    expect(tools.getByRole("link", { name: new RegExp(label) })).toBeInTheDocument();
+  }
+  await userEvent.click(tools.getByRole("link", { name: /Classify/ }));
+  expect(tools.getByRole("link", { name: /Classify/ })).toHaveAttribute("aria-current", "page");
+  expect(sections.getByRole("link", { name: "Manipulation" })).toHaveAttribute("aria-current", "page");
+  // Export is another section; coming back to Manipulation returns to Classify
+  await userEvent.click(sections.getByRole("link", { name: "Export" }));
+  expect(screen.queryByRole("navigation", { name: "Manipulation tools" })).toBeNull();
+  await userEvent.click(sections.getByRole("link", { name: "Manipulation" }));
+  expect(within(await screen.findByRole("navigation", { name: "Manipulation tools" })).getByRole("link", { name: /Classify/ })).toHaveAttribute("aria-current", "page");
 });
 
 test("shows the app version and release date", async () => {
@@ -226,7 +254,7 @@ test("a remembered camera that no longer exists falls back to the first one", as
   await waitFor(() => expect(screen.getByLabelText("Camera")).toHaveValue("camA"));
 });
 
-test("the sidebar foot holds the hardware badge, the version and an icon-only Configuration link", async () => {
+test("the status bar holds the hardware badge and the version; the top bar has an icon-only Configuration link", async () => {
   mockFetch({
     "/api/version": { version: "1.2.3", released: "2026-10-16" },
     "/api/device": { kind: "amd", label: "AMD GPU", name: "AMD Radeon RX 7800 XT", api: "ROCm", hint: "" },
@@ -238,11 +266,35 @@ test("the sidebar foot holds the hardware badge, the version and an icon-only Co
     </MemoryRouter>,
   );
   const badge = await screen.findByTestId("hardware-badge");
-  const foot = badge.closest(".sidebar-foot") as HTMLElement;
-  expect(within(foot).getByText("v1.2.3 · 2026-10-16")).toBeInTheDocument();
-  const config = within(foot).getByRole("link", { name: "Configuration" });
+  const bar = badge.closest("footer") as HTMLElement;
+  expect(bar).toHaveClass("statusbar");
+  expect(within(bar).getByText("v1.2.3 · 2026-10-16")).toBeInTheDocument();
+  const config = within(screen.getByRole("navigation", { name: "Sections" })).getByRole("link", { name: "Configuration" });
   expect(config).toHaveTextContent(/^\S{1,3}$/); // the icon only, no words
-  expect(badge.compareDocumentPosition(config) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
+test("the status bar names the camera and product being worked on", async () => {
+  render(
+    <MemoryRouter>
+      <App />
+    </MemoryRouter>,
+  );
+  await screen.findByLabelText("Product");
+  await userEvent.selectOptions(screen.getByLabelText("Product"), "P2");
+  expect(screen.getByTestId("status-where")).toHaveTextContent("camA › P2");
+});
+
+test("/dedup goes to the Scatter tool, and the Duplicates tools sit under a group label", async () => {
+  render(
+    <MemoryRouter initialEntries={["/dedup"]}>
+      <App />
+    </MemoryRouter>,
+  );
+  const tools = await screen.findByRole("navigation", { name: "Manipulation tools" });
+  await waitFor(() => expect(within(tools).getByRole("link", { name: /Scatter/ })).toHaveAttribute("aria-current", "page"));
+  expect(within(tools).getByText("Duplicates")).toBeInTheDocument();
+  const links = within(tools).getAllByRole("link").map((l) => l.textContent);
+  expect(links.slice(0, 3).map((t) => t?.replace(/^[^\p{L}]+/u, ""))).toEqual(["Scatter", "Clusters", "Outliers"]);
 });
 
 test("clicking the cogwheel again on Configuration goes back to the page you came from", async () => {
@@ -256,23 +308,51 @@ test("clicking the cogwheel again on Configuration goes back to the page you cam
   await userEvent.click(cog);
   expect(await screen.findByRole("heading", { name: /Configuration/ })).toBeInTheDocument();
   await userEvent.click(cog);
-  await waitFor(() => expect(screen.getByRole("link", { name: /Classify/ })).toHaveAttribute("aria-current", "page"));
+  await waitFor(() => expect(within(screen.getByRole("navigation", { name: "Manipulation tools" })).getByRole("link", { name: /Classify/ })).toHaveAttribute("aria-current", "page"));
 });
 
-test("on Dedup the product picker is in the page's options panel, not the sidebar, and the choice still follows you to other pages", async () => {
+test("the product picker is in the top bar on every page, Dedup included, and the choice follows you", async () => {
   render(
     <MemoryRouter initialEntries={["/dedup"]}>
       <App />
     </MemoryRouter>,
   );
   const panel = await screen.findByRole("complementary", { name: "Options" });
-  const select = await within(panel).findByLabelText("Product");
-  expect(within(screen.getByRole("navigation", { name: "Sidebar" })).queryByLabelText("Product")).toBeNull();
+  const bar = within(screen.getByRole("navigation", { name: "Sections" }));
+  const select = await bar.findByLabelText("Product");
+  expect(within(panel).queryByLabelText("Product")).toBeNull();
   await userEvent.selectOptions(select, "P2");
-  expect(within(panel).getByLabelText("Product")).toHaveValue("P2");
+  await userEvent.click(within(screen.getByRole("navigation", { name: "Manipulation tools" })).getByRole("link", { name: /Classify/ }));
+  await waitFor(() => expect(bar.getByLabelText("Product")).toHaveValue("P2"));
+});
 
-  await userEvent.click(screen.getByRole("link", { name: "Classify" }));
-  const sidebar = screen.getByRole("navigation", { name: "Sidebar" });
-  await waitFor(() => expect(within(sidebar).getByLabelText("Product")).toHaveValue("P2")); // other pages keep the sidebar picker
-  expect(screen.queryByRole("complementary", { name: "Options" })).toBeNull();
+test("tool icons are muted until the tool has left a trace on the camera, and colorful after", async () => {
+  mockFetch({
+    "/api/cameras": ["camA"],
+    "/api/cameras/camA/products": [],
+    "/api/cameras/camA/tools-used": { "dedup/scatter": false, "dedup/clusters": true, classify: true, roi: false },
+  });
+  render(
+    <MemoryRouter initialEntries={["/classify"]}>
+      <App />
+    </MemoryRouter>,
+  );
+  const used = async (id: string) => (await screen.findByTestId(`tool-icon-${id}`)).getAttribute("data-used");
+  await waitFor(async () => expect(await used("clusters")).toBe("true"));
+  expect(await used("classify")).toBe("true");
+  expect(await used("scatter")).toBe("false");
+  expect(await used("roi")).toBe("false");
+  expect(await used("detector")).toBe("false"); // a tracked tool the answer does not mention is unused
+  expect(screen.getByRole("link", { name: /Clusters/ })).toHaveAttribute("title", "Clusters — used on this camera");
+  expect(screen.getByRole("link", { name: /Scatter/ })).toHaveAttribute("title", "Scatter — not used on this camera yet");
+});
+
+test("a page with no state to show (Overview, Status) always has a colorful icon", async () => {
+  render(
+    <MemoryRouter initialEntries={["/overview"]}>
+      <App />
+    </MemoryRouter>,
+  );
+  expect((await screen.findByTestId("tool-icon-overview")).getAttribute("data-used")).toBe("true");
+  expect((await screen.findByTestId("tool-icon-status")).getAttribute("data-used")).toBe("true");
 });

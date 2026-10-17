@@ -36,7 +36,7 @@ STAGES = [
 DONE, PARTIAL, TODO, STALE = "done", "partial", "todo", "stale"
 
 
-def _vision_configured(camera: str, feature: str) -> bool:
+def vision_configured(camera: str, feature: str) -> bool:
     s = vision_settings.get(camera, feature)
     return bool(s["filter"] or (s["mask"] and s["mask"]["enabled"]) or (s["detector"] and s["detector"]["exemplars"]))
 
@@ -86,7 +86,7 @@ def stages(camera: str, feature: str, *, counts: dict[str, int] | None = None, v
 
     state: dict[str, tuple[str, str]] = {
         "roi": (DONE, ""),
-        "vision": (DONE if _vision_configured(camera, feature) else TODO, ""),
+        "vision": (DONE if vision_configured(camera, feature) else TODO, ""),
         "dedup": (DONE if muted or clustered else TODO, f"{muted} muted" if muted else ""),
         "labeled": (status_of(classes_labeled), f"{labeled} of {total} · {labels_text}" if labeled else ""),
         "goldens": (status_of(classes_golden), golden_text if classes_golden else ""),

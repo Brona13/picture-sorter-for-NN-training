@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { usePublishFeature, useSharedFeature } from "../SharedFeature";
 import { api, CardData, InsightsResponse } from "../api";
-import Card from "../classify/Card";
-import Pager, { PagerSettings } from "../classify/Pager";
+import { PagerSettings } from "../classify/Pager";
+import PictureGrid from "../classify/PictureGrid";
 import { useJob } from "../useJob";
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -18,7 +18,6 @@ export default function InsightsView({ camera, product }: { camera: string; prod
   const [cell, setCell] = useState<{ method: string; t: string; p: string; items: CardData[]; classes: string[]; methods: string[]; cols: number } | null>(null);
   const [settings, setSettings] = useState<PagerSettings | null>(null);
   const [page, setPage] = useState(1);
-  const [busy, setBusy] = useState<string | null>(null);
   const job = useJob<{ frames: number }>(jobId);
   const computing = jobId !== null && (job === null || job.status === "queued" || job.status === "running");
 
@@ -81,18 +80,10 @@ export default function InsightsView({ camera, product }: { camera: string; prod
   }, [job?.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Marks change in place; the matrix counts refresh, the open list keeps its cards until closed.
-  async function act(frame: string, call: () => Promise<{ card: { label: string | null; golden: string | null; deleted: boolean } }>) {
-    setBusy(frame);
-    try {
-      const r = await call();
-      setCell((c) => (c ? { ...c, items: c.items.map((x) => (x.frame === frame ? { ...x, ...r.card } : x)) } : c));
-      load();
-    } catch (e) {
-      setError(msg(e));
-    } finally {
-      setBusy(null);
-    }
-  }
+  const applyCard = (frame: string, card: { label: string | null; golden: string | null; deleted: boolean }) => {
+    setCell((c) => (c ? { ...c, items: c.items.map((x) => (x.frame === frame ? { ...x, ...card } : x)) } : c));
+    load();
+  };
 
   if (!camera) return <p>Select a camera.</p>;
 
@@ -199,45 +190,37 @@ export default function InsightsView({ camera, product }: { camera: string; prod
               })}
             </div>
           )}
-          {cell && settings && (() => {
-            const perPage = settings.per_page;
-            const nPages = Math.max(1, Math.ceil(cell.items.length / perPage));
-            const cur = Math.min(page, nPages);
-            const pager = { page: cur, per_page: perPage, n_pages: nPages, total: cell.items.length };
-            return (
-              <div data-testid="matrix-cell-frames">
-                <h4>
-                  {cell.method}: true {cell.t} → predicted {cell.p} — {cell.items.length} frame(s){" "}
-                  <button type="button" onClick={() => setCell(null)}>
-                    Close
-                  </button>
-                </h4>
-                {cell.items.length > 0 && (
-                  <>
-                    <Pager grid={pager} settings={settings} onPage={setPage} onSettings={changeSettings} where="insights top" />
-                    <ul style={{ display: "grid", gridTemplateColumns: `repeat(${settings.cols}, minmax(0, 1fr))`, gap: 8, padding: 0 }}>
-                      {cell.items.slice((cur - 1) * perPage, cur * perPage).map((card) => (
-                        <Card
-                          key={card.frame}
-                          camera={camera}
-                          feature={feature}
-                          classes={cell.classes}
-                          methods={cell.methods}
-                          card={card}
-                          busy={busy === card.frame}
-                          onLabel={(cls) => act(card.frame, () => api.setLabel(camera, feature, card.frame, cls))}
-                          onGolden={(on) => act(card.frame, () => api.setGolden(camera, feature, card.frame, on))}
-                          onDelete={() => act(card.frame, () => api.deleteFrame(camera, feature, card.frame))}
-                          onRestore={() => act(card.frame, () => api.restoreFrame(camera, feature, card.frame))}
-                        />
-                      ))}
-                    </ul>
-                    <Pager grid={pager} settings={settings} onPage={setPage} onSettings={changeSettings} where="insights bottom" />
-                  </>
-                )}
-              </div>
-            );
-          })()}
+          {cell && settings && (
+            <div data-testid="matrix-cell-frames">
+              <h4>
+                {cell.method}: true {cell.t} → predicted {cell.p} — {cell.items.length} frame(s){" "}
+                <button type="button" onClick={() => setCell(null)}>
+                  Close
+                </button>
+              </h4>
+              {cell.items.length > 0 && (
+                <PictureGrid
+                  camera={camera}
+                  feature={feature}
+                  classes={cell.classes}
+                  methods={cell.methods}
+                  frames={cell.items.map((c) => c.frame)}
+                  cardOf={(f) => cell.items.find((c) => c.frame === f)!}
+                  via="Insights"
+                  grid={settings}
+                  onGrid={changeSettings}
+                  page={page}
+                  onPage={setPage}
+                  where="insights"
+                  viewer={false}
+                  restorable
+                  onChanged={applyCard}
+                  onDeleted={applyCard}
+                  onError={setError}
+                />
+              )}
+            </div>
+          )}
         </>
       )}
     </section>
