@@ -370,7 +370,7 @@ Pictures are exported from the verdicts (see *Freeze and export versions*).
 
 ## Choosing the scoring methods
 
-The **⚙️ Configuration** page (last item of the left menu) has one checkbox per scoring method: CPU,
+The **⚙️ Configuration** page (the cogwheel at the bottom right of the left menu; click it again to return to the page you came from) has one checkbox per scoring method: CPU,
 ResNet18, ResNet50. The choice is global (all cameras) and saved at once. A method that is off:
 
 - is not computed, so **Refresh scores** is faster (no ResNet pass at all if both ResNets are off);
@@ -445,15 +445,38 @@ frames labeled, deleted or muted since the list was made are skipped and reporte
 of the feature apply, as in Dedup. This is separate from *Bulk label* and *Auto-assign*, which select
 by leaning, margin or novelty against the goldens.
 
-### Outliers in Dedup
+### The Dedup page
 
-The Dedup page has an **Outliers (most isolated frames)** panel. Choose *k* (how many nearest
-neighbours to compare with, 1-20, default 5) and click **Score outliers**. Each frame gets a score,
-its mean cosine distance to its *k* nearest other frames, computed on the same embeddings Dedup
-clusters (the feature's filter and mask apply). The most isolated frames come first as cards you can
-label, make golden or delete. When the 2D projection is shown, tick **Colour by outlier score** to
-colour its points from pale (typical) to dark red (most isolated). The score is a hint for review, not
-a verdict; it is computed on demand and nothing is stored.
+The page body shows the result of whichever **function** is active; the controls live in a collapsible
+**options panel** on the right (the `»` button hides it; the choice is remembered). At its top a card
+shows how many frames are in scope.
+
+- **Panel, top to bottom:** Embedding, Product (when the camera has products), Feature (ROI), then three
+  function groups: **Clusters**, **Scatter** and **Outliers**. Hover the small **i** icon in a group's title
+  row for what the function does.
+- **One active function at a time.** The active group has a tinted background and a "● active" tag. Opening
+  or closing a group only shows or hides its settings. Pressing the group's own button (**Cluster**,
+  **Compute projection**, **Score outliers**) makes it the active one: the previous one deactivates and
+  collapses, and the centre switches to the new function's results. The results of the deactivated function are
+  kept (they show again at once when you press its button) unless the ROI or the embedding changed.
+- **Clusters:** Epsilon and Min points sliders (they also move with the mouse wheel), **Cluster**, **↺**
+  (revert the sliders to the last clustering) and **🔇** (apply mute: mute every cluster member except its
+  representative; nothing is deleted, labeled and golden frames are never muted), with a line telling how many
+  frames would be muted. The centre shows a row of tabs, `0 (12)`, `1 (5)` ... and `Unique (3)`, and the
+  paged card grid of the chosen tab. Mark another card as the cluster's representative with its `○ rep` button.
+- **Scatter:** a 2D map of the frames (UMAP or t-SNE), colourable by cluster, label, outlier score or nothing.
+  It does not need a clustering. Drag a rectangle to zoom in and select; below the map you get class-coloured
+  "Label N as X" buttons, a "Delete these N frame(s)…" button (asks first) and the paged card grid of the
+  selection. Right-click resets the view.
+- **Outliers:** choose *k* (1-20, default 5, mouse wheel works) and press **Score outliers**. Each frame gets its
+  mean cosine distance to its *k* nearest other frames on the same embeddings (filter and mask apply). The most
+  isolated frames come first as cards. The score is a hint for review, not a verdict; it is computed on demand
+  and nothing is stored. Colour the scatter by it with *Colour by: Outlier score*.
+- **Picture viewer:** clicking a card's picture (in any of these grids) opens the full frame in an overlay
+  instead of a new tab (Ctrl or middle click still opens a tab). ← → walk the cards in grid order, the wheel
+  zooms (kept when you move to the next picture), dragging pans, **Reset** and **1:1** are in the toolbar, the
+  feature's ROI is outlined in yellow (**▭** hides it), and the card keys work on the shown picture: 1-9 label,
+  0 clears, the key left of 1 is golden, Delete deletes. Esc closes.
 
 ## Scoring methods
 
@@ -824,4 +847,4 @@ workflows and should be consulted as historical rationale rather than current op
 
 ## Version
 
-The app version and release date are shown under the title in the sidebar and served at `GET /api/version`. Bump `VERSION` and `RELEASED` in `app/backend/appinfo.py` with every code change (ISO date; last number for small changes, middle number for new features). Scheme: `0.x.y` was the Streamlit generation, `1.x.y` is the current FastAPI + React application.
+The app version and release date are shown at the bottom left of the sidebar and served at `GET /api/version`. Above them a small badge says which device the neural parts run on (AMD GPU, NVIDIA GPU or CPU only, with the card's name; `GET /api/device`); click it to change its look. The application remembers the last camera, product, ROI and page in the browser. Bump `VERSION` and `RELEASED` in `app/backend/appinfo.py` with every code change (ISO date; last number for small changes, middle number for new features). Scheme: `0.x.y` was the Streamlit generation, `1.x.y` is the current FastAPI + React application.

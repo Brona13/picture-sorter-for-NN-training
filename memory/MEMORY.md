@@ -3,7 +3,7 @@ name: MEMORY
 description: Portable index of project memory files
 status: current
 document_type: index
-last_updated: 2026-10-16
+last_updated: 2026-10-17
 ---
 
 # Project Memory Index
@@ -41,3 +41,5 @@ Portable memory for the *Picture Sorter for NN Training* project. Kept inside th
 - [Zoom/pan viewport, 1.23.0 (2026-10-16)](zoom-pane.md) — shared ZoomPane on the Edge angle page: wheel zoom at cursor, pan, Reset/1:1, view kept across frames; rollout to the other canvases pending; unverified in a browser.
 - [Methods configuration, 1.24.0 (2026-10-16)](methods-config.md) — Configuration page: global on/off for CPU/ResNet18/ResNet50, non-destructive, tagged card flags, menu emojis; unverified in a browser.
 - [Camera tags + verdicts, 1.25.0-1.27.0 (2026-10-16)](camera-tags-and-verdict-plan.md) — New camera wizard and tags (1.25.0); verdict model, Verdict page, progress bar (1.26.0, schema v8); project versions and export from verdicts (1.27.0); plans/project-verdict-plan.md; unverified in a browser.
+- [Laptop patches and UX round, 1.23.0-1.30.0 (2026-10-16)](laptop-patches-and-ux-round.md) — laptop patches applied (schema v8); Dedup after Ingest, tag filter, painting labels, Deleted/Verdict pagers, remembered session; build/restart and commit-hygiene lessons; unverified in a browser.
+- [Dedup redesign trial, 1.31.0-1.41.0 (2026-10-17)](dedup-redesign-panel.md) — right options panel, one active function, scatter as a function, picture viewer, info tips, hardware badge, product-picker rollout rule, wheel sliders; decisions, open points, dictation glossary; the pattern to copy to other pages.
