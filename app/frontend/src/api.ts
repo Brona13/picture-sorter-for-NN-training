@@ -13,6 +13,8 @@ export class ApiError extends Error {
 
 /** Fired on window after every successful request that is not a GET. */
 export const DATA_CHANGED = "picturesorter:changed";
+/** Fired when products were renamed (detail: old name -> new name), so a page that remembers one can follow. */
+export const PRODUCTS_RENAMED = "picturesorter:products-renamed";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, init);
@@ -971,10 +973,11 @@ export const api = {
     request<ChainDeletePreview>(
       `/cameras/${encodeURIComponent(camera)}/chain/delete-preview?feature=${encodeURIComponent(feature)}`,
     ),
-  setProductNames: (camera: string, names: string[]) =>
+  /** `names` is the list as it should be; `renames` maps old to new for the renamed products, whose labels and ROIs follow. */
+  setProductNames: (camera: string, names: string[], renames: Record<string, string> = {}) =>
     request<{ products: string[] }>(
       `/cameras/${encodeURIComponent(camera)}/product-names`,
-      send("PUT", { names }),
+      send("PUT", { names, renames }),
     ),
   classifyState: (camera: string, feature: string) =>
     request<ClassifyState>(`/cameras/${encodeURIComponent(camera)}/classify/state?feature=${encodeURIComponent(feature)}`),

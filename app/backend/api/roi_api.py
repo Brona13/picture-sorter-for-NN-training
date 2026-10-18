@@ -4,6 +4,7 @@ from __future__ import annotations
 import config
 import datamodel
 import labels
+import products as product_admin
 import versions
 from api.cameras import require_camera
 from fastapi import APIRouter, HTTPException
@@ -34,7 +35,10 @@ class ProductsUpdate(BaseModel):
 
 
 class ClassNamesUpdate(BaseModel):
+    #: The products as they should be afterwards (new names for the renamed ones), in order.
     names: list[str]
+    #: Old name -> new name for the products that are renamed: their labels, goldens and ROIs go along.
+    renames: dict[str, str] = {}
 
 
 def _check_box(b: Box) -> None:
@@ -207,6 +211,15 @@ def set_product_names(camera: str, body: ClassNamesUpdate) -> dict:
     wanted = list(dict.fromkeys(p.strip() for p in body.names if p.strip()))
     if len(wanted) < 2:
         raise HTTPException(status_code=422, detail="Keep at least two products.")
+    if body.renames:
+        try:
+            done = product_admin.check_renames(camera, body.renames)
+            missing = [new for new in done.values() if new not in wanted]
+            if missing:
+                raise product_admin.ProductError(f"The renamed product {missing[0]} is not in the list of products.")
+            product_admin.rename_products(camera, body.renames)
+        except product_admin.ProductError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
     rois = datamodel.load_rois(camera)
     for r in rois:
         if r.name == classify_feat:

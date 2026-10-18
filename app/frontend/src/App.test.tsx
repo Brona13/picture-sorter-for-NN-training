@@ -356,3 +356,43 @@ test("a page with no state to show (Overview, Status) always has a colorful icon
   expect((await screen.findByTestId("tool-icon-overview")).getAttribute("data-used")).toBe("true");
   expect((await screen.findByTestId("tool-icon-status")).getAttribute("data-used")).toBe("true");
 });
+
+test("a renamed product stays the selected one, and a renamed product's ROI stays the selected ROI", async () => {
+  render(
+    <MemoryRouter initialEntries={["/classify"]}>
+      <App />
+    </MemoryRouter>,
+  );
+  await screen.findByLabelText("Product");
+  await userEvent.selectOptions(screen.getByLabelText("Product"), "P2");
+  await waitFor(() => expect(localStorage.getItem("picturesorter.product.camA")).toBe("P2"));
+  localStorage.setItem("picturesorter.feature.camA", "P2::rod");
+  // the server now has the product under its new name
+  mockFetch({
+    "/api/cameras": ["camA", "camB"],
+    "/api/cameras/camA/products": ["P1", "Beta"],
+    "/api/cameras/camB/products": [],
+  });
+  window.dispatchEvent(new Event("picturesorter:changed")); // the save itself
+  window.dispatchEvent(new CustomEvent("picturesorter:products-renamed", { detail: { P2: "Beta" } }));
+  await waitFor(() => expect(screen.getByLabelText("Product")).toHaveValue("Beta"));
+  expect(localStorage.getItem("picturesorter.product.camA")).toBe("Beta");
+  expect(localStorage.getItem("picturesorter.feature.camA")).toBe("Beta::rod");
+});
+
+test("the product list in the top bar follows a change made elsewhere", async () => {
+  render(
+    <MemoryRouter initialEntries={["/classify"]}>
+      <App />
+    </MemoryRouter>,
+  );
+  const select = await screen.findByLabelText("Product");
+  expect(within(select).queryByRole("option", { name: "P3" })).toBeNull();
+  mockFetch({
+    "/api/cameras": ["camA", "camB"],
+    "/api/cameras/camA/products": ["P1", "P2", "P3"],
+    "/api/cameras/camB/products": [],
+  });
+  window.dispatchEvent(new Event("picturesorter:changed"));
+  expect(await within(screen.getByLabelText("Product")).findByRole("option", { name: "P3" })).toBeInTheDocument();
+});

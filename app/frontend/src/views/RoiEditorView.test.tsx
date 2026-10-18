@@ -40,6 +40,7 @@ function install(roisBody: any, framesBody?: any) {
       if (url.includes("/rois") && method === "DELETE") return new Response(JSON.stringify({ removed: { labels: 2, goldens: 1, versions: 1, settings: 0 } }));
       if (url.includes("/rois") && method === "PUT") return new Response(JSON.stringify(roi({ feature: "new", short_name: "new" })));
       if (url.includes("/reference-frame")) return new Response(JSON.stringify({ reference_frame: "f2.png" }));
+      if (url.endsWith("/product-names")) return new Response(JSON.stringify({ products: JSON.parse(init!.body as string).names }));
       return new Response("{}", { status: 404 });
     }),
   );
@@ -232,4 +233,50 @@ test("without a focus the editor is unchanged: modes, add form and the list of a
   expect(await screen.findByText("Defined ROIs")).toBeInTheDocument();
   expect(screen.getByText("Mode")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /Add \/ update ROI/ })).toBeInTheDocument();
+});
+
+// --- renaming products ----------------------------------------------------------------------------------------------
+test("the product-sorting ROI's products can be renamed in the editor; labels and ROIs follow on the server, and the app is told", async () => {
+  const withProducts = base({
+    rois: [roi({ feature: "type", short_name: "type", role: "classify", classes: ["4x4", "2x4"] }), roi()],
+    classify_feature: "type",
+    products: ["4x4", "2x4"],
+  });
+  install(withProducts);
+  const renamed = vi.fn();
+  window.addEventListener("picturesorter:products-renamed", renamed);
+  try {
+    render(<RoiEditorView camera="camA" />);
+    await userEvent.click(await screen.findByText(/Products — classes of 'type'/));
+    const field = screen.getByLabelText("Product 1");
+    expect(field).toHaveValue("4x4");
+    await userEvent.clear(field);
+    await userEvent.type(field, "Alpha");
+    await userEvent.click(screen.getByRole("button", { name: "Save products" }));
+    await waitFor(() => expect(calls.some((c) => c.url.endsWith("/product-names"))).toBe(true));
+    expect(calls.find((c) => c.url.endsWith("/product-names"))!.body).toEqual({ names: ["Alpha", "2x4"], renames: { "4x4": "Alpha" } });
+    expect(await screen.findByText(/renamed 4x4 → Alpha: labels and ROIs kept/)).toBeInTheDocument();
+    expect(renamed).toHaveBeenCalled();
+    expect((renamed.mock.calls[0][0] as CustomEvent).detail).toEqual({ "4x4": "Alpha" });
+  } finally {
+    window.removeEventListener("picturesorter:products-renamed", renamed);
+  }
+});
+
+test("adding a product sends no renames and does not tell the app about any", async () => {
+  install(base({ rois: [roi({ feature: "type", short_name: "type", role: "classify", classes: ["A", "B"] })], classify_feature: "type", products: ["A", "B"] }));
+  const renamed = vi.fn();
+  window.addEventListener("picturesorter:products-renamed", renamed);
+  try {
+    render(<RoiEditorView camera="camA" />);
+    await userEvent.click(await screen.findByText(/Products — classes of 'type'/));
+    await userEvent.click(screen.getByRole("button", { name: "+ Add product" }));
+    await userEvent.type(screen.getByLabelText("Product 3"), "C");
+    await userEvent.click(screen.getByRole("button", { name: "Save products" }));
+    await waitFor(() => expect(calls.some((c) => c.url.endsWith("/product-names"))).toBe(true));
+    expect(calls.find((c) => c.url.endsWith("/product-names"))!.body).toEqual({ names: ["A", "B", "C"], renames: {} });
+    expect(renamed).not.toHaveBeenCalled();
+  } finally {
+    window.removeEventListener("picturesorter:products-renamed", renamed);
+  }
 });

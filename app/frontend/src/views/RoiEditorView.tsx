@@ -1,5 +1,6 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { api, frameImageUrl, FramesResponse, RoiInfo, RoisResponse, roiThumbUrl } from "../api";
+import { api, frameImageUrl, FramesResponse, PRODUCTS_RENAMED, RoiInfo, RoisResponse, roiThumbUrl } from "../api";
+import ProductNamesEditor from "../classify/ProductNamesEditor";
 import PictureSizeSlider, { usePictureSize } from "../PictureSize";
 import RoiCanvas from "../RoiCanvas";
 import { FIT_VIEW, View } from "../zoomGeometry";
@@ -31,7 +32,6 @@ export default function RoiEditorView({ camera, product, focus }: { camera: stri
   const [makeClassifier, setMakeClassifier] = useState(false);
   const [productCsv, setProductCsv] = useState("");
   const [sharedWith, setSharedWith] = useState<string[]>([]);
-  const [productsText, setProductsText] = useState("");
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -73,13 +73,6 @@ export default function RoiEditorView({ camera, product, focus }: { camera: stri
     if (editing && target) setBox({ x: target.x, y: target.y, w: target.w, h: target.h });
     if (!editing) setBox(null);
   }, [editing, target?.feature, target?.x, target?.y, target?.w, target?.h]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (data?.classify_feature) {
-      const c = data.rois.find((r) => r.feature === data.classify_feature);
-      setProductsText((c?.classes ?? data.products).join(", "));
-    }
-  }, [data]);
 
   const others = useMemo(
     () =>
@@ -337,24 +330,17 @@ export default function RoiEditorView({ camera, product, focus }: { camera: stri
       {!product && classifyFeat && (!focus || focused === classifyFeat) && (
         <details>
           <summary>Products — classes of '{classifyFeat}'</summary>
-          <label>
-            Product names (comma-separated){" "}
-            <input value={productsText} onChange={(e) => setProductsText(e.target.value)} />
-          </label>{" "}
-          <button
-            onClick={() =>
+          <ProductNamesEditor
+            products={data?.rois.find((r) => r.feature === classifyFeat)?.classes ?? allProducts}
+            onSave={(names, renames) =>
               run(async () => {
-                const r = await api.setProductNames(camera, productsText.split(","));
-                return `Products: ${r.products.join(", ")}`;
+                const r = await api.setProductNames(camera, names, renames);
+                if (Object.keys(renames).length > 0) window.dispatchEvent(new CustomEvent(PRODUCTS_RENAMED, { detail: renames }));
+                const renamed = Object.entries(renames).map(([a, b]) => `${a} → ${b}`);
+                return `Products: ${r.products.join(", ")}` + (renamed.length ? ` (renamed ${renamed.join(", ")}: labels and ROIs kept)` : "");
               })
             }
-          >
-            Save products
-          </button>
-          <p>
-            Adding a product makes it available in the sidebar. Removing one does <strong>not</strong> delete its labels or ROIs —
-            they simply stop being offered.
-          </p>
+          />
         </details>
       )}
 

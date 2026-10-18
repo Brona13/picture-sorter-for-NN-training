@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 import { lastSession } from "./lastSession";
-import { api, ApiError, DATA_CHANGED, DeviceInfo, PipelineStage, RoiInfo } from "./api";
+import { api, ApiError, DATA_CHANGED, DeviceInfo, PipelineStage, PRODUCTS_RENAMED, RoiInfo } from "./api";
 import HardwareBadge from "./HardwareBadge";
 import ProductSelect from "./ProductSelect";
 import { FeatureContext } from "./SharedFeature";
@@ -30,6 +30,50 @@ export default function App() {
   const [products, setProducts] = useState<string[]>([]);
   const [product, setProduct] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // The product list follows changes (a product added, removed or renamed in the ROI editor), and a product or ROI that was
+  // renamed keeps being the selected one: its labels and ROIs went along, so the page should too.
+  useEffect(() => {
+    if (!camera) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const load = () =>
+      api
+        .products(camera)
+        .then((list) => {
+          if (cancelled) return;
+          setProducts(list);
+          setProduct((p) => (list.includes(p) ? p : ""));
+        })
+        .catch(() => undefined);
+    const onChange = () => {
+      clearTimeout(timer);
+      timer = setTimeout(load, 400);
+    };
+    const onRenamed = (e: Event) => {
+      const renames = ((e as CustomEvent<Record<string, string>>).detail ?? {}) as Record<string, string>;
+      const renameFeature = (f: string) => {
+        const [owner, ...rest] = f.split("::");
+        return rest.length > 0 && renames[owner] ? `${renames[owner]}::${rest.join("::")}` : f;
+      };
+      const p = lastSession.product(camera);
+      if (renames[p]) {
+        lastSession.setProduct(camera, renames[p]);
+        setProduct(renames[p]);
+      }
+      const f = lastSession.feature(camera);
+      if (f) lastSession.setFeature(camera, renameFeature(f));
+      setSelected((s) => (s.camera === camera ? { ...s, feature: renameFeature(s.feature) } : s));
+    };
+    window.addEventListener(DATA_CHANGED, onChange);
+    window.addEventListener(PRODUCTS_RENAMED, onRenamed);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      window.removeEventListener(DATA_CHANGED, onChange);
+      window.removeEventListener(PRODUCTS_RENAMED, onRenamed);
+    };
+  }, [camera]);
+
   const [info, setInfo] = useState<{ version: string; released: string } | null>(null);
   const [device, setDevice] = useState<DeviceInfo | null>(null);
   // The ROI being worked on is remembered with its camera, so it is dropped when the camera changes.

@@ -596,6 +596,124 @@ def delete_camera_rows(camera: str) -> dict[str, int]:
         con.close()
 
 
+def _remap_json(value, mapping: dict[str, str]):
+    """``value`` with every dict key and every string equal to a key of ``mapping`` replaced (recursively)."""
+    if isinstance(value, dict):
+        return {mapping.get(k, k) if isinstance(k, str) else k: _remap_json(v, mapping) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_remap_json(v, mapping) for v in value]
+    if isinstance(value, str):
+        return mapping.get(value, value)
+    return value
+
+
+#: Tables keyed by (camera, feature) whose rows follow a feature that is renamed.
+_FEATURE_TABLES = ("labels", "goldens", "dedup_mute", "versions", "results_cache", "scatter_cache", "cluster_snapshot", "detections")
+
+
+def rename_products(camera: str, classify_feature: str, renames: dict[str, str]) -> dict[str, int]:
+    """Rename products of the product-sorting ROI, with everything that carries a product's name, in one transaction.
+
+    A product's name is a class of the product-sorting ROI (its ``classes_json``, the ``class`` of its labels and goldens,
+    of the version items and in the version counts), it is listed in the ``products_json`` of shared ROIs, and it is the
+    prefix of the product's own ROIs (``<product>::<roi>``), which are keys of every table that holds a feature's data
+    and the end of the settings keys of a feature. All of that is moved, so labels, goldens, versions, scores and the
+    arrows of the chain stay connected. ``renames`` maps old to new; the caller has checked that no new name is in use.
+    """
+    cls_map = {old: new for old, new in renames.items()}
+    cls_map.update({f"golden_{old}": f"golden_{new}" for old, new in renames.items()})
+    con = connect()
+    try:
+        con.execute("BEGIN IMMEDIATE")
+        moved: dict[str, int] = {}
+        # the features that carry a product in their name
+        feat_map: dict[str, str] = {}
+        for row in con.execute("SELECT name FROM rois WHERE camera=?", (camera,)).fetchall():
+            owner, sep, rest = row["name"].partition("::")
+            if sep and owner in renames:
+                feat_map[row["name"]] = f"{renames[owner]}::{rest}"
+        # 1. the ROIs themselves: the product list of the product-sorting ROI, the shared ROIs' lists, the prefixed names
+        for row in con.execute("SELECT name, classes_json, products_json FROM rois WHERE camera=?", (camera,)).fetchall():
+            classes = json.loads(row["classes_json"]) if row["classes_json"] else None
+            products = json.loads(row["products_json"]) if row["products_json"] else None
+            if row["name"] == classify_feature and classes:
+                classes = [renames.get(c, c) for c in classes]
+            if products:
+                products = [renames.get(p, p) for p in products]
+            con.execute(
+                "UPDATE rois SET name=?, classes_json=?, products_json=? WHERE camera=? AND name=?",
+                (
+                    feat_map.get(row["name"], row["name"]),
+                    json.dumps(classes) if classes else None,
+                    json.dumps(products) if products else None,
+                    camera,
+                    row["name"],
+                ),
+            )
+        moved["rois"] = len(feat_map)
+        # 2. the product as a class of the product-sorting ROI
+        for old, new in renames.items():
+            moved["labels"] = moved.get("labels", 0) + con.execute(
+                "UPDATE labels SET class=? WHERE camera=? AND feature=? AND class=?", (new, camera, classify_feature, old)
+            ).rowcount
+            moved["goldens"] = moved.get("goldens", 0) + con.execute(
+                "UPDATE goldens SET class=? WHERE camera=? AND feature=? AND class=?", (new, camera, classify_feature, old)
+            ).rowcount
+            con.execute(
+                "UPDATE version_items SET class=? WHERE class=? AND version_id IN (SELECT id FROM versions WHERE camera=? AND feature=?)",
+                (new, old, camera, classify_feature),
+            )
+        # 3. the product's own ROIs: every table keyed by feature
+        for old_feature, new_feature in feat_map.items():
+            for table in _FEATURE_TABLES:
+                moved[table] = moved.get(table, 0) + con.execute(
+                    f"UPDATE {table} SET feature=? WHERE camera=? AND feature=?", (new_feature, camera, old_feature)
+                ).rowcount
+            # the vector cache has no camera: copy the rows, so the old name's rows (other cameras) stay valid
+            con.execute(
+                "INSERT OR IGNORE INTO score_cache(hash, feature, roi_key, kind, vec, ts) "
+                "SELECT hash, ?, roi_key, kind, vec, ts FROM score_cache WHERE feature=?",
+                (new_feature, old_feature),
+            )
+        # 4. the version snapshots keep counts and statistics keyed by class and naming features
+        snapshot_map = {**feat_map}
+        for row in con.execute("SELECT id, feature, counts_json, stats_json FROM versions WHERE camera=?", (camera,)).fetchall():
+            mapping = {**snapshot_map, **(cls_map if row["feature"] == classify_feature else {})}
+            if not mapping:
+                continue
+            counts = json.dumps(_remap_json(json.loads(row["counts_json"]), mapping))
+            stats = json.dumps(_remap_json(json.loads(row["stats_json"]), mapping))
+            if counts != row["counts_json"] or stats != row["stats_json"]:
+                con.execute("UPDATE versions SET counts_json=?, stats_json=? WHERE id=?", (counts, stats, row["id"]))
+        # 5. settings: keys end with the feature (vision.<feature>, grid.cols.<feature>, ...); the chain layout names boxes by it
+        node_map = {}
+        for old_feature, new_feature in feat_map.items():
+            node_map[f"roi:{old_feature}"] = f"roi:{new_feature}"
+            node_map[f"classify:{old_feature}"] = f"classify:{new_feature}"
+        for row in con.execute("SELECT key, value FROM settings WHERE camera=?", (camera,)).fetchall():
+            key, value = row["key"], row["value"]
+            new_key = key
+            for old_feature, new_feature in feat_map.items():
+                if key.endswith("." + old_feature):
+                    new_key = key[: -len(old_feature)] + new_feature
+                    break
+            if key == "chain.canvas" and node_map and value:
+                try:
+                    value = json.dumps(_remap_json(json.loads(value), node_map), sort_keys=True)
+                except ValueError:
+                    pass
+            if new_key != key or value != row["value"]:
+                con.execute("UPDATE settings SET key=?, value=? WHERE camera=? AND key=?", (new_key, value, camera, key))
+        moved["features"] = len(feat_map)
+        con.commit()
+        return moved
+    except Exception:
+        con.rollback()
+        raise
+    finally:
+        con.close()
+
+
 def delete_roi_row(camera: str, name: str) -> bool:
     """Remove one ROI; return True if a row was actually deleted."""
     con = connect()
