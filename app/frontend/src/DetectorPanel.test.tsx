@@ -385,7 +385,23 @@ test("holding A and sweeping the mouse over the cards accepts each one the point
   sweep("b.png"); // again in the same stroke: nothing more
   expect(puts()).toHaveLength(3);
   fireEvent.keyUp(window, { key: "a" });
-  expect(document.body.style.cursor).toBe("");
+  expect(document.documentElement.classList.contains("painting")).toBe(false);
+});
+
+test("the sweep cursor is a green tick for A and a red cross for X, from the moment the key goes down over a card", async () => {
+  detections = sweepRows();
+  install({ exemplars: [EXEMPLAR], topk: 1, threshold: 0.3 });
+  await openReview();
+  await userEvent.hover(await screen.findByTestId("review-card-a.png"));
+  const cursor = () => (document.documentElement.classList.contains("painting") ? decodeURIComponent(document.documentElement.style.getPropertyValue("--paint-cursor")) : null);
+  expect(cursor()).toBeNull();
+  fireEvent.keyDown(window, { key: "x" });
+  expect(cursor()).toContain("#c0392b"); // before any move
+  fireEvent.keyUp(window, { key: "x" });
+  expect(cursor()).toBeNull();
+  fireEvent.keyDown(window, { key: "a" });
+  expect(cursor()).toContain("#2e9e5b");
+  fireEvent.keyUp(window, { key: "a" });
 });
 
 test("pressing A on a hovered card accepts it and the sweep carries on from there", async () => {

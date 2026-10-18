@@ -32,6 +32,10 @@ function cards(marks: Record<string, { label: string | null; golden: string | nu
   return onLabel;
 }
 
+/** The painting cursor, if the page is in painting mode: a class on the page that forces it onto links and buttons too. */
+const painting = () =>
+  document.documentElement.classList.contains("painting") ? decodeURIComponent(document.documentElement.style.getPropertyValue("--paint-cursor")) : null;
+
 const move = (frame: string) => fireEvent.mouseMove(screen.getByTestId(`card-${frame}`), { movementX: 5, movementY: 2 });
 
 test("holding 1 labels only unlabeled cards; labeled and golden ones are left alone", () => {
@@ -67,7 +71,7 @@ test("a move with no pointer movement (a scroll) does not paint, and the cursor 
   fireEvent.keyDown(window, { key: "2" });
   fireEvent.mouseMove(screen.getByTestId("card-a"), { movementX: 0, movementY: 0 });
   expect(onLabel).not.toHaveBeenCalled();
-  expect(decodeURIComponent(document.body.style.cursor)).toContain("#c62828"); // NG is red
+  expect(painting()).toContain("#c62828"); // NG is red
   fireEvent.keyUp(window, { key: "2" });
-  expect(document.body.style.cursor).toBe("");
+  expect(painting()).toBeNull();
 });

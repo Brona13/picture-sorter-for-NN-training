@@ -357,7 +357,8 @@ Each card shows the frame with the detected box drawn on it, its state and confi
 **X** to clear it, **Z** to undo, **E** (or click the picture) to open the viewer and adjust the box: drag it,
 drag the corners or draw a new one, then **Enter** accepts and moves to the next card, **← →** switch card
 and **Esc** closes. **Hold A** (or **X**) and move the mouse across the cards to accept (or clear) every card the
-pointer enters, once, like painting labels on the other pages; cards you already decided are left alone. A decision shows at once and the card stays where it is, marked as decided (the save runs in the
+pointer enters, once, exactly like painting labels on Classify (a green tick or red cross follows the mouse while the key is held);
+cards you already decided are left alone. A decision shows at once and the card stays where it is, marked as decided (the save runs in the
 background); **Remove decided** takes the decided cards out of the grid when you want a shorter list, as does
 leaving the step or switching **Show all frames**.
 Boxes you accepted or adjusted are never overwritten by a re-run. **Show all
@@ -383,6 +384,9 @@ The **⚖️ Verdict** page lists the pictures by state (it opens on contradicti
 how it was labelled (manual, bulk, auto) and on which page. Press OK or NG to decide; your decision stands until a label
 of that picture changes, then it is marked **stale** and waits for **Keep** or a new decision. **Clear** drops your
 decision and the rule applies again. Deleted pictures are left out.
+Hover a card and press `1` (OK), `2` (NG) or `0` (clear my decision); hold one of them and move the mouse across the cards to
+paint the decision onto every card the pointer enters (a dot in the class colour follows the mouse), like labeling on Classify.
+A sweep only decides cards you have not decided, and `0` only clears cards you have, so it never overrides a decision of yours.
 
 Each camera card on Overview carries a bar with the pictures that have a verdict, open, contradictions, stale and
 **duplicates** (open pictures muted by Dedup, they need no label), plus the number of **deleted** pictures.
@@ -434,6 +438,12 @@ These values assist review. They are not calibrated probabilities and do not rep
 Expensive image features are cached, so later refreshes usually recompute distances rather than extracting every feature again.
 
 ### Review and label
+
+**One way of working on every card grid.** The Classify, Insights, Scatter, Clusters, Outliers, Verdict and Detector-review grids behave
+the same: hover a card and press its key to act on it; hold a key and move the mouse across the cards to paint the action
+onto each one the pointer enters (once per stroke, never on a scroll), with the mouse cursor changing to a dot in the
+action's colour from the moment the key goes down, on top of links and buttons too. Only the keys, the colours and what an
+action does differ by page.
 
 **Keyboard shortcuts:** hover a card and press `1`-`9` to set the class in the order of the card's buttons (the same number again removes the label), `0` to clear the label, or the key left of `1` to toggle golden (the frame must be labeled).
 

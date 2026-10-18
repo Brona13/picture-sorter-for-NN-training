@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { DetectionRow } from "./api";
 import { thumbUrl } from "./classify/Card";
-import Pager, { PagerSettings } from "./classify/Pager";
+import CardGrid from "./classify/CardGrid";
+import { PagerSettings } from "./classify/Pager";
+import { useGridCard } from "./classify/useGridCard";
 import { lastSession } from "./lastSession";
-import { markReviewPainted, reviewPaintAction, trackReviewPaint } from "./reviewPaint";
+import { markReviewPainted, reviewCursor, reviewPainter } from "./reviewPaint";
 
 const STATE_COLOR: Record<string, string> = { trusted: "#2e9e5b", human: "#1a73e8", review: "#e08a00", none: "#c0392b" };
 const STATE_TEXT: Record<string, string> = { trusted: "trusted", human: "decided", review: "unsure", none: "no detection" };
@@ -21,40 +23,6 @@ function useGridSettings(): [PagerSettings, (perPage: number, cols: number) => v
     setChosen({ per_page, cols });
   };
   return [{ ...chosen, ...OPTIONS }, change];
-}
-
-function isTypingTarget(target: EventTarget | null): boolean {
-  const el = target as HTMLElement | null;
-  return !!el && (el.isContentEditable || ["INPUT", "SELECT", "TEXTAREA"].includes(el.tagName));
-}
-
-/** Hover keys of one card: Enter or A accepts the detected box, Delete or X clears it, Z undoes, E opens it to adjust. */
-function useCardKeys(hovered: boolean, h: { accept?: () => void; clear: () => void; adjust: () => void; undo?: () => void }) {
-  const ref = useRef(h);
-  ref.current = h;
-  useEffect(() => {
-    if (!hovered) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.ctrlKey || e.metaKey || e.altKey || e.repeat || isTypingTarget(e.target)) return;
-      const key = e.key.toLowerCase();
-      if (key === "enter" || key === "a") {
-        if ((e.target as HTMLElement | null)?.tagName === "BUTTON" && key === "enter") return; // Enter on a focused button presses it
-        e.preventDefault();
-        ref.current.accept?.();
-      } else if (key === "delete" || key === "x") {
-        e.preventDefault();
-        ref.current.clear();
-      } else if (key === "e") {
-        e.preventDefault();
-        ref.current.adjust();
-      } else if (key === "z") {
-        e.preventDefault();
-        ref.current.undo?.();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [hovered]);
 }
 
 function ReviewCard({
@@ -76,15 +44,37 @@ function ReviewCard({
   onUndo: () => void;
   onAdjust: () => void;
 }) {
-  const [hovered, setHovered] = useState(false);
   const box = row.boxes[0];
   const canAccept = !!box && row.state !== "human";
-  useEffect(trackReviewPaint, []);
-  useCardKeys(hovered, {
-    accept: canAccept ? () => { markReviewPainted(row.frame); onAccept(); } : undefined,
-    clear: () => { if (!box) return; markReviewPainted(row.frame); onClear(); },
-    adjust: onAdjust,
-    undo: canUndo ? onUndo : undefined,
+  // The shared grid-card behaviour (`useGridCard`): hover keys and painting. What the keys do is this page's part.
+  const { props } = useGridCard(reviewPainter, row.frame, {
+    onKey: (e) => {
+      const key = e.key.toLowerCase();
+      if (key === "enter" || key === "a") {
+        if (key === "enter" && (e.target as HTMLElement | null)?.tagName === "BUTTON") return false; // Enter on a focused button presses it
+        if (!canAccept) return false;
+        markReviewPainted(row.frame);
+        onAccept();
+        return true;
+      }
+      if (key === "delete" || key === "x") {
+        if (!box) return false;
+        markReviewPainted(row.frame);
+        onClear();
+        return true;
+      }
+      if (key === "e") return onAdjust(), true;
+      if (key === "z" && canUndo) return onUndo(), true;
+      return false;
+    },
+    // Painting: A accepts, X or Delete clears, only on cards with a box that are not already your decision.
+    paint: (mode) => {
+      if (!box || row.state === "human") return false;
+      if (mode === "accept") onAccept();
+      else onClear();
+      return true;
+    },
+    cursorOf: reviewCursor,
   });
   const color = STATE_COLOR[row.state] ?? "var(--border)";
   const release = (fn: () => void) => (e: { currentTarget: HTMLElement }) => {
@@ -94,14 +84,7 @@ function ReviewCard({
   return (
     <li
       data-testid={`review-card-${row.frame}`}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      onMouseMove={(e) => {
-        // holding A / X and sweeping over the cards accepts / clears each one the pointer enters
-        const act = reviewPaintAction(e.nativeEvent, row);
-        if (act === "accept") onAccept();
-        else if (act === "clear") onClear();
-      }}
+      {...props}
       style={{ listStyle: "none", border: `2px solid ${color}`, borderRadius: "var(--radius)", background: "var(--panel)", padding: 4 }}
     >
       <button
@@ -182,39 +165,39 @@ export default function ReviewGrid({
 }) {
   const [settings, setSettings] = useGridSettings();
   const [page, setPage] = useState(1);
-  const nPages = Math.max(1, Math.ceil(rows.length / settings.per_page));
-  const cur = Math.min(page, nPages);
-  const shown = rows.slice((cur - 1) * settings.per_page, cur * settings.per_page);
-  const pagerGrid = { page: cur, per_page: settings.per_page, n_pages: nPages, total: rows.length };
   const decided = rows.filter((r) => r.state === "human").length;
-
   return (
-    <div aria-label="Review grid">
-      {decided > 0 && (
-        <p style={{ margin: "6px 0" }}>
-          {decided} decided in this list.{" "}
-          <button type="button" onClick={onRemoveDecided} title="Take the decided cards out of the grid">
-            Remove decided
-          </button>
-        </p>
+    <CardGrid
+      label="Review grid"
+      items={rows}
+      keyOf={(r) => r.frame}
+      settings={settings}
+      onSettings={setSettings}
+      page={page}
+      onPage={setPage}
+      where="review"
+      header={
+        decided > 0 && (
+          <p style={{ margin: "6px 0" }}>
+            {decided} decided in this list.{" "}
+            <button type="button" onClick={onRemoveDecided} title="Take the decided cards out of the grid">
+              Remove decided
+            </button>
+          </p>
+        )
+      }
+      renderCard={(row) => (
+        <ReviewCard
+          camera={camera}
+          feature={feature}
+          row={row}
+          canUndo={canUndo(row.frame)}
+          onAccept={() => onAccept(row.frame)}
+          onClear={() => onClear(row.frame)}
+          onUndo={() => onUndo(row.frame)}
+          onAdjust={() => onAdjust(row.frame)}
+        />
       )}
-      <Pager grid={pagerGrid} settings={settings} onPage={setPage} onSettings={setSettings} where="review top" />
-      <ul style={{ display: "grid", gridTemplateColumns: `repeat(${settings.cols}, minmax(0, 1fr))`, gap: 8, padding: 0, margin: 0 }}>
-        {shown.map((row) => (
-          <ReviewCard
-            key={row.frame}
-            camera={camera}
-            feature={feature}
-            row={row}
-            canUndo={canUndo(row.frame)}
-            onAccept={() => onAccept(row.frame)}
-            onClear={() => onClear(row.frame)}
-            onUndo={() => onUndo(row.frame)}
-            onAdjust={() => onAdjust(row.frame)}
-          />
-        ))}
-      </ul>
-      <Pager grid={pagerGrid} settings={settings} onPage={setPage} onSettings={setSettings} where="review bottom" />
-    </div>
+    />
   );
 }

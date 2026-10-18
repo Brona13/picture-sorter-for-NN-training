@@ -2,7 +2,8 @@ import { useState } from "react";
 import { api, CardData, CardUpdate } from "../api";
 import Card from "./Card";
 import FrameViewer from "./FrameViewer";
-import Pager, { PagerSettings } from "./Pager";
+import CardGrid from "./CardGrid";
+import { PagerSettings } from "./Pager";
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -69,9 +70,6 @@ export default function PictureGrid({
   const [viewing, setViewing] = useState<string | null>(null);
 
   const perPage = grid.per_page;
-  const nPages = Math.max(1, Math.ceil(frames.length / perPage));
-  const cur = Math.min(Math.max(page, 1), nPages);
-  const shown = frames.slice((cur - 1) * perPage, cur * perPage);
 
   async function act(frame: string, call: () => Promise<CardUpdate>, then: (card: CardUpdate["card"]) => void) {
     setBusy(frame);
@@ -88,18 +86,20 @@ export default function PictureGrid({
   const del = (f: string) => act(f, () => api.deleteFrame(camera, feature, f, via), (c) => onDeleted(f, c));
   const restore = (f: string) => (restorable ? act(f, () => api.restoreFrame(camera, feature, f), (c) => onChanged(f, c)) : undefined);
 
-  const pagerGrid = { page: cur, per_page: perPage, n_pages: nPages, total: frames.length };
-  const name = (side: string) => (where ? `${where} ${side}` : side);
-
   return (
     <>
-      <Pager grid={pagerGrid} settings={grid} onPage={onPage} onSettings={onGrid} where={name("top")} />
-      <ul style={{ display: "grid", gridTemplateColumns: `repeat(${grid.cols}, minmax(0, 1fr))`, gap: 8, padding: 0 }}>
-        {shown.map((f) => {
+      <CardGrid
+        items={frames}
+        keyOf={(f) => f}
+        settings={grid}
+        onSettings={onGrid}
+        page={page}
+        onPage={onPage}
+        where={where}
+        renderCard={(f) => {
           const x = extras?.(f) ?? {};
           return (
             <Card
-              key={f}
               camera={camera}
               feature={feature}
               classes={classes}
@@ -117,9 +117,8 @@ export default function PictureGrid({
               onRestore={() => restore(f)}
             />
           );
-        })}
-      </ul>
-      <Pager grid={pagerGrid} settings={grid} onPage={onPage} onSettings={onGrid} where={name("bottom")} />
+        }}
+      />
       {viewer && viewing && (
         <FrameViewer
           camera={camera}

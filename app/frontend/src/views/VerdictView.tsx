@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, VerdictItem, VerdictList, VerdictSummary } from "../api";
 import { classColor } from "../classify/colors";
+import CardGrid from "../classify/CardGrid";
 import FramePane from "../classify/FramePane";
-import Pager from "../classify/Pager";
+import { createPainter } from "../classify/painter";
+import { cursorFor } from "../classify/paint";
+import { useGridCard } from "../classify/useGridCard";
 import PictureViewer from "../classify/PictureViewer";
 import { useBrowse } from "../classify/useBrowse";
 import VerdictBar from "../VerdictBar";
@@ -27,38 +30,42 @@ const STATUS_TEXT: Record<string, string> = {
   stale: "stale",
 };
 
-const DEFAULT_SETTINGS = { per_page: 24, cols: 4, per_page_options: [12, 24, 48, 96], cols_options: [3, 4, 5, 6, 8] };
+/** Painting on the Verdict grid: hold 1 (OK), 2 (NG) or 0 (clear my decision) and move over the cards. */
+const verdictPainter = createPainter<string>((e) => (/^[012]$/.test(e.key) ? e.key : null));
 
-const isTypingTarget = (t: EventTarget | null) => {
-  const el = t as HTMLElement | null;
-  return !!el && (el.isContentEditable || ["INPUT", "SELECT", "TEXTAREA"].includes(el.tagName));
-};
+const DEFAULT_SETTINGS = { per_page: 24, cols: 4, per_page_options: [12, 24, 48, 96], cols_options: [3, 4, 5, 6, 8] };
 
 function Card({ camera, item, busy, onDecide, onOpen }: { camera: string; item: VerdictItem; busy: boolean; onDecide: (cls: "OK" | "NG" | null) => void; onOpen: () => void }) {
   const verdict = item.verdict;
-  // As in Classify, keys act on the card under the mouse: 1 = OK, 2 = NG, 0 = clear my decision.
-  const [hovered, setHovered] = useState(false);
-  const latest = useRef({ busy, item, onDecide });
-  latest.current = { busy, item, onDecide };
-  useEffect(() => {
-    if (!hovered) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.ctrlKey || e.metaKey || e.altKey || e.repeat || isTypingTarget(e.target) || !/^[012]$/.test(e.key)) return;
-      const cur = latest.current;
-      if (cur.busy) return;
+  // The shared grid-card behaviour (`useGridCard`), as on Classify: keys act on the card under the mouse (1 = OK, 2 = NG,
+  // 0 = clear my decision) and holding one while moving the mouse paints the cards. Painting never overrides a decision
+  // of yours: 1 and 2 only decide cards you have not decided, 0 only clears cards you have.
+  const { props } = useGridCard(verdictPainter, item.frame, {
+    onKey: (e) => {
+      if (!/^[012]$/.test(e.key) || busy) return false;
       if (e.key === "0") {
-        if (cur.item.decision) cur.onDecide(null);
-      } else cur.onDecide(e.key === "1" ? "OK" : "NG");
-      e.preventDefault();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [hovered]);
+        if (item.decision) onDecide(null);
+      } else onDecide(e.key === "1" ? "OK" : "NG");
+      verdictPainter.mark(item.frame);
+      return true;
+    },
+    paint: (mode) => {
+      if (busy) return false;
+      if (mode === "0") {
+        if (!item.decision) return false;
+        onDecide(null);
+      } else {
+        if (item.decision) return false;
+        onDecide(mode === "1" ? "OK" : "NG");
+      }
+      return true;
+    },
+    cursorOf: (mode) => cursorFor(mode, ["OK", "NG"]),
+  });
   return (
     <article
       data-testid={`verdict-card-${item.frame}`}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      {...props}
       style={{ border: "1px solid var(--border)", borderRadius: "var(--radius)", background: "var(--panel)", padding: 8, minWidth: 0, boxSizing: "border-box" }}
     >
       <button
@@ -127,20 +134,21 @@ function VerdictViewer({
   camera,
   items,
   start,
-  busy,
+  busyFrames,
   onDecide,
   onClose,
 }: {
   camera: string;
   items: VerdictItem[];
   start: string;
-  busy: boolean;
+  busyFrames: Set<string>;
   onDecide: (frame: string, cls: "OK" | "NG" | null) => void;
   onClose: () => void;
 }) {
   const frames = items.map((i) => i.frame);
   const { frame, index, go } = useBrowse(frames, start, onClose);
   const item = items.find((i) => i.frame === frame);
+  const busy = busyFrames.has(frame);
   const latest = useRef({ frame, item, busy, onDecide });
   latest.current = { frame, item, busy, onDecide };
   const onKey = (e: KeyboardEvent): boolean => {
@@ -208,7 +216,7 @@ export default function VerdictView({ camera }: { camera: string }) {
   const [list, setList] = useState<VerdictList | null>(null);
   const [summary, setSummary] = useState<VerdictSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<Set<string>>(new Set()); // the frames whose decision is being saved (per frame, so a sweep is not held up)
   const [viewing, setViewing] = useState<string | null>(null);
 
   const load = useCallback(() => {
@@ -237,14 +245,21 @@ export default function VerdictView({ camera }: { camera: string }) {
   }
 
   async function decide(frame: string, cls: "OK" | "NG" | null) {
-    setBusy(true);
+    const mark = (on: boolean) =>
+      setBusy((b) => {
+        const n = new Set(b);
+        if (on) n.add(frame);
+        else n.delete(frame);
+        return n;
+      });
+    mark(true);
     try {
       await api.verdictDecide(camera, frame, cls);
       load();
     } catch (e) {
       setError(msg(e));
     } finally {
-      setBusy(false);
+      mark(false);
     }
   }
 
@@ -281,15 +296,19 @@ export default function VerdictView({ camera }: { camera: string }) {
       {list && list.items.length === 0 && <p>Nothing here.</p>}
       {list && list.items.length > 0 && (
         <>
-          <Pager grid={list} settings={settings} onPage={setPage} onSettings={changeSettings} where="top" />
-          <div style={{ display: "grid", gridTemplateColumns: `repeat(${settings.cols}, minmax(0, 1fr))`, gap: 8 }}>
-            {list.items.map((item) => (
-              <Card key={item.frame} camera={camera} item={item} busy={busy} onDecide={(c) => void decide(item.frame, c)} onOpen={() => setViewing(item.frame)} />
-            ))}
-          </div>
-          <Pager grid={list} settings={settings} onPage={setPage} onSettings={changeSettings} where="bottom" />
+          <CardGrid
+            items={list.items}
+            keyOf={(item) => item.frame}
+            serverPage={list}
+            settings={settings}
+            onSettings={changeSettings}
+            page={page}
+            onPage={setPage}
+            container="div"
+            renderCard={(item) => <Card camera={camera} item={item} busy={busy.has(item.frame)} onDecide={(c) => void decide(item.frame, c)} onOpen={() => setViewing(item.frame)} />}
+          />
           {viewing && (
-            <VerdictViewer camera={camera} items={list.items} start={viewing} busy={busy} onDecide={(f, c) => void decide(f, c)} onClose={() => setViewing(null)} />
+            <VerdictViewer camera={camera} items={list.items} start={viewing} busyFrames={busy} onDecide={(f, c) => void decide(f, c)} onClose={() => setViewing(null)} />
           )}
         </>
       )}

@@ -8,7 +8,7 @@ import FrameViewer from "../classify/FrameViewer";
 import SimilarPanel from "../classify/SimilarPanel";
 import { methodTag } from "../methodTags";
 import ClearPanel from "../classify/ClearPanel";
-import Pager from "../classify/Pager";
+import CardGrid from "../classify/CardGrid";
 import DeletedByDay from "../classify/DeletedByDay";
 import SuggestPanel from "../classify/SuggestPanel";
 import { useJob } from "../useJob";
@@ -420,18 +420,16 @@ export default function ClassifyView({ camera, product }: { camera: string; prod
           {grid && grid.total === 0 && <p>No frames match this view.</p>}
           {grid && grid.total > 0 && (
             <>
-              <Pager grid={grid} settings={st.settings} onPage={setPage} onSettings={changeSetting} where="top" />
-              <ul
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: `repeat(${st.settings.cols}, minmax(0, 1fr))`, // exactly the chosen number of columns
-                  gap: 8,
-                  padding: 0,
-                }}
-              >
-                {grid.items.map((card) => (
+              <CardGrid
+                items={grid.items}
+                keyOf={(card) => card.frame}
+                serverPage={grid}
+                settings={st.settings}
+                onSettings={changeSetting}
+                page={page}
+                onPage={setPage}
+                renderCard={(card) => (
                   <Card
-                    key={card.frame}
                     camera={camera}
                     feature={feature}
                     classes={classes}
@@ -450,9 +448,8 @@ export default function ClassifyView({ camera, product }: { camera: string; prod
                         : undefined
                     }
                   />
-                ))}
-              </ul>
-              <Pager grid={grid} settings={st.settings} onPage={setPage} onSettings={changeSetting} where="bottom" />
+                )}
+              />
               {viewing && (
                 <FrameViewer
                   camera={camera}

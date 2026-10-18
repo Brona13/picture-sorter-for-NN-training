@@ -34,7 +34,10 @@ beforeEach(() => {
     }),
   );
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  fireEvent.blur(window); // ends any painting stroke
+  vi.unstubAllGlobals();
+});
 
 test("opens on contradictions and shows where each ROI's label came from", async () => {
   render(<VerdictView camera="camA" />);
@@ -77,6 +80,40 @@ test("clicking a picture opens the shared viewer: keys decide, the file name sit
   await waitFor(() => expect(within(viewer).getByTestId("viewer-filename")).toHaveTextContent("b.png"));
   fireEvent.keyDown(window, { key: "Escape" });
   expect(screen.queryByRole("dialog", { name: "Full-size picture" })).toBeNull();
+});
+
+test("holding 1, 2 or 0 and sweeping the mouse over the cards paints them, and never overrides a decision of yours", async () => {
+  list = () => ({
+    status: "contradiction", page: 1, per_page: 24, n_pages: 1, total: 3,
+    items: [item("a.png"), item("b.png", { status: "ng", verdict: "NG", kind: "manual", decision: "NG" }), item("c.png")],
+  });
+  render(<VerdictView camera="camA" />);
+  await screen.findByTestId("verdict-card-a.png");
+  const sweep = (f: string) => fireEvent.mouseMove(screen.getByTestId(`verdict-card-${f}`), { movementX: 6, movementY: 2 });
+  const decisions = () => calls.filter((c) => c.url.includes("/verdicts/decision")).map((c) => `${c.body.frame}:${c.body.cls}`);
+  const cursor = () => (document.documentElement.classList.contains("painting") ? decodeURIComponent(document.documentElement.style.getPropertyValue("--paint-cursor")) : null);
+  fireEvent.keyDown(window, { key: "1" });
+  expect(cursor()).toBeNull(); // no pointer over a card yet
+  for (const f of ["a.png", "b.png", "c.png"]) sweep(f);
+  await waitFor(() => expect(decisions()).toEqual(["a.png:OK", "c.png:OK"])); // b.png is your decision: left alone
+  fireEvent.keyUp(window, { key: "1" });
+  expect(cursor()).toBeNull();
+  fireEvent.keyDown(window, { key: "0" });
+  for (const f of ["a.png", "b.png", "c.png"]) sweep(f);
+  await waitFor(() => expect(decisions()).toEqual(["a.png:OK", "c.png:OK", "b.png:null"])); // only the card with a decision of yours is cleared
+  fireEvent.keyUp(window, { key: "0" });
+});
+
+test("the sweep cursor on Verdict is the class colour: green for OK, red for NG, from the moment the key goes down over a card", async () => {
+  render(<VerdictView camera="camA" />);
+  const card = await screen.findByTestId("verdict-card-a.png");
+  const cursor = () => (document.documentElement.classList.contains("painting") ? decodeURIComponent(document.documentElement.style.getPropertyValue("--paint-cursor")) : null);
+  await userEvent.hover(card);
+  fireEvent.keyDown(window, { key: "2" });
+  expect(cursor()).toContain("#c62828");
+  fireEvent.keyUp(window, { key: "2" });
+  fireEvent.keyDown(window, { key: "1" });
+  expect(cursor()).toContain("#1a7f37");
 });
 
 test("a stale decision offers Keep and Clear", async () => {

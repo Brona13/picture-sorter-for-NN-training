@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from "react";
 import { CardData, frameImageUrl } from "../api";
 import { methodTag } from "../methodTags";
 import { classColor, clusterColor } from "./colors";
-import { markPainted, paintAction, trackPaintKey } from "./paint";
+import { cursorFor, labelPainter, markPainted } from "./paint";
+import { useGridCard } from "./useGridCard";
 
 interface Props {
   camera: string;
@@ -49,64 +49,53 @@ const badge = (bg: string): React.CSSProperties => ({
  */
 export const MAX_SHORTCUT_CLASSES = 9;
 
-function isTypingTarget(target: EventTarget | null): boolean {
-  const el = target as HTMLElement | null;
-  return !!el && (el.isContentEditable || ["INPUT", "SELECT", "TEXTAREA"].includes(el.tagName));
-}
-
 export default function Card({ camera, feature, classes, methods, card, busy, onLabel, onGolden, onDelete, onRestore, isRep, onSetRep, fullSize, onOpen, caption, onSimilar }: Props) {
   const { frame, label, golden, deleted, bars, leanings, cluster, edge } = card;
 
-  // Number keys act on the card under the mouse. The handler is reread from a ref so the window
-  // listener only comes and goes with hovering, not with every render.
-  const [hovered, setHovered] = useState(false);
-  useEffect(trackPaintKey, []);
-  const latest = useRef({ classes, label, golden, busy, deleted, onLabel, onGolden, onDelete });
-  latest.current = { classes, label, golden, busy, deleted, onLabel, onGolden, onDelete };
-  useEffect(() => {
-    if (!hovered) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.ctrlKey || e.metaKey || e.altKey || e.repeat || isTypingTarget(e.target)) return;
+  // The shared grid-card behaviour (`useGridCard`): number keys act on the card under the mouse, and holding one while moving
+  // the mouse paints the cards. The page-specific part is only what a key does to a labeling card.
+  const { props } = useGridCard(labelPainter, frame, {
+    onKey: (e) => {
       const isGoldenKey = e.code === "Backquote";
       const isDeleteKey = e.key === "Delete";
-      if (!isGoldenKey && !isDeleteKey && !/^[0-9]$/.test(e.key)) return;
-      const cur = latest.current;
-      if (cur.busy || cur.deleted) return;
+      if (!isGoldenKey && !isDeleteKey && !/^[0-9]$/.test(e.key)) return false;
+      if (busy || deleted) return false;
       if (!isGoldenKey && !isDeleteKey) markPainted(frame);
       if (isDeleteKey) {
-        cur.onDelete();
-        e.preventDefault();
-        return;
+        onDelete();
+        return true;
       }
       if (isGoldenKey) {
-        if (cur.label === null) return; // a golden is always a labeled frame
-        cur.onGolden(!cur.golden);
-        e.preventDefault();
-        return;
+        if (label === null) return false; // a golden is always a labeled frame
+        onGolden(!golden);
+        return true;
       }
       const n = Number(e.key);
       if (n === 0) {
-        if (cur.label !== null) cur.onLabel(null);
+        if (label !== null) onLabel(null);
       } else {
-        const cls = cur.classes[n - 1];
-        if (cls === undefined || n > MAX_SHORTCUT_CLASSES) return;
-        cur.onLabel(cur.label === cls ? null : cls);
+        const cls = classes[n - 1];
+        if (cls === undefined || n > MAX_SHORTCUT_CLASSES) return false;
+        onLabel(label === cls ? null : cls);
       }
-      e.preventDefault();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [hovered]);
+      return true;
+    },
+    // Painting: a class key labels unlabeled cards, 0 clears labeled non-golden ones; goldens never change.
+    paint: (mode) => {
+      if (busy || deleted || golden) return false;
+      const n = Number(mode);
+      if (n >= 1 && (n > MAX_SHORTCUT_CLASSES || classes[n - 1] === undefined)) return false;
+      if (n === 0 ? label === null : label !== null) return false;
+      onLabel(n === 0 ? null : classes[n - 1]);
+      return true;
+    },
+    cursorOf: (mode) => cursorFor(mode, classes),
+  });
 
   return (
     <li
       data-testid={`card-${frame}`}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      onMouseMove={(e) => {
-        const act = paintAction(e.nativeEvent, { frame, label, golden, deleted, busy }, classes, MAX_SHORTCUT_CLASSES);
-        if (act !== undefined) onLabel(act);
-      }}
+      {...props}
       style={{ border: "1px solid #ccc", borderRadius: 8, padding: 6, listStyle: "none" }}
     >
       {(() => {
