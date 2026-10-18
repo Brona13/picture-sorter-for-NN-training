@@ -9,6 +9,7 @@ with their labels (``labels.via``) and deletes (``deleted_frames.source``); see 
 """
 from __future__ import annotations
 
+import chain
 import datamodel
 import db
 import dedup
@@ -29,6 +30,7 @@ TOOLS = (
     "dedup/clusters",
     "dedup/outliers",
     "roi",
+    "chain",
     "detector",
     "edge-angle",
     "classify",
@@ -82,6 +84,7 @@ def used(camera: str) -> dict[str, bool]:
         or any(db.muted_frames(camera, f) or dedup.load_snapshot(camera, f) is not None for f in features),
         "dedup/outliers": acted(VIA_OUTLIERS),
         "roi": bool(features),
+        "chain": bool(db.get_setting(camera, chain.SETTING_KEY)),
         "detector": any(pipeline.vision_configured(camera, f) for f in features),
         "edge-angle": any(edge_angle.get(camera, f) is not None for f in features),
         "classify": classify_labels or "user" in deletes or "Classify" in deletes,

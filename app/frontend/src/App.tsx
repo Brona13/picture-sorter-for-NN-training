@@ -9,6 +9,7 @@ import StatusBar from "./StatusBar";
 import ToolIcon from "./ToolIcon";
 import StepBar from "./StepBar";
 import { CONFIG_VIEW, SECTIONS, VIEWS, sectionOf } from "./views";
+import ChainView from "./views/ChainView";
 import ClassifyView from "./views/ClassifyView";
 import ConfigurationView from "./views/ConfigurationView";
 import DetectorView from "./views/DetectorView";
@@ -225,6 +226,7 @@ export default function App() {
               />
             }
           />
+          <Route path="/chain" element={<ChainView camera={camera} />} />
           <Route path="/status" element={<StatusView camera={camera} />} />
           <Route
             path="/versions"

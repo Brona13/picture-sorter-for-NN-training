@@ -259,6 +259,63 @@ export interface RoiUpsert {
   shared_with?: string[];
 }
 
+/** One box of the chain canvas: Ingest, or one ROI (see `chain.py`). */
+export interface ChainNode {
+  id: string;
+  kind: "ingest" | "roi";
+  /** The ROI's feature name (null for Ingest). */
+  ref: string | null;
+  label: string;
+  x: number;
+  y: number;
+  role: string | null;
+  /** classify (defines the products), name (`<product>::<roi>`), products (shared list), camera (whole camera). */
+  scope: "classify" | "name" | "products" | "camera" | null;
+  product: string | null;
+  products: string[];
+  classes: string[];
+  frames: number;
+  labeled: number;
+}
+
+export interface ChainEdge {
+  id: string;
+  source: string;
+  /** `p:<product>` for an arrow that leaves one product handle of the classify ROI. */
+  source_handle: string | null;
+  target: string;
+  /** An arrow fixed by the ROI's name (`<product>::<roi>`); it cannot be removed. */
+  locked: boolean;
+}
+
+export interface ChainViewport {
+  x: number;
+  y: number;
+  zoom: number;
+}
+
+export interface ChainCanvas {
+  camera: string;
+  nodes: ChainNode[];
+  edges: ChainEdge[];
+  products: string[];
+  classify: string | null;
+  viewport: ChainViewport | null;
+}
+
+export interface ChainLayout {
+  nodes: Record<string, { x: number; y: number; label?: string }>;
+  viewport: ChainViewport | null;
+}
+
+export interface ChainDeletePreview {
+  feature: string;
+  role: string;
+  counts: { labels: number; goldens: number; detections: number; versions: number };
+  /** Product-scoped ROIs that stay behind when the product-sorting ROI is deleted. */
+  dependents: string[];
+}
+
 export interface FilterParamSpec {
   min: number;
   max: number;
@@ -874,6 +931,13 @@ export const api = {
     request<{ removed: Record<string, number> }>(
       `/cameras/${encodeURIComponent(camera)}/rois/${encodeURIComponent(feature)}`,
       send("DELETE"),
+    ),
+  chain: (camera: string) => request<ChainCanvas>(`/cameras/${encodeURIComponent(camera)}/chain`),
+  saveChainLayout: (camera: string, layout: ChainLayout) =>
+    request<ChainCanvas>(`/cameras/${encodeURIComponent(camera)}/chain/layout`, send("PUT", layout)),
+  chainDeletePreview: (camera: string, feature: string) =>
+    request<ChainDeletePreview>(
+      `/cameras/${encodeURIComponent(camera)}/chain/delete-preview?feature=${encodeURIComponent(feature)}`,
     ),
   setProductNames: (camera: string, names: string[]) =>
     request<{ products: string[] }>(

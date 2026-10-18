@@ -5,12 +5,12 @@
  */
 export type IconId =
   | "overview" | "status" | "ingest" | "scatter" | "clusters" | "outliers" | "roi" | "detector"
-  | "edge-angle" | "classify" | "insights" | "verdict" | "augmentation" | "versions";
+  | "edge-angle" | "classify" | "insights" | "verdict" | "augmentation" | "versions" | "chain";
 
 /** Hue of the colourful state, so every tool is recognisable by colour too. */
 const HUE: Record<IconId, number> = {
   overview: 215, status: 200, ingest: 160, scatter: 265, clusters: 285, outliers: 330, roi: 30,
-  detector: 355, "edge-angle": 45, classify: 145, insights: 190, verdict: 120, augmentation: 12, versions: 235,
+  detector: 355, "edge-angle": 45, classify: 145, insights: 190, verdict: 120, augmentation: 12, versions: 235, chain: 75,
 };
 
 const A = "var(--ti-a)";
@@ -45,6 +45,8 @@ function Shapes({ id }: { id: IconId }) {
       return (<><circle cx="12" cy="12" r="8.5" {...stroke} /><path d="M8 12.5l3 3 5-6" fill="none" stroke={B} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" /></>);
     case "augmentation":
       return (<><rect x="4" y="7" width="11" height="11" {...stroke} /><rect x="9" y="4" width="11" height="11" fill={B} opacity="0.6" transform="rotate(12 14.5 9.5)" /></>);
+    case "chain":
+      return (<><rect x="3" y="9" width="6" height="6" rx="1.5" fill={A} /><rect x="15" y="4" width="6" height="6" rx="1.5" fill={B} /><rect x="15" y="14" width="6" height="6" rx="1.5" fill={B} /><path d="M9 12h3M12 7h3M12 17h3M12 7v10" {...stroke} /></>);
     case "versions":
       return (<><path d="M12 4l9 4.5-9 4.5-9-4.5z" fill={B} stroke={A} strokeWidth="1.5" strokeLinejoin="round" /><path d="M3 12.5l9 4.5 9-4.5M3 16.5l9 4.5 9-4.5" {...stroke} /></>);
   }
