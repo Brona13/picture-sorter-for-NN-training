@@ -55,6 +55,8 @@ Freeze a version
 Export training-ready class folders
 ```
 
+The **Chain** page (v1.51.0) draws this per camera as boxes and arrows: Ingest → ROI product → Classify → ROI feature → Classify. It is a view of the ROI definitions, not a second source of truth.
+
 ## Current hierarchy
 
 The current data hierarchy is:
@@ -298,6 +300,8 @@ The application is a FastAPI backend (`app/backend/`) that wraps the domain modu
 - `app/backend/db.py` — SQLite schema and low-level persistence
 - `app/backend/labels.py` — direct label/golden state and transactional invariants
 - `app/backend/versions.py` — freeze, revert, and export behavior
+- `app/backend/chain.py` — the Chain canvas as a view of the ROIs: boxes, derived arrows, per-box status, layout in the `chain.canvas` setting (v1.51.0)
+- `app/backend/products.py` — renaming a product with everything that carries its name (`db.rename_products`, one transaction; v1.63.0)
 
 ### Scoring
 
@@ -322,16 +326,17 @@ The application is a FastAPI backend (`app/backend/`) that wraps the domain modu
 ### API (`app/backend/api/`)
 
 One thin router per area, each delegating to the domain modules above:
-`cameras`, `status`, `versions_api`, `ingest_api`, `frames_api` (frames and thumbnails),
-`roi_api`, `classify_api`, `insights_api`, `dedup_api`, `overview_api` (all cameras with reference frame and ROIs for the Overview page), `outliers_api`, `similar_api`, `config_api` (active scoring methods), `rules_api`, `motion_api`, `vision_api` (filter catalogue, per-feature filter/mask/detector settings, live preview, detection job and review).
+`cameras` (also `DELETE /cameras/{camera}` with its delete preview), `status`, `versions_api`, `ingest_api`, `frames_api` (frames and thumbnails),
+`roi_api` (also the product list and product renames), `chain_api` (the Chain canvas and its layout), `classify_api` (also the whole-camera file-name search of the grid, `unmute`, live counts), `insights_api`, `dedup_api` (also `scatter/cached`), `overview_api` (all cameras with reference frame and ROIs for the Overview page), `outliers_api`, `similar_api`, `config_api` (active scoring methods), `rules_api`, `motion_api`, `vision_api` (filter catalogue, per-feature filter/mask/detector settings, live preview, detection job and review).
 
 ### Frontend (`app/frontend/src/`)
 
 - `App.tsx` — top bar (title, the four sections, camera, product, hardware badge, version and ⚙️) with a second-level tool bar for sections that hold several pages and routes; `lastSession.ts` — what the browser remembers
-- `SidePanel.tsx` (options panel, `PanelGroup`), `InfoTip.tsx`, `ProductSelect.tsx`, `WheelRange.tsx` (slider that answers the wheel), `HardwareBadge.tsx`, `StepBar.tsx`
+- `SidePanel.tsx` (options panel, `PanelGroup`, `PanelSection`, `PanelPortal`: a view writes its controls into the panel), `RankContext.ts` + `RankSelect.tsx` (the top bar's *Rank using*), `CameraDelete.tsx` (delete a camera), `InfoTip.tsx`, `ProductSelect.tsx`, `WheelRange.tsx` (slider that answers the wheel), `HardwareBadge.tsx`, `StepBar.tsx`
 - `api.ts` — typed API client
-- `views/` — Overview, Status, Ingest, Dedup, ROI editor, Detector, Edge angle, Classify, Insights, Verdict, Augmentation, Versions (grouped into sections in `views.ts`)
+- `views/` — Overview, Chain, Status, Ingest, Dedup, ROI editor, Detector, Edge angle, Classify, Insights, Verdict, Augmentation, Versions (grouped into sections in `views.ts`)
 - `classify/` — `PictureGrid` (shared paged card grid + viewer), card, bulk, clear-labels, auto-assign, suggested-goldens panels, SVG scatter (drag a rectangle to zoom and list the frames inside, optionally delete them with a note, or label them all as one of the feature's classes with the "Label N as <class>" buttons, which overwrite existing labels and keep goldens in step; right-click resets), per-day Deleted view (follows the Classify per-page / column setting and pages through the days, newest first; v1.29.1), `FrameViewer.tsx` (full-size picture overlay), cluster browser (row of cluster tabs, paged card grid per cluster with its own grid size per ROI; cards can be labeled, made golden, made representative or deleted, with the same hover keys as Classify, plus Delete)
+- `chain/chainModel.ts` + `views/ChainView.tsx` — the Chain canvas (React Flow, `@xyflow/react`); `classify/` also holds `ClassifyKpis` (the clickable numbers), `ClassifyScatter` / `ClassifyOutliers` (the Scatter and Outliers views of Classify) over the shared `ScatterWorkbench` (map, projection job, selection) and `OutlierPanel`, `useDedupState` (embedding choice), `SearchExtras` (the viewer's Product row, Show again and the zoom-line note), `ProductNamesEditor` (rename products), `CardGrid` (also the pager's file-name search), `toolInfo`, `paint` / `painter` / `useGridCard` (sweeps)
 - `RoiCanvas.tsx` + `roiGeometry.ts` — pointer-driven ROI draw/move/resize in normalised coordinates
 - `views/ConfigurationView.tsx` (method checkboxes), `methodTags.ts` (CPU/R18/R50), `views.ts` (menu icons, `SECTIONS` = Overview (Overview, Status), Management (Ingest), Manipulation (Dedup, ROI editor, Detector, Edge angle, Classify, Insights, Verdict, Augmentation), Export (Versions); `CONFIG_VIEW` is the ⚙️ button at the right of the top bar)
 - `ZoomPane.tsx` + `zoomGeometry.ts` — zoomable, pannable bordered picture viewport (used by `LineCanvas`; planned for the other canvases)
@@ -421,9 +426,11 @@ Listed in recommended priority order:
 
 0a. **Easy access to hidden and deleted pictures** (noted 2026-10-18): the Classify numbers now leave out deleted and muted pictures so the user works only with valid ones, but the user must keep full control of the dataset. Add one obvious place (a view on the Overview or Status page, or a small section per camera) that lists the deleted pictures (with note, time, Restore) and the muted ones per ROI (with Unmute), and shows their counts. Today deleted ones are in Classify's *Show: Deleted*, muted ones behind its *Show muted* checkbox, and either can be found by the file-name search.
 
-0. **Chain canvas, next steps** (`plans/chain-canvas.md`): look at the Chain page in a browser (v1.51.0 was tested with mocked API and unit tests, not clicked through), then filter and detector boxes bound to `vision.<feature>`; **Merge box** for A/B branches (late stage: it joins variants such as two ROIs or detectors and must never blend classical and ResNet scores); a "run the whole chain" button; the Overview rework.
+0b. **Per-product outlier scoring** (proposed 2026-10-18, not built): in the Outliers view of Classify add a *Pictures* choice (All, Labeled <class>, Unlabeled) so the k nearest neighbours are searched inside one product (or OK / NG) only; the list says "Outliers among <group>, N pictures", a group too small for k says so, and the Dedup Outliers page stays on All. Needs a small backend change in `outliers.py` / `dedup_api`.
 
-1. **Look at the UI restructure and the Detector rework in a browser on real data** (v1.31.0-v1.50.0: top bar and tool bar, status bar, tool icons, Scatter / Clusters / Outliers as tools, the shared picture viewer and card grids with painting, the Detector's method choice, the review grid with delete, undo, filter and sort) and judge it; run detection again (the default method is now template matching, so earlier detections are stale) and compare the boxes with the 768 / 512 model sizes if you keep the model. Then: choose the hardware badge look, roll the options-panel layout out to the other tools, convert their explanatory text to info tips, and decide on the parked items from `discussions/picture-sorter-ui-navigation-handover.md` (background precompute of scatter and clustering with a "ready / needs refresh" indicator, the status bar's frame position, final names for Management and Manipulation, the Detector page's remaining steps). Possible follow-up: do not drop the scatter / cluster / result caches on every accepted box when the mask is off (`vision_settings.purge_derived`).
+0. **Chain canvas, next steps** (`plans/chain-canvas.md`): look at the Chain page in a browser (v1.51.0-v1.57.1 were tested with a mocked API and unit tests, not clicked through), then filter and detector boxes bound to `vision.<feature>`; **Merge box** for A/B branches (late stage: it joins variants such as two ROIs or detectors and must never blend classical and ResNet scores); a "run the whole chain" button; the Overview rework.
+
+1. **Look at the UI restructure, the Detector rework and everything since in a browser on real data** (v1.31.0-v1.63.2, the second half of which — the Chain page, camera delete, the Classify options panel, numbers, search, X / Delete sweeps, product rename, Rank using in the top bar — has only been tested with a mocked API; v1.31.0-v1.50.0: top bar and tool bar, status bar, tool icons, Scatter / Clusters / Outliers as tools, the shared picture viewer and card grids with painting, the Detector's method choice, the review grid with delete, undo, filter and sort) and judge it; run detection again (the default method is now template matching, so earlier detections are stale) and compare the boxes with the 768 / 512 model sizes if you keep the model. Then: choose the hardware badge look, roll the options-panel layout out to the other tools, convert their explanatory text to info tips, and decide on the parked items from `discussions/picture-sorter-ui-navigation-handover.md` (background precompute of scatter and clustering with a "ready / needs refresh" indicator, the status bar's frame position, final names for Management and Manipulation, the Detector page's remaining steps). Possible follow-up: do not drop the scatter / cluster / result caches on every accepted box when the mask is off (`vision_settings.purge_derived`).
 2. **Try the 2026-10-15 tools on real data** (nothing in v1.15.0-v1.20.0 has been used on the real cameras or in a browser): Overview stage chips and the step bar, Outliers, Find similar, the edge-angle rule (angle, band width), augmentation ranges (the "not measured" counts), the downstream results form. See `memory/handover-new-tools.md`.
 3. Find out which quality metrics the downstream system reports, then refine the Downstream results form (today: free-text metric names).
 4. Add focused automated tests for product-scope, version, and export invariants.
@@ -432,9 +439,9 @@ Listed in recommended priority order:
 7. Consider aligned difference views or heatmaps for faster human verification.
 8. Improve per-product grouping in Status and Versions.
 9. Add browser-level (end-to-end) tests for the React views; current frontend tests mock the API and cannot exercise real pointer interaction.
-10. Build the `setup_torch.sh` / `setup_torch.ps1` hardware detect-or-ask helper; investigate the flaky `test_clean_schema.py::MigrationV3ToV4Tests::test_parallel_first_connects_all_succeed`. See `memory/gpu-backends-rocm.md`.
+10. Build the `setup_torch.sh` / `setup_torch.ps1` hardware detect-or-ask helper; investigate the flaky `test_clean_schema.py::MigrationV3ToV4Tests::test_parallel_first_connects_all_succeed` ("database is locked", seen again 2026-10-18) and the occasional `DedupView.test.tsx` clustering test that fails once under the full-suite load and passes alone. See `memory/gpu-backends-rocm.md`.
 
-Deferred (discussed, not planned): **frontend bundle size** (v1.51.0: 680 kB, 210 kB gzipped, so `vite build` warns above 500 kB; the Chain canvas library is most of the growth; options: raise `build.chunkSizeWarningLimit`, or load `ChainView` lazily with a dynamic `import()`; to discuss), embedding drift over time (filenames carry `dd.mm.yyyy_hh.mm.ss`), reorganizing the menu into tabs or branches, further rule-based tools (object counting, presence in a zone, colour threshold, blob area).
+Deferred (discussed, not planned): **undo of a whole sweep** (a card deleted by a sweep has Restore on it, which does not bring its labels back; a stroke-level undo with Z was proposed and not built), **frontend bundle size** (v1.51.0: 680 kB, 210 kB gzipped, so `vite build` warns above 500 kB; the Chain canvas library is most of the growth; options: raise `build.chunkSizeWarningLimit`, or load `ChainView` lazily with a dynamic `import()`; to discuss), embedding drift over time (filenames carry `dd.mm.yyyy_hh.mm.ss`), reorganizing the menu into tabs or branches, further rule-based tools (object counting, presence in a zone, colour threshold, blob area).
 
 ## Explicitly out of scope
 

@@ -168,6 +168,10 @@ opens Ingest on the new camera. Tags are free text and belong to one camera (a p
 used on any camera, **×** removes a tag from that camera only, and the tag buttons above the camera cards filter
 the Overview (click a tag once to require it, again to exclude it, a third time to clear: a camera must carry every required tag and none of the excluded ones). Tags only describe and filter cameras.
 
+### Delete a camera
+
+Each camera on the Overview has **🗑 Delete camera…**. The warning lists what would go (the files and their size on disk, the pictures, ROIs, labels, goldens, versions and other records), and the button stays disabled until you type the camera's name again. Deleting removes everything related to the camera: its folder (pictures and exports), every database record of every page, and the cached vectors that belong only to it. **There is no trash and no undo**, and a camera with a job still running refuses it.
+
 ## Add images
 
 Use the **Ingest** view (select a camera first; new ones are created on the Overview page).
@@ -211,6 +215,28 @@ product classes.
 
 Deleting an ROI requires confirmation and removes its associated labels,
 goldens, cached results, versions, and deduplication state. Source frames remain unchanged.
+
+**Products.** Under *Products — classes of …* every product has its own field. Change a name to **rename** the product:
+its labels, goldens, versions and the ROIs that belong to it (`<product>::<roi>`, and the shared ROIs that list it) stay
+connected, and the Chain boxes keep their place. **+ Add product** adds one; **✕** takes one off the list (its labels and
+ROIs stay, they are just not offered). To swap two names, rename one of them first. Exports already written keep the old names.
+
+## The Chain page
+
+**Overview → Chain** draws the processing chain of the selected camera as boxes and arrows: **Ingest → ROI product →
+Classify → ROI feature → Classify**. It is a map of your ROIs, not a second copy: a box is Ingest, one ROI, or the Classify
+(labeling) step of an ROI, and the arrows come from the ROIs themselves.
+
+- The product ROI's **Classify** box shows the pictures per product and how many are not labeled yet, and has **one handle
+  per product**. Drag from a product handle to a feature ROI to scope that feature to the product (several handles = several
+  products); drag from Ingest to put it back on the whole camera. Deleting an arrow removes that product.
+- **+ ROI product** (type at least two product names) and **+ ROI feature** add real ROIs. Click a box to rename it (double-click
+  its name; this is only a display name), to open its **ROI editor** or **Classify** page, or to **Delete…** it (a warning
+  lists the labels, goldens, detections and versions that would go).
+- **ROI editor** and **Classify** open locked to that one ROI (no ROI list, no creating other ROIs, only its own rectangle) with
+  **← Back to chain**; the same pages from the menu keep their ROI selector.
+- Wheel zooms, drag pans, the corner button fits the whole map. Box positions and names are remembered per camera.
+
 
 ## Pipeline stages and the step bar
 
@@ -452,7 +478,17 @@ onto each one the pointer enters (once per stroke, never on a scroll), with the 
 action's colour from the moment the key goes down, on top of links and buttons too. Only the keys, the colours and what an
 action does differ by page.
 
-**Keyboard shortcuts:** hover a card and press `1`-`9` to set the class in the order of the card's buttons (the same number again removes the label), `0` to clear the label, or the key left of `1` to toggle golden (the frame must be labeled).
+**Keyboard shortcuts:** hover a card and press `1`-`9` to set the class in the order of the card's buttons (the same number again removes the label), `0` or `X` to clear the label, `Delete` to delete the picture, or the key left of `1` to toggle golden (the frame must be labeled). The buttons show only the labels; the key is in their hover hint. **Hold a key and move the mouse across the cards** to do the same to each one: a class key labels only the *unlabeled* cards, `0` / `X` clears labeled non-golden cards, `Delete` deletes unlabeled non-golden ones. A sweep never overwrites an existing label (clear it first, then paint), and a golden is never touched.
+
+**Deleting fades, it does not reflow.** A deleted card fades and stays where it is, with a Restore button, so nothing moves while you work; it drops out when you turn the grid (another page, page size, columns, View or search). The numbers above the grid count only the pictures you work with (not deleted, not hidden by duplicate removal).
+
+### The Classify page
+
+- **Numbers.** Above the grid, boxes show *Frames* ("of N" when the ROI covers only some products), one box per class of the ROI (the products on the product ROI, OK / NG on a feature, in the class colours) with its golden count, and *Unlabeled*. Click a box to see those pictures.
+- **View switch.** **Grid** (the default), **Scatter** (a 2D map: drag a rectangle to select many pictures, then label or delete them in one click) and **Outliers** (the most unusual pictures first). **🔄 Refresh scores** sits on the same line while the Grid is shown.
+- **Options panel** (right, `»` collapses it). It shows the selected view's properties: Show / Order by / the bulk tools for the Grid, embedding, projection and colour for Scatter, embedding, k and *Score outliers* for Outliers.
+- **Rank using** (ResNet 50 / 18 / Classical) is in the top bar next to Camera and Product.
+- **Search by file name.** The magnifying glass in the pager (top and bottom) filters the cards by part of a file name. In Classify's grid it searches the **whole camera**, deleted, hidden and out-of-scope pictures included. A picture outside the ROI's scope has a red frame (hover for its product), a hidden one a dark grey dashed frame. Click it: in a feature ROI the viewer shows a **Product** row (see and correct the product) next to the **Feature** buttons (OK / NG); a hidden picture has **Show again**. The bulk tools are off while a search is active.
 
 Frames can be labeled individually or through an explicitly selected bulk operation.
 

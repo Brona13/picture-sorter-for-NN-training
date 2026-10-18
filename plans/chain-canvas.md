@@ -8,6 +8,9 @@ last_updated: 2026-10-18
 
 # Chain canvas, v1 (ROI chain)
 
+> **Status (2026-10-18).** v1 is built and pushed (not yet clicked through in a browser). Delivered: 1.51.0 the Chain page (Ingest and ROI boxes, arrows derived from the ROIs, one handle per product, layout in `chain.canvas`, delete with a preview); 1.53.0 the **Classify box** of the product ROI (the product handles moved to it); 1.55.0 the **ROI editor opened locked to one ROI**; 1.56.0 a **Classify box for every feature ROI**; 1.56.1 the short *ROI editor* / *Classify* buttons on every ROI box; 1.57.1 **Classify locked to the ROI** with Back to chain; 1.63.0 renaming a product keeps the chain connected. The text below is the original plan; where it differs (the Classify boxes, the focused pages) the built behaviour is described in `docs/current-project.md` (*Chain canvas*).
+> **Still parked:** filter and detector boxes bound to `vision.<feature>`, the Merge box for A/B branches (never blends classical and ResNet), the run-the-whole-chain button, the Overview rework.
+
 ## Context
 `discussions/chain-canvas-handover.md` describes a per-camera visual canvas where the user builds the processing chain from tool boxes. Decisions from the discussion:
 
