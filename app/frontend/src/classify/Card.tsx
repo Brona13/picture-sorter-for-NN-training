@@ -51,6 +51,17 @@ export const MAX_SHORTCUT_CLASSES = 9;
 
 export default function Card({ camera, feature, classes, methods, card, busy, onLabel, onGolden, onDelete, onRestore, isRep, onSetRep, fullSize, onOpen, caption, onSimilar }: Props) {
   const { frame, label, golden, deleted, bars, leanings, cluster, edge } = card;
+  // Search results only: a picture outside this ROI's scope gets a red frame and cannot be labeled here until its
+  // product fits (open it to change the product); a muted one gets a dark grey dashed frame.
+  const outside = !!card.outside;
+  const muted = !!card.muted;
+  const frameHint = outside
+    ? card.product
+      ? `In product ${card.product}, so outside this ROI. Open the picture to change its product.`
+      : "No product yet, so outside this ROI. Open the picture to set its product."
+    : muted
+      ? "Muted for this ROI, so hidden from its grid. Open the picture to unmute it."
+      : undefined;
 
   // The shared grid-card behaviour (`useGridCard`): number keys act on the card under the mouse, and holding one while moving
   // the mouse paints the cards. The page-specific part is only what a key does to a labeling card.
@@ -59,7 +70,7 @@ export default function Card({ camera, feature, classes, methods, card, busy, on
       const isGoldenKey = e.code === "Backquote";
       const isDeleteKey = e.key === "Delete";
       if (!isGoldenKey && !isDeleteKey && !/^[0-9]$/.test(e.key)) return false;
-      if (busy || deleted) return false;
+      if (busy || deleted || outside) return false;
       if (!isGoldenKey && !isDeleteKey) markPainted(frame);
       if (isDeleteKey) {
         onDelete();
@@ -82,7 +93,7 @@ export default function Card({ camera, feature, classes, methods, card, busy, on
     },
     // Painting: a class key labels unlabeled cards, 0 clears labeled non-golden ones; goldens never change.
     paint: (mode) => {
-      if (busy || deleted || golden) return false;
+      if (busy || deleted || golden || outside) return false;
       const n = Number(mode);
       if (n >= 1 && (n > MAX_SHORTCUT_CLASSES || classes[n - 1] === undefined)) return false;
       if (n === 0 ? label === null : label !== null) return false;
@@ -96,7 +107,13 @@ export default function Card({ camera, feature, classes, methods, card, busy, on
     <li
       data-testid={`card-${frame}`}
       {...props}
-      style={{ border: "1px solid #ccc", borderRadius: 8, padding: 6, listStyle: "none" }}
+      title={frameHint}
+      style={{
+        border: outside ? "2px solid #c62828" : muted ? "2px dashed #555" : "1px solid #ccc",
+        borderRadius: 8,
+        padding: outside || muted ? 5 : 6,
+        listStyle: "none",
+      }}
     >
       {(() => {
         const img = (
@@ -227,9 +244,10 @@ export default function Card({ camera, feature, classes, methods, card, busy, on
         {classes.map((c, i) => (
           <button
             key={c}
-            disabled={busy}
+            disabled={busy || outside}
             aria-pressed={label === c}
             title={
+              (outside ? "Outside this ROI: set the picture's product first (open it). " : "") +
               (label === c ? "Click to remove the label. " : "") +
               (i < MAX_SHORTCUT_CLASSES ? `Hover the card and press ${i + 1}. Hold the key and move the mouse over cards to paint it on unlabeled ones.` : "")
             }
@@ -246,7 +264,7 @@ export default function Card({ camera, feature, classes, methods, card, busy, on
         ))}
         <button
           aria-label={golden ? "Remove golden" : "Make golden"}
-          disabled={busy || label === null}
+          disabled={busy || label === null || outside}
           title={
             label === null
               ? "Label the frame first, then star it to make it a golden reference for that class. Shortcut: the key left of 1."

@@ -33,47 +33,15 @@ A larger extension the user scoped on 2026-07-27, on top of [[flow-v3-classify-a
 - ✅ **ROI editor frame list is product-scoped (2026-07-27)** — drawing a product's ROI offers only that product's frames (so you can't draw a 2x4 box on a 4x4 picture), **with a fallback to the whole inbox** when the product has nothing classified yet, so the editor is never empty.
 - 📌 **Discoverability note:** the **sidebar Product selector is what assigns a new ROI to a product** — there is no separate control in the ROI editor form. The user overlooked this at first; they chose to keep the current mechanism rather than add an in-form picker, so if it trips anyone again, prefer a *clearer preview in the form* over a second source of truth.
 - ✅ **Shared ROIs across a product subset (2026-07-27)** — for a region that looks *identical* on some products (the user's case: "connector D" on 2x4 and 4x4RS). A camera-level quality ROI can carry `products=[...]` (`ROI.products`, absent = unrestricted): it is **one** feature with **one** golden set, one label set and one export, but `frames_for_feature` returns the **union** of those products' frames and `list_features_for` surfaces it under **each** of them (marked `🔗 shared` in the dropdowns; `datamodel.is_shared_feature`). Created via an *"Applies to products"* multiselect at camera level in the ROI editor; edited only at camera level (a product scope just names the shared ROIs covering it) so deleting from one product can't silently affect another. The decision rule to tell the user: **"would a golden from product X be a valid reference for product Y here?"** — yes ⇒ share; no ⇒ keep one ROI per product.
-- ✅ **Editing an existing ROI's products (2026-07-27)** — the create-form multiselect wasn't
-  enough (user: *"Only when creating a new ROI I can assign it to products"*). Each camera-level
-  quality ROI in *Defined ROIs* now has a **🔗 Applies to products** expander (multiselect +
-  Save) that re-assigns it **without redrawing**. Non-destructive and reversible: only the frame
-  set changes — labels/goldens/versions are keyed by feature name, so narrowing merely *hides*
+- ✅ **Editing an existing ROI's products (2026-07-27)** — the create-form multiselect wasn't enough (user: *"Only when creating a new ROI I can assign it to products"*). Each camera-level quality ROI in *Defined ROIs* now has a **🔗 Applies to products** expander (multiselect + Save) that re-assigns it **without redrawing**. Non-destructive and reversible: only the frame set changes — labels/goldens/versions are keyed by feature name, so narrowing merely *hides*
   the other products' frames and widening brings their labels back.
-- ✅ **The count gap is now explained in the UI (2026-07-27)** — the user hit exactly the gotcha
-  below ("Status says 207, this ROI says 135"). Two honest numbers reading as a contradiction is a
-  UI failure, so: a restricted ROI's card now says **"135 of 207 frames"** (plain "207 frames"
-  when it sees everything), the Defined ROIs list shows a one-off **info banner** naming how many
-  frames have no product yet and where to sort them, and Classify's shared-ROI caption carries the
-  same "covers N of M" note. Principle reused: *a surprising number must say why*.
-- ⚠️ **Gotcha — "all products selected" ≠ "left empty":** an unrestricted ROI (`products=None`)
-  covers the **whole inbox**, including frames not yet classified; a ROI listing *every* product
-  covers only frames that **have** a product. Measured on `pekat-cam3`: `suspension-rod-front-left`
-  (None) → 207 frames, `screw-bottom-1` (all three) → 135. Listing all products also makes the ROI
-  appear in every product scope. A shared ROI always shows the **union** of its products'
-  frames regardless of the sidebar product — Classify now says so in a caption.
+- ✅ **The count gap is now explained in the UI (2026-07-27)** — the user hit exactly the gotcha below ("Status says 207, this ROI says 135"). Two honest numbers reading as a contradiction is a UI failure, so: a restricted ROI's card now says **"135 of 207 frames"** (plain "207  frames" when it sees everything), the Defined ROIs list shows a one-off **info banner** naming how many frames have no product yet and where to sort them, and Classify's shared-ROI caption carries the same "covers N of M" note. Principle reused: *a surprising number must say why*.
+- ⚠️ **Gotcha — "all products selected" ≠ "left empty":** an unrestricted ROI (`products=None`) covers the **whole inbox**, including frames not yet classified; a ROI listing *every* product covers only frames that **have** a product. Measured on `pekat-cam3`: `suspension-rod-front-left` (None) → 207 frames, `screw-bottom-1` (all three) → 135. Listing all products also makes the ROI appear in every product scope. A shared ROI always shows the **union** of its products' frames regardless of the sidebar product — Classify now says so in a caption.
 - ✅ **Defined ROIs redesigned (2026-07-27)** — the user judged the ROI list "not really friendly".
-  Removed: normalised `x/y/w/h` (unreadable), the dead `cutouts: 0 selected · 0 rejected` line
-  (legacy of the retired Sort view), and the duplicated product listing. Added: a **square
-  thumbnail** of the cutout (recognise a ROI by looking at it), a **scope chip**
-  (`all frames` / `🔗 shared · …` / `<product> only` / `🗂 product sorter`), and the counts that
-  actually drive decisions (frames · ⭐goldens · labeled · active version). Products edit **in
-  place** via a multiselect that **saves on change** (`on_change=_save_products`, toast confirms)
-  — the per-ROI expander is gone. Fixed a latent `NameError` in the delete-confirm text, which
-  still referenced the removed cutout counts. See [[streamlit-gotchas]] for the image-404 and
-  `st.html` findings this uncovered.
+  Removed: normalised `x/y/w/h` (unreadable), the dead `cutouts: 0 selected · 0 rejected` line (legacy of the retired Sort view), and the duplicated product listing. Added: a **square thumbnail** of the cutout (recognise a ROI by looking at it), a **scope chip** (`all frames` / `🔗 shared · …` / `<product> only` / `🗂 product sorter`), and the counts that actually drive decisions (frames · ⭐goldens · labeled · active version). Products edit **in place** via a multiselect that **saves on change** (`on_change=_save_products`, toast confirms) — the per-ROI expander is gone. Fixed a latent `NameError` in the delete-confirm text, which still referenced the removed cutout counts. See [[streamlit-gotchas]] for the image-404 and `st.html` findings this uncovered.
 - ⏭ **Phase 4:** group Status/Versions by product (export-path sanitising already done in P3).
-- ✅ **Star ≡ "this labelled frame is a reference" (2026-07-28).** The Classify grid used to
-  have **two rows** of buttons — labels + a per-class ☆/★ toggle (6 controls for a 3-class ROI).
-  Rebuilt as one row: `[OK] [★] [NG]` for 2 classes (star between, as the user asked), `[c1] …
-  [cN] [★]` for N>2. The **star is disabled until the frame has a label**, and starring it makes
-  it a golden reference for the currently-labelled class. **Clicking a different class moves the
-  star with it** (unmark old class, mark new) so a golden's class can never disagree with its
-  label. This makes the earlier "exclusive goldens" rule structural — one label per frame ⇒ one
-  golden class — so `mark_golden_exclusive`, `datamodel.feature_role` and the `exclusive_goldens`
-  branch are removed. **Migration ran once** on `pekat-cam3`: 54 goldens carried no label
-  (goldens and labels used to be independent); each was labelled with its golden class (zero
-  conflicts across all 7 ROIs, verified pre- and post-migration; labels are append-only, so old
-  history stays).
+- ✅ **Star ≡ "this labelled frame is a reference" (2026-07-28).** The Classify grid used to have **two rows** of buttons — labels + a per-class ☆/★ toggle (6 controls for a 3-class ROI).
+  Rebuilt as one row: `[OK] [★] [NG]` for 2 classes (star between, as the user asked), `[c1] … [cN] [★]` for N>2. The **star is disabled until the frame has a label**, and starring it makes it a golden reference for the currently-labelled class. **Clicking a different class moves the star with it** (unmark old class, mark new) so a golden's class can never disagree with its label. This makes the earlier "exclusive goldens" rule structural — one label per frame ⇒ one golden class — so `mark_golden_exclusive`, `datamodel.feature_role` and the `exclusive_goldens` branch are removed. **Migration ran once** on `pekat-cam3`: 54 goldens carried no label (goldens and labels used to be independent); each was labelled with its golden class (zero conflicts across all 7 ROIs, verified pre- and post-migration; labels are append-only, so old history stays).
 - 🗑 **Exclusive goldens on classify ROIs (2026-07-27, superseded 2026-07-28)** — briefly, marking one product's golden auto-unmarked the others (via `mark_golden_exclusive`). Cleaned up 3 frames on `pekat-cam3` that had been double-marked (kept the latest — all 4x4). This code path is **gone**; the star=label model above makes exclusivity structural (one label per frame ⇒ one golden class), so `mark_golden_exclusive` and `datamodel.feature_role` were removed with it.
 - 💭 **Golden-verification feature — deferred, and my recommendation is to split it:** a *structural* integrity check (golden for 2 mutually-exclusive classes; golden for X but labeled Y; class with no goldens) is cheap with **zero false positives** and worth having. A *distance-based* audit ("this golden looks like class B") is only meaningful once a ROI separates classes well — on the current near-duplicate data (distances 0.139–0.171 across 3 products) it would be mostly noise, and it reintroduces the very golden-vs-golden comparison just removed. Don't build it now.
 

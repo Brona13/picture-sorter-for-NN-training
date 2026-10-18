@@ -12,6 +12,7 @@ import { methodTag } from "../methodTags";
 import ClearPanel from "../classify/ClearPanel";
 import CardGrid from "../classify/CardGrid";
 import DeletedByDay from "../classify/DeletedByDay";
+import SearchExtras from "../classify/SearchExtras";
 import SuggestPanel from "../classify/SuggestPanel";
 import { useJob } from "../useJob";
 
@@ -50,6 +51,7 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
   const [busy, setBusy] = useState<string | null>(null);
   const [viewing, setViewing] = useState<string | null>(null); // the picture viewer, on a frame of this page
   const [revision, setRevision] = useState(0);
+  const [search, setSearch] = useState(""); // a part of a file name: the grid then lists matching pictures of the whole camera
   const [mode, setMode] = useState<"grid" | "scatter" | "outliers">("grid");
   const [similarSeed, setSimilarSeed] = useState<{ frame: string; label: string } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -130,20 +132,22 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
   const loadGrid = useCallback(async () => {
     if (!camera || !feature || !st) return;
     try {
-      const g = await api.classifyGrid(camera, query, page);
+      const g = await api.classifyGrid(camera, search ? { ...query, search } : query, page);
       setGrid(g);
       if (g.page !== page) setPage(g.page);
     } catch (e) {
       setError(msg(e));
     }
-  }, [camera, feature, st?.feature, query, page]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [camera, feature, st?.feature, query, page, search]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     loadGrid();
   }, [loadGrid, revision]);
 
   // Changing any filter returns to page 1.
-  useEffect(() => setPage(1), [view, rank, order, showMuted, auto.on, auto.classes, auto.minMargin]);
+  useEffect(() => setPage(1), [view, rank, order, showMuted, auto.on, auto.classes, auto.minMargin, search]);
+  // A search belongs to one ROI.
+  useEffect(() => setSearch(""), [camera, feature]);
 
   useEffect(() => {
     if (job?.status === "done") {
@@ -157,6 +161,20 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
     setRevision((r) => r + 1);
     loadState();
   };
+
+  // An action on the picture that is not about the open ROI's counts (the product label, a mute): reload everything after it.
+  async function actElsewhere(frame: string, call: () => Promise<unknown>) {
+    setBusy(frame);
+    setError(null);
+    try {
+      await call();
+      bump();
+    } catch (e) {
+      setError(msg(e));
+    } finally {
+      setBusy(null);
+    }
+  }
 
   async function act(frame: string, call: () => Promise<CardUpdate>, reloadGrid = false) {
     setBusy(frame);
@@ -402,8 +420,9 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
             </p>
           )}
 
+          {search && st.scored && <p role="status">The bulk, clear and auto-label tools are off while a search is active.</p>}
           {st.scored && (
-            <>
+            <fieldset disabled={!!search} style={{ border: 0, padding: 0, margin: 0, opacity: search ? 0.5 : 1 }}>
               <BulkPanel
                 camera={camera}
                 query={query}
@@ -445,9 +464,9 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
                   bump();
                 }}
               />
-            </>
+            </fieldset>
           )}
-          {st.scored && (
+          {st.scored && !search && (
             <SuggestPanel
               camera={camera}
               query={query}
@@ -467,13 +486,14 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
             </p>
           )}
 
-          {grid && grid.total === 0 && <p>No frames match this view.</p>}
-          {grid && grid.total > 0 && (
+          {grid && grid.total === 0 && !search && <p>No frames match this view.</p>}
+          {grid && (grid.total > 0 || search) && (
             <>
               <CardGrid
                 items={grid.items}
                 keyOf={(card) => card.frame}
                 serverPage={grid}
+                search={{ value: search, onChange: setSearch }}
                 settings={st.settings}
                 onSettings={changeSetting}
                 page={page}
@@ -517,6 +537,21 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
                   onDelete={(f) => act(f, () => api.deleteFrame(camera, feature, f), true)}
                   deleted={(f) => !!grid.items.find((x) => x.frame === f)?.deleted}
                   onRestore={(f) => act(f, () => api.restoreFrame(camera, feature, f), true)}
+                  labelsLocked={(f) => !!grid.items.find((x) => x.frame === f)?.outside}
+                  extra={(f) => {
+                    const c = grid.items.find((x) => x.frame === f);
+                    const info = grid.search;
+                    if (!c || !info) return null;
+                    return (
+                      <SearchExtras
+                        card={c}
+                        search={info}
+                        busy={busy !== null}
+                        onProduct={(cls) => info.classify_feature && actElsewhere(f, () => api.setLabel(camera, info.classify_feature!, f, cls))}
+                        onMute={(muted) => actElsewhere(f, () => api.muteFrame(camera, feature, f, muted))}
+                      />
+                    );
+                  }}
                   onClose={() => setViewing(null)}
                 />
               )}

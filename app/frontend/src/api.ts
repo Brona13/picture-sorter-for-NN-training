@@ -499,6 +499,12 @@ export interface CardData {
   cluster: { id: number; is_rep: boolean } | null;
   /** Edge-angle rule result for this frame, when the rule has been run on the current settings. */
   edge?: { verdict: "pass" | "fail" | "undetermined" | null; status: "ok" | "none"; angle: number | null; polarity: "+" | "-" | null } | null;
+  /** Search results only: the picture is outside this ROI's scope (another product, or none yet). */
+  outside?: boolean;
+  /** Search results only: the product the picture is labeled with in the product-sorting ROI. */
+  product?: string | null;
+  /** Search results only: the picture is muted for this ROI. */
+  muted?: boolean;
 }
 
 export interface GridResponse {
@@ -510,6 +516,8 @@ export interface GridResponse {
   n_pages: number;
   total: number;
   items: CardData[];
+  /** Present when the grid is a search result. */
+  search?: { query: string; classify_feature: string | null; product_classes: string[] };
 }
 
 export interface CardUpdate {
@@ -526,6 +534,8 @@ export interface GridQuery {
   auto_preview?: boolean;
   auto_classes?: string[] | null;
   auto_min_margin?: number | null;
+  /** A part of a file name: the grid then lists every picture of the camera that matches. */
+  search?: string;
 }
 
 export interface BulkPreview {
@@ -563,6 +573,7 @@ export function gridParams(q: GridQuery, extra: Record<string, string | number |
     (q.auto_classes ?? []).forEach((c) => p.append("auto_classes", c));
     if (q.auto_min_margin != null) p.set("auto_min_margin", String(q.auto_min_margin));
   }
+  if (q.search) p.set("search", q.search);
   Object.entries(extra).forEach(([k, v]) => v != null && p.set(k, String(v)));
   return p.toString();
 }
@@ -978,6 +989,12 @@ export const api = {
     request<CardUpdate>(`/cameras/${encodeURIComponent(camera)}/classify/golden`, send("PUT", { feature, frame, golden })),
   deleteFrame: (camera: string, feature: string, frame: string, via?: string) =>
     request<CardUpdate>(`/cameras/${encodeURIComponent(camera)}/classify/delete`, post({ feature, frame, via })),
+  /** Hide one picture from this ROI's grid (dedup mute), or bring it back. */
+  muteFrame: (camera: string, feature: string, frame: string, muted: boolean) =>
+    request<{ frame: string; muted: boolean; muted_count: number }>(
+      `/cameras/${encodeURIComponent(camera)}/classify/mute`,
+      send("PUT", { feature, frame, muted }),
+    ),
   restoreFrame: (camera: string, feature: string, frame: string) =>
     request<CardUpdate>(`/cameras/${encodeURIComponent(camera)}/classify/restore`, post({ feature, frame })),
   deleteFrames: (camera: string, feature: string, frames: string[], note = "", via?: string) =>

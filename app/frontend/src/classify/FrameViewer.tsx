@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { ReactNode, useEffect, useRef, useState } from "react";
 import { api, RoiInfo } from "../api";
 import FramePane from "./FramePane";
 import PictureViewer from "./PictureViewer";
@@ -23,6 +23,10 @@ interface Props {
   /** A grid that keeps deleted frames on show: they cannot be labeled, and can be restored. */
   deleted?: (frame: string) => boolean;
   onRestore?: (frame: string) => void;
+  /** Frames whose labels and golden cannot be changed here (a picture outside the ROI's scope found by search). */
+  labelsLocked?: (frame: string) => boolean;
+  /** More controls for the frame on screen, under the label buttons (the search's fixes). */
+  extra?: (frame: string) => ReactNode;
   /** Called whenever the shown frame changes, so the grid can turn to the page that holds it. */
   onShow?: (frame: string) => void;
   onClose: () => void;
@@ -33,7 +37,7 @@ interface Props {
  * pan, the same pane the ROI editor uses), the ROI outline, and the card's own actions for the frame on screen
  * (1-9 label, 0 clear, the key left of 1 golden, Delete).
  */
-export default function FrameViewer({ camera, feature, frames, start, classes, marks, busy, onLabel, onGolden, onDelete, deleted, onRestore, onShow, onClose }: Props) {
+export default function FrameViewer({ camera, feature, frames, start, classes, marks, busy, onLabel, onGolden, onDelete, deleted, onRestore, labelsLocked, extra, onShow, onClose }: Props) {
   const [roi, setRoi] = useState<RoiInfo | null>(null);
   const [showRoi, setShowRoi] = useState(true);
   useEffect(() => {
@@ -50,8 +54,8 @@ export default function FrameViewer({ camera, feature, frames, start, classes, m
   }, [camera, feature]);
   const { frame, index, go } = useBrowse(frames, start, onClose, onShow);
 
-  const latest = useRef({ frame, classes, busy, marks, onLabel, onGolden, onDelete, deleted });
-  latest.current = { frame, classes, busy, marks, onLabel, onGolden, onDelete, deleted };
+  const latest = useRef({ frame, classes, busy, marks, onLabel, onGolden, onDelete, deleted, labelsLocked });
+  latest.current = { frame, classes, busy, marks, onLabel, onGolden, onDelete, deleted, labelsLocked };
   // The label keys: 1-9 label, 0 clear, the key left of 1 golden, Delete deletes (the shell has Esc and the arrows).
   const onKey = (e: KeyboardEvent): boolean => {
     const cur = latest.current;
@@ -60,6 +64,7 @@ export default function FrameViewer({ camera, feature, frames, start, classes, m
     const digit = /^[0-9]$/.test(e.key);
     if (!isGolden && !isDelete && !digit) return false;
     if (e.repeat || cur.busy || !cur.frame || cur.deleted?.(cur.frame)) return true; // a deleted frame takes no label
+    if (!isDelete && cur.labelsLocked?.(cur.frame)) return true; // nor does a frame outside the ROI's scope
     const m = cur.marks(cur.frame);
     if (isDelete) cur.onDelete(cur.frame);
     else if (isGolden) {
@@ -79,6 +84,7 @@ export default function FrameViewer({ camera, feature, frames, start, classes, m
   if (!frame) return null;
   const mark = marks(frame);
   const isDeleted = !!deleted?.(frame);
+  const locked = !!labelsLocked?.(frame);
 
   return (
     <PictureViewer
@@ -92,12 +98,13 @@ export default function FrameViewer({ camera, feature, frames, start, classes, m
       onKey={onKey}
       hint="Wheel zooms · drag pans · ← → browse · 1-9 label · 0 clear · ` golden · Delete deletes · Esc closes"
       toolbar={
+        <div style={{ flex: 1 }}>
         <div role="group" aria-label="Label" style={{ display: "flex", gap: 6, alignItems: "center", flex: 1 }}>
           {classes.map((c, i) => (
             <button
               key={c}
               type="button"
-              disabled={busy || isDeleted}
+              disabled={busy || isDeleted || locked}
               aria-pressed={mark.label === c}
               title={i < MAX_SHORTCUT_CLASSES ? `Press ${i + 1}.` : undefined}
               onClick={() => onLabel(frame, mark.label === c ? null : c)}
@@ -110,12 +117,14 @@ export default function FrameViewer({ camera, feature, frames, start, classes, m
           <button
             type="button"
             aria-label={mark.golden ? "Remove golden" : "Make golden"}
-            disabled={busy || isDeleted || mark.label === null}
+            disabled={busy || isDeleted || locked || mark.label === null}
             title={mark.label === null ? "Label the frame first. Shortcut: the key left of 1." : "Golden reference for the label. Shortcut: the key left of 1."}
             onClick={() => onGolden(frame, !mark.golden)}
           >
             {mark.golden ? "⭐" : "☆"}
           </button>
+        </div>
+        {extra?.(frame)}
         </div>
       }
       tools={

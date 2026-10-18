@@ -38,6 +38,8 @@ class GridQuery(BaseModel):
     auto_preview: bool = False
     auto_classes: list[str] | None = None
     auto_min_margin: float | None = None
+    # A part of a file name: the grid then lists every picture of the camera that matches (see ``_search_grid``).
+    search: str = ""
 
 
 def _grid_query(
@@ -49,10 +51,11 @@ def _grid_query(
     auto_preview: bool = False,
     auto_classes: Annotated[list[str] | None, Query()] = None,
     auto_min_margin: float | None = None,
+    search: str = "",
 ) -> GridQuery:
     return GridQuery(
         feature=feature, view=view, rank=rank, order=order, show_muted=show_muted,
-        auto_preview=auto_preview, auto_classes=auto_classes, auto_min_margin=auto_min_margin,
+        auto_preview=auto_preview, auto_classes=auto_classes, auto_min_margin=auto_min_margin, search=search,
     )
 
 
@@ -281,35 +284,99 @@ def _edge_card(edge: dict, frame: str) -> dict | None:
     return {"verdict": edge["verdicts"].get(frame), "status": r["status"], "angle": r["angle"], "polarity": r["polarity"]}
 
 
+def _grid_card(ctx: Ctx, fs, snapshot: dict | None) -> dict:
+    """The card of one scored frame, as the grid shows it."""
+    golden = labels.golden_class_of(ctx.gold, fs.frame)
+    ms = fs.per_method.get(ctx.rank)
+    chip = snapshot.get(fs.frame) if snapshot else None
+    return {
+        "frame": fs.frame,
+        "label": ctx.lab.get(fs.frame),
+        "golden": golden,
+        "deleted": fs.frame in ctx.deleted,
+        "leanings": {m: p.leaning for m, p in fs.per_method.items()},
+        "bars": None if golden or not ms else cv.bars(ms.dists, ctx.classes),
+        "cluster": {"id": chip[0], "is_rep": chip[1]} if chip else None,
+        "edge": _edge_card(ctx.edge, fs.frame),
+    }
+
+
+def _page(total: int, page: int, per_page: int) -> tuple[int, int]:
+    n_pages = max(1, (total + per_page - 1) // per_page)
+    return n_pages, max(1, min(page, n_pages))
+
+
+def _search_grid(camera: str, q: GridQuery, page: int, per_page: int) -> dict:
+    """Every picture of the camera whose file name contains the search text, in name order.
+
+    It ignores the View, the muted and the auto-preview filters: the point is to find one picture wherever it is,
+    deleted, muted or outside this ROI's scope included. Cards look like the grid's own; each also says whether the
+    picture is outside this ROI's scope (``outside``), which product it is in (``product``) and whether it is muted
+    for this ROI (``muted``), so the page can flag it and offer the fixes.
+    """
+    require_feature(camera, q.feature)
+    classes = datamodel.classes_for(camera, q.feature)
+    methods = classify.methods_available()
+    rank = q.rank or cv.default_rank_method(methods)
+    if rank not in methods:
+        raise HTTPException(status_code=422, detail=f"Unknown rank method: {rank}")
+    needle = q.search.strip().lower()
+    matches = [p.name for p in datamodel.list_unsorted(camera) if needle in p.name.lower()]
+    total = len(matches)
+    n_pages, page = _page(total, page, per_page)
+    shown = matches[(page - 1) * per_page : page * per_page]
+
+    results, _, _ = load_scored(camera, q.feature)
+    scored_by_frame = {r.frame: r for r in results or []}
+    ctx = Ctx(
+        camera, q.feature, classes, methods, rank, results, labels.current_goldens(camera, q.feature),
+        labels.current_labels(camera, q.feature), db.deleted_frames_of(camera),
+        bool(results) and any(r.per_method for r in results), [], _edge_state(camera, q.feature),
+    )
+    snapshot = dedup.load_snapshot(camera, q.feature)
+    in_scope = set(datamodel.frames_for_feature(camera, q.feature))
+    muted = db.muted_frames(camera, q.feature)
+    product_feature = datamodel.classify_feature(camera)
+    product_of = labels.current_labels(camera, product_feature) if product_feature else {}
+    cards = []
+    for frame in shown:
+        fs = scored_by_frame.get(frame) or classify.FrameScore(frame=frame, golden=None)
+        card = _grid_card(ctx, fs, snapshot)
+        card["muted"] = frame in muted
+        card["product"] = product_of.get(frame)
+        # A deleted picture has lost its labels, so its product is unknown: it is flagged by being deleted, not as outside.
+        card["outside"] = frame not in in_scope and frame not in ctx.deleted
+        cards.append(card)
+    return {
+        "has_results": results is not None,
+        "scored": ctx.scored,
+        "rank": rank,
+        "page": page,
+        "per_page": per_page,
+        "n_pages": n_pages,
+        "total": total,
+        "items": cards,
+        "search": {
+            "query": q.search.strip(),
+            "classify_feature": product_feature,
+            "product_classes": datamodel.classes_for(camera, product_feature) if product_feature else [],
+        },
+    }
+
+
 @router.get("/cameras/{camera}/classify/grid")
 def grid(camera: str, q: QueryParams, page: int = 1, per_page: int | None = None) -> dict:
-    ctx = _build(camera, q)
     if per_page is None:
         per_page = _grid_setting(camera, q.feature, "perpage", PER_PAGE_OPTIONS, 24)
     if per_page not in PER_PAGE_OPTIONS:
         raise HTTPException(status_code=422, detail="Unsupported per_page value.")
+    if q.search.strip():
+        return _search_grid(camera, q, page, per_page)
+    ctx = _build(camera, q)
     total = len(ctx.items)
-    n_pages = max(1, (total + per_page - 1) // per_page)
-    page = max(1, min(page, n_pages))
+    n_pages, page = _page(total, page, per_page)
     shown = ctx.items[(page - 1) * per_page : page * per_page]
     snapshot = dedup.load_snapshot(camera, q.feature)
-    cards = []
-    for fs in shown:
-        golden = labels.golden_class_of(ctx.gold, fs.frame)
-        ms = fs.per_method.get(ctx.rank)
-        chip = snapshot.get(fs.frame) if snapshot else None
-        cards.append(
-            {
-                "frame": fs.frame,
-                "label": ctx.lab.get(fs.frame),
-                "golden": golden,
-                "deleted": fs.frame in ctx.deleted,
-                "leanings": {m: p.leaning for m, p in fs.per_method.items()},
-                "bars": None if golden or not ms else cv.bars(ms.dists, ctx.classes),
-                "cluster": {"id": chip[0], "is_rep": chip[1]} if chip else None,
-                "edge": _edge_card(ctx.edge, fs.frame),
-            }
-        )
     return {
         "has_results": ctx.results is not None,
         "scored": ctx.scored,
@@ -318,7 +385,7 @@ def grid(camera: str, q: QueryParams, page: int = 1, per_page: int | None = None
         "per_page": per_page,
         "n_pages": n_pages,
         "total": total,
-        "items": cards,
+        "items": [_grid_card(ctx, fs, snapshot) for fs in shown],
     }
 
 
@@ -431,6 +498,31 @@ def restore_frame(camera: str, body: DeleteBody) -> dict:
     classes = datamodel.classes_for(camera, body.feature)
     db.restore_frames(camera, [body.frame])
     return _result(camera, body.feature, body.frame, classes)
+
+
+class MuteBody(BaseModel):
+    feature: str
+    frame: str
+    muted: bool
+
+
+@router.put("/cameras/{camera}/classify/mute")
+def mute_frame(camera: str, body: MuteBody) -> dict:
+    """Hide one picture from this ROI's grid (dedup mute), or bring it back. The cluster Apply may undo a mute later.
+
+    A labeled or golden picture is never muted (the dedup invariant), nor is a deleted one.
+    """
+    require_feature(camera, body.feature)
+    frame_path(camera, body.frame)
+    if body.muted:
+        if db.is_frame_deleted(camera, body.frame):
+            raise HTTPException(status_code=409, detail="Restore the picture before muting it.")
+        if body.frame in labels.current_labels(camera, body.feature) or labels.current_golden_for_frame(camera, body.feature, body.frame):
+            raise HTTPException(status_code=409, detail="A labeled picture stays visible: clear its label first.")
+        db.add_dedup_mutes(camera, body.feature, [(body.frame, labels.frame_hash(camera, body.frame), -1)], source="Classify")
+    else:
+        db.add_dedup_unmutes(camera, body.feature, [body.frame])
+    return {"frame": body.frame, "muted": body.muted, "muted_count": len(db.muted_frames(camera, body.feature))}
 
 
 class FramesBody(BaseModel):

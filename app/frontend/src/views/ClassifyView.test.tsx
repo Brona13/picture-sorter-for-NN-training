@@ -128,6 +128,7 @@ function install() {
           },
         });
       if (url.endsWith("/classify/label-bulk")) return ok({ labeled: 1 });
+      if (url.endsWith("/classify/mute")) return ok({ frame: "x", muted: true, muted_count: 1 });
       if (url.endsWith("/dedup/outliers")) return ok({ id: "o1", status: "queued", progress: {}, result: null, error: null });
       if (url === "/api/jobs/o1")
         return ok({
@@ -639,4 +640,131 @@ test("without a focus the ROI dropdown is still there", async () => {
   render(<ClassifyView camera="camA" />);
   await cardEl("a.png");
   expect(screen.getByLabelText(/Feature \(ROI\)/)).toBeInTheDocument();
+});
+
+// --- search by file name ---------------------------------------------------------------------------------------
+const searchInfo = { query: "red", classify_feature: "type", product_classes: ["A", "B"] };
+const searchBody = (items: unknown[], over: Record<string, unknown> = {}) =>
+  gridBody(items, { search: searchInfo, ...over });
+const found = [
+  card("red_0.png", { leanings: {}, bars: null, outside: true, product: "B", muted: false }),
+  card("red_1.png", { leanings: {}, bars: null, outside: false, product: "A", muted: true }),
+];
+
+function searchable() {
+  grid = (url: string) => (url.includes("search=") ? searchBody(found) : gridBody([card("a.png"), card("b.png")]));
+}
+const gridCalls = () => calls.filter((c) => /\/classify\/grid\?/.test(c.url));
+
+async function typeSearch(text: string) {
+  render(<ClassifyView camera="camA" />);
+  await cardEl("a.png");
+  await userEvent.click(screen.getAllByRole("button", { name: "Search by file name" })[0]);
+  await userEvent.type(screen.getAllByLabelText(/Search file name/)[0], text);
+}
+
+test("typing in the pager's search lists the matching pictures of the whole camera, as cards, flagged when outside the ROI or muted", async () => {
+  searchable();
+  await typeSearch("red");
+  const outside = await screen.findByTestId("card-red_0.png");
+  expect(screen.queryByTestId("card-a.png")).toBeNull(); // the normal list is replaced
+  expect(outside).toHaveStyle({ border: "2px solid #c62828" });
+  expect(outside).toHaveAttribute("title", expect.stringContaining("In product B"));
+  expect(screen.getByTestId("card-red_1.png")).toHaveStyle({ border: "2px dashed #555" });
+  const call = gridCalls().find((c) => c.url.includes("search=red"))!;
+  expect(call.url).toContain("feature=seal");
+});
+
+test("the search waits for a pause in typing: one request, not one per key", async () => {
+  searchable();
+  await typeSearch("red");
+  await screen.findByTestId("card-red_0.png");
+  expect(gridCalls().filter((c) => c.url.includes("search=")).length).toBe(1);
+  expect(gridCalls().some((c) => c.url.includes("search=r&") || c.url.endsWith("search=r"))).toBe(false);
+});
+
+test("a search with no result says Not found and keeps the field; closing it brings the normal list back", async () => {
+  grid = (url: string) => (url.includes("search=") ? searchBody([], { total: 0, n_pages: 1 }) : gridBody([card("a.png"), card("b.png")]));
+  await typeSearch("zzz");
+  expect(await screen.findByText("Not found")).toBeInTheDocument();
+  expect(screen.getAllByLabelText(/Search file name/).length).toBeGreaterThan(0);
+  await userEvent.click(screen.getAllByRole("button", { name: "Search by file name" })[0]);
+  await cardEl("a.png");
+  expect(screen.queryByText("Not found")).toBeNull();
+  expect(gridCalls().at(-1)!.url).not.toContain("search=");
+});
+
+test("while a search is active the bulk, clear and auto-label tools are switched off", async () => {
+  searchable();
+  render(<ClassifyView camera="camA" />);
+  await cardEl("a.png");
+  expect(screen.queryByText(/are off while a search is active/)).toBeNull();
+  await userEvent.click(screen.getAllByRole("button", { name: "Search by file name" })[0]);
+  await userEvent.type(screen.getAllByLabelText(/Search file name/)[0], "red");
+  expect(await screen.findByText(/are off while a search is active/)).toBeInTheDocument();
+  const off = document.querySelector("fieldset[disabled]");
+  expect(off).not.toBeNull();
+  expect(within(off as HTMLElement).queryAllByRole("button").length).toBeGreaterThan(0); // the tools are there, just disabled
+});
+
+test("opening a picture outside the ROI shows the product buttons; choosing one sets the label in the product ROI and reloads", async () => {
+  searchable();
+  await typeSearch("red");
+  fireEvent.click(within(await screen.findByTestId("card-red_0.png")).getByRole("link"));
+  const viewer = await screen.findByRole("dialog", { name: "Full-size picture" });
+  const labels = within(viewer).getByRole("group", { name: "Label" });
+  expect(within(labels).getByRole("button", { name: /OK/ })).toBeDisabled(); // locked until the product fits
+  const product = within(viewer).getByRole("group", { name: "Product" });
+  expect(within(product).getByRole("button", { name: "B" })).toHaveAttribute("aria-pressed", "true");
+  const before = gridCalls().length;
+  await userEvent.click(within(product).getByRole("button", { name: "A" }));
+  await waitFor(() => expect(calls.find((c) => c.method === "PUT" && c.url.endsWith("/classify/label"))?.body).toEqual({ feature: "type", frame: "red_0.png", cls: "A" }));
+  await waitFor(() => expect(gridCalls().length).toBeGreaterThan(before));
+  expect(calls.some((c) => c.url.includes("/classify/state"))).toBe(true);
+});
+
+test("the OK / NG keys do nothing on an outside picture in the viewer", async () => {
+  searchable();
+  await typeSearch("red");
+  fireEvent.click(within(await screen.findByTestId("card-red_0.png")).getByRole("link"));
+  await screen.findByRole("dialog", { name: "Full-size picture" });
+  fireEvent.keyDown(window, { key: "1" });
+  expect(calls.some((c) => c.method === "PUT" && c.url.endsWith("/classify/label"))).toBe(false);
+});
+
+test("a muted picture inside the ROI offers only Unmute in the viewer, and it unmutes for the open ROI", async () => {
+  searchable();
+  await typeSearch("red");
+  fireEvent.click(within(await screen.findByTestId("card-red_1.png")).getByRole("link"));
+  const viewer = await screen.findByRole("dialog", { name: "Full-size picture" });
+  expect(within(viewer).queryByRole("group", { name: "Product" })).toBeNull();
+  await userEvent.click(within(viewer).getByRole("button", { name: "Unmute" }));
+  await waitFor(() => expect(calls.find((c) => c.url.endsWith("/classify/mute"))?.body).toEqual({ feature: "seal", frame: "red_1.png", muted: false }));
+});
+
+test("an outside picture can be muted from the viewer", async () => {
+  searchable();
+  await typeSearch("red");
+  fireEvent.click(within(await screen.findByTestId("card-red_0.png")).getByRole("link"));
+  const viewer = await screen.findByRole("dialog", { name: "Full-size picture" });
+  await userEvent.click(within(viewer).getByRole("button", { name: "Mute" }));
+  await waitFor(() => expect(calls.find((c) => c.url.endsWith("/classify/mute"))?.body).toEqual({ feature: "seal", frame: "red_0.png", muted: true }));
+});
+
+test("a picture found by search that is inside the ROI and not muted looks and acts like any other", async () => {
+  grid = (url: string) => (url.includes("search=") ? searchBody([card("red_9.png", { leanings: {}, bars: null, outside: false, product: "A", muted: false })]) : gridBody([card("a.png")]));
+  await typeSearch("red");
+  const c = await screen.findByTestId("card-red_9.png");
+  expect(c).toHaveStyle({ border: "1px solid #ccc" });
+  fireEvent.click(within(c).getByRole("link"));
+  const viewer = await screen.findByRole("dialog", { name: "Full-size picture" });
+  expect(within(viewer).queryByTestId("search-extras")).toBeNull();
+  expect(within(viewer).getByRole("button", { name: /OK/ })).toBeEnabled();
+});
+
+test("the normal grid has no flags and no extras", async () => {
+  render(<ClassifyView camera="camA" />);
+  const c = await cardEl("a.png");
+  expect(c).toHaveStyle({ border: "1px solid #ccc" });
+  expect(c).not.toHaveAttribute("title");
 });
