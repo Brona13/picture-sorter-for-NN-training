@@ -1011,3 +1011,17 @@ test("an in-scope found picture's product can be corrected from its viewer; it i
   await waitFor(() => expect(calls.find((c) => c.method === "PUT" && c.url.endsWith("/classify/label"))?.body).toEqual({ feature: "type", frame: "red_9.png", cls: "B" }));
   await waitFor(() => expect(gridCalls().length).toBeGreaterThan(before));
 });
+
+test("in the viewer of a found picture the Product buttons and the feature's OK / NG buttons share one line, product first", async () => {
+  searchable();
+  await typeSearch("red");
+  fireEvent.click(within(await screen.findByTestId("card-red_0.png")).getByRole("link"));
+  const viewer = await screen.findByRole("dialog", { name: "Full-size picture" });
+  const product = within(viewer).getByRole("group", { name: "Product" });
+  const labels = within(viewer).getByRole("group", { name: "Label" });
+  expect(product.parentElement).toBe(labels.parentElement);
+  const row = Array.from((labels.parentElement as HTMLElement).children);
+  expect(row.indexOf(product)).toBeLessThan(row.indexOf(labels));
+  // the note and Mute are under that line
+  expect(within(viewer).getByTestId("search-extras").parentElement).not.toBe(labels.parentElement);
+});

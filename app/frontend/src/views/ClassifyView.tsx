@@ -13,7 +13,7 @@ import { methodTag } from "../methodTags";
 import ClearPanel from "../classify/ClearPanel";
 import CardGrid from "../classify/CardGrid";
 import DeletedByDay from "../classify/DeletedByDay";
-import SearchExtras from "../classify/SearchExtras";
+import SearchExtras, { ProductRow } from "../classify/SearchExtras";
 import SuggestPanel from "../classify/SuggestPanel";
 import { useJob } from "../useJob";
 
@@ -540,20 +540,24 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
                   deleted={(f) => !!grid.items.find((x) => x.frame === f)?.deleted}
                   onRestore={(f) => restoreInPlace(f)}
                   labelsLocked={(f) => !!grid.items.find((x) => x.frame === f)?.outside}
-                  extra={(f) => {
+                  lead={(f) => {
                     const c = grid.items.find((x) => x.frame === f);
                     const info = grid.search;
                     if (!c || !info) return null;
                     return (
-                      <SearchExtras
+                      <ProductRow
                         card={c}
                         search={info}
                         productRow={!!info.classify_feature && info.classify_feature !== feature}
                         busy={busy !== null}
                         onProduct={(cls) => info.classify_feature && actElsewhere(f, () => api.setLabel(camera, info.classify_feature!, f, cls))}
-                        onMute={(muted) => actElsewhere(f, () => api.muteFrame(camera, feature, f, muted))}
                       />
                     );
+                  }}
+                  extra={(f) => {
+                    const c = grid.items.find((x) => x.frame === f);
+                    if (!c || !grid.search) return null;
+                    return <SearchExtras card={c} busy={busy !== null} onMute={(muted) => actElsewhere(f, () => api.muteFrame(camera, feature, f, muted))} />;
                   }}
                   onClose={() => setViewing(null)}
                 />

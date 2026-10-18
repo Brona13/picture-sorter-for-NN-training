@@ -4,7 +4,7 @@ import { expect, test, vi } from "vitest";
 import { CardData } from "../api";
 import Card from "./Card";
 import FrameViewer from "./FrameViewer";
-import SearchExtras from "./SearchExtras";
+import SearchExtras, { ProductRow } from "./SearchExtras";
 
 const base = (over: Partial<CardData> = {}): CardData => ({
   frame: "blue_0.png", label: null, golden: null, deleted: false, leanings: {}, bars: null, cluster: null, ...over,
@@ -62,57 +62,63 @@ test("outside beats muted, and a deleted picture outside its scope can still be 
 
 // --- what the viewer adds ---
 const info = { query: "blue", classify_feature: "type", product_classes: ["A", "B"] };
-const renderExtras = (card: CardData, productRow = true) => {
-  const h = { onProduct: vi.fn(), onMute: vi.fn() };
-  render(<SearchExtras card={card} search={info} productRow={productRow} busy={false} {...h} />);
-  return h;
+const renderProduct = (card: CardData, productRow = true) => {
+  const h = { onProduct: vi.fn() };
+  const view = render(<ProductRow card={card} search={info} productRow={productRow} busy={false} {...h} />);
+  return { ...h, ...view };
+};
+const renderExtras = (card: CardData) => {
+  const h = { onMute: vi.fn() };
+  const view = render(<SearchExtras card={card} busy={false} {...h} />);
+  return { ...h, ...view };
 };
 
-test("in the product-sorting ROI itself there is no Product row: nothing, or only Unmute for a muted picture", async () => {
-  const { container } = render(<SearchExtras card={base()} search={info} productRow={false} busy={false} onProduct={vi.fn()} onMute={vi.fn()} />);
-  expect(container).toBeEmptyDOMElement();
-  const h = { onProduct: vi.fn(), onMute: vi.fn() };
-  render(<SearchExtras card={base({ muted: true })} search={info} productRow={false} busy={false} {...h} />);
-  expect(screen.queryByRole("group", { name: "Product" })).toBeNull();
-  await userEvent.click(screen.getByRole("button", { name: "Unmute" }));
-  expect(h.onMute).toHaveBeenCalledWith(false);
+test("in a feature ROI every found picture shows which product it is in, outside the scope or not, and the product can be changed", async () => {
+  for (const outside of [false, true]) {
+    const { onProduct, unmount } = renderProduct(base({ outside, product: "A" }));
+    const group = screen.getByRole("group", { name: "Product" });
+    expect(within(group).getByRole("button", { name: "A" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(group).getByRole("button", { name: "B" })).toHaveAttribute("aria-pressed", "false");
+    await userEvent.click(within(group).getByRole("button", { name: "B" }));
+    expect(onProduct).toHaveBeenCalledWith("B");
+    await userEvent.click(within(group).getByRole("button", { name: "A" }));
+    expect(onProduct).toHaveBeenLastCalledWith(null); // pressing the current product removes it
+    unmount();
+  }
 });
 
-test("in a feature ROI a picture inside the scope shows which product it is in, without any alarm, and the product can be changed", async () => {
-  const h = renderExtras(base({ outside: false, product: "A" }));
-  const group = screen.getByRole("group", { name: "Product" });
-  expect(within(group).getByRole("button", { name: "A" })).toHaveAttribute("aria-pressed", "true");
-  expect(within(group).getByRole("button", { name: "B" })).toHaveAttribute("aria-pressed", "false");
-  expect(screen.queryByText(/Outside this ROI/)).toBeNull();
-  expect(screen.queryByRole("button", { name: "Mute" })).toBeNull(); // muting is offered for outside pictures only
-  expect(screen.queryByRole("button", { name: "Unmute" })).toBeNull();
-  await userEvent.click(within(group).getByRole("button", { name: "B" }));
-  expect(h.onProduct).toHaveBeenCalledWith("B");
-});
-
-test("a muted picture inside the scope shows the product and Unmute", async () => {
-  const h = renderExtras(base({ outside: false, product: "A", muted: true }));
-  expect(screen.getByRole("group", { name: "Product" })).toBeInTheDocument();
-  await userEvent.click(screen.getByRole("button", { name: "Unmute" }));
-  expect(h.onMute).toHaveBeenCalledWith(false);
-});
-
-test("a picture inside the scope with no product says so (a whole-camera ROI covers such pictures)", () => {
-  renderExtras(base({ outside: false, product: null }));
+test("a picture with no product says so (inside the scope, a whole-camera ROI covers such pictures)", () => {
+  renderProduct(base({ outside: false, product: null }));
   expect(screen.getByText("no product yet")).toBeInTheDocument();
   for (const name of ["A", "B"]) expect(within(screen.getByRole("group", { name: "Product" })).getByRole("button", { name })).toHaveAttribute("aria-pressed", "false");
 });
 
-test("an outside picture gets the product buttons with its product pressed, a note, and Mute", async () => {
+test("in the product-sorting ROI itself there is no Product row", () => {
+  const { container } = renderProduct(base(), false);
+  expect(container).toBeEmptyDOMElement();
+});
+
+test("a deleted picture has no Product row: it is restored first", () => {
+  const { container } = renderProduct(base({ outside: true, deleted: true }));
+  expect(container).toBeEmptyDOMElement();
+});
+
+test("an inside picture that is not muted has no extras under the label line", () => {
+  const { container } = renderExtras(base({ outside: false, product: "A" }));
+  expect(container).toBeEmptyDOMElement();
+});
+
+test("an inside muted picture offers only Unmute", async () => {
+  const h = renderExtras(base({ muted: true }));
+  expect(screen.queryByRole("button", { name: "Mute" })).toBeNull();
+  expect(screen.queryByText(/Outside this ROI/)).toBeNull();
+  await userEvent.click(screen.getByRole("button", { name: "Unmute" }));
+  expect(h.onMute).toHaveBeenCalledWith(false);
+});
+
+test("an outside picture gets the red note naming its product, and Mute", async () => {
   const h = renderExtras(base({ outside: true, product: "B" }));
   expect(screen.getByText(/Outside this ROI: in product B/)).toBeInTheDocument();
-  const group = screen.getByRole("group", { name: "Product" });
-  expect(within(group).getByRole("button", { name: "B" })).toHaveAttribute("aria-pressed", "true");
-  expect(within(group).getByRole("button", { name: "A" })).toHaveAttribute("aria-pressed", "false");
-  await userEvent.click(within(group).getByRole("button", { name: "A" }));
-  expect(h.onProduct).toHaveBeenCalledWith("A");
-  await userEvent.click(within(group).getByRole("button", { name: "B" }));
-  expect(h.onProduct).toHaveBeenLastCalledWith(null); // pressing the current product removes it
   await userEvent.click(screen.getByRole("button", { name: "Mute" }));
   expect(h.onMute).toHaveBeenCalledWith(true);
 });
@@ -128,7 +134,7 @@ test("a labeled picture cannot be muted", () => {
 });
 
 test("a deleted picture gets no extras: it is restored first", () => {
-  const { container } = render(<SearchExtras card={base({ outside: true, deleted: true })} search={info} productRow busy={false} onProduct={vi.fn()} onMute={vi.fn()} />);
+  const { container } = renderExtras(base({ outside: true, deleted: true }));
   expect(container).toBeEmptyDOMElement();
 });
 
@@ -175,4 +181,19 @@ test("the viewer shows the extras of the picture on screen under the label butto
   expect(screen.getByTestId("extra")).toHaveTextContent("extras for a.png");
   fireEvent.keyDown(window, { key: "ArrowRight" });
   expect(screen.getByTestId("extra")).toHaveTextContent("extras for b.png");
+});
+
+test("the viewer puts the lead (the Product buttons) first on the label line, then the OK / NG buttons, in one row", () => {
+  renderViewer({ lead: () => <div role="group" aria-label="Product"><button>A</button><button>B</button></div> });
+  const product = screen.getByRole("group", { name: "Product" });
+  const labels = screen.getByRole("group", { name: "Label" });
+  expect(product.parentElement).toBe(labels.parentElement); // one line
+  const row = Array.from((labels.parentElement as HTMLElement).children);
+  expect(row.indexOf(product)).toBeLessThan(row.indexOf(labels)); // product first, then the feature's buttons
+});
+
+test("the extras sit under that line, not in it", () => {
+  renderViewer({ lead: () => <div role="group" aria-label="Product" />, extra: () => <div data-testid="under">under</div> });
+  const labels = screen.getByRole("group", { name: "Label" });
+  expect(screen.getByTestId("under").parentElement).not.toBe(labels.parentElement);
 });
