@@ -45,9 +45,10 @@ class ChainApiTests(ApiTestCase):
         self.make_chain()
         self.assertEqual(self.edges(), {
             ("ingest", None, "roi:type"),
-            ("roi:type", "p:A", "roi:seal"),
+            ("roi:type", None, "classify:type"),
+            ("classify:type", "p:A", "roi:seal"),
             ("ingest", None, "roi:edge"),
-            ("roi:type", "p:B", "roi:B::rod"),
+            ("classify:type", "p:B", "roi:B::rod"),
         })
         locked = {e["target"]: e["locked"] for e in self.canvas()["edges"]}
         self.assertTrue(locked["roi:B::rod"])
@@ -56,8 +57,8 @@ class ChainApiTests(ApiTestCase):
     def test_shared_roi_gets_one_edge_per_product(self) -> None:
         self.make_chain()
         self.client.patch(f"/api/cameras/{CAM}/rois/seal/products", json={"products": ["A", "B"]})
-        self.assertIn(("roi:type", "p:B", "roi:seal"), self.edges())
-        self.assertIn(("roi:type", "p:A", "roi:seal"), self.edges())
+        self.assertIn(("classify:type", "p:B", "roi:seal"), self.edges())
+        self.assertIn(("classify:type", "p:A", "roi:seal"), self.edges())
 
     def test_without_classify_roi_features_hang_from_ingest(self) -> None:
         datamodel.save_rois(CAM, [ROI("seal", 0, 0, 1, 1)])
@@ -66,19 +67,43 @@ class ChainApiTests(ApiTestCase):
     def test_boxes_without_stored_position_are_placed_in_columns(self) -> None:
         self.make_chain()
         nodes = {n["id"]: n for n in self.canvas()["nodes"]}
-        self.assertEqual((nodes["ingest"]["x"], nodes["roi:type"]["x"]), (0, 280))
-        self.assertEqual(nodes["roi:seal"]["x"], 560)
+        self.assertEqual((nodes["ingest"]["x"], nodes["roi:type"]["x"], nodes["classify:type"]["x"]), (0, 280, 560))
+        self.assertEqual(nodes["roi:seal"]["x"], 840)
         ys = sorted(nodes[i]["y"] for i in ("roi:seal", "roi:edge", "roi:B::rod"))
         self.assertEqual(len(set(ys)), 3)
 
     def test_a_new_box_is_placed_below_the_stored_ones(self) -> None:
         self.make_chain()
         self.client.put(f"{self.base}/layout", json={"nodes": {
-            "roi:seal": {"x": 560, "y": 0}, "roi:edge": {"x": 560, "y": 150}, "roi:B::rod": {"x": 560, "y": 300},
+            "roi:seal": {"x": 840, "y": 0}, "roi:edge": {"x": 840, "y": 150}, "roi:B::rod": {"x": 840, "y": 300},
         }})
         datamodel.save_rois(CAM, [*datamodel.load_rois(CAM), ROI("extra", 0, 0, 1, 1)])
-        self.assertEqual((self.node("roi:extra")["x"], self.node("roi:extra")["y"]), (560, 450))
+        self.assertEqual((self.node("roi:extra")["x"], self.node("roi:extra")["y"]), (840, 450))
         self.assertEqual(self.node("roi:seal")["y"], 0)
+
+    def test_the_classify_box_exists_with_the_product_roi_and_counts_the_products(self) -> None:
+        self.assertNotIn("classify:type", [n["id"] for n in self.canvas()["nodes"]])
+        self.make_chain()
+        labels.set_label(CAM, "type", self.frames[0], "A")
+        labels.set_label(CAM, "type", self.frames[1], "A")
+        labels.set_label(CAM, "type", self.frames[2], "B")
+        box = self.node("classify:type")
+        self.assertEqual((box["kind"], box["ref"], box["label"]), ("classify", "type", "Classify"))
+        self.assertEqual(box["product_counts"], {"A": 2, "B": 1})
+        self.assertEqual((box["labeled"], box["unlabeled"], box["frames"]), (3, 1, 4))
+
+    def test_only_the_product_roi_gets_a_classify_box(self) -> None:
+        self.make_chain()
+        ids = [n["id"] for n in self.canvas()["nodes"] if n["kind"] == "classify"]
+        self.assertEqual(ids, ["classify:type"])
+
+    def test_the_classify_box_goes_with_its_roi_and_keeps_a_stored_name(self) -> None:
+        self.make_chain()
+        self.client.put(f"{self.base}/layout", json={"nodes": {"classify:type": {"x": 5, "y": 6, "label": "Sort"}}})
+        box = self.node("classify:type")
+        self.assertEqual((box["x"], box["y"], box["label"]), (5, 6, "Sort"))
+        self.client.delete(f"/api/cameras/{CAM}/rois/type")
+        self.assertNotIn("classify:type", [n["id"] for n in self.canvas()["nodes"]])
 
     def test_node_status_counts_frames_and_labels(self) -> None:
         self.make_chain()

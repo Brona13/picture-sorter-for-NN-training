@@ -6,7 +6,7 @@ import ChainView from "./ChainView";
 
 const node = (over: Record<string, unknown>) => ({
   kind: "roi", ref: "x", label: "x", x: 0, y: 0, role: "quality", scope: "camera", product: null, products: [],
-  classes: ["OK", "NG"], frames: 4, labeled: 1, ...over,
+  classes: ["OK", "NG"], frames: 4, labeled: 1, product_counts: {}, unlabeled: 0, ...over,
 });
 
 const canvas = (over: Record<string, unknown> = {}) => ({
@@ -17,11 +17,13 @@ const canvas = (over: Record<string, unknown> = {}) => ({
   nodes: [
     node({ id: "ingest", kind: "ingest", ref: null, label: "Ingest", role: null, scope: null }),
     node({ id: "roi:type", ref: "type", label: "type", x: 280, role: "classify", scope: "classify", classes: ["A", "B"] }),
-    node({ id: "roi:seal", ref: "seal", label: "seal", x: 560, scope: "products", products: ["A"] }),
+    node({ id: "classify:type", kind: "classify", ref: "type", label: "Classify", x: 560, role: "classify", scope: null, classes: ["A", "B"], labeled: 3, unlabeled: 1, product_counts: { A: 2, B: 1 } }),
+    node({ id: "roi:seal", ref: "seal", label: "seal", x: 840, scope: "products", products: ["A"] }),
   ],
   edges: [
     { id: "e1", source: "ingest", source_handle: null, target: "roi:type", locked: false },
-    { id: "e2", source: "roi:type", source_handle: "p:A", target: "roi:seal", locked: false },
+    { id: "e1b", source: "roi:type", source_handle: null, target: "classify:type", locked: true },
+    { id: "e2", source: "classify:type", source_handle: "p:A", target: "roi:seal", locked: false },
   ],
   ...over,
 });
@@ -54,11 +56,14 @@ afterEach(() => vi.unstubAllGlobals());
 // d3-drag (inside React Flow) cannot take user-event's mousedown in jsdom, so boxes are clicked with fireEvent.
 const renderView = () => render(<MemoryRouter><ChainView camera="camA" /></MemoryRouter>);
 
-test("draws a box for Ingest and each ROI, with the product handles", async () => {
+test("draws a box for Ingest, each ROI and the Classify box with the product counts", async () => {
   renderView();
   expect(await screen.findByTestId("chain-node-ingest")).toBeInTheDocument();
-  expect(screen.getByTestId("chain-node-roi:type")).toHaveTextContent("A");
-  expect(screen.getByTestId("chain-node-roi:type")).toHaveTextContent("B");
+  const classify = screen.getByTestId("chain-node-classify:type");
+  expect(classify).toHaveTextContent("A: 2");
+  expect(classify).toHaveTextContent("B: 1");
+  expect(classify).toHaveTextContent("1 not labeled yet");
+  expect(screen.getByTestId("chain-node-roi:type")).not.toHaveTextContent("A: 2");
   expect(screen.getByTestId("chain-node-roi:seal")).toHaveTextContent("A · 1/4 labeled");
 });
 
@@ -83,6 +88,13 @@ test("Keep it closes the confirmation without deleting", async () => {
   await user.click(await screen.findByRole("button", { name: "Keep it" }));
   expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   expect(calls.some((c) => c.method === "DELETE")).toBe(false);
+});
+
+test("the Classify box opens the Classify page and cannot be deleted on its own", async () => {
+  renderView();
+  fireEvent.click(await screen.findByTestId("chain-node-classify:type"));
+  expect(screen.getByRole("button", { name: "Open Classify" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /Delete…/ })).not.toBeInTheDocument();
 });
 
 test("Ingest has no Delete button", async () => {

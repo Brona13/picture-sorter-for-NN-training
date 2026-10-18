@@ -47,10 +47,10 @@ export function connectAction(canvas: ChainCanvas, c: Connection): ConnectResult
   }
   if (source.kind === "ingest") return { feature: target.ref, products: [] };
   const product = productOfHandle(c.sourceHandle);
-  if (source.role === "classify" && product) {
+  if (source.kind === "classify" && product) {
     return { feature: target.ref, products: [...new Set([...target.products, product])] };
   }
-  return { error: "Start the arrow at Ingest or at one of the product handles." };
+  return { error: "Start the arrow at Ingest or at one of the product handles of the Classify box." };
 }
 
 /** What deleting an arrow means: the target ROI loses that product (no product left = whole camera). */
@@ -76,6 +76,7 @@ export function layoutOf(
 /** Short line under a box's name: what it does to the pictures. */
 export function describeNode(n: ChainNode): string {
   if (n.kind === "ingest") return `${n.frames} picture${n.frames === 1 ? "" : "s"}`;
+  if (n.kind === "classify") return `${n.labeled}/${n.frames} labeled`;
   if (n.scope === "classify") return `${n.classes.length} products`;
   const where =
     n.scope === "name" ? n.product ?? "" : n.scope === "products" ? n.products.join(", ") : "whole camera";

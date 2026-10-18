@@ -267,11 +267,11 @@ export interface CameraDeletePreview {
   bytes: number;
 }
 
-/** One box of the chain canvas: Ingest, or one ROI (see `chain.py`). */
+/** One box of the chain canvas: Ingest, one ROI, or the Classify box of the product-sorting ROI (see `chain.py`). */
 export interface ChainNode {
   id: string;
-  kind: "ingest" | "roi";
-  /** The ROI's feature name (null for Ingest). */
+  kind: "ingest" | "roi" | "classify";
+  /** The ROI's feature name (null for Ingest); for the Classify box, the product-sorting ROI it labels. */
   ref: string | null;
   label: string;
   x: number;
@@ -284,6 +284,9 @@ export interface ChainNode {
   classes: string[];
   frames: number;
   labeled: number;
+  /** Classify box only: pictures per product, and how many are not labeled yet. */
+  product_counts: Record<string, number>;
+  unlabeled: number;
 }
 
 export interface ChainEdge {

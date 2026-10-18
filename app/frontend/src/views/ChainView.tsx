@@ -26,7 +26,7 @@ type BoxData = {
 type BoxNode = Node<BoxData, "box">;
 
 const HUE = { ingest: 160, roi: 30, classify: 145 } as const;
-const hueOf = (n: ChainNode) => (n.kind === "ingest" ? HUE.ingest : n.role === "classify" ? HUE.classify : HUE.roi);
+const hueOf = (n: ChainNode) => (n.kind === "ingest" ? HUE.ingest : n.kind === "classify" ? HUE.classify : HUE.roi);
 
 /** A box of the chain: a rounded two-tone rectangle with an inline-renamable title. */
 function Box({ data, selected }: NodeProps<BoxNode>) {
@@ -39,14 +39,14 @@ function Box({ data, selected }: NodeProps<BoxNode>) {
     if (label && label !== node.label) onRename(node.id, label);
     else setDraft(node.label);
   };
-  const isClassify = node.role === "classify";
+  const isClassify = node.kind === "classify";
   return (
     <div
       className={`chain-node${selected ? " selected" : ""}`}
       style={{ ["--hue" as string]: hueOf(node) }}
       data-testid={`chain-node-${node.id}`}
     >
-      {node.kind === "roi" && <Handle type="target" position={Position.Left} />}
+      {node.kind !== "ingest" && <Handle type="target" position={Position.Left} />}
       <div className="chain-node-title" onDoubleClick={() => { setDraft(node.label); setEditing(true); }}>
         {editing ? (
           <input
@@ -70,11 +70,12 @@ function Box({ data, selected }: NodeProps<BoxNode>) {
       {isClassify &&
         node.classes.map((product) => (
           <div className="chain-node-product" key={product}>
-            {product}
+            {product}: {node.product_counts[product] ?? 0}
             <Handle type="source" position={Position.Right} id={productHandle(product)} />
           </div>
         ))}
-      {node.kind === "ingest" && <Handle type="source" position={Position.Right} />}
+      {isClassify && node.unlabeled > 0 && <div className="chain-node-sub">{node.unlabeled} not labeled yet</div>}
+      {(node.kind === "ingest" || node.role === "classify") && !isClassify && <Handle type="source" position={Position.Right} />}
     </div>
   );
 }
@@ -180,7 +181,7 @@ function Canvas({ camera }: { camera: string }) {
 
   const requestDelete = (id: string) => {
     const node = canvas?.nodes.find((n) => n.id === id);
-    if (!node?.ref) return;
+    if (node?.kind !== "roi" || !node.ref) return;
     setSelectedId(id);
     api.chainDeletePreview(camera, node.ref).then(setPreview).catch(fail);
   };
@@ -223,7 +224,7 @@ function Canvas({ camera }: { camera: string }) {
 
   const openInEditor = (n: ChainNode) => {
     if (n.ref) shared.publish(n.ref);
-    navigate(n.kind === "ingest" ? "/ingest" : "/roi");
+    navigate(n.kind === "ingest" ? "/ingest" : n.kind === "classify" ? "/classify" : "/roi");
   };
 
   const panel = (
@@ -253,13 +254,16 @@ function Canvas({ camera }: { camera: string }) {
       )}
       <h3>Selected box</h3>
       {!selectedLive && <p className="muted">Click a box. Double-click its name to rename it. Drag from a handle to draw an arrow.</p>}
+      {selectedLive?.kind === "classify" && (
+        <p className="muted">Label the pictures here to tell which product each one is. It goes when its ROI is deleted.</p>
+      )}
       {selectedLive && (
         <div className="chain-selected">
           <p><strong>{selectedLive.label}</strong></p>
           <p className="muted">{describeNode(selectedLive)}</p>
           {selectedLive.ref && <p className="muted">ROI: {selectedLive.ref}</p>}
           <button type="button" onClick={() => openInEditor(selectedLive)}>
-            {selectedLive.kind === "ingest" ? "Open Ingest" : "Open in ROI editor"}
+            {selectedLive.kind === "ingest" ? "Open Ingest" : selectedLive.kind === "classify" ? "Open Classify" : "Open in ROI editor"}
           </button>
           {selectedLive.kind === "roi" && (
             <button type="button" className="danger" onClick={() => requestDelete(selectedLive.id)}>
@@ -271,6 +275,7 @@ function Canvas({ camera }: { camera: string }) {
       {preview && (
         <div className="chain-delete" role="alertdialog" aria-label="Confirm delete">
           <p><strong>Delete {preview.feature}?</strong> This cannot be undone.</p>
+          {preview.role === "classify" && <p>Its Classify box and the product labels go with it.</p>}
           <ul>
             <li>{preview.counts.labels} labels</li>
             <li>{preview.counts.goldens} goldens</li>
