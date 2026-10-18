@@ -107,6 +107,27 @@ function install() {
       if (url.includes("/classify/auto") && method === "GET")
         return ok({ candidates: 4, total: 4, per_class: [{ cls: "OK", count: 3, avg_margin: 0.2 }, { cls: "NG", count: 1, avg_margin: 0.3 }], lo: 0.1, hi: 0.5, min_margin: 0.1 });
       if (url.includes("/classify/auto")) return ok({ labeled: 4, counts: { OK: 4 } });
+      if (url.includes("/dedup/state"))
+        return ok({
+          feature: "seal", reason: null, backbones: ["resnet50"], params: { method: "resnet50", epsilon: 0.02, min_points: 2 },
+          ranges: { epsilon: [0.001, 0.2], min_points: [2, 10] }, frames: 3, device: "cpu", device_label: "cpu", muted_count: 0,
+          projections: ["umap"], result: null,
+          grid: { per_page: 24, cols: 4, per_page_options: [12, 24], cols_options: [3, 4] },
+        });
+      if (url.includes("/dedup/scatter/cached")) return ok({ cached: true });
+      if (url.endsWith("/dedup/scatter")) return ok({ id: "s1", status: "queued", progress: {} }, 202);
+      if (url === "/api/jobs/s1")
+        return ok({
+          id: "s1", status: "done", progress: {}, error: null,
+          result: {
+            projection: "umap", method: "resnet50", from_cache: true, classes: ["OK", "NG"],
+            points: [
+              { frame: "a.png", x: 0, y: 0, cluster: null, representative: false, golden: null, label: null },
+              { frame: "b.png", x: 1, y: 1, cluster: null, representative: false, golden: null, label: "OK" },
+            ],
+          },
+        });
+      if (url.endsWith("/classify/label-bulk")) return ok({ labeled: 1 });
       return new Response("{}", { status: 404 });
     }),
   );
@@ -494,4 +515,37 @@ test("a method switched on since the last refresh asks for a refresh", async () 
   state = baseState({ missing_methods: ["resnet50"] });
   render(<ClassifyView camera="camA" />);
   expect(await screen.findByText(/R50 switched on since the last refresh/)).toBeInTheDocument();
+});
+
+test("the grid is the default view, and a switch shows the 2D map instead and back", async () => {
+  render(<ClassifyView camera="camA" />);
+  await cardEl("a.png");
+  const group = screen.getByRole("group", { name: "View" });
+  expect(within(group).getByRole("button", { name: /Grid/ })).toHaveAttribute("aria-pressed", "true");
+  expect(calls.some((c) => c.url.includes("/dedup/"))).toBe(false); // the map is only asked for when you switch to it
+
+  await userEvent.click(within(group).getByRole("button", { name: /Scatter/ }));
+  expect(await screen.findByRole("img", { name: /2D scatter/ })).toBeInTheDocument();
+  expect(screen.queryByTestId("card-a.png")).toBeNull();
+  expect(within(group).getByRole("button", { name: /Scatter/ })).toHaveAttribute("aria-pressed", "true");
+
+  await userEvent.click(within(group).getByRole("button", { name: /Grid/ }));
+  await cardEl("a.png");
+  expect(screen.queryByRole("img", { name: /2D scatter/ })).toBeNull();
+});
+
+test("labeling a selection on the map reloads the page's counts", async () => {
+  render(<ClassifyView camera="camA" />);
+  await cardEl("a.png");
+  await userEvent.click(screen.getByRole("button", { name: /Scatter/ }));
+  const svg = await screen.findByRole("img", { name: /2D scatter/ });
+  svg.getBoundingClientRect = () => ({ left: 0, top: 0, width: 720, height: 420, right: 720, bottom: 420, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
+  const before = calls.filter((c) => c.url.includes("/classify/state")).length;
+  fireEvent.mouseDown(svg, { button: 0, clientX: 0, clientY: 0 });
+  fireEvent.mouseMove(window, { clientX: 100, clientY: 100 });
+  fireEvent.mouseUp(window, { clientX: 100, clientY: 100 });
+  const labelGroup = await screen.findByRole("group", { name: "Label the selection" });
+  await userEvent.click(within(labelGroup).getByRole("button", { name: /Label 1 as NG/ }));
+  await waitFor(() => expect(calls.filter((c) => c.url.includes("/classify/state")).length).toBeGreaterThan(before));
+  expect(calls.find((c) => c.url.endsWith("/classify/label-bulk"))!.body).toMatchObject({ feature: "seal", cls: "NG" });
 });

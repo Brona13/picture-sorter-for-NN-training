@@ -239,6 +239,15 @@ VARIANTS = {
 
 
 # --- cache -------------------------------------------------------------------
+def is_cached(camera: str, feature: str, method: str, backbone: str, frames: list[str]) -> bool:
+    """Whether a projection for exactly these frames can be served from the cache without computing anything.
+
+    True when every frame is part of the cached layout (the same set, or frames removed since), the two cases
+    ``project`` answers from the cache.
+    """
+    return bool(frames) and _load_subset(camera, feature, method, backbone, frames) is not None
+
+
 def _load_cached(
     camera: str, feature: str, method: str, backbone: str, fsig: str,
 ) -> np.ndarray | None:

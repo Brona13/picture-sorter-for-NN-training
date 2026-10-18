@@ -109,6 +109,8 @@ See [[data-model]] for the canonical entities and invariants.
 
 ### Classification
 
+- **Grid | Scatter switch (v1.54.0):** Classify has a **View** switch under the class counts. **Grid** (the card grid with filters, always the default) or **Scatter**: the 2D map of this ROI's pictures, where dragging a rectangle selects many at once and one click labels them all as a class (for the product ROI: the products), clears them, or deletes them, exactly as on the Scatter page. The map code is shared, not copied: `classify/ScatterWorkbench.tsx` (the `useScatterMap` hook, `ScatterMapView`, `ScatterSelection`) is used by both the Scatter page and `classify/ClassifyScatter.tsx`. A map that is already computed appears at once (`GET /api/cameras/{camera}/dedup/scatter/cached`, `scatter.is_cached`: every live picture is part of the cached layout); otherwise a **Compute map** button runs the same projection job as the Scatter page. The Scatter view has its own Embedding, projection and Colour-by (label / cluster / nothing) choices; the embedding is the Dedup setting of the ROI. A label or delete from the map reloads Classify's counts and grid.
+
 - Metadata labels; source frames do not move
 - Default binary quality classes: `OK` and `NG`
 - Multi-class product classification

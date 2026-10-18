@@ -179,6 +179,35 @@ class DedupApiTests(ApiTestCase):
         self.assertEqual(sum(p["representative"] for p in pts.values()), 2)
         self.assertEqual(self.client.post(f"{self.base}/scatter", json={"feature": FEAT, "projection": "pca"}).status_code, 422)
 
+    def _store_projection(self, frames: list[str], method: str = "umap", backbone: str = "resnet50") -> None:
+        import json
+
+        xy = [[float(i), float(i)] for i in range(len(frames))]
+        db.save_scatter(CAM, FEAT, method, backbone, "sig", json.dumps({"frames": frames, "xy": xy}).encode("utf-8"))
+
+    def cached(self, **over) -> bool:
+        params = {"feature": FEAT, "projection": "umap", "method": "resnet50", **over}
+        r = self.client.get(f"{self.base}/scatter/cached", params=params)
+        self.assertEqual(r.status_code, 200, r.text)
+        return r.json()["cached"]
+
+    def test_scatter_cached_probe_tells_when_the_map_needs_no_computing(self) -> None:
+        self.assertFalse(self.cached())
+        self._store_projection(self.frames)
+        self.assertTrue(self.cached())
+        self.assertFalse(self.cached(method="resnet18"))
+        self.assertFalse(self.cached(projection="tsne"))
+
+    def test_scatter_cached_probe_accepts_frames_removed_since_but_not_new_ones(self) -> None:
+        self._store_projection([*self.frames, "deleted-since.png"])
+        self.assertTrue(self.cached())
+        self._store_projection(self.frames[:-1])  # a frame was added after the projection
+        self.assertFalse(self.cached())
+
+    def test_scatter_cached_probe_rejects_unknown_projection_and_feature(self) -> None:
+        self.assertEqual(self.client.get(f"{self.base}/scatter/cached", params={"feature": FEAT, "projection": "pca", "method": "resnet50"}).status_code, 422)
+        self.assertEqual(self.client.get(f"{self.base}/scatter/cached", params={"feature": "nope", "projection": "umap", "method": "resnet50"}).status_code, 404)
+
     def test_scatter_missing_optional_dependency_is_reported(self) -> None:
         self.cluster()
         with mock.patch.object(scatter, "project", side_effect=ImportError("umap")):

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import ClassifyScatter from "../classify/ClassifyScatter";
 import { usePublishFeature, useSharedFeature } from "../SharedFeature";
 import { api, CardData, CardUpdate, ClassifyState, GridQuery, GridResponse } from "../api";
 import AutoPanel, { AutoFilter } from "../classify/AutoPanel";
@@ -39,6 +40,7 @@ export default function ClassifyView({ camera, product }: { camera: string; prod
   const [busy, setBusy] = useState<string | null>(null);
   const [viewing, setViewing] = useState<string | null>(null); // the picture viewer, on a frame of this page
   const [revision, setRevision] = useState(0);
+  const [mode, setMode] = useState<"grid" | "scatter">("grid");
   const [similarSeed, setSimilarSeed] = useState<{ frame: string; label: string } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -231,6 +233,23 @@ export default function ClassifyView({ camera, product }: { camera: string; prod
         </dl>
       )}
 
+      {st && (
+        <div role="group" aria-label="View" style={{ display: "flex", gap: 6, margin: "8px 0" }}>
+          <button type="button" aria-pressed={mode === "grid"} onClick={() => setMode("grid")}>
+            ▦ Grid
+          </button>
+          <button type="button" aria-pressed={mode === "scatter"} onClick={() => setMode("scatter")}>
+            ✦ Scatter
+          </button>
+        </div>
+      )}
+
+      {mode === "scatter" && st && (
+        <ClassifyScatter camera={camera} feature={feature} onChanged={bump} onNotice={setNotice} onError={setError} />
+      )}
+
+      {mode === "grid" && (
+        <>
       {st?.cold_start && (
         <p>
           <strong>Start here:</strong> mark a few reference frames ({classes.slice(0, 2).map((c) => `⭐${c}`).join(" / ")}, …). Then hit Refresh — every
@@ -474,6 +493,8 @@ export default function ClassifyView({ camera, product }: { camera: string; prod
           )}
             </>
           )}
+        </>
+      )}
         </>
       )}
     </section>

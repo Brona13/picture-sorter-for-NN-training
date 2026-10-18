@@ -1,12 +1,10 @@
-import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ReactNode, useCallback, useEffect, useState } from "react";
 import { usePublishFeature, useSharedFeature } from "../SharedFeature";
-import { api, CardData, DedupParams, DedupResult, DedupState, DeletePreview, DeleteResult, OutlierResult, ScatterPoint, ScatterResult } from "../api";
-import { classColor } from "../classify/colors";
-import { PagerSettings } from "../classify/Pager";
-import PictureGrid from "../classify/PictureGrid";
+import { api, DedupParams, DedupResult, DedupState, OutlierResult } from "../api";
 import ClusterBrowser, { Marks } from "../classify/ClusterBrowser";
 import { OutlierControls, OutlierResults, useOutliers } from "../classify/OutlierPanel";
-import Scatter, { ColourBy, ScatterLegend } from "../classify/Scatter";
+import { ColourBy } from "../classify/Scatter";
+import { effectiveColour, ScatterMapView, useScatterMap } from "../classify/ScatterWorkbench";
 import InfoTip from "../InfoTip";
 import SidePanel from "../SidePanel";
 import WheelRange from "../WheelRange";
@@ -70,40 +68,18 @@ export default function DedupView({
   const [result, setResult] = useState<DedupResult | null>(null);
   const [picks, setPicks] = useState<Record<number, string>>({});
   const [clusterJob, setClusterJob] = useState<string | null>(null);
-  const [scatterJob, setScatterJob] = useState<string | null>(null);
-  const [projection, setProjection] = useState("umap");
-  const [scatter, setScatter] = useState<ScatterResult | null>(null);
-  const [selected, setSelected] = useState<ScatterPoint[] | null>(null);
-  // Changes made from the selection (a label, a delete) show on the map at once, without projecting again. null = deleted.
-  const [overrides, setOverrides] = useState<Record<string, Mark | null>>({});
   const [marks, setMarks] = useState<Marks>({});
   const [outliers, setOutliers] = useState<OutlierResult | null>(null);
   const [colourBy, setColourBy] = useState<ColourBy>("label");
   // The selected tool owns the options panel and the centre; the other tools keep their results while it is away.
   const active = tool;
-  // A fresh projection resets the chart's zoom and selection; the key changes in the same render, so no remount flicker.
-  const genRef = useRef<{ scatter: ScatterResult | null; gen: number }>({ scatter: null, gen: 0 });
-  if (genRef.current.scatter !== scatter) genRef.current = { scatter, gen: genRef.current.gen + 1 };
   const [confirmClear, setConfirmClear] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const cj = useJob<DedupResult>(clusterJob);
-  const sj = useJob<ScatterResult>(scatterJob);
   const clustering = clusterJob !== null && (cj === null || cj.status === "queued" || cj.status === "running");
-  const projecting = scatterJob !== null && (sj === null || sj.status === "queued" || sj.status === "running");
-
-  useEffect(() => {
-    setSelected(null);
-    setOverrides({});
-  }, [scatter]);
-  const mapPoints = useMemo(
-    () => (scatter ? scatter.points.flatMap((p) => (p.frame in overrides ? (overrides[p.frame] === null ? [] : [{ ...p, ...overrides[p.frame] }]) : [p])) : []),
-    [scatter, overrides],
-  );
-  // A map of another embedding would be stale.
-  useEffect(() => {
-    if (scatter && params && scatter.method !== params.method) setScatter(null);
-  }, [params?.method]); // eslint-disable-line react-hooks/exhaustive-deps
+  const map = useScatterMap({ camera, feature, method: params?.method ?? "", onError: setError });
+  const { scatter, projecting, projection, setProjection } = map;
   useEffect(() => setMarks(result?.marks ?? {}), [result]);
 
   useEffect(() => {
@@ -136,9 +112,7 @@ export default function DedupView({
     setResult(null);
     setOutliers(null);
     setPicks({});
-    setScatter(null);
     setClusterJob(null);
-    setScatterJob(null);
     setNotice(null);
     setConfirmClear(false);
     load();
@@ -148,26 +122,15 @@ export default function DedupView({
     if (cj?.status === "done" && cj.result) {
       setResult(cj.result);
       setPicks({});
-      if (scatter) runScatter(); // its cluster colours follow the new clustering (the projection itself is cached)
+      if (map.scatter) map.run(); // its cluster colours follow the new clustering (the projection itself is cached)
     } else if (cj?.status === "error") setError(cj.error);
   }, [cj?.status]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (sj?.status === "done" && sj.result) setScatter(sj.result);
-    else if (sj?.status === "error") setError(sj.error);
-  }, [sj?.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function change(patch: Partial<DedupParams>) {
     if (!params) return;
     const next = { ...params, ...patch };
     setParams(next);
     api.dedupSaveSettings(camera, feature, next).catch((e: unknown) => setError(msg(e)));
-  }
-
-  // The map of the feature's frames, for the chosen embedding. No clustering is needed.
-  function runScatter() {
-    if (!params?.method) return;
-    api.dedupScatter(camera, feature, projection, params.method).then((j) => setScatterJob(j.id)).catch((e: unknown) => setError(msg(e)));
   }
 
   const outlierRun = useOutliers({ camera, feature, method: params?.method ?? "", onResult: setOutliers, onError: setError });
@@ -199,15 +162,7 @@ export default function DedupView({
   const validPicks = Object.fromEntries(Object.entries(picks).filter(([cid, f]) => result?.clusters.find((c) => c.id === Number(cid))?.members.includes(f)));
   const wouldMute = result ? result.clusters.reduce((n, c) => n + c.members.length - 1, 0) : 0;
   const progress = cj?.progress ?? {};
-  // The map can only be coloured by what exists: say so and fall back to the labels.
-  const hasClusters = !!scatter && scatter.points.some((p) => p.cluster !== null);
-  const colourNote =
-    colourBy === "cluster" && !hasClusters
-      ? "There is no clustering for this embedding yet, so the dots are coloured by label. Run Clusters to colour by cluster."
-      : colourBy === "outlier" && !outliers
-        ? "Outliers have not been scored for this embedding, so the dots are coloured by label. Run Outliers first."
-        : null;
-  const effectiveColour: ColourBy = colourNote ? "label" : colourBy;
+  const { colour: shownColour, note: colourNote } = effectiveColour(colourBy, scatter, outliers);
 
   return (
     <SidePanel
@@ -354,7 +309,7 @@ export default function DedupView({
                 <button
                   disabled={projecting}
                   onClick={() => {
-                    runScatter();
+                    map.run();
                   }}
                 >
                   Compute projection
@@ -387,61 +342,23 @@ export default function DedupView({
           {scatter && (
             <>
               {colourNote && <p role="note" style={{ fontSize: 12 }}>{colourNote}</p>}
-              <ScatterLegend colourBy={effectiveColour} classes={scatter.classes} />
-              <Scatter
-                key={genRef.current.gen}
-                points={mapPoints}
-                classes={scatter.classes}
-                onSelect={setSelected}
-                colourBy={effectiveColour}
+              <ScatterMapView
+                camera={camera}
+                feature={feature}
+                map={map}
+                colourBy={shownColour}
                 scores={outliers ? outlierShades(outliers) : undefined}
+                grid={st?.grid ?? { per_page: 24, cols: 4, per_page_options: [], cols_options: [] }}
+                onGrid={(perPage, cols) =>
+                  api
+                    .dedupGridSettings(camera, feature, perPage, cols)
+                    .then((g) => setSt((x) => (x ? { ...x, grid: g } : x)))
+                    .catch((e: unknown) => setError(msg(e)))
+                }
+                onNotice={setNotice}
+                onError={setError}
+                onChanged={load}
               />
-              {selected && st && (
-                <ScatterSelection
-                  camera={camera}
-                  feature={feature}
-                  points={selected}
-                  classes={scatter.classes}
-                  grid={st.grid}
-                  onGrid={(perPage, cols) =>
-                    api
-                      .dedupGridSettings(camera, feature, perPage, cols)
-                      .then((g) => setSt((x) => (x ? { ...x, grid: g } : x)))
-                      .catch((e: unknown) => setError(msg(e)))
-                  }
-                  onMark={(frame, m) => setOverrides((o) => ({ ...o, [frame]: m }))}
-                  onRemoved={(frame) => {
-                    setOverrides((o) => ({ ...o, [frame]: null }));
-                    setNotice(`Deleted ${frame}. It stays on disk; see Classify → Show: Deleted.`);
-                    load();
-                  }}
-                  onError={(m) => setError(m)}
-                  onLabeled={(frames, cls) => {
-                    setNotice(`Labeled ${frames.length} frame(s) as ${cls}.`);
-                    setOverrides((o) => ({
-                      ...o,
-                      ...Object.fromEntries(
-                        frames.map((f) => {
-                          const pt = scatter.points.find((q) => q.frame === f);
-                          const prev = o[f] ?? (pt ? { label: pt.label, golden: pt.golden } : { label: null, golden: null });
-                          return [f, { label: cls, golden: prev.golden ? cls : null }];
-                        }),
-                      ),
-                    }));
-                    load();
-                  }}
-                  onDeleted={(r, frames) => {
-                    setNotice(
-                      `Deleted ${r.deleted} frame(s)` +
-                        (r.cleared_labels || r.cleared_goldens ? ` · cleared ${r.cleared_labels} label(s) and ${r.cleared_goldens} golden mark(s)` : "") +
-                        ". They stay on disk; see Classify → Show: Deleted.",
-                    );
-                    setOverrides((o) => ({ ...o, ...Object.fromEntries(frames.map((f) => [f, null])) }));
-                    setSelected(null);
-                    load();
-                  }}
-                />
-              )}
             </>
           )}
         </div>
@@ -511,7 +428,7 @@ export default function DedupView({
               onDeleted={(frame) => {
                 setNotice(`Deleted ${frame}. It stays on disk; see Classify → Show: Deleted.`);
                 load();
-                if (scatter) runScatter();
+                if (map.scatter) map.run();
               }}
             />
           )}
@@ -551,8 +468,6 @@ export default function DedupView({
   );
 }
 
-type Mark = { label: string | null; golden: string | null };
-
 /** The selected tool's heading (with its info tip) and controls, in the options panel under the shared Embedding and Feature. */
 function ToolControls({ tool, info, children }: { tool: DedupTool; info: ReactNode; children: ReactNode }) {
   return (
@@ -563,178 +478,5 @@ function ToolControls({ tool, info, children }: { tool: DedupTool; info: ReactNo
       </h3>
       {children}
     </section>
-  );
-}
-
-/**
- * The frames inside the rectangle drawn on the scatter: a summary, the batch actions (label all as
- * a class, delete all), and then the same paged card grid used everywhere else, with the picture
- * viewer on click. Changes are reported up so the map can show them without being recomputed.
- */
-function ScatterSelection({
-  camera,
-  feature,
-  points,
-  classes,
-  grid,
-  onGrid,
-  onMark,
-  onRemoved,
-  onDeleted,
-  onLabeled,
-  onError,
-}: {
-  camera: string;
-  feature: string;
-  points: ScatterPoint[];
-  classes: string[];
-  grid: PagerSettings;
-  onGrid: (perPage: number, cols: number) => void;
-  onMark: (frame: string, mark: Mark) => void;
-  onRemoved: (frame: string) => void;
-  onDeleted: (r: DeleteResult, frames: string[]) => void;
-  onLabeled: (frames: string[], cls: string) => void;
-  onError: (m: string) => void;
-}) {
-  const [preview, setPreview] = useState<DeletePreview | null>(null);
-  const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [page, setPage] = useState(1);
-  const [marks, setMarks] = useState<Record<string, Mark>>({});
-  const [gone, setGone] = useState<Set<string>>(new Set());
-
-  const hasClusters = points.some((p) => p.cluster !== null);
-  const clusterKey = (p: ScatterPoint) => (p.cluster === null || p.cluster < 0 ? 1e9 : p.cluster);
-  const sorted = useMemo(() => [...points].sort((a, b) => clusterKey(a) - clusterKey(b) || a.frame.localeCompare(b.frame)), [points]);
-
-  // A new selection starts clean: no old confirmation, page, marks or removals.
-  useEffect(() => {
-    setPreview(null);
-    setPage(1);
-    setGone(new Set());
-    setMarks(Object.fromEntries(points.map((p) => [p.frame, { label: p.label, golden: p.golden }])));
-  }, [points]);
-
-  const rows = sorted.filter((p) => !gone.has(p.frame));
-  const frames = rows.map((p) => p.frame);
-  const markOf = (frame: string): Mark => marks[frame] ?? { label: null, golden: null };
-  const askDelete = () => {
-    setBusy(true);
-    api
-      .deletePreview(camera, feature, frames)
-      .then(setPreview)
-      .catch((e: unknown) => onError(msg(e)))
-      .finally(() => setBusy(false));
-  };
-  const doLabel = (cls: string) => {
-    setBusy(true);
-    api
-      .labelFrames(camera, feature, frames, cls, "Scatter")
-      .then((r) => {
-        setMarks((m) => Object.fromEntries(Object.entries(m).map(([f, v]) => [f, { label: frames.includes(f) ? cls : v.label, golden: frames.includes(f) && v.golden ? cls : v.golden }])));
-        onLabeled(frames, cls);
-        void r;
-      })
-      .catch((e: unknown) => onError(msg(e)))
-      .finally(() => setBusy(false));
-  };
-  const doDelete = () => {
-    setBusy(true);
-    api
-      .deleteFrames(camera, feature, frames, note, "Scatter")
-      .then((r) => {
-        setPreview(null);
-        setNote("");
-        onDeleted(r, frames);
-      })
-      .catch((e: unknown) => onError(msg(e)))
-      .finally(() => setBusy(false));
-  };
-
-  // What the selection is made of: clusters when there is a clustering, labels otherwise.
-  const counts = new Map<string, number>();
-  for (const p of rows) {
-    const k = hasClusters ? (p.cluster === null || p.cluster < 0 ? "unique" : `cluster ${p.cluster}`) : (markOf(p.frame).label ?? "unlabeled");
-    counts.set(k, (counts.get(k) ?? 0) + 1);
-  }
-  const summary = [...counts.entries()].map(([k, n]) => `${k}: ${n}`).join(" · ");
-
-  const cardOf = (frame: string): CardData => ({ frame, ...markOf(frame), deleted: false, leanings: {}, bars: null, cluster: null });
-
-  return (
-    <div data-testid="scatter-selection">
-      <h4>{rows.length} frame(s) in the selected region</h4>
-      {rows.length === 0 ? (
-        <p>No frames inside the rectangle. Right-click to reset the view.</p>
-      ) : (
-        <>
-          <p style={{ fontSize: 12 }}>{summary}</p>
-          {preview === null ? (
-            <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center", margin: "6px 0" }}>
-              <div role="group" aria-label="Label the selection" style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                {classes.map((c) => (
-                  <button
-                    key={c}
-                    type="button"
-                    disabled={busy}
-                    onClick={() => doLabel(c)}
-                    style={{ background: classColor(c, classes), color: "#fff", borderColor: classColor(c, classes) }}
-                  >
-                    Label {rows.length} as {c}
-                  </button>
-                ))}
-              </div>
-              <button type="button" disabled={busy} onClick={askDelete} style={{ borderColor: "#c62828", color: "#c62828" }}>
-                🗑 Delete these {rows.length} frame(s)…
-              </button>
-            </div>
-          ) : (
-            <div role="alertdialog" aria-label="Confirm delete" style={{ border: "1px solid #c33", padding: 8, margin: "6px 0" }}>
-              <p style={{ margin: "0 0 6px" }}>
-                Delete <strong>{preview.total}</strong> frame(s) on this camera, in <strong>every ROI</strong>? Of these, <strong>{preview.labeled}</strong>{" "}
-                labeled and <strong>{preview.golden}</strong> golden lose their marks (a restore does not bring the marks back). Files stay on disk.
-              </p>
-              <label>
-                Note (optional){" "}
-                <input type="text" value={note} maxLength={200} onChange={(e) => setNote(e.target.value)} placeholder="e.g. foreign object" style={{ width: 260 }} />
-              </label>{" "}
-              <button type="button" disabled={busy} onClick={doDelete}>
-                Yes — delete {preview.total}
-              </button>{" "}
-              <button type="button" disabled={busy} onClick={() => setPreview(null)}>
-                Cancel
-              </button>
-            </div>
-          )}
-          <PictureGrid
-            camera={camera}
-            feature={feature}
-            classes={classes}
-            frames={frames}
-            cardOf={cardOf}
-            via="Scatter"
-            grid={grid}
-            onGrid={onGrid}
-            page={page}
-            onPage={setPage}
-            where="selection"
-            extras={(f) => {
-              const p = rows.find((q) => q.frame === f);
-              return { caption: !p || p.cluster === null ? undefined : p.cluster < 0 ? "unique" : `cluster ${p.cluster}${p.representative ? " · rep" : ""}` };
-            }}
-            onChanged={(f, c) => {
-              const m = { label: c.label, golden: c.golden };
-              setMarks((cur) => ({ ...cur, [f]: m }));
-              onMark(f, m);
-            }}
-            onDeleted={(f) => {
-              setGone((g) => new Set(g).add(f));
-              onRemoved(f);
-            }}
-            onError={onError}
-          />
-        </>
-      )}
-    </div>
   );
 }

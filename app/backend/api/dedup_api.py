@@ -268,6 +268,15 @@ class ScatterBody(BaseModel):
     method: str | None = None
 
 
+@router.get("/cameras/{camera}/dedup/scatter/cached")
+def scatter_cached(camera: str, feature: str, projection: str, method: str) -> dict:
+    """Whether the 2D map for this embedding and projection can be shown at once (nothing to compute)."""
+    require_feature(camera, feature)
+    if projection not in scatter.SUPPORTED_METHODS:
+        raise HTTPException(status_code=422, detail=f"Unknown projection: {projection}")
+    return {"cached": scatter.is_cached(camera, feature, projection, method, dedup.live_frames(camera, feature))}
+
+
 @router.post("/cameras/{camera}/dedup/scatter", status_code=202)
 def run_scatter(camera: str, body: ScatterBody) -> dict:
     """2D projection of the feature's embeddings (job: UMAP/t-SNE can be slow on first use).

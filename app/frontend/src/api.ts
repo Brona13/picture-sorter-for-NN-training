@@ -1100,6 +1100,10 @@ export const api = {
     ),
   dedupOutliers: (camera: string, feature: string, method: string, k: number) =>
     request<Job<OutlierResult>>(`/cameras/${encodeURIComponent(camera)}/dedup/outliers`, post({ feature, method, k })),
+  dedupScatterCached: (camera: string, feature: string, projection: string, method: string) =>
+    request<{ cached: boolean }>(
+      `/cameras/${encodeURIComponent(camera)}/dedup/scatter/cached?feature=${encodeURIComponent(feature)}&projection=${encodeURIComponent(projection)}&method=${encodeURIComponent(method)}`,
+    ),
   dedupScatter: (camera: string, feature: string, projection: string, method: string) =>
     request<Job<ScatterResult>>(`/cameras/${encodeURIComponent(camera)}/dedup/scatter`, post({ feature, projection, method })),
 };

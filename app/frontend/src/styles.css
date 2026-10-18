@@ -249,3 +249,5 @@ ul[style*="grid"] > li { min-width: 0; overflow-wrap: anywhere; }
 .camera-delete label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
 button.danger { color: var(--danger-fg); background: var(--danger-bg); border: 1px solid var(--danger-fg); border-radius: var(--radius); cursor: pointer; }
 button.danger:disabled { opacity: 0.5; cursor: not-allowed; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+button[aria-pressed="true"] { background: var(--info-bg); color: var(--info-fg); border-color: var(--accent); }
