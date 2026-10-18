@@ -4,6 +4,7 @@ import { api, DedupParams, DedupResult, DedupState, OutlierResult } from "../api
 import ClusterBrowser, { Marks } from "../classify/ClusterBrowser";
 import { OutlierControls, OutlierResults, useOutliers } from "../classify/OutlierPanel";
 import { ColourBy } from "../classify/Scatter";
+import { OUTLIERS_INFO, SCATTER_INFO } from "../classify/toolInfo";
 import { effectiveColour, ScatterMapView, useScatterMap } from "../classify/ScatterWorkbench";
 import InfoTip from "../InfoTip";
 import SidePanel from "../SidePanel";
@@ -27,19 +28,6 @@ const CLUSTERS_INFO = (
     cluster is muted when you press <strong>Apply mute</strong>. Nothing is deleted, and labeled or golden frames are never muted.
   </>
 );
-const SCATTER_INFO = (
-  <>
-    A 2D map of the frames' embeddings (UMAP or t-SNE): pictures that look alike sit close together. Drag a rectangle to zoom in and select the frames inside it,
-    right-click to reset the view. The map distorts distances, so use it as a sanity check; clustering is done on the full embeddings.
-  </>
-);
-const OUTLIERS_INFO = (
-  <>
-    Scores each frame by its mean cosine distance to its <em>k</em> nearest other frames, using the chosen embedding (filter and mask apply). A high score means few
-    similar frames: an unusual picture, or one that does not belong. It is a hint for review, not a verdict.
-  </>
-);
-
 /** The three duplicate tools; the top bar picks one, and its controls fill the options panel and its results the centre. */
 export type DedupTool = "scatter" | "clusters" | "outliers";
 const TITLES: Record<DedupTool, string> = { scatter: "Scatter", clusters: "Clusters", outliers: "Outliers" };

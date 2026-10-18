@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { lastSession } from "../lastSession";
 import ClassifyView from "./ClassifyView";
 
 const baseState = (over: Record<string, unknown> = {}) => ({
@@ -1047,4 +1048,100 @@ test("in the viewer of a found picture the Product buttons and the feature's OK 
   expect(row.indexOf(product)).toBeLessThan(row.indexOf(labels));
   // nothing is stacked under that line
   expect(labels.parentElement!.parentElement!.children).toHaveLength(1);
+});
+
+// --- the options panel on the right ---------------------------------------------------------------------------------
+const panel = () => screen.getByRole("complementary", { name: "Options" });
+
+test("the Grid view's properties are in the options panel on the right: Show, Rank using, Order by, and the bulk tools", async () => {
+  render(<ClassifyView camera="camA" />);
+  await cardEl("a.png");
+  const grid = within(panel()).getByTestId("grid-controls");
+  expect(within(grid).getByRole("combobox", { name: /Show/ })).toBeInTheDocument();
+  expect(within(grid).getByRole("combobox", { name: /Rank using/ })).toBeInTheDocument();
+  expect(within(grid).getByRole("combobox", { name: /Order by/ })).toBeInTheDocument();
+  expect(within(grid).getByText(/Bulk-label a selection/)).toBeInTheDocument();
+  expect(within(grid).getByText(/Auto-assign by leaning/)).toBeInTheDocument();
+  expect(within(grid).getByText(/Clear labels in this view/)).toBeInTheDocument();
+});
+
+test("those controls are no longer in the page itself", async () => {
+  render(<ClassifyView camera="camA" />);
+  await cardEl("a.png");
+  const main = document.querySelector(".with-panel-main") as HTMLElement;
+  expect(within(main).queryByRole("combobox", { name: /Show/ })).toBeNull();
+  expect(within(main).queryByText(/Bulk-label a selection/)).toBeNull();
+});
+
+test("changing Show in the panel still changes the grid", async () => {
+  render(<ClassifyView camera="camA" />);
+  await cardEl("a.png");
+  await userEvent.selectOptions(within(panel()).getByRole("combobox", { name: /Show/ }), "Unlabeled");
+  await waitFor(() => expect(gridCalls().at(-1)!.url).toContain("view=Unlabeled"));
+});
+
+test("choosing a view changes what the panel shows: Scatter then Outliers then Grid", async () => {
+  render(<ClassifyView camera="camA" />);
+  await cardEl("a.png");
+  const views = screen.getByRole("group", { name: "View" });
+  await userEvent.click(within(views).getByRole("button", { name: /Scatter/ }));
+  const scatter = await within(panel()).findByTestId("scatter-controls");
+  expect(within(scatter).getByLabelText("Embedding")).toBeInTheDocument();
+  expect(within(scatter).getByRole("button", { name: /map/ })).toBeInTheDocument();
+  expect(within(panel()).queryByTestId("grid-controls")).toBeNull();
+
+  await userEvent.click(within(views).getByRole("button", { name: /Outliers/ }));
+  const outliers = await within(panel()).findByTestId("outliers-controls");
+  expect(within(outliers).getByLabelText("Embedding")).toBeInTheDocument();
+  expect(within(outliers).getByLabelText("k neighbours")).toBeInTheDocument(); // the slider
+  expect(within(outliers).getByRole("button", { name: "Score outliers" })).toBeInTheDocument();
+  expect(within(panel()).queryByTestId("scatter-controls")).toBeNull();
+
+  await userEvent.click(within(views).getByRole("button", { name: /Grid/ }));
+  expect(await within(panel()).findByTestId("grid-controls")).toBeInTheDocument();
+  expect(within(panel()).queryByTestId("outliers-controls")).toBeNull();
+});
+
+test("the Score outliers button and its slider are in the panel, not in the page, and still score", async () => {
+  render(<ClassifyView camera="camA" />);
+  await cardEl("a.png");
+  await userEvent.click(screen.getByRole("button", { name: /Outliers/ }));
+  const main = document.querySelector(".with-panel-main") as HTMLElement;
+  await within(panel()).findByRole("button", { name: "Score outliers" });
+  expect(within(main).queryByRole("button", { name: "Score outliers" })).toBeNull();
+  await userEvent.click(within(panel()).getByRole("button", { name: "Score outliers" }));
+  expect(await screen.findByTestId("card-a.png")).toBeInTheDocument();
+  expect(calls.find((c) => c.url.endsWith("/dedup/outliers"))!.body).toMatchObject({ feature: "seal", k: 5 });
+});
+
+test("the panel collapses: its controls go, the page keeps working, and it comes back", async () => {
+  try {
+    render(<ClassifyView camera="camA" />);
+    await cardEl("a.png");
+    await userEvent.click(screen.getByRole("button", { name: "Hide options panel" }));
+    expect(screen.queryByTestId("grid-controls")).toBeNull();
+    expect(screen.getByTestId("card-a.png")).toBeInTheDocument();
+    await userEvent.click(screen.getByTestId("kpi-unlabeled")); // the numbers still switch the View
+    await waitFor(() => expect(gridCalls().at(-1)!.url).toContain("view=Unlabeled"));
+    await userEvent.click(screen.getByRole("button", { name: "Show options panel" }));
+    const show = within(await screen.findByTestId("grid-controls")).getByRole("combobox", { name: /Show/ });
+    expect(show).toHaveValue("Unlabeled");
+  } finally {
+    lastSession.setPanelCollapsed(false);
+  }
+});
+
+test("collapsed, the Scatter and Outliers views show no controls (the hints point to the panel)", async () => {
+  try {
+    lastSession.setPanelCollapsed(true);
+    render(<ClassifyView camera="camA" />);
+    await cardEl("a.png");
+    await userEvent.click(screen.getByRole("button", { name: /Outliers/ }));
+    expect(await screen.findByText(/in the options panel/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Score outliers" })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Show options panel" }));
+    expect(await screen.findByRole("button", { name: "Score outliers" })).toBeInTheDocument();
+  } finally {
+    lastSession.setPanelCollapsed(false);
+  }
 });

@@ -1,5 +1,7 @@
+import { PanelPortal, PanelSection } from "../SidePanel";
 import { OutlierControls, OutlierResults, useOutliers } from "./OutlierPanel";
 import { PagerSettings } from "./Pager";
+import { OUTLIERS_INFO } from "./toolInfo";
 import { EmbeddingSelect, useDedupState } from "./useDedupState";
 
 /**
@@ -34,13 +36,17 @@ export default function ClassifyOutliers({
 
   return (
     <div data-testid="classify-outliers">
-      <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center", margin: "8px 0" }}>
-        <EmbeddingSelect state={embed} />
-        <OutlierControls o={o} />
-      </div>
+      <PanelPortal>
+        <PanelSection title="Outliers" info={OUTLIERS_INFO} testId="outliers-controls">
+          <EmbeddingSelect state={embed} />
+          <div style={{ marginTop: 8 }}>
+            <OutlierControls o={o} />
+          </div>
+        </PanelSection>
+      </PanelPortal>
       {!o.result && !o.running && (
         <p>
-          Press <strong>Score outliers</strong> to list this ROI's pictures from the most unusual one. A high score means few similar pictures: an unusual
+          Press <strong>Score outliers</strong> in the options panel to list this ROI's pictures from the most unusual one. A high score means few similar pictures: an unusual
           picture, or one that does not belong. It is a hint for review, not a verdict.
         </p>
       )}

@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { PanelPortal, PanelSection } from "../SidePanel";
+import { SCATTER_INFO } from "./toolInfo";
 import { PagerSettings } from "./Pager";
 import { ColourBy } from "./Scatter";
 import { effectiveColour, ScatterMapView, useScatterMap } from "./ScatterWorkbench";
@@ -39,36 +41,40 @@ export default function ClassifyScatter({
   const { colour, note } = effectiveColour(colourBy, map.scatter, null);
   return (
     <div data-testid="classify-scatter">
-      <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center", margin: "8px 0" }}>
-        <EmbeddingSelect state={embed} />
-        <fieldset style={{ border: 0, padding: 0, margin: 0 }}>
-          <legend className="visually-hidden">Projection</legend>
-          {dst.projections.map((p) => (
-            <label key={p} style={{ marginRight: 10 }}>
-              <input type="radio" name="classify-projection" checked={map.projection === p} onChange={() => map.setProjection(p)} /> {p}
-            </label>
-          ))}
-        </fieldset>
-        <label>
-          Colour by{" "}
-          <select value={colourBy} onChange={(e) => setColourBy(e.target.value as ColourBy)}>
-            <option value="label">Label</option>
-            <option value="cluster">Cluster</option>
-            <option value="none">Nothing</option>
-          </select>
-        </label>
-        <button type="button" disabled={map.projecting} onClick={map.run}>
-          {map.scatter ? "Recompute map" : "Compute map"}
-        </button>
-      </div>
-      {map.projecting && (
-        <p aria-live="polite">
-          <progress /> Projecting…
-        </p>
-      )}
+      <PanelPortal>
+        <PanelSection title="Scatter" info={SCATTER_INFO} testId="scatter-controls">
+          <EmbeddingSelect state={embed} />
+          <fieldset style={{ border: 0, padding: 0, margin: "6px 0 0" }}>
+            <legend style={{ fontSize: 12, color: "var(--muted)", padding: 0 }}>Projection</legend>
+            {dst.projections.map((p) => (
+              <label key={p} style={{ display: "inline-block", marginRight: 12 }}>
+                <input type="radio" name="classify-projection" checked={map.projection === p} onChange={() => map.setProjection(p)} /> {p}
+              </label>
+            ))}
+          </fieldset>
+          <label>
+            Colour by
+            <select value={colourBy} onChange={(e) => setColourBy(e.target.value as ColourBy)}>
+              <option value="label">Label</option>
+              <option value="cluster">Cluster</option>
+              <option value="none">Nothing</option>
+            </select>
+          </label>
+          <div style={{ marginTop: 8 }}>
+            <button type="button" disabled={map.projecting} onClick={map.run}>
+              {map.scatter ? "Recompute map" : "Compute map"}
+            </button>
+          </div>
+          {map.projecting && (
+            <p aria-live="polite">
+              <progress /> Projecting…
+            </p>
+          )}
+        </PanelSection>
+      </PanelPortal>
       {!map.scatter && !map.projecting && map.cached === false && (
         <p>
-          This map is not computed yet. Press <strong>Compute map</strong>; it can take a while for a big set, and it is kept afterwards.
+          This map is not computed yet. Press <strong>Compute map</strong> in the options panel; it can take a while for a big set, and it is kept afterwards.
         </p>
       )}
       {note && (

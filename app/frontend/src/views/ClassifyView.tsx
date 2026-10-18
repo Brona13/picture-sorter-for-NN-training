@@ -14,10 +14,17 @@ import ClearPanel from "../classify/ClearPanel";
 import CardGrid from "../classify/CardGrid";
 import DeletedByDay from "../classify/DeletedByDay";
 import { ProductRow, SearchNote, ShowAgain, showsProductRow } from "../classify/SearchExtras";
+import SidePanel, { PanelSection } from "../SidePanel";
 import SuggestPanel from "../classify/SuggestPanel";
 import { useJob } from "../useJob";
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
+const GRID_INFO = (
+  <>
+    <strong>Show</strong> filters the pictures the grid lists; <strong>Rank using</strong> and <strong>Order by</strong> sort them by the machine's
+    scores. The tools below label, clear or auto-assign many pictures at once and act on the <em>whole</em> Show list, not only the page you see.
+  </>
+);
 const PHASES: Record<string, string> = {
   discovery: "Finding frames and goldens…",
   features: "Computing features…",
@@ -288,12 +295,102 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
   const navRow = { display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", margin: "8px 0" } as const;
   const classes = st?.classes ?? [];
 
+  // The Grid view's properties live in the options panel, like the Dedup pages' tools: which pictures it lists and in what
+  // order, and the tools that label, clear or auto-assign many pictures at once. (Scatter and Outliers put theirs there
+  // themselves, through `PanelPortal`.) The suggested goldens stay in the page: they are a list of pictures.
+  const gridPanel =
+    mode === "grid" && st && st.has_results ? (
+      <PanelSection title="Grid" info={GRID_INFO} testId="grid-controls">
+              <label>
+                Show{" "}
+                <select value={view} onChange={(e) => setView(e.target.value)}>
+                  {st.views
+                    .filter((v) => v !== "Methods disagree" || st.methods.length > 1) // one method cannot disagree with itself
+                    .map((v) => (
+                      <option key={v}>{v}</option>
+                    ))}
+                </select>
+              </label>
+              <label>
+                Rank using{" "}
+                <select value={query.rank} disabled={!st.scored} onChange={(e) => setRank(e.target.value)}>
+                  {st.methods.map((m) => (
+                    <option key={m}>{m}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Order by{" "}
+                <select value={order} disabled={!st.scored} onChange={(e) => setOrder(e.target.value)}>
+                  {st.orders.map((o) => (
+                    <option key={o}>{o}</option>
+                  ))}
+                </select>
+              </label>
+              {st.muted_count > 0 && (
+                <label>
+                  <input type="checkbox" checked={showMuted} onChange={(e) => setShowMuted(e.target.checked)} /> Show muted ({st.muted_count} hidden by dedup)
+                </label>
+              )}
+        <div style={{ marginTop: 6 }}>
+            {search && st.scored && <p role="status">The bulk, clear and auto-label tools are off while a search is active.</p>}
+            {st.scored && (
+              <fieldset disabled={!!search} style={{ border: 0, padding: 0, margin: 0, opacity: search ? 0.5 : 1 }}>
+                <BulkPanel
+                  camera={camera}
+                  query={query}
+                  classes={classes}
+                  revision={revision}
+                  onError={setError}
+                  onLabeled={(n, cls, c) => {
+                    setNotice(`Labeled ${n} frames as ${cls}.`);
+                    setSt((s) => (s ? { ...s, counts: c } : s));
+                    bump();
+                  }}
+                />
+                <ClearPanel
+                  camera={camera}
+                  query={query}
+                  revision={revision}
+                  onError={setError}
+                  onCleared={(n, spared, c) => {
+                    setNotice(
+                      `Cleared ${n} label${n === 1 ? "" : "s"}.` +
+                        (spared > 0 ? ` ${spared} golden${spared === 1 ? "" : "s"} kept.` : ""),
+                    );
+                    setSt((s) => (s ? { ...s, counts: c } : s));
+                    bump();
+                  }}
+                />
+                <AutoPanel
+                  camera={camera}
+                  query={query}
+                  allClasses={classes}
+                  revision={revision}
+                  filter={auto}
+                  onFilter={setAuto}
+                  onError={setError}
+                  onApplied={(n, c) => {
+                    setNotice(`Auto-labelled ${n} frame(s) using ${query.rank}. Review or undo any of them from the grid.`);
+                    setSt((s) => (s ? { ...s, counts: c } : s));
+                    setAuto((a) => ({ ...a, on: false, minMargin: null }));
+                    bump();
+                  }}
+                />
+              </fieldset>
+            )}
+
+        </div>
+      </PanelSection>
+    ) : null;
+
   return (
     <section>
       <h2>
         Classify — {camera}
         {focus ? ` › ${focus.feature.split("::").pop()}` : product ? ` › ${product}` : ""}
       </h2>
+      <SidePanel panel={gridPanel} wide>
       {focus && (
         // Locked to one ROI: the way back and the three views are all navigation, so they share one line.
         <div style={navRow}>
@@ -360,39 +457,6 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
         <>
       {st && st.has_results && (
         <>
-          <div style={{ display: "flex", gap: 16, flexWrap: "wrap", margin: "8px 0" }}>
-            <label>
-              Show{" "}
-              <select value={view} onChange={(e) => setView(e.target.value)}>
-                {st.views
-                  .filter((v) => v !== "Methods disagree" || st.methods.length > 1) // one method cannot disagree with itself
-                  .map((v) => (
-                    <option key={v}>{v}</option>
-                  ))}
-              </select>
-            </label>
-            <label>
-              Rank using{" "}
-              <select value={query.rank} disabled={!st.scored} onChange={(e) => setRank(e.target.value)}>
-                {st.methods.map((m) => (
-                  <option key={m}>{m}</option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Order by{" "}
-              <select value={order} disabled={!st.scored} onChange={(e) => setOrder(e.target.value)}>
-                {st.orders.map((o) => (
-                  <option key={o}>{o}</option>
-                ))}
-              </select>
-            </label>
-            {st.muted_count > 0 && (
-              <label>
-                <input type="checkbox" checked={showMuted} onChange={(e) => setShowMuted(e.target.checked)} /> Show muted ({st.muted_count} hidden by dedup)
-              </label>
-            )}
-          </div>
           {view === "Deleted" ? (
             <DeletedByDay camera={camera} feature={feature} revision={revision} settings={st.settings} onSettings={changeSetting} onChanged={bump} onNotice={setNotice} onError={setError} />
           ) : (
@@ -422,52 +486,6 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
             </p>
           )}
 
-          {search && st.scored && <p role="status">The bulk, clear and auto-label tools are off while a search is active.</p>}
-          {st.scored && (
-            <fieldset disabled={!!search} style={{ border: 0, padding: 0, margin: 0, opacity: search ? 0.5 : 1 }}>
-              <BulkPanel
-                camera={camera}
-                query={query}
-                classes={classes}
-                revision={revision}
-                onError={setError}
-                onLabeled={(n, cls, c) => {
-                  setNotice(`Labeled ${n} frames as ${cls}.`);
-                  setSt((s) => (s ? { ...s, counts: c } : s));
-                  bump();
-                }}
-              />
-              <ClearPanel
-                camera={camera}
-                query={query}
-                revision={revision}
-                onError={setError}
-                onCleared={(n, spared, c) => {
-                  setNotice(
-                    `Cleared ${n} label${n === 1 ? "" : "s"}.` +
-                      (spared > 0 ? ` ${spared} golden${spared === 1 ? "" : "s"} kept.` : ""),
-                  );
-                  setSt((s) => (s ? { ...s, counts: c } : s));
-                  bump();
-                }}
-              />
-              <AutoPanel
-                camera={camera}
-                query={query}
-                allClasses={classes}
-                revision={revision}
-                filter={auto}
-                onFilter={setAuto}
-                onError={setError}
-                onApplied={(n, c) => {
-                  setNotice(`Auto-labelled ${n} frame(s) using ${query.rank}. Review or undo any of them from the grid.`);
-                  setSt((s) => (s ? { ...s, counts: c } : s));
-                  setAuto((a) => ({ ...a, on: false, minMargin: null }));
-                  bump();
-                }}
-              />
-            </fieldset>
-          )}
           {st.scored && !search && (
             <SuggestPanel
               camera={camera}
@@ -579,6 +597,7 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
       )}
         </>
       )}
+      </SidePanel>
     </section>
   );
 }
