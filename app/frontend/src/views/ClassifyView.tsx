@@ -548,6 +548,7 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
                       <SearchExtras
                         card={c}
                         search={info}
+                        productRow={!!info.classify_feature && info.classify_feature !== feature}
                         busy={busy !== null}
                         onProduct={(cls) => info.classify_feature && actElsewhere(f, () => api.setLabel(camera, info.classify_feature!, f, cls))}
                         onMute={(muted) => actElsewhere(f, () => api.muteFrame(camera, feature, f, muted))}

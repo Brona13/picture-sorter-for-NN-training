@@ -808,7 +808,8 @@ test("a muted picture inside the ROI offers only Unmute in the viewer, and it un
   await typeSearch("red");
   fireEvent.click(within(await screen.findByTestId("card-red_1.png")).getByRole("link"));
   const viewer = await screen.findByRole("dialog", { name: "Full-size picture" });
-  expect(within(viewer).queryByRole("group", { name: "Product" })).toBeNull();
+  expect(within(viewer).getByRole("group", { name: "Product" })).toBeInTheDocument(); // which product it is in
+  expect(within(viewer).queryByRole("button", { name: "Mute" })).toBeNull(); // only Unmute for a muted picture in the scope
   await userEvent.click(within(viewer).getByRole("button", { name: "Unmute" }));
   await waitFor(() => expect(calls.find((c) => c.url.endsWith("/classify/mute"))?.body).toEqual({ feature: "seal", frame: "red_1.png", muted: false }));
 });
@@ -822,14 +823,17 @@ test("an outside picture can be muted from the viewer", async () => {
   await waitFor(() => expect(calls.find((c) => c.url.endsWith("/classify/mute"))?.body).toEqual({ feature: "seal", frame: "red_0.png", muted: true }));
 });
 
-test("a picture found by search that is inside the ROI and not muted looks and acts like any other", async () => {
+test("a picture found by search that is inside the ROI and not muted looks like any other card and its viewer shows its product", async () => {
   grid = (url: string) => (url.includes("search=") ? searchBody([card("red_9.png", { leanings: {}, bars: null, outside: false, product: "A", muted: false })]) : gridBody([card("a.png")]));
   await typeSearch("red");
   const c = await screen.findByTestId("card-red_9.png");
   expect(c).toHaveStyle({ border: "1px solid #ccc" });
   fireEvent.click(within(c).getByRole("link"));
   const viewer = await screen.findByRole("dialog", { name: "Full-size picture" });
-  expect(within(viewer).queryByTestId("search-extras")).toBeNull();
+  // no alarm: no red note, no Mute; just which product it is in, with the ROI's own buttons enabled
+  expect(within(viewer).queryByText(/Outside this ROI/)).toBeNull();
+  expect(within(viewer).getByRole("button", { name: "A" })).toHaveAttribute("aria-pressed", "true");
+  expect(within(viewer).queryByRole("button", { name: "Mute" })).toBeNull();
   expect(within(viewer).getByRole("button", { name: /OK/ })).toBeEnabled();
 });
 
@@ -984,4 +988,26 @@ test("the numbers have the shape the server sends: frames, a box per class, unla
   expect(screen.getByTestId("kpi-frames")).toHaveTextContent("Frames19 of 40");
   expect(screen.getByTestId("kpi-class-OK")).toHaveTextContent("7 ⭐ 2");
   expect(screen.getByTestId("kpi-unlabeled")).toHaveTextContent("9");
+});
+
+test("in the product-sorting ROI the viewer of a found picture has no Product row: its own buttons are the products", async () => {
+  grid = (url: string) =>
+    url.includes("search=")
+      ? gridBody([card("red_9.png", { leanings: {}, bars: null, outside: false, product: "A", muted: false })], { search: { query: "red", classify_feature: "seal", product_classes: ["A", "B"] } })
+      : gridBody([card("a.png")]);
+  await typeSearch("red");
+  fireEvent.click(within(await screen.findByTestId("card-red_9.png")).getByRole("link"));
+  const viewer = await screen.findByRole("dialog", { name: "Full-size picture" });
+  expect(within(viewer).queryByRole("group", { name: "Product" })).toBeNull(); // classify_feature is the open ROI ("seal")
+});
+
+test("an in-scope found picture's product can be corrected from its viewer; it is set in the product-sorting ROI and the grid reloads", async () => {
+  grid = (url: string) => (url.includes("search=") ? searchBody([card("red_9.png", { leanings: {}, bars: null, outside: false, product: "A", muted: false })]) : gridBody([card("a.png")]));
+  await typeSearch("red");
+  fireEvent.click(within(await screen.findByTestId("card-red_9.png")).getByRole("link"));
+  const viewer = await screen.findByRole("dialog", { name: "Full-size picture" });
+  const before = gridCalls().length;
+  await userEvent.click(within(within(viewer).getByRole("group", { name: "Product" })).getByRole("button", { name: "B" }));
+  await waitFor(() => expect(calls.find((c) => c.method === "PUT" && c.url.endsWith("/classify/label"))?.body).toEqual({ feature: "type", frame: "red_9.png", cls: "B" }));
+  await waitFor(() => expect(gridCalls().length).toBeGreaterThan(before));
 });

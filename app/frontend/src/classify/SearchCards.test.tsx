@@ -62,20 +62,45 @@ test("outside beats muted, and a deleted picture outside its scope can still be 
 
 // --- what the viewer adds ---
 const info = { query: "blue", classify_feature: "type", product_classes: ["A", "B"] };
-const renderExtras = (card: CardData) => {
+const renderExtras = (card: CardData, productRow = true) => {
   const h = { onProduct: vi.fn(), onMute: vi.fn() };
-  render(<SearchExtras card={card} search={info} busy={false} {...h} />);
+  render(<SearchExtras card={card} search={info} productRow={productRow} busy={false} {...h} />);
   return h;
 };
 
-test("an in-scope picture needs no extras unless it is muted, then only Unmute", async () => {
-  const { container } = render(<SearchExtras card={base()} search={info} busy={false} onProduct={vi.fn()} onMute={vi.fn()} />);
+test("in the product-sorting ROI itself there is no Product row: nothing, or only Unmute for a muted picture", async () => {
+  const { container } = render(<SearchExtras card={base()} search={info} productRow={false} busy={false} onProduct={vi.fn()} onMute={vi.fn()} />);
   expect(container).toBeEmptyDOMElement();
   const h = { onProduct: vi.fn(), onMute: vi.fn() };
-  render(<SearchExtras card={base({ muted: true })} search={info} busy={false} {...h} />);
+  render(<SearchExtras card={base({ muted: true })} search={info} productRow={false} busy={false} {...h} />);
   expect(screen.queryByRole("group", { name: "Product" })).toBeNull();
   await userEvent.click(screen.getByRole("button", { name: "Unmute" }));
   expect(h.onMute).toHaveBeenCalledWith(false);
+});
+
+test("in a feature ROI a picture inside the scope shows which product it is in, without any alarm, and the product can be changed", async () => {
+  const h = renderExtras(base({ outside: false, product: "A" }));
+  const group = screen.getByRole("group", { name: "Product" });
+  expect(within(group).getByRole("button", { name: "A" })).toHaveAttribute("aria-pressed", "true");
+  expect(within(group).getByRole("button", { name: "B" })).toHaveAttribute("aria-pressed", "false");
+  expect(screen.queryByText(/Outside this ROI/)).toBeNull();
+  expect(screen.queryByRole("button", { name: "Mute" })).toBeNull(); // muting is offered for outside pictures only
+  expect(screen.queryByRole("button", { name: "Unmute" })).toBeNull();
+  await userEvent.click(within(group).getByRole("button", { name: "B" }));
+  expect(h.onProduct).toHaveBeenCalledWith("B");
+});
+
+test("a muted picture inside the scope shows the product and Unmute", async () => {
+  const h = renderExtras(base({ outside: false, product: "A", muted: true }));
+  expect(screen.getByRole("group", { name: "Product" })).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Unmute" }));
+  expect(h.onMute).toHaveBeenCalledWith(false);
+});
+
+test("a picture inside the scope with no product says so (a whole-camera ROI covers such pictures)", () => {
+  renderExtras(base({ outside: false, product: null }));
+  expect(screen.getByText("no product yet")).toBeInTheDocument();
+  for (const name of ["A", "B"]) expect(within(screen.getByRole("group", { name: "Product" })).getByRole("button", { name })).toHaveAttribute("aria-pressed", "false");
 });
 
 test("an outside picture gets the product buttons with its product pressed, a note, and Mute", async () => {
@@ -103,7 +128,7 @@ test("a labeled picture cannot be muted", () => {
 });
 
 test("a deleted picture gets no extras: it is restored first", () => {
-  const { container } = render(<SearchExtras card={base({ outside: true, deleted: true })} search={info} busy={false} onProduct={vi.fn()} onMute={vi.fn()} />);
+  const { container } = render(<SearchExtras card={base({ outside: true, deleted: true })} search={info} productRow busy={false} onProduct={vi.fn()} onMute={vi.fn()} />);
   expect(container).toBeEmptyDOMElement();
 });
 
