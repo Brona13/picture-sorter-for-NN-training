@@ -197,6 +197,12 @@ def set_grid_settings(camera: str, body: GridSettings) -> dict:
     return {"per_page": body.per_page, "cols": body.cols}
 
 
+def _counts(camera: str, feature: str, **state) -> dict[str, int]:
+    """The numbers above the grid: only the pictures the user works with (not deleted, not muted for this ROI)."""
+    hidden = db.deleted_frames_of(camera) | db.muted_frames(camera, feature)
+    return labels.live_counts(camera, feature, hidden=hidden, **state)
+
+
 # --- overview ----------------------------------------------------------------
 @router.get("/cameras/{camera}/classify/state")
 def state(camera: str, feature: str) -> dict:
@@ -205,7 +211,7 @@ def state(camera: str, feature: str) -> dict:
     methods = classify.methods_available()
     gold = labels.current_goldens(camera, feature)
     lab = labels.current_labels(camera, feature)
-    counts = labels.counts(camera, feature, label_state=lab, golden_state=gold)
+    counts = _counts(camera, feature, label_state=lab, golden_state=gold)
     results, gsig, fsig = load_scored(camera, feature)
     frames = datamodel.frames_for_feature(camera, feature)
     inbox = len(datamodel.list_unsorted(camera))
@@ -232,6 +238,11 @@ def state(camera: str, feature: str) -> dict:
         "shared_products": datamodel.feature_products(camera, feature),
         "frames_seen": len(frames),
         "inbox_total": inbox,
+        # For "Frames 120 of 180": whether the ROI covers only some products, and how many pictures the camera has left.
+        "scope": {
+            "restricted": bool(datamodel.split_feature(feature)[0] or datamodel.feature_products(camera, feature)),
+            "camera_frames": inbox - len(db.deleted_frames_of(camera)),
+        },
         "settings": {
             "per_page": _grid_setting(camera, feature, "perpage", PER_PAGE_OPTIONS, 24),
             "cols": _grid_setting(camera, feature, "cols", COLS_OPTIONS, 4),
@@ -413,7 +424,7 @@ class DeleteBody(BaseModel):
 def _result(camera: str, feature: str, frame: str, classes: list[str]) -> dict:
     return {
         "card": _card(camera, feature, frame, classes),
-        "counts": labels.counts(camera, feature),
+        "counts": _counts(camera, feature),
     }
 
 
@@ -642,7 +653,7 @@ def bulk_label(camera: str, body: BulkBody) -> dict:
         ctx.items, rank_method=ctx.rank, mode=body.mode, lean_cls=body.lean_cls, threshold=body.threshold
     )
     n = labels.set_labels_bulk(camera, body.query.feature, [r.frame for r in picked], body.label_as)
-    return {"labeled": n, "counts": labels.counts(camera, body.query.feature)}
+    return {"labeled": n, "counts": _counts(camera, body.query.feature)}
 
 
 # --- bulk clear --------------------------------------------------------------
@@ -674,7 +685,7 @@ def clear_labels(camera: str, body: ClearBody) -> dict:
     return {
         "cleared": cleared,
         "goldens_spared": spared,
-        "counts": labels.counts(camera, body.query.feature),
+        "counts": _counts(camera, body.query.feature),
     }
 
 
@@ -725,7 +736,7 @@ def auto_apply(camera: str, body: AutoBody) -> dict:
             written += labels.set_labels_bulk(
                 camera, body.query.feature, [r.frame for r in rs], cls, source="auto"
             )
-    return {"labeled": written, "counts": labels.counts(camera, body.query.feature)}
+    return {"labeled": written, "counts": _counts(camera, body.query.feature)}
 
 
 # --- suggested goldens -------------------------------------------------------

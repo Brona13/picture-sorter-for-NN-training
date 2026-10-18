@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import ClassifyKpis from "../classify/ClassifyKpis";
 import ClassifyOutliers from "../classify/ClassifyOutliers";
 import ClassifyScatter from "../classify/ClassifyScatter";
 import { usePublishFeature, useSharedFeature } from "../SharedFeature";
@@ -275,7 +276,6 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
     ) : null;
   const navRow = { display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", margin: "8px 0" } as const;
   const classes = st?.classes ?? [];
-  const counts = st?.counts ?? {};
 
   return (
     <section>
@@ -318,20 +318,16 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
       )}
 
       {st && (
-        <dl style={{ display: "flex", gap: 24 }}>
-          <div>
-            <dt>Frames</dt>
-            <dd>{counts.total ?? 0}</dd>
-          </div>
-          {classes.map((c) => (
-            <div key={c}>
-              <dt>{c}</dt>
-              <dd>
-                {counts[c] ?? 0} <small>⭐ {counts[`golden_${c}`] ?? 0}</small>
-              </dd>
-            </div>
-          ))}
-        </dl>
+        <ClassifyKpis
+          state={st}
+          view={mode === "grid" && !search ? view : null}
+          onPick={(v) => {
+            // A box leads to the grid's View of those pictures, from wherever the page is.
+            setSearch("");
+            setMode("grid");
+            setView(v);
+          }}
+        />
       )}
 
       {st && !focus && (

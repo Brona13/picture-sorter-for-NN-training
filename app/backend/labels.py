@@ -348,6 +348,32 @@ def counts(
     return output
 
 
+def live_counts(
+    camera: str,
+    feature: str,
+    *,
+    hidden: set[str],
+    label_state: dict[str, str] | None = None,
+    golden_state: dict[str, list[str]] | None = None,
+) -> dict[str, int]:
+    """:func:`counts` for the pictures the user works with: those the ROI applies to, leaving out the ``hidden`` ones
+    (deleted, and muted for this ROI). Same keys. Labels and goldens of pictures outside that set are not counted."""
+    lab = current_labels(camera, feature) if label_state is None else label_state
+    gold = current_goldens(camera, feature) if golden_state is None else golden_state
+    live = {f for f in datamodel.frames_for_feature(camera, feature) if f not in hidden}
+    lab = {f: cls for f, cls in lab.items() if f in live}
+    gold = {cls: [f for f in frames if f in live] for cls, frames in gold.items()}
+    golden_frames = {frame for frames in gold.values() for frame in frames}
+    output: dict[str, int] = {}
+    classes = list(dict.fromkeys([*datamodel.classes_for(camera, feature), *lab.values(), *gold.keys()]))
+    for cls in classes:
+        output[cls] = sum(1 for value in lab.values() if value == cls)
+        output[f"golden_{cls}"] = len(gold.get(cls, []))
+    output["unlabeled"] = max(0, len(live) - len(set(lab) | golden_frames))
+    output["total"] = len(live)
+    return output
+
+
 def purge_feature(camera: str, feature: str) -> dict[str, int]:
     """Remove all current state, snapshots, settings, and caches for a feature."""
     con = db.connect()

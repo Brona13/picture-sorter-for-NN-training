@@ -7,7 +7,7 @@ import embedding
 import methods_config
 import labels
 import neighbors
-from api import jobs
+from api import classify_api, jobs
 from api.cameras import require_feature
 from api.frames_api import frame_path
 from fastapi import APIRouter, HTTPException
@@ -69,4 +69,4 @@ def label_frames(camera: str, body: LabelFramesBody) -> dict:
     if body.cls not in datamodel.classes_for(camera, body.feature):
         raise HTTPException(status_code=422, detail=f"Unknown class: {body.cls}")
     labeled, skipped = neighbors.apply_label(camera, body.feature, body.frames, body.cls)
-    return {"labeled": labeled, "skipped": skipped, "counts": labels.counts(camera, body.feature)}
+    return {"labeled": labeled, "skipped": skipped, "counts": classify_api._counts(camera, body.feature)}

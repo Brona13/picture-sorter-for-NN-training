@@ -868,3 +868,49 @@ test("the refresh result goes away when another ROI or camera is opened", async 
   rerender(<ClassifyView camera="camB" focus={{ feature: "seal", onBack: () => {} }} />);
   await waitFor(() => expect(screen.queryByText(/Scores refreshed/)).toBeNull());
 });
+
+// --- the clickable numbers -------------------------------------------------------------------------------------
+test("the numbers are boxes; clicking Unlabeled turns the grid to that View", async () => {
+  render(<ClassifyView camera="camA" />);
+  await cardEl("a.png");
+  await userEvent.click(screen.getByTestId("kpi-unlabeled"));
+  await waitFor(() => expect(gridCalls().at(-1)!.url).toContain("view=Unlabeled"));
+  expect(screen.getByRole("combobox", { name: /Show/ })).toHaveValue("Unlabeled");
+  expect(screen.getByTestId("kpi-unlabeled")).toHaveAttribute("aria-pressed", "true");
+  await userEvent.click(screen.getByTestId("kpi-class-NG"));
+  await waitFor(() => expect(gridCalls().at(-1)!.url).toContain("view=Labeled+NG"));
+  expect(screen.getByTestId("kpi-class-NG")).toHaveAttribute("aria-pressed", "true");
+});
+
+test("clicking a box from Scatter or Outliers goes back to the grid on that View", async () => {
+  render(<ClassifyView camera="camA" />);
+  await cardEl("a.png");
+  const views = screen.getByRole("group", { name: "View" });
+  await userEvent.click(within(views).getByRole("button", { name: /Scatter/ }));
+  await screen.findByRole("img", { name: /2D scatter/ });
+  await userEvent.click(screen.getByTestId("kpi-class-OK"));
+  await cardEl("a.png");
+  expect(screen.queryByRole("img", { name: /2D scatter/ })).toBeNull();
+  expect(within(views).getByRole("button", { name: /Grid/ })).toHaveAttribute("aria-pressed", "true");
+  expect(gridCalls().at(-1)!.url).toContain("view=Labeled+OK");
+});
+
+test("clicking a box ends a search, since a search ignores the View", async () => {
+  searchable();
+  await typeSearch("red");
+  await screen.findByTestId("card-red_0.png");
+  expect(screen.getByTestId("kpi-class-OK")).toHaveAttribute("aria-pressed", "false"); // a search is not a View
+  await userEvent.click(screen.getByTestId("kpi-class-OK"));
+  await cardEl("a.png");
+  expect(gridCalls().at(-1)!.url).not.toContain("search=");
+  expect(gridCalls().at(-1)!.url).toContain("view=Labeled+OK");
+});
+
+test("the numbers have the shape the server sends: frames, a box per class, unlabeled", async () => {
+  state = baseState({ counts: { OK: 7, golden_OK: 2, NG: 3, golden_NG: 0, unlabeled: 9, total: 19 }, scope: { restricted: true, camera_frames: 40 } });
+  render(<ClassifyView camera="camA" />);
+  await cardEl("a.png");
+  expect(screen.getByTestId("kpi-frames")).toHaveTextContent("Frames19 of 40");
+  expect(screen.getByTestId("kpi-class-OK")).toHaveTextContent("7 ⭐ 2");
+  expect(screen.getByTestId("kpi-unlabeled")).toHaveTextContent("9");
+});

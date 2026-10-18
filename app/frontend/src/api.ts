@@ -462,7 +462,10 @@ export interface MethodsConfig {
 export interface ClassifyState {
   feature: string;
   classes: string[];
+  /** The pictures the user works with: not deleted, not muted for this ROI. */
   counts: Record<string, number>;
+  /** Whether the ROI covers only some products, and how many pictures the camera has left (not deleted). */
+  scope?: { restricted: boolean; camera_frames: number };
   methods: string[];
   default_rank: string;
   device: string;
