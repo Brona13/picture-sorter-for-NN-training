@@ -136,7 +136,8 @@ body {
 .right-panel-body input[type="range"] { width: 100%; }
 .right-panel-body label > span { display: block; color: var(--fg, inherit); }
 .right-panel-body progress { display: block; width: 100%; margin-bottom: 2px; }
-.right-panel-body { overflow-wrap: anywhere; overflow-y: auto; min-height: 0; }
+/* The body scrolls, which also clips sideways: a little padding (cancelled by the negative margin) keeps the edges and focus rings of full-width controls whole. */
+.right-panel-body { overflow-wrap: anywhere; overflow-y: auto; min-height: 0; padding: 4px; margin: -4px; }
 .tool-controls-title { font-size: 13px; margin: 12px 0 4px; padding-top: 8px; border-top: 1px solid var(--border); }
 .main { flex: 1; min-width: 0; padding: 20px 28px calc(var(--status-h) + 24px); max-width: 1400px; }
 
