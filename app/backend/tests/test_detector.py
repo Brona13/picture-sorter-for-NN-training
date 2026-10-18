@@ -359,6 +359,45 @@ class ApiTests(DetectorBase):
         self.assertFalse(np.array_equal(shifted, unshifted))
 
 
+class RestoreTests(DetectorBase):
+    """Undo of a review decision: the frame's detections come back as they were."""
+
+    def rows(self, frame: str) -> list[dict]:
+        return detections.load("camA", "seal").get(self.hash_of(frame), [])
+
+    def test_undoing_an_accept_brings_back_the_auto_candidates_with_the_current_signature(self) -> None:
+        self.save()
+        detector.set_backend(StubBackend([[(box_at(0.4, 0.4), 0.9), (box_at(0.1, 0.1), 0.5)]]))
+        detector.run("camA", "seal")
+        before = [{k: r[k] for k in ("x", "y", "w", "h", "conf", "status")} for r in self.rows(self.frames[0])]
+        self.assertEqual(len(before), 2)
+        self.client.put(f"{self.url}/detections/{self.frames[0]}", json={"box": box_at(0.4, 0.4), "status": "reviewed"})
+        self.assertEqual([r["status"] for r in self.rows(self.frames[0])], ["reviewed"])
+        r = self.client.post(f"{self.url}/detections/{self.frames[0]}/restore", json={"rows": before})
+        self.assertEqual(r.status_code, 200, r.text)
+        after = self.rows(self.frames[0])
+        self.assertEqual([{k: x[k] for k in ("x", "y", "w", "h", "conf", "status")} for x in after], before)
+        sig = vision_settings.detection_signature(vision_settings.get("camA", "seal"))
+        self.assertEqual({x["sig"] for x in after}, {sig})  # valid again: shown as the detector's own result
+
+    def test_undoing_a_clear_restores_a_human_decision_and_an_empty_list_clears(self) -> None:
+        self.save()
+        box = {"x": 0.3, "y": 0.3, "w": 0.2, "h": 0.2}
+        self.client.put(f"{self.url}/detections/{self.frames[1]}", json={"box": box, "status": "manual"})
+        self.client.delete(f"{self.url}/detections/{self.frames[1]}")
+        self.assertEqual(self.rows(self.frames[1]), [])
+        self.client.post(f"{self.url}/detections/{self.frames[1]}/restore", json={"rows": [{**box, "conf": 1.0, "status": "manual"}]})
+        self.assertEqual([r["status"] for r in self.rows(self.frames[1])], ["manual"])
+        self.client.post(f"{self.url}/detections/{self.frames[1]}/restore", json={"rows": []})
+        self.assertEqual(self.rows(self.frames[1]), [])
+
+    def test_bad_input_is_refused(self) -> None:
+        self.save()
+        bad = self.client.post(f"{self.url}/detections/{self.frames[0]}/restore", json={"rows": [{**box_at(0.1, 0.1), "status": "magic"}]})
+        self.assertEqual(bad.status_code, 422)
+        self.assertEqual(self.client.post(f"{self.url}/detections/nope.png/restore", json={"rows": []}).status_code, 404)
+
+
 class CacheKeyTests(DetectorBase):
     def test_vectors_of_shifted_frames_are_cached_under_their_offset(self) -> None:
         self.save()

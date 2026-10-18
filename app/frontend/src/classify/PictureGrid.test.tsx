@@ -108,6 +108,15 @@ test("clicking a picture opens the viewer, unless the tool turned it off", async
   expect(screen.queryByRole("dialog")).toBeNull();
 });
 
+test("a deleted card in the viewer cannot be labeled and can be restored, but only where the tool keeps deleted frames", async () => {
+  render(<Harness deleted restorable />);
+  await userEvent.click(within(screen.getByTestId("card-a.png")).getByRole("link"));
+  const viewer = await screen.findByRole("dialog", { name: "Full-size picture" });
+  expect(within(viewer).getByRole("button", { name: /NG/ })).toBeDisabled();
+  await userEvent.click(within(viewer).getByRole("button", { name: "Restore frame" }));
+  await waitFor(() => expect(calls.some((c) => c.url.endsWith("/classify/restore"))).toBe(true));
+});
+
 test("a deleted card can be restored only when the tool keeps deleted frames on the grid", async () => {
   const { unmount } = render(<Harness deleted />);
   await userEvent.click(within(screen.getByTestId("card-a.png")).getByRole("button", { name: /Restore/ }));

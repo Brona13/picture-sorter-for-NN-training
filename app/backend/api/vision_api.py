@@ -62,6 +62,15 @@ class BoxUpdate(BaseModel):
     status: str = detections.MANUAL
 
 
+class RestoreRow(Box):
+    conf: float = 1.0
+    status: str = detections.AUTO
+
+
+class RestoreBody(BaseModel):
+    rows: list[RestoreRow] = []
+
+
 class PreviewRequest(VisionSettings):
     frame: str
 
@@ -226,6 +235,18 @@ def put_detection(camera: str, feature: str, frame: str, body: BoxUpdate) -> dic
     require_feature(camera, feature)
     try:
         detections.set_box(camera, feature, _frame_hash(camera, frame), body.box.model_dump(), body.status)
+    except (ValueError, vision_settings.SettingsError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"ok": True}
+
+
+@router.post("/cameras/{camera}/vision/{feature}/detections/{frame}/restore")
+def restore_detection(camera: str, feature: str, frame: str, body: RestoreBody) -> dict:
+    """Undo a decision: put the frame's detections back as they were (an empty list leaves it without any)."""
+    require_feature(camera, feature)
+    sig = vision_settings.detection_signature(vision_settings.get(camera, feature))
+    try:
+        detections.restore(camera, feature, _frame_hash(camera, frame), [r.model_dump() for r in body.rows], sig)
     except (ValueError, vision_settings.SettingsError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {"ok": True}

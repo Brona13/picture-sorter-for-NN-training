@@ -122,6 +122,34 @@ afterEach(() => vi.unstubAllGlobals());
 
 const cardEl = (frame: string) => screen.findByTestId(`card-${frame}`);
 
+test("clicking a card's picture opens the shared viewer on this page's frames: keys label, arrows browse, the file name sits under the picture", async () => {
+  render(<ClassifyView camera="camA" />);
+  const a = await cardEl("a.png");
+  await userEvent.click(within(a).getByRole("link"));
+  const viewer = await screen.findByRole("dialog", { name: "Full-size picture" });
+  expect(within(viewer).getByTestId("viewer-filename")).toHaveTextContent("a.png");
+  expect(within(viewer).getByTestId("viewer-position")).toHaveTextContent("1 / 2");
+  fireEvent.keyDown(window, { key: "1" });
+  await waitFor(() => expect(calls.find((c) => c.method === "PUT" && c.url.includes("/classify/label"))?.body).toEqual({ feature: "seal", frame: "a.png", cls: "OK" }));
+  expect(calls.filter((c) => c.url.includes("/classify/label")).length).toBe(1); // the card under the overlay did not act as well
+  fireEvent.keyDown(window, { key: "ArrowRight" });
+  await waitFor(() => expect(within(viewer).getByTestId("viewer-filename")).toHaveTextContent("b.png"));
+  fireEvent.keyDown(window, { key: "Escape" });
+  expect(screen.queryByRole("dialog", { name: "Full-size picture" })).toBeNull();
+});
+
+test("a deleted frame in the viewer cannot be labeled and can be restored", async () => {
+  grid = () => gridBody([card("a.png", { deleted: true })]);
+  state = baseState({ views: ["All", "Deleted"] });
+  render(<ClassifyView camera="camA" />);
+  await userEvent.click(within(await cardEl("a.png")).getByRole("link"));
+  const viewer = await screen.findByRole("dialog", { name: "Full-size picture" });
+  expect(within(viewer).getByRole("button", { name: /OK/ })).toBeDisabled();
+  expect(within(viewer).queryByRole("button", { name: "Delete frame" })).toBeNull();
+  await userEvent.click(within(viewer).getByRole("button", { name: "Restore frame" }));
+  await waitFor(() => expect(calls.some((c) => c.url.includes("/classify/restore"))).toBe(true));
+});
+
 test("renders metrics, cards with leaning badges, bars and the golden reference tag", async () => {
   render(<ClassifyView camera="camA" />);
   const a = await cardEl("a.png");

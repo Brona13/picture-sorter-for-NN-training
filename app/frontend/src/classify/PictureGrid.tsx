@@ -57,7 +57,7 @@ export default function PictureGrid({
   /** Prefix of the pagers' accessible names ("selection" gives "Pagination selection top"). */
   where?: string;
   extras?: (frame: string) => GridExtras;
-  /** Clicking a picture opens the viewer (otherwise the full picture opens in a new tab). */
+  /** Clicking a picture opens the viewer (when off, the picture is not clickable). */
   viewer?: boolean;
   /** Show Restore on deleted cards (the tool keeps deleted frames on the grid). */
   restorable?: boolean;
@@ -135,6 +135,8 @@ export default function PictureGrid({
           onLabel={label}
           onGolden={golden}
           onDelete={del}
+          deleted={restorable ? (f) => cardOf(f).deleted : undefined}
+          onRestore={restorable ? (f) => void restore(f) : undefined}
           onShow={(f) => {
             const at = frames.indexOf(f);
             if (at >= 0) onPage(Math.floor(at / perPage) + 1);

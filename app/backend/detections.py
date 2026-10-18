@@ -134,6 +134,38 @@ def set_box(camera: str, feature: str, frame_hash: str, box: dict, status: str =
     vision_settings.purge_derived(camera, feature)
 
 
+def restore(camera: str, feature: str, frame_hash: str, rows: list[dict], sig: str) -> None:
+    """Put a frame's detections back as they were before a decision (undo).
+
+    ``rows`` are ``{x, y, w, h, conf, status}``, best first; an empty list leaves the frame without detections. Auto rows
+    are stamped with the current signature (a restore under changed settings is only valid for the settings now in force),
+    human rows keep no signature, as ``set_box`` writes them.
+    """
+    clean = []
+    for r in rows:
+        status = r.get("status", AUTO)
+        if status not in (AUTO, *HUMAN):
+            raise ValueError(f"status must be one of {(AUTO, *HUMAN)}")
+        box = vision_settings.clean_box({k: r[k] for k in ("x", "y", "w", "h")})
+        clean.append((box, min(1.0, max(0.0, float(r.get("conf", 1.0)))), status))
+    con = db.connect()
+    try:
+        con.execute("BEGIN IMMEDIATE")
+        con.execute("DELETE FROM detections WHERE camera=? AND feature=? AND hash=?", (camera, feature, frame_hash))
+        now = time.time()
+        con.executemany(
+            "INSERT INTO detections(camera,feature,hash,rank,x,y,w,h,conf,status,sig,ts) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            [(camera, feature, frame_hash, i, b["x"], b["y"], b["w"], b["h"], c, st, sig if st == AUTO else "", now) for i, (b, c, st) in enumerate(clean)],
+        )
+        con.execute("COMMIT")
+    except Exception:
+        con.execute("ROLLBACK")
+        raise
+    finally:
+        con.close()
+    vision_settings.purge_derived(camera, feature)
+
+
 def clear_box(camera: str, feature: str, frame_hash: str) -> None:
     """Forget a frame's detections (including human ones)."""
     con = db.connect()

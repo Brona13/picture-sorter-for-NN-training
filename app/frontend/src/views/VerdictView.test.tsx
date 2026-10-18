@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import VerdictView from "./VerdictView";
@@ -60,6 +60,23 @@ test("deciding sends the class and reloads", async () => {
   await userEvent.click(within(card).getByRole("button", { name: "Decide NG for a.png" }));
   await waitFor(() => expect(calls.find((c) => c.url.includes("/verdicts/decision"))?.body).toEqual({ frame: "a.png", cls: "NG" }));
   await waitFor(() => expect(calls.filter((c) => c.url.includes("/verdicts?")).length).toBeGreaterThan(before));
+});
+
+test("clicking a picture opens the shared viewer: keys decide, the file name sits under the picture", async () => {
+  list = () => ({ status: "contradiction", page: 1, per_page: 24, n_pages: 1, total: 2, items: [item("a.png"), item("b.png")] });
+  render(<VerdictView camera="camA" />);
+  await userEvent.click(await screen.findByRole("button", { name: "Open a.png" }));
+  const viewer = await screen.findByRole("dialog", { name: "Full-size picture" });
+  expect(within(viewer).getByTestId("viewer-filename")).toHaveTextContent("a.png");
+  expect(within(viewer).getByTestId("viewer-position")).toHaveTextContent("1 / 2");
+  expect(within(viewer).getByTestId("viewer-verdict")).toHaveTextContent("contradiction — roi1: OK, roi2: NG");
+  fireEvent.keyDown(window, { key: "2" });
+  await waitFor(() => expect(calls.find((c) => c.url.includes("/verdicts/decision"))?.body).toEqual({ frame: "a.png", cls: "NG" }));
+  expect(calls.filter((c) => c.url.includes("/verdicts/decision")).length).toBe(1); // the card under the overlay did not act as well
+  fireEvent.keyDown(window, { key: "ArrowRight" });
+  await waitFor(() => expect(within(viewer).getByTestId("viewer-filename")).toHaveTextContent("b.png"));
+  fireEvent.keyDown(window, { key: "Escape" });
+  expect(screen.queryByRole("dialog", { name: "Full-size picture" })).toBeNull();
 });
 
 test("a stale decision offers Keep and Clear", async () => {

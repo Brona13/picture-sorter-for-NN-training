@@ -212,7 +212,6 @@ export default function InsightsView({ camera, product }: { camera: string; prod
                   page={page}
                   onPage={setPage}
                   where="insights"
-                  viewer={false}
                   restorable
                   onChanged={applyCard}
                   onDeleted={applyCard}

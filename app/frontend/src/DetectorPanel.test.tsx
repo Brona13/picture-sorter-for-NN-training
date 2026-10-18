@@ -7,6 +7,8 @@ const EXEMPLAR = { frame: "f1.png", box: { x: 0.2, y: 0.2, w: 0.2, h: 0.2 } };
 let calls: { url: string; method: string; body?: any }[];
 let detections: any;
 let infoExtra: object;
+let saveGate: Promise<void> | null; // holds the server's answer to a decision, to see what the screen does meanwhile
+let saveFails: boolean;
 
 function install(savedDetector: any) {
   vi.stubGlobal(
@@ -24,8 +26,19 @@ function install(savedDetector: any) {
         );
         return new Response(JSON.stringify({ ...detections, frames }));
       }
-      if (url.includes("/detections") && method === "PUT") return new Response('{"ok":true}');
-      if (url.includes("/detections") && method === "DELETE") return new Response('{"ok":true}');
+      if (url.includes("/detections") && method !== "GET") {
+        if (saveGate) await saveGate;
+        if (saveFails) return new Response(JSON.stringify({ detail: "disk full" }), { status: 500 });
+        // the server remembers what was decided
+        const frame = decodeURIComponent(url.split("/detections/")[1]?.split("/")[0] ?? "");
+        const row = detections.frames.find((f: any) => f.frame === frame);
+        const body = init?.body ? JSON.parse(init.body as string) : undefined;
+        if (row && method === "PUT") Object.assign(row, { state: "human", status: body.status, boxes: [{ ...body.box, conf: row.boxes[0]?.conf ?? 1 }] });
+        else if (row && method === "DELETE") Object.assign(row, { state: "none", status: null, boxes: [] });
+        else if (row && method === "POST")
+          Object.assign(row, { state: body.rows.length ? "review" : "none", status: body.rows[0]?.status ?? null, boxes: body.rows.map(({ status, ...b }: any) => b) });
+        return new Response('{"ok":true}');
+      }
       if (url.endsWith("/detect"))
         return new Response(JSON.stringify({ id: "j1", status: "queued", progress: {}, result: null, error: null }));
       if (url.includes("/jobs/j1"))
@@ -55,6 +68,8 @@ beforeEach(() => {
   calls = [];
   detections = { threshold: 0.3, counts: {}, frames: [] };
   infoExtra = {};
+  saveGate = null;
+  saveFails = false;
   URL.createObjectURL = vi.fn(() => "blob:preview");
   URL.revokeObjectURL = vi.fn();
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
@@ -230,6 +245,101 @@ test("the review queue is a grid of cards with the detected box, state, confiden
   expect(screen.getByRole("navigation", { name: "Pagination review top" })).toBeInTheDocument();
   await userEvent.click(within(card).getByRole("button", { name: /Clear/ }));
   await waitFor(() => expect(calls.some((c) => c.method === "DELETE" && c.url.includes("/detections/a.png"))).toBe(true));
+});
+
+async function openReview() {
+  render(<DetectorView camera="camA" />);
+  await userEvent.click(await screen.findByRole("tab", { name: /Review/ }));
+}
+
+test("a decision shows at once and the card stays where it is, even while the save is still on its way", async () => {
+  detections = reviewRows();
+  let release!: () => void;
+  saveGate = new Promise<void>((r) => (release = r));
+  install({ exemplars: [EXEMPLAR], topk: 1, threshold: 0.3 });
+  await openReview();
+  const card = await screen.findByTestId("review-card-a.png");
+  await userEvent.click(within(card).getByRole("button", { name: /Accept/ }));
+  expect(card).toHaveTextContent("decided"); // before the server has answered
+  expect(within(card).getByRole("button", { name: "✓ Accepted" })).toBeDisabled();
+  expect(screen.getByTestId("review-card-a.png")).toBe(card); // the same card, in the same place
+  expect(screen.getByTestId("review-card-b.png")).toBeInTheDocument();
+  release();
+  await waitFor(() => expect(calls.some((c) => c.method === "PUT" && c.url.includes("/detections/a.png"))).toBe(true));
+  expect(screen.getByTestId("review-card-a.png")).toBe(card); // and still there after the save
+});
+
+test("Remove decided takes the decided cards out of the grid", async () => {
+  detections = reviewRows();
+  install({ exemplars: [EXEMPLAR], topk: 1, threshold: 0.3 });
+  await openReview();
+  expect(screen.queryByRole("button", { name: "Remove decided" })).toBeNull();
+  detections = { ...reviewRows(), counts: { review: 1, human: 1 }, frames: [{ ...reviewRows().frames[0], state: "human", status: "reviewed" }, reviewRows().frames[1]] }; // what the server will say
+  await userEvent.click(within(await screen.findByTestId("review-card-a.png")).getByRole("button", { name: /Accept/ }));
+  const remove = await screen.findByRole("button", { name: "Remove decided" });
+  expect(screen.getByTestId("review-card-a.png")).toBeInTheDocument();
+  await userEvent.click(remove);
+  await waitFor(() => expect(screen.queryByTestId("review-card-a.png")).toBeNull());
+  expect(screen.getByTestId("review-card-b.png")).toBeInTheDocument();
+});
+
+test("undo (button or Z) puts a decision back as it was, through the restore call", async () => {
+  detections = reviewRows();
+  install({ exemplars: [EXEMPLAR], topk: 1, threshold: 0.3 });
+  await openReview();
+  const card = await screen.findByTestId("review-card-a.png");
+  expect(within(card).queryByRole("button", { name: /Undo/ })).toBeNull();
+  await userEvent.click(within(card).getByRole("button", { name: /Accept/ }));
+  expect(card).toHaveTextContent("decided");
+  await userEvent.hover(card);
+  await userEvent.keyboard("z");
+  expect(card).toHaveTextContent("unsure · 20%");
+  await waitFor(() => {
+    const restore = calls.find((c) => c.method === "POST" && c.url.endsWith("/detections/a.png/restore"));
+    expect(restore?.body).toEqual({ rows: [{ x: 0.1, y: 0.1, w: 0.3, h: 0.3, conf: 0.2, status: "auto" }] });
+  });
+  expect(within(card).queryByRole("button", { name: /Undo/ })).toBeNull();
+});
+
+test("a failed save puts the card back and says so", async () => {
+  detections = reviewRows();
+  saveFails = true;
+  install({ exemplars: [EXEMPLAR], topk: 1, threshold: 0.3 });
+  await openReview();
+  const card = await screen.findByTestId("review-card-a.png");
+  await userEvent.click(within(card).getByRole("button", { name: /Accept/ }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(/disk full/);
+  await waitFor(() => expect(card).toHaveTextContent("unsure · 20%"));
+  expect(within(card).getByRole("button", { name: "✓ Accept" })).toBeEnabled();
+});
+
+test("deciding in the grid renders no preview of the frame behind it", async () => {
+  detections = reviewRows();
+  install({ exemplars: [EXEMPLAR], topk: 1, threshold: 0.3 });
+  await openReview();
+  await screen.findByTestId("review-card-a.png");
+  await new Promise((r) => setTimeout(r, 400)); // longer than the preview's debounce
+  calls.length = 0;
+  await userEvent.click(within(screen.getByTestId("review-card-a.png")).getByRole("button", { name: /Accept/ }));
+  await userEvent.click(within(screen.getByTestId("review-card-b.png")).getByRole("button", { name: /Clear/ }));
+  await new Promise((r) => setTimeout(r, 400));
+  expect(calls.some((c) => c.url.endsWith("/preview"))).toBe(false);
+});
+
+test("the editor is the shared picture viewer: file name under the picture, position, hints", async () => {
+  detections = reviewRows();
+  install({ exemplars: [EXEMPLAR], topk: 1, threshold: 0.3 });
+  await openReview();
+  await userEvent.click(await screen.findByRole("button", { name: "Adjust b.png" }));
+  const viewer = await screen.findByTestId("box-editor");
+  expect(within(viewer).getByTestId("viewer-filename")).toHaveTextContent("b.png");
+  expect(within(viewer).getByTestId("viewer-position")).toHaveTextContent("2 / 2");
+  expect(within(viewer).getByRole("button", { name: "Previous picture" })).toBeEnabled();
+  expect(within(viewer).getByRole("button", { name: "Next picture" })).toBeDisabled();
+  await userEvent.click(within(viewer).getByRole("button", { name: "Previous picture" }));
+  expect(within(viewer).getByTestId("viewer-filename")).toHaveTextContent("a.png");
+  await userEvent.click(within(viewer).getByRole("button", { name: "Close" }));
+  await waitFor(() => expect(screen.queryByTestId("box-editor")).toBeNull());
 });
 
 test("hover keys act on the card under the mouse: Enter or A accepts, Delete or X clears", async () => {

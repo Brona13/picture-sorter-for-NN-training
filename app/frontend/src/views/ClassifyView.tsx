@@ -4,6 +4,7 @@ import { api, CardData, CardUpdate, ClassifyState, GridQuery, GridResponse } fro
 import AutoPanel, { AutoFilter } from "../classify/AutoPanel";
 import BulkPanel from "../classify/BulkPanel";
 import Card from "../classify/Card";
+import FrameViewer from "../classify/FrameViewer";
 import SimilarPanel from "../classify/SimilarPanel";
 import { methodTag } from "../methodTags";
 import ClearPanel from "../classify/ClearPanel";
@@ -36,6 +37,7 @@ export default function ClassifyView({ camera, product }: { camera: string; prod
   const [grid, setGrid] = useState<GridResponse | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [viewing, setViewing] = useState<string | null>(null); // the picture viewer, on a frame of this page
   const [revision, setRevision] = useState(0);
   const [similarSeed, setSimilarSeed] = useState<{ frame: string; label: string } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -436,6 +438,8 @@ export default function ClassifyView({ camera, product }: { camera: string; prod
                     methods={st.methods}
                     card={card}
                     busy={busy === card.frame}
+                    fullSize
+                    onOpen={() => setViewing(card.frame)}
                     onLabel={(cls) => act(card.frame, () => api.setLabel(camera, feature, card.frame, cls))}
                     onGolden={(on) => act(card.frame, () => api.setGolden(camera, feature, card.frame, on))}
                     onDelete={() => act(card.frame, () => api.deleteFrame(camera, feature, card.frame), true)}
@@ -449,6 +453,26 @@ export default function ClassifyView({ camera, product }: { camera: string; prod
                 ))}
               </ul>
               <Pager grid={grid} settings={st.settings} onPage={setPage} onSettings={changeSetting} where="bottom" />
+              {viewing && (
+                <FrameViewer
+                  camera={camera}
+                  feature={feature}
+                  frames={grid.items.map((c) => c.frame)}
+                  start={viewing}
+                  classes={classes}
+                  marks={(f) => {
+                    const c = grid.items.find((x) => x.frame === f);
+                    return { label: c?.label ?? null, golden: c?.golden ?? null };
+                  }}
+                  busy={busy !== null}
+                  onLabel={(f, cls) => act(f, () => api.setLabel(camera, feature, f, cls))}
+                  onGolden={(f, on) => act(f, () => api.setGolden(camera, feature, f, on))}
+                  onDelete={(f) => act(f, () => api.deleteFrame(camera, feature, f), true)}
+                  deleted={(f) => !!grid.items.find((x) => x.frame === f)?.deleted}
+                  onRestore={(f) => act(f, () => api.restoreFrame(camera, feature, f), true)}
+                  onClose={() => setViewing(null)}
+                />
+              )}
             </>
           )}
             </>

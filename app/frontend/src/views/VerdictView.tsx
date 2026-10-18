@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, VerdictItem, VerdictList, VerdictSummary } from "../api";
 import { classColor } from "../classify/colors";
+import FramePane from "../classify/FramePane";
 import Pager from "../classify/Pager";
+import PictureViewer from "../classify/PictureViewer";
+import { useBrowse } from "../classify/useBrowse";
 import VerdictBar from "../VerdictBar";
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -31,7 +34,7 @@ const isTypingTarget = (t: EventTarget | null) => {
   return !!el && (el.isContentEditable || ["INPUT", "SELECT", "TEXTAREA"].includes(el.tagName));
 };
 
-function Card({ camera, item, busy, onDecide }: { camera: string; item: VerdictItem; busy: boolean; onDecide: (cls: "OK" | "NG" | null) => void }) {
+function Card({ camera, item, busy, onDecide, onOpen }: { camera: string; item: VerdictItem; busy: boolean; onDecide: (cls: "OK" | "NG" | null) => void; onOpen: () => void }) {
   const verdict = item.verdict;
   // As in Classify, keys act on the card under the mouse: 1 = OK, 2 = NG, 0 = clear my decision.
   const [hovered, setHovered] = useState(false);
@@ -58,12 +61,23 @@ function Card({ camera, item, busy, onDecide }: { camera: string; item: VerdictI
       onMouseLeave={() => setHovered(false)}
       style={{ border: "1px solid var(--border)", borderRadius: "var(--radius)", background: "var(--panel)", padding: 8, minWidth: 0, boxSizing: "border-box" }}
     >
-      <img
-        src={`/api/cameras/${encodeURIComponent(camera)}/frames/${encodeURIComponent(item.frame)}/thumb`}
-        alt={item.frame}
-        loading="lazy"
-        style={{ width: "100%", display: "block" }}
-      />
+      <button
+        type="button"
+        aria-label={`Open ${item.frame}`}
+        title="Open the full picture"
+        onClick={(e) => {
+          e.currentTarget.blur(); // keep the number keys for the hover keys and the viewer
+          onOpen();
+        }}
+        style={{ display: "block", width: "100%", padding: 0, border: 0, background: "none", lineHeight: 0, cursor: "pointer" }}
+      >
+        <img
+          src={`/api/cameras/${encodeURIComponent(camera)}/frames/${encodeURIComponent(item.frame)}/thumb`}
+          alt={item.frame}
+          loading="lazy"
+          style={{ width: "100%", display: "block" }}
+        />
+      </button>
       <div style={{ fontSize: 12, margin: "4px 0", wordBreak: "break-all" }}>{item.frame}</div>
       <div style={{ margin: "2px 0" }}>
         <span
@@ -106,6 +120,85 @@ function Card({ camera, item, busy, onDecide }: { camera: string; item: VerdictI
 }
 
 /**
+ * The picture viewer for the Verdict page: the shared shell and frame pane, with this page's own actions: decide OK or NG
+ * (keys 1 and 2) or clear the decision (0), and what the ROIs said about the picture.
+ */
+function VerdictViewer({
+  camera,
+  items,
+  start,
+  busy,
+  onDecide,
+  onClose,
+}: {
+  camera: string;
+  items: VerdictItem[];
+  start: string;
+  busy: boolean;
+  onDecide: (frame: string, cls: "OK" | "NG" | null) => void;
+  onClose: () => void;
+}) {
+  const frames = items.map((i) => i.frame);
+  const { frame, index, go } = useBrowse(frames, start, onClose);
+  const item = items.find((i) => i.frame === frame);
+  const latest = useRef({ frame, item, busy, onDecide });
+  latest.current = { frame, item, busy, onDecide };
+  const onKey = (e: KeyboardEvent): boolean => {
+    if (!/^[012]$/.test(e.key)) return false;
+    const cur = latest.current;
+    if (e.repeat || cur.busy || !cur.item) return true;
+    if (e.key === "0") {
+      if (cur.item.decision) cur.onDecide(cur.frame, null);
+    } else cur.onDecide(cur.frame, e.key === "1" ? "OK" : "NG");
+    return true;
+  };
+  if (!item) return null;
+  const verdict = item.verdict;
+  return (
+    <PictureViewer
+      label="Full-size picture"
+      testId="verdict-viewer"
+      name={frame}
+      index={index}
+      total={frames.length}
+      onGo={go}
+      onClose={onClose}
+      onKey={onKey}
+      hint="Wheel zooms · drag pans · ← → browse · 1 OK · 2 NG · 0 clears my decision · Esc closes"
+      toolbar={
+        <div role="group" aria-label="Decide" style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+          {(["OK", "NG"] as const).map((c, i) => (
+            <button
+              key={c}
+              type="button"
+              disabled={busy}
+              aria-pressed={item.kind === "manual" && verdict === c}
+              title={`Press ${i + 1}.`}
+              onClick={() => onDecide(frame, c)}
+              style={item.kind === "manual" && verdict === c ? { background: classColor(c), color: "#fff" } : undefined}
+            >
+              <kbd style={{ opacity: 0.6, marginRight: 4, fontSize: 10 }}>{i + 1}</kbd>
+              {item.status === "stale" && item.decision === c ? `Keep ${c}` : c}
+            </button>
+          ))}
+          {item.decision && (
+            <button type="button" disabled={busy} title="Press 0." onClick={() => onDecide(frame, null)}>
+              Clear
+            </button>
+          )}
+          <span data-testid="viewer-verdict" style={{ fontSize: 12 }}>
+            {verdict ? `${verdict}${item.kind === "manual" ? " · my decision" : " · automatic"}` : STATUS_TEXT[item.status]}
+            {item.inputs.length > 0 && ` — ${item.inputs.map((i) => `${i.short_name}: ${i.cls}`).join(", ")}`}
+          </span>
+        </div>
+      }
+    >
+      {(width) => <FramePane camera={camera} frame={frame} width={width} />}
+    </PictureViewer>
+  );
+}
+
+/**
  * The project verdict of every picture: OK or NG, combined from all quality ROIs. Pictures whose ROIs agree get an
  * automatic verdict; this page is where contradictions and stale decisions are looked at and decided.
  */
@@ -116,6 +209,7 @@ export default function VerdictView({ camera }: { camera: string }) {
   const [summary, setSummary] = useState<VerdictSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [viewing, setViewing] = useState<string | null>(null);
 
   const load = useCallback(() => {
     if (!camera) return;
@@ -190,10 +284,13 @@ export default function VerdictView({ camera }: { camera: string }) {
           <Pager grid={list} settings={settings} onPage={setPage} onSettings={changeSettings} where="top" />
           <div style={{ display: "grid", gridTemplateColumns: `repeat(${settings.cols}, minmax(0, 1fr))`, gap: 8 }}>
             {list.items.map((item) => (
-              <Card key={item.frame} camera={camera} item={item} busy={busy} onDecide={(c) => void decide(item.frame, c)} />
+              <Card key={item.frame} camera={camera} item={item} busy={busy} onDecide={(c) => void decide(item.frame, c)} onOpen={() => setViewing(item.frame)} />
             ))}
           </div>
           <Pager grid={list} settings={settings} onPage={setPage} onSettings={changeSettings} where="bottom" />
+          {viewing && (
+            <VerdictViewer camera={camera} items={list.items} start={viewing} busy={busy} onDecide={(f, c) => void decide(f, c)} onClose={() => setViewing(null)} />
+          )}
         </>
       )}
     </section>

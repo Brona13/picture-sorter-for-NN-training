@@ -261,39 +261,6 @@ export function RunBar({
   );
 }
 
-/** In the editor: Enter accepts the box, ←/→ move through the queue, Delete clears the box, Esc closes. */
-export function useReviewKeys(enabled: boolean, h: { accept: () => void; clear: () => void; step: (d: number) => void; close: () => void }) {
-  const ref = useRef(h);
-  ref.current = h;
-  useEffect(() => {
-    if (!enabled) return;
-    const onKey = (e: KeyboardEvent) => {
-      const t = e.target as HTMLElement | null;
-      const tag = t?.tagName;
-      if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA" || t?.isContentEditable) return;
-      if (e.key === "Escape") {
-        e.preventDefault();
-        ref.current.close();
-      } else if (e.key === "Enter") {
-        if (tag === "BUTTON") return;
-        e.preventDefault();
-        ref.current.accept();
-      } else if (e.key === "ArrowRight") {
-        e.preventDefault();
-        ref.current.step(1);
-      } else if (e.key === "ArrowLeft") {
-        e.preventDefault();
-        ref.current.step(-1);
-      } else if (e.key === "Delete") {
-        e.preventDefault();
-        ref.current.clear();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [enabled]);
-}
-
 /** Review queue header: the counts, the filter, the hints and the run controls; the frames are in the grid below. */
 export function ReviewPanel({
   list,
@@ -334,8 +301,9 @@ export function ReviewPanel({
         <p>
           <em>
             Hover a card: <kbd>Enter</kbd> or <kbd>A</kbd> accepts its box, <kbd>Delete</kbd> or <kbd>X</kbd> clears it,{" "}
-            <kbd>E</kbd> (or a click on the picture) opens it to adjust the box. Adjusted boxes are saved as manual and kept
-            when detection is re-run.
+            <kbd>Z</kbd> undoes, <kbd>E</kbd> (or a click on the picture) opens it to adjust the box. A decision shows at once and
+            the card stays where it is until you press Remove decided. Adjusted boxes are saved as manual and kept when
+            detection is re-run.
           </em>
         </p>
       )}

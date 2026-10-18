@@ -725,6 +725,12 @@ export const api = {
       `/cameras/${encodeURIComponent(camera)}/vision/${encodeURIComponent(feature)}/detections/${encodeURIComponent(frame)}`,
       send("PUT", { box, status }),
     ),
+  /** Undo a decision: put the frame's detections back as they were (an empty list leaves it without any). */
+  restoreDetection: (camera: string, feature: string, frame: string, rows: (Box & { conf: number; status: string })[]) =>
+    request<{ ok: boolean }>(
+      `/cameras/${encodeURIComponent(camera)}/vision/${encodeURIComponent(feature)}/detections/${encodeURIComponent(frame)}/restore`,
+      post({ rows }),
+    ),
   deleteDetection: (camera: string, feature: string, frame: string) =>
     request<{ ok: boolean }>(
       `/cameras/${encodeURIComponent(camera)}/vision/${encodeURIComponent(feature)}/detections/${encodeURIComponent(frame)}`,

@@ -1,6 +1,6 @@
-import { ReactNode, useEffect, useMemo, useState } from "react";
+import { ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { usePublishFeature, useSharedFeature } from "../SharedFeature";
-import { api, DetectionList, DetectorChoice, DetectorInfo, FilterChoice, FilterSpec, MaskChoice } from "../api";
+import { api, DetectionList, DetectionRow, DetectorChoice, DetectorInfo, FilterChoice, FilterSpec, MaskChoice } from "../api";
 import {
   byConfidence,
   EMPTY_DETECTOR,
@@ -8,8 +8,8 @@ import {
   needsLook,
   ReviewPanel,
   RunBar,
-  useReviewKeys,
 } from "../DetectorPanel";
+import PictureViewer from "../classify/PictureViewer";
 import PictureSizeSlider, { usePictureSize } from "../PictureSize";
 import ReviewGrid from "../ReviewGrid";
 import RoiCanvas from "../RoiCanvas";
@@ -171,12 +171,41 @@ export default function DetectorView({ camera, product }: { camera: string; prod
     const all = list?.frames ?? [];
     return showAll ? [...all].sort(byConfidence) : all.filter(needsLook);
   }, [list, showAll]);
-  const navFrames = useMemo(() => (tab === "review" ? queue.map((r) => r.frame) : frames), [tab, queue, frames]);
 
-  // The review step always shows a frame from the queue.
+  // --- the review grid: a decision shows at once and the card stays where it is ---
+  // `order` is the frames in the grid, kept stable while you decide (decided cards stay until "Remove decided", leaving the
+  // step, or another filter); `overrides` are decisions shown before the server has confirmed them.
+  const [order, setOrder] = useState<string[]>([]);
+  const [overrides, setOverrides] = useState<Record<string, DetectionRow>>({});
+  const [undoRows, setUndoRows] = useState<Record<string, DetectionRow>>({});
+  const [reseed, setReseed] = useState(0);
+  const seeded = useRef("");
+  const pending = useRef(new Set<string>());
+  const listSeq = useRef(0);
+  const seedKey = `${tab}|${showAll}|${feature}|${jobDone}|${reseed}`;
   useEffect(() => {
-    if (tab === "review" && queue.length > 0 && !queue.some((r) => r.frame === frame)) setFrame(queue[0].frame);
-  }, [tab, queue, frame]);
+    if (tab !== "review") {
+      seeded.current = ""; // coming back to the step starts from a fresh queue
+      return;
+    }
+    if (!list || seeded.current === seedKey) return;
+    seeded.current = seedKey;
+    setOrder(queue.map((r) => r.frame));
+    setOverrides({});
+    setUndoRows({});
+  }, [tab, list, queue, seedKey]);
+  const rowOf = (f: string): DetectionRow | undefined => overrides[f] ?? rows.get(f);
+  const shownRows = useMemo(() => order.map((f) => overrides[f] ?? rows.get(f)).filter((r): r is DetectionRow => !!r), [order, overrides, rows]);
+  const navFrames = useMemo(() => (tab === "review" ? order : frames), [tab, order, frames]);
+  const editorOpen = tab === "review" && editing && order.length > 0;
+  useEffect(() => {
+    if (editing && (tab !== "review" || order.length === 0)) setEditing(false); // nothing left to adjust
+  }, [editing, tab, order.length]);
+
+  // The editor and the review keys always show a frame of the grid.
+  useEffect(() => {
+    if (tab === "review" && order.length > 0 && !order.includes(frame)) setFrame(order[0]);
+  }, [tab, order, frame]);
 
   const firstExemplar = detector?.exemplars[0]?.frame;
   // The mask follows the detected object, so it is drawn on the first exemplar's frame.
@@ -186,10 +215,11 @@ export default function DetectorView({ camera, product }: { camera: string; prod
   }, [tab]);
 
   useEffect(() => setDraft(null), [frame, feature]);
+  const topBox = (overrides[frame] ?? rows.get(frame))?.boxes[0];
   useEffect(() => {
-    const top = rows.get(frame)?.boxes[0];
-    setReviewBox(top ? { x: top.x, y: top.y, w: top.w, h: top.h } : null);
-  }, [rows, frame]);
+    setReviewBox(topBox ? { x: topBox.x, y: topBox.y, w: topBox.w, h: topBox.h } : null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [topBox?.x, topBox?.y, topBox?.w, topBox?.h, frame]);
 
   // The Masked view only exists while the mask is applied; otherwise fall back to Filtered.
   const view: View = viewChoice === "masked" && !mask?.enabled ? "filtered" : viewChoice;
@@ -197,7 +227,7 @@ export default function DetectorView({ camera, product }: { camera: string; prod
   const imageUrl = usePreview(
     camera,
     feature,
-    frame,
+    tab === "review" && !editorOpen ? "" : frame, // the grid shows thumbnails; no preview is rendered for it
     view === "original" ? null : filter,
     maskOn,
     setError,
@@ -251,48 +281,102 @@ export default function DetectorView({ camera, product }: { camera: string; prod
     setDraft(null);
   };
 
-  const decide = (action: () => Promise<unknown>) => {
-    const i = queue.findIndex((r) => r.frame === frame);
-    const next = queue[i + 1]?.frame ?? queue[i - 1]?.frame;
-    action()
-      .then(() => {
-        setTick((t) => t + 1);
-        if (next) setFrame(next);
-      })
-      .catch((e: unknown) => setError(msg(e)));
-  };
-  const accept = () =>
-    reviewBox && decide(() => api.putDetection(camera, feature, frame, roundBox(reviewBox), "reviewed"));
-  const clear = () => decide(() => api.deleteDetection(camera, feature, frame));
   const step = (d: number) => {
     const i = navFrames.indexOf(frame);
     const n = navFrames[Math.min(navFrames.length - 1, Math.max(0, (i < 0 ? 0 : i) + d))];
     if (n) setFrame(n);
   };
 
-  // The cards of the review grid decide on their own frame; the editor decides on the frame it shows.
-  const acceptRow = (f: string) => {
-    const b = rows.get(f)?.boxes[0];
-    if (!b) return Promise.resolve();
-    return api
-      .putDetection(camera, feature, f, roundBox({ x: b.x, y: b.y, w: b.w, h: b.h }), "reviewed")
-      .then(() => setTick((t) => t + 1))
+  // A decision shows at once; the save runs in the background and is undone on screen if it fails.
+  const refreshList = () => {
+    const seq = ++listSeq.current;
+    api
+      .detections(camera, feature, false)
+      .then((l) => {
+        if (seq !== listSeq.current) return; // a newer answer is on its way
+        setList(l);
+        setOverrides((o) => Object.fromEntries(Object.entries(o).filter(([f]) => pending.current.has(f))));
+      })
       .catch((e: unknown) => setError(msg(e)));
   };
-  const clearRow = (f: string) =>
-    api
-      .deleteDetection(camera, feature, f)
-      .then(() => setTick((t) => t + 1))
-      .catch((e: unknown) => setError(msg(e)));
+  const decision = (f: string, next: DetectionRow, call: () => Promise<unknown>, keepUndo = true) => {
+    const before = rowOf(f);
+    if (before && keepUndo) setUndoRows((u) => ({ ...u, [f]: before }));
+    setOverrides((o) => ({ ...o, [f]: next }));
+    pending.current.add(f);
+    call()
+      .then(() => {
+        pending.current.delete(f);
+        refreshList();
+      })
+      .catch((e: unknown) => {
+        pending.current.delete(f);
+        setOverrides((o) => {
+          const n = { ...o };
+          if (before) n[f] = before;
+          else delete n[f];
+          return n;
+        });
+        setError(msg(e));
+      });
+  };
+  const acceptRow = (f: string) => {
+    const row = rowOf(f);
+    const b = row?.boxes[0];
+    if (!row || !b || row.state === "human") return;
+    decision(f, { ...row, state: "human", status: "reviewed", boxes: [b] }, () =>
+      api.putDetection(camera, feature, f, roundBox({ x: b.x, y: b.y, w: b.w, h: b.h }), "reviewed"),
+    );
+  };
+  const clearRow = (f: string) => {
+    const row = rowOf(f);
+    if (!row?.boxes[0]) return;
+    decision(f, { ...row, state: "none", status: null, boxes: [] }, () => api.deleteDetection(camera, feature, f));
+  };
+  const undoRow = (f: string) => {
+    const prev = undoRows[f];
+    if (!prev) return;
+    setUndoRows((u) => {
+      const n = { ...u };
+      delete n[f];
+      return n;
+    });
+    decision(
+      f,
+      prev,
+      () => api.restoreDetection(camera, feature, f, prev.boxes.map((b) => ({ x: b.x, y: b.y, w: b.w, h: b.h, conf: b.conf, status: prev.status ?? "auto" }))),
+      false,
+    );
+  };
   const adjust = (f: string) => {
     setFrame(f);
     setEditing(true);
   };
-  const editorOpen = tab === "review" && editing && queue.length > 0;
-  useEffect(() => {
-    if (editing && (tab !== "review" || queue.length === 0)) setEditing(false); // nothing left to adjust
-  }, [editing, tab, queue.length]);
-  useReviewKeys(editorOpen, { accept: () => reviewBox && accept(), clear, step, close: () => setEditing(false) });
+  // In the editor: the box on screen (possibly adjusted) is what is accepted; then on to the next card.
+  const advance = () => {
+    const next = order[order.indexOf(frame) + 1];
+    if (next) setFrame(next);
+  };
+  const acceptEditor = () => {
+    const row = rowOf(frame);
+    if (!row || !reviewBox) return;
+    const box = roundBox(reviewBox);
+    decision(frame, { ...row, state: "human", status: "reviewed", boxes: [{ ...box, conf: row.boxes[0]?.conf ?? 1 }] }, () => api.putDetection(camera, feature, frame, box, "reviewed"));
+    advance();
+  };
+  const clearEditor = () => {
+    clearRow(frame);
+    advance();
+  };
+  const editorKey = (e: KeyboardEvent): boolean => {
+    const key = e.key.toLowerCase();
+    if (e.repeat) return key === "enter" || key === "a" || key === "delete" || key === "x" || key === "z";
+    if (key === "enter" || key === "a") acceptEditor();
+    else if (key === "delete" || key === "x") clearEditor();
+    else if (key === "z") undoRow(frame);
+    else return false;
+    return true;
+  };
 
   const spec = filter ? catalogue[filter.name] : undefined;
   const counts = list?.counts ?? {};
@@ -380,9 +464,15 @@ export default function DetectorView({ camera, product }: { camera: string; prod
     </div>
   );
 
+  const reviewTool = (width: number): ReactNode =>
+    !imageUrl ? (
+      <p>Loading preview…</p>
+    ) : (
+      <RoiCanvas imageUrl={imageUrl} mode={reviewBox ? "edit" : "draw"} box={reviewBox} onChange={setReviewBox} width={width} />
+    );
+
   let tool: ReactNode;
-  if (tab === "review" && queue.length === 0) tool = <p>No frame to review.</p>;
-  else if (!imageUrl) tool = <p>Loading preview…</p>;
+  if (!imageUrl) tool = <p>Loading preview…</p>;
   else if (view === "masked")
     tool = <img src={imageUrl} alt="Masked preview" style={{ width: size, maxWidth: "100%" }} />;
   else if (tab === "filter")
@@ -404,16 +494,6 @@ export default function DetectorView({ camera, product }: { camera: string; prod
         box={draft}
         onChange={setDraft}
         others={[...exemplarOutlines, ...(detectedBox ? [{ name: "detected", box: detectedBox }] : [])]}
-        width={size}
-      />
-    );
-  else if (tab === "review")
-    tool = (
-      <RoiCanvas
-        imageUrl={imageUrl}
-        mode={reviewBox ? "edit" : "draw"}
-        box={reviewBox}
-        onChange={setReviewBox}
         width={size}
       />
     );
@@ -628,11 +708,21 @@ export default function DetectorView({ camera, product }: { camera: string; prod
 
           {tab === "review" && (
             <>
-              <ReviewPanel list={list} queue={queue} showAll={showAll} onShowAll={setShowAll}>
+              <ReviewPanel list={list} queue={shownRows} showAll={showAll} onShowAll={setShowAll}>
                 {runBar}
               </ReviewPanel>
-              {queue.length > 0 && (
-                <ReviewGrid camera={camera} feature={feature} rows={queue} keysOn={!editorOpen} onAccept={acceptRow} onClear={clearRow} onAdjust={adjust} />
+              {order.length > 0 && (
+                <ReviewGrid
+                  camera={camera}
+                  feature={feature}
+                  rows={shownRows}
+                  canUndo={(f) => !!undoRows[f]}
+                  onAccept={acceptRow}
+                  onClear={clearRow}
+                  onUndo={undoRow}
+                  onAdjust={adjust}
+                  onRemoveDecided={() => setReseed((n) => n + 1)}
+                />
               )}
             </>
           )}
@@ -686,39 +776,34 @@ export default function DetectorView({ camera, product }: { camera: string; prod
         </div>
       </div>
       {editorOpen && (
-        <div
-          role="dialog"
-          aria-label="Adjust detection"
-          onClick={(e) => e.target === e.currentTarget && setEditing(false)}
-          style={{ position: "fixed", inset: 0, zIndex: 40, background: "rgba(0,0,0,.6)", overflow: "auto", padding: 24, display: "flex", justifyContent: "center", alignItems: "flex-start" }}
-        >
-          <div style={{ background: "var(--panel)", borderRadius: "var(--radius)", padding: 12, maxWidth: "96vw" }}>
-            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
-              <strong>{frame}</strong>
-              <span style={caption}>
-                {position >= 0 ? `${position + 1} / ${pickerFrames.length}` : ""}
-              </span>
-              <span style={{ flex: 1 }} />
-              <button onClick={() => step(-1)} aria-label="Previous frame">
-                ←
-              </button>
-              <button onClick={() => step(1)} aria-label="Next frame">
-                →
-              </button>
-              <button disabled={!reviewBox || !queue.some((r) => r.frame === frame)} onClick={accept} title="Accept the box (Enter)">
+        <PictureViewer
+          label="Adjust detection"
+          testId="box-editor"
+          name={frame}
+          index={Math.max(0, order.indexOf(frame))}
+          total={order.length}
+          onGo={(i) => order[i] && setFrame(order[i])}
+          onClose={() => setEditing(false)}
+          onKey={editorKey}
+          hint="Drag the box to move it, drag a corner to resize it, or draw a new one · Enter or A accepts and moves on · Delete or X clears · Z undoes · ← → browse · Esc closes"
+          toolbar={
+            <div role="group" aria-label="Decide" style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <button disabled={!reviewBox} onClick={acceptEditor} title="Accept the box (Enter or A)">
                 ✓ Accept box
               </button>
-              <button onClick={clear} title="Clear the box (Delete)">
+              <button disabled={!rowOf(frame)?.boxes[0]} onClick={clearEditor} title="Clear the box (Delete or X)">
                 ✕ Clear
               </button>
-              <button onClick={() => setEditing(false)} title="Close (Esc)">
-                Close
-              </button>
+              {undoRows[frame] && (
+                <button onClick={() => undoRow(frame)} title="Undo this decision (Z)">
+                  ↶ Undo
+                </button>
+              )}
             </div>
-            <p style={{ ...caption, margin: "0 0 6px" }}>Drag the box to move it, drag the corners to resize it, or draw a new one.</p>
-            {tool}
-          </div>
-        </div>
+          }
+        >
+          {reviewTool}
+        </PictureViewer>
       )}
     </section>
   );

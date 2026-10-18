@@ -354,8 +354,11 @@ Detections are suggestions. A box is *trusted* when its confidence is at or abov
 threshold slider; otherwise it waits in the **review queue**, a paged grid of cards like the other pages.
 Each card shows the frame with the detected box drawn on it, its state and confidence, and its own
 **Accept** and **Clear** buttons. Hover a card and press **Enter** or **A** to accept its box, **Delete** or
-**X** to clear it, **E** (or click the picture) to open the editor and adjust the box: drag it, drag the corners
-or draw a new one, then **Enter** accepts and moves to the next card, **← →** switch card and **Esc** closes.
+**X** to clear it, **Z** to undo, **E** (or click the picture) to open the viewer and adjust the box: drag it,
+drag the corners or draw a new one, then **Enter** accepts and moves to the next card, **← →** switch card
+and **Esc** closes. A decision shows at once and the card stays where it is, marked as decided (the save runs in the
+background); **Remove decided** takes the decided cards out of the grid when you want a shorter list, as does
+leaving the step or switching **Show all frames**.
 Boxes you accepted or adjusted are never overwritten by a re-run. **Show all
 frames, least confident first** lists every frame with the confidence range, so you can
 check the confident ones too. Frames without a trusted box keep the mask where it was drawn.
@@ -485,11 +488,15 @@ scrolls on its own, independently of the centre. At its top a card shows how man
   mean cosine distance to its *k* nearest other frames on the same embeddings (filter and mask apply). The most
   isolated frames come first as cards. The score is a hint for review, not a verdict; it is computed on demand
   and nothing is stored. Colour the scatter by it with *Colour by: Outlier score*.
-- **Picture viewer:** clicking a card's picture (in any of these grids) opens the full frame in an overlay
-  instead of a new tab (Ctrl or middle click still opens a tab). ← → walk the cards in grid order, the wheel
-  zooms (kept when you move to the next picture), dragging pans, **Reset** and **1:1** are in the toolbar, the
-  feature's ROI is outlined in yellow (**▭** hides it), and the card keys work on the shown picture: 1-9 label,
-  0 clears, the key left of 1 is golden, Delete deletes. Esc closes.
+- **Picture viewer:** one viewer for every page that shows pictures: the Scatter selection, Clusters, Outliers,
+  Insights, Classify, Verdict and the Detector's review. Clicking a card's picture opens the full frame in an overlay
+  instead of a new tab (Ctrl or middle click still opens a tab). ← → walk the pictures in grid order (on Classify
+  and Verdict: the page you are on), the wheel zooms (kept when you move to the next picture), dragging pans,
+  **Reset** and **1:1** are in the toolbar, the feature's ROI is outlined in yellow (**▭** hides it), and the file
+  name sits under the picture. Each page adds its own actions: on the labeling pages the card keys work on the
+  shown picture (1-9 label, 0 clears, the key left of 1 is golden, Delete deletes; a deleted frame can be restored),
+  on Verdict 1 decides OK, 2 NG and 0 clears the decision, and on the Detector review the viewer edits the
+  detected box. Esc closes.
 
 ## Scoring methods
 
