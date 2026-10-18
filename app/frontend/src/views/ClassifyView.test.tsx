@@ -608,3 +608,35 @@ test("the outliers list uses Classify's grid settings too", async () => {
   await waitFor(() => expect(calls.some((c) => c.url.includes("/classify/grid-settings"))).toBe(true));
   expect(calls.some((c) => c.url.includes("/dedup/grid-settings"))).toBe(false);
 });
+
+// --- focused page (opened from the Chain canvas) -----------------------------------------------------------------
+test("opened on one ROI from the chain, the page is locked to it: no ROI dropdown, the way back, and that ROI's data", async () => {
+  const onBack = vi.fn();
+  render(<ClassifyView camera="camA" focus={{ feature: "seal", onBack }} />);
+  await cardEl("a.png");
+  expect(screen.queryByLabelText(/Feature \(ROI\)/)).toBeNull();
+  expect(screen.getByRole("heading", { name: /Classify — camA › seal/ })).toBeInTheDocument();
+  expect(calls.some((c) => c.url.includes("/versions/features"))).toBe(false); // the ROI list is not even asked for
+  expect(calls.find((c) => c.url.includes("/classify/state"))!.url).toContain("feature=seal");
+  await userEvent.click(screen.getByRole("button", { name: /Back to chain/ }));
+  expect(onBack).toHaveBeenCalled();
+});
+
+test("a product-scoped ROI shows its short name in the heading", async () => {
+  render(<ClassifyView camera="camA" focus={{ feature: "B::rod", onBack: () => {} }} />);
+  expect(await screen.findByRole("heading", { name: /Classify — camA › rod/ })).toBeInTheDocument();
+  expect(calls.find((c) => c.url.includes("/classify/state"))!.url).toContain(encodeURIComponent("B::rod"));
+});
+
+test("the Grid | Scatter | Outliers switch still works on the locked page", async () => {
+  render(<ClassifyView camera="camA" focus={{ feature: "seal", onBack: () => {} }} />);
+  await cardEl("a.png");
+  await userEvent.click(screen.getByRole("button", { name: /Scatter/ }));
+  expect(await screen.findByRole("img", { name: /2D scatter/ })).toBeInTheDocument();
+});
+
+test("without a focus the ROI dropdown is still there", async () => {
+  render(<ClassifyView camera="camA" />);
+  await cardEl("a.png");
+  expect(screen.getByLabelText(/Feature \(ROI\)/)).toBeInTheDocument();
+});

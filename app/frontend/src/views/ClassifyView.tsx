@@ -24,7 +24,16 @@ const PHASES: Record<string, string> = {
   presentation: "Preparing the grid…",
 };
 
-export default function ClassifyView({ camera, product }: { camera: string; product?: string }) {
+/**
+ * `focus` locks the page to one ROI: the one chosen on the Chain canvas, where its scope was already decided. The ROI
+ * dropdown is then not offered, and a button leads back to the chain.
+ */
+export interface ClassifyFocus {
+  feature: string;
+  onBack: () => void;
+}
+
+export default function ClassifyView({ camera, product, focus }: { camera: string; product?: string; focus?: ClassifyFocus }) {
   const [features, setFeatures] = useState<{ feature: string; label: string }[]>([]);
   const [feature, setFeature] = useState("");
   const shared = useSharedFeature();
@@ -75,6 +84,11 @@ export default function ClassifyView({ camera, product }: { camera: string; prod
     setSt(null);
     setGrid(null);
     setSimilarSeed(null);
+    if (focus) {
+      setFeatures([]);
+      setFeature(focus.feature);
+      return;
+    }
     api
       .versionFeatures(camera, product)
       .then((f) => {
@@ -82,7 +96,7 @@ export default function ClassifyView({ camera, product }: { camera: string; prod
         setFeature(shared.pick(f));
       })
       .catch((e: unknown) => setError(msg(e)));
-  }, [camera, product]);
+  }, [camera, product, focus?.feature]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadState = useCallback(async () => {
     if (!camera || !feature) return;
@@ -186,21 +200,30 @@ export default function ClassifyView({ camera, product }: { camera: string; prod
     <section>
       <h2>
         Classify — {camera}
-        {product ? ` › ${product}` : ""}
+        {focus ? ` › ${focus.feature.split("::").pop()}` : product ? ` › ${product}` : ""}
       </h2>
+      {focus && (
+        <p>
+          <button type="button" onClick={focus.onBack}>
+            ← Back to chain
+          </button>
+        </p>
+      )}
       {error && <p role="alert">{error}</p>}
       {notice && <p role="status">{notice}</p>}
 
-      <label>
-        Feature (ROI){" "}
-        <select value={feature} onChange={(e) => setFeature(e.target.value)}>
-          {features.map((f) => (
-            <option key={f.feature} value={f.feature}>
-              {f.label}
-            </option>
-          ))}
-        </select>
-      </label>
+      {!focus && (
+        <label>
+          Feature (ROI){" "}
+          <select value={feature} onChange={(e) => setFeature(e.target.value)}>
+            {features.map((f) => (
+              <option key={f.feature} value={f.feature}>
+                {f.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
 
       {st?.shared_products && (
         <p>
