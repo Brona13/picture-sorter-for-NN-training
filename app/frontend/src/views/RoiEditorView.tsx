@@ -8,7 +8,17 @@ import { Box, round4, roundBox, sameBox } from "../roiGeometry";
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const NUM_FIELDS: (keyof Box)[] = ["x", "y", "w", "h"];
 
-export default function RoiEditorView({ camera, product }: { camera: string; product?: string }) {
+/**
+ * `focus` locks the editor to one ROI: the one chosen on the Chain canvas, where it was already decided whether it is
+ * the product-sorting ROI or a feature. Only its rectangle is shown (no other ROI, no drawing of new ones), and what
+ * the canvas owns (the ROI's kind, the products it applies to, deleting it) is not offered here.
+ */
+export interface RoiFocus {
+  feature: string;
+  onBack: () => void;
+}
+
+export default function RoiEditorView({ camera, product, focus }: { camera: string; product?: string; focus?: RoiFocus }) {
   const [size, setSize] = usePictureSize("roi.pictureSize", 900, 200, 1600);
   const [frames, setFrames] = useState<FramesResponse | null>(null);
   const [view, setView] = useState<View>(FIT_VIEW);
@@ -51,9 +61,12 @@ export default function RoiEditorView({ camera, product }: { camera: string; pro
     reload();
   }, [reload]);
 
-  const rois = data?.rois ?? [];
-  const target: RoiInfo | undefined = rois.find((r) => r.feature === editFeature) ?? rois[0];
-  const editing = mode === "edit" && target !== undefined;
+  const focused = focus?.feature ?? "";
+  const rois = (data?.rois ?? []).filter((r) => !focused || r.feature === focused);
+  const target: RoiInfo | undefined = focused
+    ? rois[0]
+    : (rois.find((r) => r.feature === editFeature) ?? rois[0]);
+  const editing = (focused !== "" || mode === "edit") && target !== undefined;
 
   // Entering edit mode (or switching target) seeds the box from the saved geometry.
   useEffect(() => {
@@ -133,12 +146,21 @@ export default function RoiEditorView({ camera, product }: { camera: string; pro
     <section>
       <h2>
         ROI editor — {camera}
-        {product ? ` › ${product}` : ""}
+        {focus ? ` › ${target?.short_name ?? datamodelShort(focused)}` : product ? ` › ${product}` : ""}
       </h2>
+      {focus && (
+        <p>
+          <button type="button" onClick={focus.onBack}>
+            ← Back to chain
+          </button>{" "}
+          {target && <small>{chip(target)}</small>}
+        </p>
+      )}
       {error && <p role="alert">{error}</p>}
       {notice && <p role="status">{notice}</p>}
+      {focus && data && !target && <p role="alert">This ROI no longer exists. Go back to the chain.</p>}
 
-      {product ? (
+      {focus ? null : product ? (
         <p>
           Drawing ROIs for product <strong>{product}</strong> — they apply only to its frames.
           {data && data.shared_here.length > 0 && (
@@ -181,7 +203,7 @@ export default function RoiEditorView({ camera, product }: { camera: string; pro
         )}
       </div>
 
-      {rois.length > 0 && (
+      {!focus && rois.length > 0 && (
         <fieldset>
           <legend>Mode</legend>
           <label>
@@ -206,7 +228,7 @@ export default function RoiEditorView({ camera, product }: { camera: string; pro
         </fieldset>
       )}
 
-      {frame && (
+      {frame && (!focus || target) && (
         <>
           <PictureSizeSlider value={size} onChange={setSize} min={200} max={1600} />
           <RoiCanvas
@@ -223,7 +245,7 @@ export default function RoiEditorView({ camera, product }: { camera: string; pro
       )}
       <p>
         {editing
-          ? "Drag the box to move it, or pull a corner/edge handle to resize. Other ROIs stay drawn in green for reference. Wheel: zoom at the cursor. Pan: middle button or Space + drag (or drag the background)."
+          ? `Drag the box to move it, or pull a corner/edge handle to resize.${focus ? "" : " Other ROIs stay drawn in green for reference."} Wheel: zoom at the cursor. Pan: middle button or Space + drag (or drag the background).`
           : "Existing ROIs are drawn in green. Drag on the image to draw a new rectangle, name it, and add it. Wheel: zoom at the cursor. Pan: middle button or Space + drag."}
       </p>
 
@@ -273,7 +295,7 @@ export default function RoiEditorView({ camera, product }: { camera: string; pro
         </div>
       )}
 
-      {!editing && (
+      {!editing && !focus && (
         <form onSubmit={onAdd}>
           <label>
             Feature name for this ROI{" "}
@@ -312,7 +334,7 @@ export default function RoiEditorView({ camera, product }: { camera: string; pro
         </form>
       )}
 
-      {!product && classifyFeat && (
+      {!product && classifyFeat && (!focus || focused === classifyFeat) && (
         <details>
           <summary>Products — classes of '{classifyFeat}'</summary>
           <label>
@@ -336,7 +358,7 @@ export default function RoiEditorView({ camera, product }: { camera: string; pro
         </details>
       )}
 
-      {rois.length > 0 && (
+      {!focus && rois.length > 0 && (
         <div>
           <h3>Defined ROIs</h3>
           <p>
@@ -386,6 +408,9 @@ export default function RoiEditorView({ camera, product }: { camera: string; pro
     </section>
   );
 }
+
+/** The ROI's own name, before its data is loaded: "typeA::rod" -> "rod". */
+const datamodelShort = (feature: string) => feature.split("::").pop() ?? feature;
 
 function chip(r: RoiInfo): string {
   if (r.role === "classify") return "🗂 product sorter";

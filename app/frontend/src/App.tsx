@@ -38,7 +38,9 @@ export default function App() {
   const remembered = useMemo(() => lastSession.feature(camera), [camera]);
   const feature = selected.camera === camera ? selected.feature : remembered;
   const navigate = useNavigate();
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
+  // "/roi?focus=<ROI>" is the ROI editor locked to one ROI (opened from the Chain canvas); plain "/roi" is the full editor.
+  const focusFeature = new URLSearchParams(search).get("focus") ?? "";
   const knownPages = [...VIEWS, CONFIG_VIEW].map((v) => `/${v.path}`);
   // The page the cogwheel returns to when it is clicked again on Configuration.
   const beforeConfig = useRef("/overview");
@@ -155,7 +157,8 @@ export default function App() {
     lastSession.setFeature(camera, feature);
     setProduct(owner);
     setSelected({ camera, feature });
-    navigate(`/${view}`);
+    // The ROI editor opens locked to this ROI; Classify just opens on it.
+    navigate(view === "roi" ? `/roi?focus=${encodeURIComponent(feature)}` : `/${view}`);
   };
 
   return (
@@ -253,7 +256,7 @@ export default function App() {
           />
           <Route
             path="/roi"
-            element={<RoiEditorView camera={camera} product={product || undefined} />}
+            element={<RoiEditorView camera={camera} product={product || undefined} focus={focusFeature ? { feature: focusFeature, onBack: () => navigate("/chain") } : undefined} />}
           />
           <Route path="/verdict" element={<VerdictView camera={camera} />} />
           <Route

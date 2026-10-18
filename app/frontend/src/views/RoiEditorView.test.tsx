@@ -164,3 +164,72 @@ test("picture size slider scales the drawing canvas and is remembered", async ()
   expect(screen.getByTestId("roi-canvas")).toHaveStyle({ width: "1200px" });
   localStorage.removeItem("roi.pictureSize");
 });
+
+// --- focused editor (opened from the Chain canvas) ---------------------------------------------------------------
+const focusData = () =>
+  base({
+    rois: [
+      roi({ feature: "type", short_name: "type", role: "classify", classes: ["A", "B"], x: 0.05, y: 0.05, w: 0.9, h: 0.9 }),
+      roi({ feature: "seal", short_name: "seal", x: 0.1, y: 0.2, w: 0.3, h: 0.4 }),
+      roi({ feature: "edge", short_name: "edge", x: 0.5, y: 0.5, w: 0.2, h: 0.2 }),
+    ],
+    classify_feature: "type",
+    products: ["A", "B"],
+  });
+
+test("opened on one feature, it shows only that ROI: no other rectangles, no drawing, no ROI creation, no product options", async () => {
+  install(focusData());
+  const onBack = vi.fn();
+  render(<RoiEditorView camera="camA" focus={{ feature: "seal", onBack }} />);
+  expect(await screen.findByRole("heading", { name: /ROI editor — camA › seal/ })).toBeInTheDocument();
+  await waitFor(() => expect(screen.getByLabelText("x")).toHaveValue(0.1)); // the box is the feature's own, ready to adjust
+  // no other ROI's rectangle on the picture
+  expect(document.querySelectorAll('[title="type"], [title="edge"], [title="seal"]')).toHaveLength(0);
+  // nothing that creates or lists ROIs, picks a mode, sets products or deletes
+  expect(screen.queryByText("Mode")).toBeNull();
+  expect(screen.queryByRole("button", { name: /Add \/ update ROI/ })).toBeNull();
+  expect(screen.queryByLabelText(/Feature name/)).toBeNull();
+  expect(screen.queryByText(/product-sorting/)).toBeNull();
+  expect(screen.queryByText("Defined ROIs")).toBeNull();
+  expect(screen.queryByText(/Applies to products/)).toBeNull();
+  expect(screen.queryByRole("button", { name: "Delete seal" })).toBeNull();
+  expect(screen.queryByText(/Products — classes/)).toBeNull();
+  // the way back
+  await userEvent.click(screen.getByRole("button", { name: /Back to chain/ }));
+  expect(onBack).toHaveBeenCalled();
+});
+
+test("in the focused editor the rectangle can still be moved and saved", async () => {
+  install(focusData());
+  render(<RoiEditorView camera="camA" focus={{ feature: "seal", onBack: () => {} }} />);
+  await waitFor(() => expect(screen.getByLabelText("x")).toHaveValue(0.1));
+  const x = screen.getByLabelText("x");
+  await userEvent.clear(x);
+  await userEvent.type(x, "0.3");
+  await userEvent.click(screen.getByRole("button", { name: /Save position/ }));
+  await waitFor(() => expect(calls.some((c) => c.url.includes("/rois/seal/geometry"))).toBe(true));
+  expect(calls.find((c) => c.url.includes("/geometry"))!.body).toEqual({ x: 0.3, y: 0.2, w: 0.3, h: 0.4 });
+});
+
+test("opened on the product-sorting ROI, it shows only that rectangle and keeps the product names", async () => {
+  install(focusData());
+  render(<RoiEditorView camera="camA" focus={{ feature: "type", onBack: () => {} }} />);
+  await waitFor(() => expect(screen.getByLabelText("w")).toHaveValue(0.9));
+  expect(screen.getByText(/Products — classes of 'type'/)).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /Add \/ update ROI/ })).toBeNull();
+  expect(screen.queryByText("Mode")).toBeNull();
+});
+
+test("a focused ROI that no longer exists says so", async () => {
+  install(focusData());
+  render(<RoiEditorView camera="camA" focus={{ feature: "gone", onBack: () => {} }} />);
+  expect(await screen.findByText(/no longer exists/)).toBeInTheDocument();
+});
+
+test("without a focus the editor is unchanged: modes, add form and the list of all ROIs", async () => {
+  install(focusData());
+  render(<RoiEditorView camera="camA" />);
+  expect(await screen.findByText("Defined ROIs")).toBeInTheDocument();
+  expect(screen.getByText("Mode")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /Add \/ update ROI/ })).toBeInTheDocument();
+});
