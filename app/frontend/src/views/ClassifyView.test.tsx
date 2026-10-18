@@ -768,3 +768,22 @@ test("the normal grid has no flags and no extras", async () => {
   expect(c).toHaveStyle({ border: "1px solid #ccc" });
   expect(c).not.toHaveAttribute("title");
 });
+
+test("locked to a ROI, the way back and the three views share one line; the plain page keeps its switch under the counts", async () => {
+  const { unmount } = render(<ClassifyView camera="camA" focus={{ feature: "seal", onBack: () => {} }} />);
+  await cardEl("a.png");
+  const back = screen.getByRole("button", { name: /Back to chain/ });
+  const views = screen.getByRole("group", { name: "View" });
+  expect(views.parentElement).toBe(back.parentElement); // one row
+  expect(within(back.parentElement as HTMLElement).getAllByRole("button").map((b) => b.textContent)).toEqual([
+    "← Back to chain", "▦ Grid", "✦ Scatter", "◎ Outliers",
+  ]);
+  await userEvent.click(within(views).getByRole("button", { name: /Scatter/ }));
+  expect(await screen.findByRole("img", { name: /2D scatter/ })).toBeInTheDocument();
+  unmount();
+
+  render(<ClassifyView camera="camA" />);
+  await cardEl("a.png");
+  expect(screen.queryByRole("button", { name: /Back to chain/ })).toBeNull();
+  expect(screen.getAllByRole("group", { name: "View" })).toHaveLength(1);
+});

@@ -207,6 +207,19 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
   }
 
   if (!camera) return <p>Select a camera.</p>;
+  const viewSwitch = (
+    <div role="group" aria-label="View" style={{ display: "flex", gap: 6 }}>
+      <button type="button" aria-pressed={mode === "grid"} onClick={() => setMode("grid")}>
+        ▦ Grid
+      </button>
+      <button type="button" aria-pressed={mode === "scatter"} onClick={() => setMode("scatter")}>
+        ✦ Scatter
+      </button>
+      <button type="button" aria-pressed={mode === "outliers"} onClick={() => setMode("outliers")}>
+        ◎ Outliers
+      </button>
+    </div>
+  );
   const classes = st?.classes ?? [];
   const progress = job?.progress ?? {};
   const phase = String(progress.phase ?? "");
@@ -221,11 +234,14 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
         {focus ? ` › ${focus.feature.split("::").pop()}` : product ? ` › ${product}` : ""}
       </h2>
       {focus && (
-        <p>
+        // Locked to one ROI: the way back and the three views are all navigation, so they share one line.
+        <div style={{ display: "flex", gap: 6, alignItems: "center", margin: "8px 0" }}>
           <button type="button" onClick={focus.onBack}>
             ← Back to chain
           </button>
-        </p>
+          {st && <span aria-hidden="true" style={{ width: 14 }} />}
+          {st && viewSwitch}
+        </div>
       )}
       {error && <p role="alert">{error}</p>}
       {notice && <p role="status">{notice}</p>}
@@ -275,19 +291,7 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
         </dl>
       )}
 
-      {st && (
-        <div role="group" aria-label="View" style={{ display: "flex", gap: 6, margin: "8px 0" }}>
-          <button type="button" aria-pressed={mode === "grid"} onClick={() => setMode("grid")}>
-            ▦ Grid
-          </button>
-          <button type="button" aria-pressed={mode === "scatter"} onClick={() => setMode("scatter")}>
-            ✦ Scatter
-          </button>
-          <button type="button" aria-pressed={mode === "outliers"} onClick={() => setMode("outliers")}>
-            ◎ Outliers
-          </button>
-        </div>
-      )}
+      {st && !focus && <div style={{ margin: "8px 0" }}>{viewSwitch}</div>}
 
       {mode === "scatter" && st && (
         <ClassifyScatter camera={camera} feature={feature} grid={st.settings} onGrid={changeSetting} onChanged={bump} onNotice={setNotice} onError={setError} />

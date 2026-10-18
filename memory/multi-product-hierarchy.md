@@ -45,12 +45,7 @@ A larger extension the user scoped on 2026-07-27, on top of [[flow-v3-classify-a
 - 🗑 **Exclusive goldens on classify ROIs (2026-07-27, superseded 2026-07-28)** — briefly, marking one product's golden auto-unmarked the others (via `mark_golden_exclusive`). Cleaned up 3 frames on `pekat-cam3` that had been double-marked (kept the latest — all 4x4). This code path is **gone**; the star=label model above makes exclusivity structural (one label per frame ⇒ one golden class), so `mark_golden_exclusive` and `datamodel.feature_role` were removed with it.
 - 💭 **Golden-verification feature — deferred, and my recommendation is to split it:** a *structural* integrity check (golden for 2 mutually-exclusive classes; golden for X but labeled Y; class with no goldens) is cheap with **zero false positives** and worth having. A *distance-based* audit ("this golden looks like class B") is only meaningful once a ROI separates classes well — on the current near-duplicate data (distances 0.139–0.171 across 3 products) it would be mostly noise, and it reintroduces the very golden-vs-golden comparison just removed. Don't build it now.
 
-- ✅ **Two big views split into packages (2026-07-28)** — `view_classify/` and `view_roi_editor/`
-  are now packages; layout in [[package-layout]]. `app.py` still does `import view_classify`.
-- ✅ **Refresh no longer resets the *Columns* / *Per page* selectboxes (2026-07-28)** — the
-  redundant `st.rerun()` at the end of the Refresh handler in `view_classify/render.py::_refresh`
-  was making widgets rendered *below* the button forget their persisted state. Streamlit already
-  reruns from the click; the code after the button branch picks up fresh session_state on the
-  same rerun. See [[streamlit-gotchas]] §7.
+- ✅ **Two big views split into packages (2026-07-28)** — `view_classify/` and `view_roi_editor/` are now packages; layout in [[package-layout]]. `app.py` still does `import view_classify`.
+- ✅ **Refresh no longer resets the *Columns* / *Per page* selectboxes (2026-07-28)** — the redundant `st.rerun()` at the end of the Refresh handler in `view_classify/render.py::_refresh` was making widgets rendered *below* the button forget their persisted state. Streamlit already reruns from the click; the code after the button branch picks up fresh session_state on the same rerun. See [[streamlit-gotchas]] §7.
 
 Note: `view_status.py` still shows OK/NG columns (deferred to Phase 4) — harmless for classify features (shows 0s, no crash). See [[findings-real-data-method-comparison]] (near-duplicate batches ⇒ tiny margins ⇒ the uncertain marker matters).
