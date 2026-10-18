@@ -101,7 +101,7 @@ test("running detection reports the result; the review queue accepts a box", asy
 
   const queue = await screen.findByRole("region", { name: "Review queue" });
   expect(within(queue).getByText(/Review \(1 to check, 2 trusted/)).toBeInTheDocument();
-  await userEvent.click(within(queue).getByRole("button", { name: "Accept box" }));
+  await userEvent.click(within(await screen.findByTestId("review-card-f1.png")).getByRole("button", { name: /Accept/ }));
   await waitFor(() => {
     const put = calls.find((c) => c.method === "PUT" && c.url.includes("/detections/f1.png"));
     expect(put?.body).toEqual({ box: { x: 0.1, y: 0.1, w: 0.3, h: 0.3 }, status: "reviewed" });
@@ -123,6 +123,60 @@ test("threshold and candidate count edit the detector settings", async () => {
   });
 });
 
+test("the input size is a choice between the model's own size and a faster one, saved with the settings", async () => {
+  install({ exemplars: [EXEMPLAR], topk: 2, threshold: 0.3, method: "model", size: 768 });
+  render(<DetectorView camera="camA" />);
+  await userEvent.click(await screen.findByRole("tab", { name: /Detector/ }));
+  const size = await screen.findByLabelText("Input size");
+  await waitFor(() => expect(size).toHaveValue("768"));
+  expect(within(size).getAllByRole("option").map((o) => o.textContent)).toEqual(["768 (precise)", "512 (about 2x faster, boxes less exact)"]);
+  await userEvent.selectOptions(size, "512");
+  await userEvent.click(screen.getByRole("button", { name: "Save settings" }));
+  await waitFor(() => {
+    const put = calls.find((c) => c.method === "PUT" && c.url.endsWith("/vision/seal"));
+    expect(put?.body.detector).toMatchObject({ size: 512 });
+  });
+});
+
+test("a detector saved before the size existed shows the model's own size", async () => {
+  install({ exemplars: [EXEMPLAR], topk: 2, threshold: 0.3, method: "model" });
+  render(<DetectorView camera="camA" />);
+  await userEvent.click(await screen.findByRole("tab", { name: /Detector/ }));
+  await waitFor(async () => expect(await screen.findByLabelText("Input size")).toHaveValue("768"));
+});
+
+test("the method is template matching by default, saved with the settings, and the model-only options appear only for the model", async () => {
+  install({ exemplars: [EXEMPLAR], topk: 2, threshold: 0.3 });
+  render(<DetectorView camera="camA" />);
+  await userEvent.click(await screen.findByRole("tab", { name: /Detector/ }));
+  const method = await screen.findByLabelText("Method");
+  await waitFor(() => expect(method).toHaveValue("template"));
+  expect(within(method).getAllByRole("option").map((o) => o.textContent)).toEqual(["Template matching (fast, exact size)", "Model (OWL-ViT)"]);
+  expect(screen.queryByLabelText("Input size")).toBeNull();
+  await userEvent.selectOptions(method, "model");
+  expect(screen.getByLabelText("Input size")).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Save settings" }));
+  await waitFor(() => {
+    const put = calls.find((c) => c.method === "PUT" && c.url.endsWith("/vision/seal"));
+    expect(put?.body.detector).toMatchObject({ method: "model" });
+  });
+});
+
+test("template matching needs no model: no download prompt and no missing-dependency warning", async () => {
+  infoExtra = { ...MISSING_MODEL, available: false };
+  install({ exemplars: [EXEMPLAR], topk: 1, threshold: 0.3, method: "template" });
+  render(<DetectorView camera="camA" />);
+  await userEvent.click(await screen.findByRole("tab", { name: /Detector/ }));
+  const run = await screen.findByRole("button", { name: "Run detection" });
+  await waitFor(() => expect(run).toBeEnabled());
+  expect(screen.queryByText(/First run downloads the model/)).toBeNull();
+  expect(screen.queryByText(/Detector dependencies are missing/)).toBeNull();
+  await userEvent.click(run);
+  expect(screen.queryByRole("alertdialog")).toBeNull();
+  await waitFor(() => expect(calls.some((c) => c.url.endsWith("/detect"))).toBe(true));
+  expect(calls.find((c) => c.url.endsWith("/detect"))?.body?.accept_download).not.toBe(true); // nothing to confirm
+});
+
 test("show-all lists every frame least confident first, with the confidence range", async () => {
   const frame = (name: string, conf: number, state: string) => ({
     frame: name, state, status: "auto", boxes: [{ x: 0.1, y: 0.1, w: 0.3, h: 0.3, conf }],
@@ -139,8 +193,8 @@ test("show-all lists every frame least confident first, with the confidence rang
   expect(screen.getByText("Nothing to review.")).toBeInTheDocument();
   await userEvent.click(screen.getByLabelText(/Show all frames/));
   expect(await screen.findByText(/71% to 97% \(threshold 50%\)/)).toBeInTheDocument();
-  const options = within(screen.getByRole("combobox", { name: /^Frame/ })).getAllByRole("option");
-  expect(options.map((o) => o.textContent)).toEqual([expect.stringContaining("mid.png"), expect.stringContaining("hi.png")]);
+  const cards = within(await screen.findByLabelText("Review grid")).getAllByTestId(/^review-card-/);
+  expect(cards.map((c) => c.getAttribute("data-testid"))).toEqual(["review-card-mid.png", "review-card-hi.png"]); // least confident first
 });
 
 test("run detection saves unsaved settings first", async () => {
@@ -158,30 +212,89 @@ test("run detection saves unsaved settings first", async () => {
   expect(put).toBeLessThan(detect);
 });
 
-test("review keyboard: Enter accepts, Delete clears, arrows switch frame", async () => {
-  const row = (frame: string, x: number) => ({
-    frame, state: "review", status: "auto", boxes: [{ x, y: 0.1, w: 0.3, h: 0.3, conf: 0.2 }],
-  });
-  detections = { threshold: 0.3, counts: { review: 2 }, frames: [row("a.png", 0.1), row("b.png", 0.2)] };
+const reviewRows = () => {
+  const row = (frame: string, x: number) => ({ frame, state: "review", status: "auto", boxes: [{ x, y: 0.1, w: 0.3, h: 0.3, conf: 0.2 }] });
+  return { threshold: 0.3, counts: { review: 2 }, frames: [row("a.png", 0.1), row("b.png", 0.2)] };
+};
+
+test("the review queue is a grid of cards with the detected box, state, confidence and Accept / Clear buttons", async () => {
+  detections = reviewRows();
   install({ exemplars: [EXEMPLAR], topk: 1, threshold: 0.3 });
   render(<DetectorView camera="camA" />);
   await userEvent.click(await screen.findByRole("tab", { name: /Review/ }));
-  const frame = await screen.findByRole("combobox", { name: /^Frame/ });
-  await waitFor(() => expect(frame).toHaveValue("a.png"));
+  const card = await screen.findByTestId("review-card-a.png");
+  expect(card).toHaveTextContent("unsure · 20%");
+  expect(within(card).getByTestId("review-box-a.png")).toHaveStyle({ left: "10%", top: "10%", width: "30%", height: "30%" });
+  expect(screen.getByTestId("review-card-b.png")).toBeInTheDocument();
+  expect(screen.queryByRole("group", { name: "Frame strip" })).toBeNull(); // the thumbnail strip is gone from Review
+  expect(screen.getByRole("navigation", { name: "Pagination review top" })).toBeInTheDocument();
+  await userEvent.click(within(card).getByRole("button", { name: /Clear/ }));
+  await waitFor(() => expect(calls.some((c) => c.method === "DELETE" && c.url.includes("/detections/a.png"))).toBe(true));
+});
+
+test("hover keys act on the card under the mouse: Enter or A accepts, Delete or X clears", async () => {
+  detections = reviewRows();
+  install({ exemplars: [EXEMPLAR], topk: 1, threshold: 0.3 });
+  render(<DetectorView camera="camA" />);
+  await userEvent.click(await screen.findByRole("tab", { name: /Review/ }));
+  await userEvent.hover(await screen.findByTestId("review-card-a.png"));
+  await userEvent.keyboard("a");
+  await waitFor(() => {
+    const put = calls.find((c) => c.method === "PUT" && c.url.includes("/detections/a.png"));
+    expect(put?.body).toEqual({ box: { x: 0.1, y: 0.1, w: 0.3, h: 0.3 }, status: "reviewed" });
+  });
+  await userEvent.unhover(screen.getByTestId("review-card-a.png"));
+  await userEvent.hover(screen.getByTestId("review-card-b.png"));
+  await userEvent.keyboard("{Delete}");
+  await waitFor(() => expect(calls.some((c) => c.method === "DELETE" && c.url.includes("/detections/b.png"))).toBe(true));
+  expect(calls.some((c) => c.method === "DELETE" && c.url.includes("/detections/a.png"))).toBe(false); // only the hovered card
+});
+
+test("a card with nothing detected cannot be accepted, only adjusted", async () => {
+  detections = { threshold: 0.3, counts: { none: 1 }, frames: [{ frame: "n.png", state: "none", status: null, boxes: [] }] };
+  install({ exemplars: [EXEMPLAR], topk: 1, threshold: 0.3 });
+  render(<DetectorView camera="camA" />);
+  await userEvent.click(await screen.findByRole("tab", { name: /Review/ }));
+  const card = await screen.findByTestId("review-card-n.png");
+  expect(within(card).getByRole("button", { name: /Accept/ })).toBeDisabled();
+  expect(within(card).getByText(/no detection/)).toBeInTheDocument();
+  expect(within(card).queryByTestId("review-box-n.png")).toBeNull();
+});
+
+test("the editor opens from a card (E or a click on the picture): Enter accepts and moves on, arrows switch frame, Esc closes", async () => {
+  detections = reviewRows();
+  install({ exemplars: [EXEMPLAR], topk: 1, threshold: 0.3 });
+  render(<DetectorView camera="camA" />);
+  await userEvent.click(await screen.findByRole("tab", { name: /Review/ }));
+  expect(screen.queryByRole("dialog", { name: "Adjust detection" })).toBeNull();
+  await userEvent.click(await screen.findByRole("button", { name: "Adjust a.png" }));
+  const dialog = await screen.findByRole("dialog", { name: "Adjust detection" });
+  expect(within(dialog).getByText("a.png")).toBeInTheDocument();
   await userEvent.keyboard("{ArrowRight}");
-  await waitFor(() => expect(frame).toHaveValue("b.png"));
+  await waitFor(() => expect(within(dialog).getByText("b.png")).toBeInTheDocument());
   await userEvent.keyboard("{ArrowLeft}");
-  await waitFor(() => expect(frame).toHaveValue("a.png"));
+  await waitFor(() => expect(within(dialog).getByText("a.png")).toBeInTheDocument());
   await userEvent.keyboard("{Enter}");
   await waitFor(() => {
     const put = calls.find((c) => c.method === "PUT" && c.url.includes("/detections/a.png"));
     expect(put?.body).toEqual({ box: { x: 0.1, y: 0.1, w: 0.3, h: 0.3 }, status: "reviewed" });
   });
-  await waitFor(() => expect(frame).toHaveValue("b.png")); // moves on to the next frame
-  await userEvent.keyboard("{Delete}");
-  await waitFor(() =>
-    expect(calls.some((c) => c.method === "DELETE" && c.url.includes("/detections/b.png"))).toBe(true),
-  );
+  await waitFor(() => expect(within(dialog).getByText("b.png")).toBeInTheDocument()); // moves on to the next frame
+  await userEvent.keyboard("{Escape}");
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "Adjust detection" })).toBeNull());
+});
+
+test("while the editor is open the hover keys do not act on the cards behind it", async () => {
+  detections = reviewRows();
+  install({ exemplars: [EXEMPLAR], topk: 1, threshold: 0.3 });
+  render(<DetectorView camera="camA" />);
+  await userEvent.click(await screen.findByRole("tab", { name: /Review/ }));
+  await userEvent.hover(await screen.findByTestId("review-card-b.png"));
+  await userEvent.click(await screen.findByRole("button", { name: "Adjust a.png" }));
+  await screen.findByRole("dialog", { name: "Adjust detection" });
+  await userEvent.keyboard("{Delete}"); // clears the editor's frame (a.png), not the hovered card
+  await waitFor(() => expect(calls.some((c) => c.method === "DELETE" && c.url.includes("/detections/a.png"))).toBe(true));
+  expect(calls.some((c) => c.method === "DELETE" && c.url.includes("/detections/b.png"))).toBe(false);
 });
 
 test("the frame strip draws the detected box on each thumbnail", async () => {
@@ -207,7 +320,7 @@ const MISSING_MODEL = { model_cached: false, download_mb: 600, download_source: 
 
 test("a missing model asks for confirmation, with size and source, before anything is downloaded", async () => {
   infoExtra = MISSING_MODEL;
-  install({ exemplars: [EXEMPLAR], topk: 1, threshold: 0.3 });
+  install({ exemplars: [EXEMPLAR], topk: 1, threshold: 0.3, method: "model" });
   render(<DetectorView camera="camA" />);
   await userEvent.click(await screen.findByRole("tab", { name: /Detector/ }));
   expect(await screen.findByText(/First run downloads the model \(about 600 MB\)/)).toBeInTheDocument();
@@ -226,7 +339,7 @@ test("a missing model asks for confirmation, with size and source, before anythi
 
 test("agreeing to the download starts detection with the confirmation flag", async () => {
   infoExtra = MISSING_MODEL;
-  install({ exemplars: [EXEMPLAR], topk: 1, threshold: 0.3 });
+  install({ exemplars: [EXEMPLAR], topk: 1, threshold: 0.3, method: "model" });
   render(<DetectorView camera="camA" />);
   await userEvent.click(await screen.findByRole("tab", { name: /Detector/ }));
   const run = await screen.findByRole("button", { name: "Run detection" });

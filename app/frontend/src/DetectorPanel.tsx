@@ -2,7 +2,16 @@ import { ReactNode, useEffect, useRef, useState } from "react";
 import { DetectionList, DetectionRow, DetectorChoice, DetectorInfo } from "./api";
 import { thumbUrl } from "./classify/Card";
 
-export const EMPTY_DETECTOR: DetectorChoice = { exemplars: [], topk: 1, threshold: 0.3 };
+export const EMPTY_DETECTOR: DetectorChoice = { exemplars: [], topk: 1, threshold: 0.3, method: "template", size: 768 };
+
+const METHOD_LABEL: Record<string, string> = {
+  template: "Template matching (fast, exact size)",
+  model: "Model (OWL-ViT)",
+};
+const METHOD_HELP =
+  "Template matching slides your exemplar over each frame: exact position and your drawn size, no model to download. It suits a fixed camera and an object of constant size. The model (OWL-ViT) tolerates a different look, but its boxes are often much bigger than the object, and its confidence is only relative. Changing the method makes the stored detections stale."
+
+const SIZE_LABEL: Record<number, string> = { 768: "768 (precise)", 512: "512 (about 2x faster, boxes less exact)" };
 
 /** Frames the detector is unsure about (or found nothing in) – the review queue. */
 export const needsLook = (r: DetectionRow) => r.state === "review" || r.state === "none";
@@ -130,7 +139,8 @@ export function RunBar({
 }) {
   const [minK, maxK] = info?.topk ?? [1, 5];
   const [confirming, setConfirming] = useState(false);
-  const needsDownload = info?.model_cached === false;
+  const usesModel = (det.method ?? "template") === "model";
+  const needsDownload = usesModel && info?.model_cached === false;
   return (
     <div style={{ marginTop: 8 }}>
       <p style={{ margin: "4px 0" }}>
@@ -144,6 +154,30 @@ export function RunBar({
             ))}
           </select>
         </label>{" "}
+        <label title={METHOD_HELP}>
+          Method{" "}
+          <select value={det.method ?? "template"} onChange={(e) => onDetector({ ...det, method: e.target.value as DetectorChoice["method"] })}>
+            {(info?.methods ?? ["template", "model"]).map((m) => (
+              <option key={m} value={m}>
+                {METHOD_LABEL[m] ?? m}
+              </option>
+            ))}
+          </select>
+        </label>{" "}
+        {usesModel && (
+          <>
+            <label title="The side the pictures are scaled to before the model looks at them. 512 is about twice as fast, but the boxes are less exact; changing it makes the stored detections stale.">
+              Input size{" "}
+              <select value={det.size ?? 768} onChange={(e) => onDetector({ ...det, size: Number(e.target.value) })}>
+                {(info?.input_sizes ?? [768, 512]).map((n) => (
+                  <option key={n} value={n}>
+                    {SIZE_LABEL[n] ?? n}
+                  </option>
+                ))}
+              </select>
+            </label>{" "}
+          </>
+        )}
         <label>
           Confidence threshold{" "}
           <input
@@ -199,7 +233,7 @@ export function RunBar({
       <p style={{ margin: "4px 0" }}>
         <button
           onClick={() => (needsDownload ? setConfirming(true) : onRun(false))}
-          disabled={det.exemplars.length === 0 || !info?.available || run.running}
+          disabled={det.exemplars.length === 0 || (usesModel && !info?.available) || run.running}
         >
           Run detection
         </button>{" "}
@@ -227,8 +261,8 @@ export function RunBar({
   );
 }
 
-/** Enter accepts the box, ←/→ move through the queue, Delete clears the box. */
-function useReviewKeys(enabled: boolean, h: { accept: () => void; clear: () => void; step: (d: number) => void }) {
+/** In the editor: Enter accepts the box, ←/→ move through the queue, Delete clears the box, Esc closes. */
+export function useReviewKeys(enabled: boolean, h: { accept: () => void; clear: () => void; step: (d: number) => void; close: () => void }) {
   const ref = useRef(h);
   ref.current = h;
   useEffect(() => {
@@ -237,7 +271,10 @@ function useReviewKeys(enabled: boolean, h: { accept: () => void; clear: () => v
       const t = e.target as HTMLElement | null;
       const tag = t?.tagName;
       if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA" || t?.isContentEditable) return;
-      if (e.key === "Enter") {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        ref.current.close();
+      } else if (e.key === "Enter") {
         if (tag === "BUTTON") return;
         e.preventDefault();
         ref.current.accept();
@@ -257,35 +294,20 @@ function useReviewKeys(enabled: boolean, h: { accept: () => void; clear: () => v
   }, [enabled]);
 }
 
-/** Review queue controls; the frame itself is shown on the shared preview. */
+/** Review queue header: the counts, the filter, the hints and the run controls; the frames are in the grid below. */
 export function ReviewPanel({
   list,
   queue,
   showAll,
   onShowAll,
-  canAccept,
-  onAccept,
-  onClear,
-  onStep,
-  active,
   children,
 }: {
   list: DetectionList | null;
   queue: DetectionRow[];
   showAll: boolean;
   onShowAll: (v: boolean) => void;
-  canAccept: boolean;
-  onAccept: () => void;
-  onClear: () => void;
-  onStep: (d: number) => void;
-  active: boolean;
   children?: ReactNode;
 }) {
-  useReviewKeys(active && queue.length > 0, {
-    accept: () => canAccept && onAccept(),
-    clear: onClear,
-    step: onStep,
-  });
   if (!list) return <p>Add exemplars and run the detector first — its uncertain frames show up here.</p>;
   const toCheck = (list.counts.review ?? 0) + (list.counts.none ?? 0);
   const confidences = queue.map((f) => f.boxes[0]?.conf).filter((c): c is number => c !== undefined);
@@ -310,13 +332,10 @@ export function ReviewPanel({
         <p>Nothing to review.</p>
       ) : (
         <p>
-          <button disabled={!canAccept} onClick={onAccept}>
-            Accept box
-          </button>{" "}
-          <button onClick={onClear}>Clear</button>{" "}
           <em>
-            Shortcuts: Enter accepts, ← → switch frame, Delete clears. Adjusted boxes are saved as manual and
-            kept when detection is re-run.
+            Hover a card: <kbd>Enter</kbd> or <kbd>A</kbd> accepts its box, <kbd>Delete</kbd> or <kbd>X</kbd> clears it,{" "}
+            <kbd>E</kbd> (or a click on the picture) opens it to adjust the box. Adjusted boxes are saved as manual and kept
+            when detection is re-run.
           </em>
         </p>
       )}

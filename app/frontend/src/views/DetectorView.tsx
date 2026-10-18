@@ -8,8 +8,10 @@ import {
   needsLook,
   ReviewPanel,
   RunBar,
+  useReviewKeys,
 } from "../DetectorPanel";
 import PictureSizeSlider, { usePictureSize } from "../PictureSize";
+import ReviewGrid from "../ReviewGrid";
 import RoiCanvas from "../RoiCanvas";
 import { Box, roundBox } from "../roiGeometry";
 import ShapeCanvas from "../ShapeCanvas";
@@ -94,6 +96,7 @@ export default function DetectorView({ camera, product }: { camera: string; prod
   const [tick, setTick] = useState(0);
   const [showAll, setShowAll] = useState(false);
   const [reviewBox, setReviewBox] = useState<Box | null>(null);
+  const [editing, setEditing] = useState(false); // the box editor opened over the review grid
   const [jobId, setJobId] = useState<string | null>(null);
   const job = useJob<{ detected: number; needs_review: number; skipped_human: number }>(jobId);
 
@@ -266,6 +269,30 @@ export default function DetectorView({ camera, product }: { camera: string; prod
     const n = navFrames[Math.min(navFrames.length - 1, Math.max(0, (i < 0 ? 0 : i) + d))];
     if (n) setFrame(n);
   };
+
+  // The cards of the review grid decide on their own frame; the editor decides on the frame it shows.
+  const acceptRow = (f: string) => {
+    const b = rows.get(f)?.boxes[0];
+    if (!b) return Promise.resolve();
+    return api
+      .putDetection(camera, feature, f, roundBox({ x: b.x, y: b.y, w: b.w, h: b.h }), "reviewed")
+      .then(() => setTick((t) => t + 1))
+      .catch((e: unknown) => setError(msg(e)));
+  };
+  const clearRow = (f: string) =>
+    api
+      .deleteDetection(camera, feature, f)
+      .then(() => setTick((t) => t + 1))
+      .catch((e: unknown) => setError(msg(e)));
+  const adjust = (f: string) => {
+    setFrame(f);
+    setEditing(true);
+  };
+  const editorOpen = tab === "review" && editing && queue.length > 0;
+  useEffect(() => {
+    if (editing && (tab !== "review" || queue.length === 0)) setEditing(false); // nothing left to adjust
+  }, [editing, tab, queue.length]);
+  useReviewKeys(editorOpen, { accept: () => reviewBox && accept(), clear, step, close: () => setEditing(false) });
 
   const spec = filter ? catalogue[filter.name] : undefined;
   const counts = list?.counts ?? {};
@@ -479,6 +506,7 @@ export default function DetectorView({ camera, product }: { camera: string; prod
       </div>
       <p style={{ margin: "6px 0" }}>{tabInfo.purpose}</p>
 
+      {tab !== "review" && (
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end", margin: "6px 0 10px" }}>
         <div
           role="group"
@@ -496,8 +524,10 @@ export default function DetectorView({ camera, product }: { camera: string; prod
         {viewSwitch}
         <PictureSizeSlider value={size} onChange={setSize} min={200} max={1600} />
       </div>
+      )}
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "flex-start" }}>
+        {tab !== "review" && (
         <div role="group" aria-label="Preview" style={{ position: "sticky", top: 52, width: size, maxWidth: "100%", minWidth: 0 }}>
           {view === "masked" && tab !== "filter" && (
             <p style={{ margin: "4px 0" }}>
@@ -514,6 +544,7 @@ export default function DetectorView({ camera, product }: { camera: string; prod
             onPick={setFrame}
           />
         </div>
+        )}
 
         <div role="tabpanel" aria-label={`${tabInfo.label} step`} style={{ flex: "1 1 320px", minWidth: 0, overflowWrap: "anywhere" }}>
           {tab === "filter" && (
@@ -561,7 +592,7 @@ export default function DetectorView({ camera, product }: { camera: string; prod
                 detector looks for similar objects in every frame. Detection is a suggestion: boxes below the
                 confidence threshold wait for your review.
               </p>
-              {info && !info.available && (
+              {info && !info.available && det.method === "model" && (
                 <p role="alert">
                   Detector dependencies are missing. Install them with{" "}
                   <code>pip install -r requirements-detector.txt</code> ({info.model}, downloaded once).
@@ -596,19 +627,14 @@ export default function DetectorView({ camera, product }: { camera: string; prod
           )}
 
           {tab === "review" && (
-            <ReviewPanel
-              list={list}
-              queue={queue}
-              showAll={showAll}
-              onShowAll={setShowAll}
-              canAccept={!!reviewBox && queue.some((r) => r.frame === frame)}
-              onAccept={accept}
-              onClear={clear}
-              onStep={step}
-              active={tab === "review"}
-            >
-              {runBar}
-            </ReviewPanel>
+            <>
+              <ReviewPanel list={list} queue={queue} showAll={showAll} onShowAll={setShowAll}>
+                {runBar}
+              </ReviewPanel>
+              {queue.length > 0 && (
+                <ReviewGrid camera={camera} feature={feature} rows={queue} keysOn={!editorOpen} onAccept={acceptRow} onClear={clearRow} onAdjust={adjust} />
+              )}
+            </>
           )}
 
           {tab === "mask" && (
@@ -659,6 +685,41 @@ export default function DetectorView({ camera, product }: { camera: string; prod
           )}
         </div>
       </div>
+      {editorOpen && (
+        <div
+          role="dialog"
+          aria-label="Adjust detection"
+          onClick={(e) => e.target === e.currentTarget && setEditing(false)}
+          style={{ position: "fixed", inset: 0, zIndex: 40, background: "rgba(0,0,0,.6)", overflow: "auto", padding: 24, display: "flex", justifyContent: "center", alignItems: "flex-start" }}
+        >
+          <div style={{ background: "var(--panel)", borderRadius: "var(--radius)", padding: 12, maxWidth: "96vw" }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
+              <strong>{frame}</strong>
+              <span style={caption}>
+                {position >= 0 ? `${position + 1} / ${pickerFrames.length}` : ""}
+              </span>
+              <span style={{ flex: 1 }} />
+              <button onClick={() => step(-1)} aria-label="Previous frame">
+                ←
+              </button>
+              <button onClick={() => step(1)} aria-label="Next frame">
+                →
+              </button>
+              <button disabled={!reviewBox || !queue.some((r) => r.frame === frame)} onClick={accept} title="Accept the box (Enter)">
+                ✓ Accept box
+              </button>
+              <button onClick={clear} title="Clear the box (Delete)">
+                ✕ Clear
+              </button>
+              <button onClick={() => setEditing(false)} title="Close (Esc)">
+                Close
+              </button>
+            </div>
+            <p style={{ ...caption, margin: "0 0 6px" }}>Drag the box to move it, drag the corners to resize it, or draw a new one.</p>
+            {tool}
+          </div>
+        </div>
+      )}
     </section>
   );
 }

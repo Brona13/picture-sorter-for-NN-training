@@ -331,16 +331,32 @@ Pipeline for every frame of the feature, in this order:
    **Apply mask to Classify, Dedup and suggestions** to turn it on. Rectangle: drag the corners
    or edges; circle: centre and radius handles; polygon: drag a point, double-click an edge to
    add a point, double-click or right-click a point to remove it (three stay).
-4. **Detector** (optional, needs `requirements-detector.txt`): the mask follows the object.
-   Mark the object with a box on up to three frames (**exemplars**; vary lighting and screw
-   lean), save, then **Run detection**. The detector (OWL-ViT, runs locally; the model is about 600 MB
-   and is downloaded only after you confirm a dialog showing the size, source and storage folder) looks for the most similar object in every frame of the feature.
+4. **Detector** (optional): the mask follows the object. Mark the object with a box on up to three
+   frames (**exemplars**; vary lighting and screw lean), save, then **Run detection**. There are two
+   **methods**:
+   - **Template matching** (the default, fast, no model): slides your exemplar crop over every frame and reports
+     where it matches best. The box has exactly the size you drew and the position is the best match; the
+     confidence is the real similarity (1 = identical), so the threshold slider means something. It suits a
+     fixed camera and an object of constant size. It copes with small changes in light, but not with a
+     rotated, scaled or differently seen object. About 1.5 ms per frame on the CPU.
+   - **Model** (OWL-ViT, needs `requirements-detector.txt`, runs locally; the model is about 600 MB and is
+     downloaded only after you confirm a dialog showing the size, source and storage folder): looks for
+     the most similar object in every frame and tolerates a different look, but its boxes are often much
+     bigger than the object (so the stored box takes your drawn size, centred where the model put its own box),
+     and its confidence is only relative to the frame's best box. The **Input size** choice (768 precise,
+     512 about twice as fast, boxes less exact) belongs to this method.
+
    The mask is drawn on the first exemplar's frame and shifted by how far each frame's
-   detected object is from the exemplar's position (translation only, no resizing).
+   detected object is from the exemplar's position (translation only, no resizing). Changing the method
+   (or the exemplars, or the model's input size) makes the stored detections stale, so run again.
 
 Detections are suggestions. A box is *trusted* when its confidence is at or above the
-threshold slider; otherwise it waits in the **review queue**, where you can adjust it, accept
-it or clear it. Boxes you accepted or adjusted are never overwritten by a re-run. **Show all
+threshold slider; otherwise it waits in the **review queue**, a paged grid of cards like the other pages.
+Each card shows the frame with the detected box drawn on it, its state and confidence, and its own
+**Accept** and **Clear** buttons. Hover a card and press **Enter** or **A** to accept its box, **Delete** or
+**X** to clear it, **E** (or click the picture) to open the editor and adjust the box: drag it, drag the corners
+or draw a new one, then **Enter** accepts and moves to the next card, **← →** switch card and **Esc** closes.
+Boxes you accepted or adjusted are never overwritten by a re-run. **Show all
 frames, least confident first** lists every frame with the confidence range, so you can
 check the confident ones too. Frames without a trusted box keep the mask where it was drawn.
 
@@ -547,7 +563,9 @@ card runs the CPU build. CPU inference is fast enough for this tool: on a
 the practical limits rather than the model. A GPU mainly helps the object
 detector on the Detector page. Measured on a Radeon RX 7800 XT with the ROCm build:
 resnet18 about 680 frames/s, resnet50 about 400 frames/s, and detection about
-95 ms per frame against 367 ms on the CPU.
+95 ms per frame against 367 ms on the CPU (before v1.45.2; the detector has since been made much
+faster, about 37 frames/s at the default size and about 85 frames/s at the 512 input size on synthetic
+250 x 250 frames: `python app/backend/benchmark_detector.py`).
 
 The default PyPI wheels carry CUDA libraries that add roughly 2 GB, so prefer
 the explicit CPU or ROCm index above on machines without an Nvidia card.

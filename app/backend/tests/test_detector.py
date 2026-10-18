@@ -13,6 +13,7 @@ import db
 import detections
 import detector
 import engine
+import ingest
 import labels
 import vision_settings
 from roi import ROI
@@ -50,7 +51,7 @@ class DetectorBase(ApiTestCase):
     def save(self, **overrides) -> None:
         body = {
             "mask": {"enabled": True, "shape": RECT},
-            "detector": {"exemplars": [EXEMPLAR], "topk": 2, "threshold": 0.3},
+            "detector": {"exemplars": [EXEMPLAR], "topk": 2, "threshold": 0.3, "method": "model"},  # the model path; template matching has its own tests
         }
         body.update(overrides)
         r = self.client.put(self.url, json=body)
@@ -107,6 +108,151 @@ class SettingsTests(DetectorBase):
         other = {"frame": "frame_001.png", "box": {"x": 0.1, "y": 0.1, "w": 0.2, "h": 0.2}}
         self.save(detector={"exemplars": [other], "topk": 2, "threshold": 0.3})
         self.assertNotEqual(vision_settings.signature("camA", "seal"), anchored)
+
+
+class InputSizeTests(DetectorBase):
+    def stored(self) -> dict:
+        return vision_settings.get("camA", "seal")["detector"]
+
+    def test_the_size_defaults_to_the_models_own_and_accepts_the_smaller_one(self) -> None:
+        self.save()
+        self.assertEqual(self.stored()["size"], 768)
+        self.save(detector={"exemplars": [EXEMPLAR], "topk": 2, "threshold": 0.3, "method": "model", "size": 512})
+        self.assertEqual(self.stored()["size"], 512)
+
+    def test_other_sizes_are_refused(self) -> None:
+        for bad in (640, 0, True):
+            r = self.client.put(self.url, json={"detector": {"exemplars": [EXEMPLAR], "size": bad}})
+            self.assertEqual(r.status_code, 422, f"{bad!r}: {r.text}")
+
+    def test_the_info_lists_the_sizes(self) -> None:
+        self.assertEqual(self.client.get("/api/vision/detector").json()["input_sizes"], [768, 512])
+
+    def test_a_smaller_size_makes_stored_detections_stale_but_the_default_keeps_them_valid(self) -> None:
+        self.save()
+        default = vision_settings.detection_signature(vision_settings.get("camA", "seal"))
+        legacy = vision_settings.detection_signature({**vision_settings.get("camA", "seal"), "detector": {"exemplars": [EXEMPLAR], "method": "model"}})
+        self.assertEqual(default, legacy)  # a detector without a size, as stored before, hashes as the default
+        self.save(detector={"exemplars": [EXEMPLAR], "topk": 2, "threshold": 0.3, "method": "model", "size": 512})
+        self.assertNotEqual(vision_settings.detection_signature(vision_settings.get("camA", "seal")), default)
+
+    def test_topk_and_threshold_do_not_change_the_detection_signature(self) -> None:
+        self.save()
+        before = vision_settings.detection_signature(vision_settings.get("camA", "seal"))
+        self.save(detector={"exemplars": [EXEMPLAR], "topk": 5, "threshold": 0.9, "method": "model"})
+        self.assertEqual(vision_settings.detection_signature(vision_settings.get("camA", "seal")), before)
+
+
+class MethodTests(DetectorBase):
+    """Template matching (default) and the model are two methods of one setting."""
+
+    def test_the_method_defaults_to_template_matching_and_accepts_the_model(self) -> None:
+        self.client.put(self.url, json={"detector": {"exemplars": [EXEMPLAR]}})
+        self.assertEqual(vision_settings.get("camA", "seal")["detector"]["method"], "template")
+        self.save()
+        self.assertEqual(vision_settings.get("camA", "seal")["detector"]["method"], "model")
+
+    def test_other_methods_are_refused_and_the_info_lists_both(self) -> None:
+        r = self.client.put(self.url, json={"detector": {"exemplars": [EXEMPLAR], "method": "magic"}})
+        self.assertEqual(r.status_code, 422)
+        self.assertEqual(self.client.get("/api/vision/detector").json()["methods"], ["template", "model"])
+
+    def test_the_method_is_part_of_the_detection_signature_but_the_models_old_signature_is_unchanged(self) -> None:
+        def sig(det):
+            return vision_settings.detection_signature({"filter": None, "mask": None, "detector": det})
+
+        model = sig({"exemplars": [EXEMPLAR], "method": "model"})
+        self.assertEqual(model, sig({"exemplars": [EXEMPLAR], "method": "model", "size": 768}))
+        self.assertNotEqual(model, sig({"exemplars": [EXEMPLAR], "method": "template"}))
+        self.assertEqual(sig({"exemplars": [EXEMPLAR], "method": "template"}), sig({"exemplars": [EXEMPLAR], "method": "template", "size": 512}))  # size is the model's
+
+    def test_template_matching_needs_neither_torch_nor_the_model(self) -> None:
+        self.client.put(self.url, json={"detector": {"exemplars": [EXEMPLAR]}})
+        with (
+            mock.patch.object(detector, "available", return_value=False),
+            mock.patch.object(detector, "model_cached", return_value=False),
+        ):
+            r = self.client.post(f"{self.url}/detect")
+        self.assertEqual(r.status_code, 200, r.text)
+        wait_for_job(self.client, r.json()["id"])
+
+    def test_the_model_method_still_needs_them(self) -> None:
+        self.save()
+        with mock.patch.object(detector, "available", return_value=False):
+            self.assertEqual(self.client.post(f"{self.url}/detect").status_code, 503)
+
+
+class TemplateMatchingTests(DetectorBase):
+    def scene(self) -> np.ndarray:
+        rng = np.random.default_rng(5)
+        return rng.integers(0, 255, (200, 200, 3), dtype=np.uint8)
+
+    def test_it_finds_the_exemplar_where_it_is_with_the_exemplars_own_size(self) -> None:
+        scene = self.scene()
+        query = scene[60:100, 80:140].copy()  # 60 wide, 40 high
+        shifted = np.roll(scene, (15, -20), axis=(0, 1))  # the object moved 15 down, 20 left
+        (box, score), *_ = detector._template_backend(shifted, [query], 1)
+        self.assertAlmostEqual(box["x"], 60 / 200, places=3)
+        self.assertAlmostEqual(box["y"], 75 / 200, places=3)
+        self.assertAlmostEqual(box["w"], 60 / 200, places=3)  # never the size of anything else
+        self.assertAlmostEqual(box["h"], 40 / 200, places=3)
+        self.assertGreater(score, 0.99)
+
+    def test_the_score_is_absolute_so_a_missing_object_scores_low(self) -> None:
+        scene = self.scene()
+        query = scene[60:100, 80:140].copy()
+        other = np.random.default_rng(9).integers(0, 255, (200, 200, 3), dtype=np.uint8)
+        found = detector._template_backend(other, [query], 1)
+        self.assertLess(found[0][1], 0.5)
+
+    def test_several_peaks_are_separate_places(self) -> None:
+        scene = np.full((200, 200, 3), 100, np.uint8)
+        query = self.scene()[:30, :30].copy()
+        scene[10:40, 10:40] = query
+        scene[120:150, 140:170] = query
+        found = detector._template_backend(scene, [query], 2)
+        places = sorted((round(b["x"] * 200), round(b["y"] * 200)) for b, _ in found)
+        self.assertEqual(places, [(10, 10), (140, 120)])
+
+    def test_a_flat_picture_does_not_break_it(self) -> None:
+        flat = np.full((100, 100, 3), 50, np.uint8)
+        self.assertEqual(detector._template_backend(flat, [flat[:20, :20].copy()], 1), [])
+
+    def test_an_exemplar_larger_than_the_frame_is_skipped(self) -> None:
+        self.assertEqual(detector._template_backend(np.zeros((20, 20, 3), np.uint8), [np.zeros((30, 30, 3), np.uint8)], 1), [])
+
+    def test_run_stores_template_detections_without_a_model(self) -> None:
+        rng = np.random.default_rng(2)
+        for name in self.frames:  # textured frames: a flat exemplar cannot be matched
+            cv2.imwrite(str(datamodel.unsorted_dir("camA") / name), rng.integers(0, 255, (40, 60, 3), dtype=np.uint8))
+        ingest.rebuild_index("camA")
+        self.client.put(self.url, json={"detector": {"exemplars": [EXEMPLAR], "threshold": 0.5}})
+        with (
+            mock.patch.object(detector, "available", return_value=False),
+            mock.patch.object(detector, "model_cached", return_value=False),
+        ):
+            result = detector.run("camA", "seal")
+        self.assertEqual(result["detected"] + result["skipped_human"], 3)
+        stored = detections.load("camA", "seal")
+        self.assertEqual(len(stored), 3)
+        for rows in stored.values():
+            self.assertEqual(rows[0]["status"], "auto")
+
+
+class ModelBoxSizeTests(DetectorBase):
+    def test_a_huge_model_box_becomes_the_exemplars_size_around_its_centre(self) -> None:
+        box = detector.sized_like_exemplar((0, 0, 200, 100), exemplar=(40, 20), crop=(200, 100))  # the model boxed the whole frame
+        self.assertEqual(box, {"x": 0.4, "y": 0.4, "w": 0.2, "h": 0.2})
+
+    def test_the_box_stays_inside_the_crop(self) -> None:
+        box = detector.sized_like_exemplar((180, 90, 200, 100), exemplar=(40, 20), crop=(200, 100))  # a corner
+        self.assertEqual(box, {"x": 0.8, "y": 0.8, "w": 0.2, "h": 0.2})
+        box = detector.sized_like_exemplar((0, 0, 10, 10), exemplar=(40, 20), crop=(200, 100))
+        self.assertEqual((box["x"], box["y"]), (0.0, 0.0))
+
+    def test_an_exemplar_bigger_than_the_crop_is_limited_to_it(self) -> None:
+        box = detector.sized_like_exemplar((10, 10, 20, 20), exemplar=(300, 300), crop=(200, 100))
+        self.assertEqual((box["x"], box["y"], box["w"], box["h"]), (0.0, 0.0, 1.0, 1.0))
 
 
 class RunTests(DetectorBase):
@@ -316,14 +462,16 @@ class ModelDownloadTests(DetectorBase):
 class BatchingTests(DetectorBase):
     """The default backend takes frames in batches; a replacement backend still takes them one at a time."""
 
-    def run_default(self, batch: int) -> tuple[dict, list[int]]:
+    def run_default(self, batch: int, **detector_settings) -> tuple[dict, list[int]]:
         sizes: list[int] = []
+        self.sizes_seen: list[int] = []
 
-        def fake_batch(crops, queries, topk):
+        def fake_batch(crops, queries, topk, size=detector.INPUT_SIZE):
             sizes.append(len(crops))
+            self.sizes_seen.append(size)
             return [[(box_at(0.4, 0.4), 0.9)] for _ in crops]
 
-        self.save()
+        self.save(detector={"exemplars": [EXEMPLAR], "topk": 2, "threshold": 0.3, "method": "model", **detector_settings})
         with (
             mock.patch.object(detector, "model_cached", return_value=True),
             mock.patch.object(detector, "_load_owl"),
@@ -337,13 +485,19 @@ class BatchingTests(DetectorBase):
         self.assertEqual(sizes, [2, 1])  # three frames, batches of two
         self.assertEqual(result["detected"], 3)
 
+    def test_the_chosen_input_size_reaches_the_backend_and_defaults_to_the_models_own(self) -> None:
+        self.run_default(batch=8)
+        self.assertEqual(self.sizes_seen, [768])
+        self.run_default(batch=8, size=512)
+        self.assertEqual(self.sizes_seen, [512])
+
     def test_one_batch_when_it_is_big_enough_and_progress_still_reaches_the_total(self) -> None:
         phases: list[dict] = []
         self.save()
         with (
             mock.patch.object(detector, "model_cached", return_value=True),
             mock.patch.object(detector, "_load_owl"),
-            mock.patch.object(detector, "_owl_backend_batch", lambda crops, q, k: [[] for _ in crops]),
+            mock.patch.object(detector, "_owl_backend_batch", lambda crops, q, k, size=detector.INPUT_SIZE: [[] for _ in crops]),
         ):
             result = detector.run("camA", "seal", phases.append)
         self.assertEqual(result["detected"], 3)
@@ -367,6 +521,23 @@ class NonMaximumSuppressionTests(DetectorBase):
         kept = detector._boxes_above_nms(scores, boxes)
         self.assertEqual(kept.tolist(), [np.float32(0.9), 0.0, np.float32(0.5)])
         self.assertEqual(scores.tolist(), [np.float32(0.9), np.float32(0.8), np.float32(0.5)])  # the input is untouched
+
+    def test_suppression_stops_once_enough_boxes_survive_and_drops_the_rest(self) -> None:
+        boxes = np.array([[0, 0, 10, 10], [20, 20, 30, 30], [40, 40, 50, 50], [60, 60, 70, 70]], dtype=np.float32)
+        scores = np.array([0.9, 0.8, 0.7, 0.6], dtype=np.float32)
+        self.assertEqual(detector._boxes_above_nms(scores, boxes, keep=2).tolist(), [np.float32(0.9), np.float32(0.8), 0.0, 0.0])
+        self.assertEqual((detector._boxes_above_nms(scores, boxes) > 0).sum(), 4)  # the default keeps up to NMS_KEEP
+
+    def test_stopping_early_gives_the_same_best_boxes_as_full_suppression(self) -> None:
+        rng = np.random.default_rng(0)
+        centres = rng.uniform(0.1, 0.9, (576, 2)).astype(np.float32)
+        boxes = np.concatenate([centres - 0.05, centres + 0.05], axis=1)
+        scores = rng.uniform(0.01, 1.0, 576).astype(np.float32)
+        full = detector._boxes_above_nms(scores, boxes, keep=10_000)
+        early = detector._boxes_above_nms(scores, boxes)
+        best = np.argsort(-full)[: detector.NMS_KEEP]
+        self.assertEqual(sorted(np.flatnonzero(early).tolist()), sorted(best.tolist()))
+        self.assertEqual(early[best].tolist(), full[best].tolist())
 
     def test_zero_scores_are_skipped(self) -> None:
         boxes = np.array([[0, 0, 10, 10], [0, 0, 10, 10]], dtype=np.float32)

@@ -285,6 +285,10 @@ export interface DetectorChoice {
   exemplars: Exemplar[];
   topk: number;
   threshold: number;
+  /** "template" matches the exemplar crop itself (fast, exact size: for a fixed camera); "model" is the OWL-ViT model. */
+  method: "template" | "model";
+  /** The side the pictures are scaled to by the model method: 768 is its own (precise), 512 is faster with less exact boxes. */
+  size: number;
 }
 export interface VisionSettings {
   filter: FilterChoice | null;
@@ -300,6 +304,10 @@ export interface DetectorInfo {
   model: string;
   max_exemplars: number;
   topk: [number, number];
+  /** The detection methods the server offers (older servers do not say; then template and model). */
+  methods?: string[];
+  /** The picture sizes the detector can use (older servers do not say; then 768 and 512). */
+  input_sizes?: number[];
   /** False when the model weights still have to be downloaded (undefined from older servers = ready). */
   model_cached?: boolean;
   download_mb?: number;

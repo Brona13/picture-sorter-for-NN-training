@@ -17,6 +17,10 @@ MAX_EXEMPLARS = 3
 TOPK_RANGE = (1, 5)
 DEFAULT_TOPK = 1
 DEFAULT_THRESHOLD = 0.3
+METHODS = ("template", "model")  # template matching (exact size, fixed camera) or the OWL-ViT model
+DEFAULT_METHOD = "template"
+INPUT_SIZES = (768, 512)  # the detector's picture size: the model's own (precise), or a smaller one (about twice as fast, boxes less exact)
+DEFAULT_INPUT_SIZE = 768
 
 
 class SettingsError(ValueError):
@@ -81,7 +85,13 @@ def _clean_detector(det: dict | None) -> dict | None:
     if isinstance(topk, bool) or not isinstance(topk, int) or not TOPK_RANGE[0] <= topk <= TOPK_RANGE[1]:
         raise SettingsError(f"topk must be a whole number between {TOPK_RANGE[0]} and {TOPK_RANGE[1]}")
     threshold = _unit(det.get("threshold", DEFAULT_THRESHOLD), "threshold")
-    return {"exemplars": clean_ex, "topk": topk, "threshold": threshold}
+    method = det.get("method", DEFAULT_METHOD)
+    if method not in METHODS:
+        raise SettingsError(f"method must be one of {', '.join(METHODS)}")
+    size = det.get("size", DEFAULT_INPUT_SIZE)
+    if isinstance(size, bool) or size not in INPUT_SIZES:
+        raise SettingsError(f"size must be one of {', '.join(str(n) for n in INPUT_SIZES)}")
+    return {"exemplars": clean_ex, "topk": topk, "threshold": threshold, "method": method, "size": size}
 
 
 def anchored(settings: dict) -> bool:
@@ -176,14 +186,17 @@ def signature(camera: str, feature: str, con=None) -> str:
 
 
 def detection_signature(settings: dict) -> str:
-    """Fingerprint of what auto detections depend on: filter, exemplars and model."""
+    """Fingerprint of what auto detections depend on: filter, exemplars, method (and for the model, its picture size)."""
     import detector  # noqa: PLC0415 - detector imports this module
 
-    exemplars = (settings.get("detector") or {}).get("exemplars", [])
-    blob = json.dumps(
-        {"filter": settings["filter"], "exemplars": exemplars, "model": detector.MODEL_ID},
-        sort_keys=True,
-    )
+    det = settings.get("detector") or {}
+    method = det.get("method", DEFAULT_METHOD)
+    parts = {"filter": settings["filter"], "exemplars": det.get("exemplars", []), "model": detector.MODEL_ID}
+    if method != "model":
+        parts["method"] = method  # the model method hashes as it always did, so its stored detections stay valid
+    elif det.get("size", DEFAULT_INPUT_SIZE) != DEFAULT_INPUT_SIZE:
+        parts["size"] = det["size"]  # the picture size matters to the model only, and only when it is not the default
+    blob = json.dumps(parts, sort_keys=True)
     return hashlib.sha1(blob.encode()).hexdigest()[:8]
 
 

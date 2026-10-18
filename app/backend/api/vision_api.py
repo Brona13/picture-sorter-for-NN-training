@@ -47,6 +47,8 @@ class DetectorChoice(BaseModel):
     exemplars: list[Exemplar] = []
     topk: int = vision_settings.DEFAULT_TOPK
     threshold: float = vision_settings.DEFAULT_THRESHOLD
+    method: str = vision_settings.DEFAULT_METHOD
+    size: int = vision_settings.DEFAULT_INPUT_SIZE
 
 
 class VisionSettings(BaseModel):
@@ -138,6 +140,8 @@ def detector_info() -> dict:
         "cache_dir": detector.model_cache_dir(),
         "max_exemplars": vision_settings.MAX_EXEMPLARS,
         "topk": list(vision_settings.TOPK_RANGE),
+        "input_sizes": list(vision_settings.INPUT_SIZES),
+        "methods": list(vision_settings.METHODS),
     }
 
 
@@ -152,13 +156,14 @@ def detect(camera: str, feature: str, body: DetectBody = DetectBody()) -> dict:
     settings = vision_settings.get(camera, feature)
     if not settings["detector"] or not settings["detector"]["exemplars"]:
         raise HTTPException(status_code=422, detail="Save at least one exemplar first")
-    if not detector.available() and detector._backend is None:
+    uses_model = settings["detector"]["method"] == "model"  # template matching needs neither torch nor the model
+    if uses_model and not detector.available() and detector._backend is None:
         raise HTTPException(
             status_code=503,
             detail="The detector needs torch and transformers (pip install -r requirements-detector.txt)",
         )
 
-    if not detector.model_ready() and not body.accept_download:
+    if uses_model and not detector.model_ready() and not body.accept_download:
         raise HTTPException(
             status_code=409,
             detail=(

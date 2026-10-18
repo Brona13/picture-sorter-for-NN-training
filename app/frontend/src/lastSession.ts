@@ -29,6 +29,9 @@ export const lastSession = {
   /** The right-hand options panel is open unless the user collapsed it (shared by every page that has one). */
   hardwareStyle: () => get("hardware.style"),
   setHardwareStyle: (v: string) => set("hardware.style", v),
+  /** The Detector review grid's "per page x columns", e.g. "24x4". */
+  reviewGrid: () => get("review.grid"),
+  setReviewGrid: (v: string) => set("review.grid", v),
   panelCollapsed: () => get("panel.collapsed") === "1",
   setPanelCollapsed: (v: boolean) => set("panel.collapsed", v ? "1" : ""),
 };

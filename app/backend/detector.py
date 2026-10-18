@@ -32,7 +32,9 @@ MODEL_ID = "google/owlvit-base-patch32"
 MODEL_SOURCE = "huggingface.co"
 MODEL_DOWNLOAD_MB = 600  # approximate size of the weights, shown to the user before downloading
 NMS_IOU = 0.5
+INPUT_SIZE = 768  # the side the model was trained at; the Detector may choose a smaller one (see vision_settings.INPUT_SIZES)
 BATCH = 8  # frames encoded together on the default (OWL-ViT) backend
+NMS_KEEP = 10  # surviving boxes per exemplar after which the suppression stops (only the best few matter)
 HALF = False  # half precision on a GPU is about 1.4x faster but changes which boxes win on ambiguous frames; opt in here
 _QUERY_NMS = 0.3  # overlap above which a weaker box of one exemplar is dropped (as the model's own post-processing did)
 
@@ -135,61 +137,87 @@ def _load_owl():
     return torch, processor, model, device
 
 
+def sized_like_exemplar(model_box: tuple[float, float, float, float], exemplar: tuple[int, int], crop: tuple[int, int]) -> dict:
+    """The box to store for a model box (pixels ``x0, y0, x1, y1``): the exemplar's size (pixels ``w, h``), centred where
+    the model put its box, kept inside the crop (pixels ``w, h``), normalised. The model's own box size is not used: on a
+    fixed camera the object keeps the size that was drawn, while the model often returns a much bigger region."""
+    x0, y0, x1, y1 = model_box
+    (qw, qh), (width, height) = exemplar, crop
+    w, h = min(1.0, qw / width), min(1.0, qh / height)
+    cx, cy = (x0 + x1) / 2 / width, (y0 + y1) / 2 / height
+    return {"x": min(max(cx - w / 2, 0.0), 1.0 - w), "y": min(max(cy - h / 2, 0.0), 1.0 - h), "w": w, "h": h}
+
+
 _query_cache: dict[bytes, object] = {}  # exemplar crops -> their query embeddings (they do not change during a run)
 
 
-def _query_embeds(queries: list[np.ndarray]):
-    """One query embedding per exemplar, encoded once and kept while the same exemplars are used."""
+def _size_kwargs(size: int) -> dict:
+    """Processor arguments for an input other than the model's own size (none for the default, so it is unchanged)."""
+    return {} if size == INPUT_SIZE else {"size": {"height": size, "width": size}, "crop_size": {"height": size, "width": size}}
+
+
+def _query_embeds(queries: list[np.ndarray], size: int = INPUT_SIZE):
+    """One query embedding per exemplar, encoded once and kept while the same exemplars and size are used."""
     from PIL import Image  # noqa: PLC0415
 
     torch, processor, model, device = _load_owl()
-    key = hashlib.sha1(b"".join(q.tobytes() + repr(q.shape).encode() for q in queries)).digest() + bytes([HALF])
+    key = hashlib.sha1(b"".join(q.tobytes() + repr(q.shape).encode() for q in queries)).digest() + bytes([HALF]) + size.to_bytes(2, "big")
     if key not in _query_cache:
         if len(_query_cache) > 8:
             _query_cache.clear()
         embeds = []
+        interp = size != INPUT_SIZE
         with torch.no_grad():
             for q in queries:
                 image = Image.fromarray(cv2.cvtColor(q, cv2.COLOR_BGR2RGB))
-                pv = processor(images=image, return_tensors="pt")["pixel_values"].to(device, model.dtype)
-                fmap = model.image_embedder(pixel_values=pv)[0]
+                pv = processor(images=image, return_tensors="pt", **_size_kwargs(size))["pixel_values"].to(device, model.dtype)
+                fmap = model.image_embedder(pixel_values=pv, interpolate_pos_encoding=interp)[0]
                 feats = torch.reshape(fmap, (1, fmap.shape[1] * fmap.shape[2], fmap.shape[3]))
-                embeds.append(model.embed_image_query(feats, fmap)[0])
+                embeds.append(model.embed_image_query(feats, fmap, interp)[0])
         _query_cache[key] = embeds
     return _query_cache[key]
 
 
-def _boxes_above_nms(scores: np.ndarray, boxes: np.ndarray) -> np.ndarray:
+def _boxes_above_nms(scores: np.ndarray, boxes: np.ndarray, keep: int = NMS_KEEP) -> np.ndarray:
     """Greedy non-maximum suppression as the model's post-processing does it: best first, each kept box zeroes the
-    scores of the boxes overlapping it by more than ``_QUERY_NMS``. Returns the scores left (0 = suppressed)."""
+    scores of the boxes overlapping it by more than ``_QUERY_NMS``. It stops once ``keep`` boxes survive, since only the
+    best few are ever used. Returns the scores of the survivors (0 for every other box)."""
     scores = scores.copy()
+    kept = np.zeros_like(scores)
     area = (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])
+    n = 0
     for i in np.argsort(-scores, kind="stable"):
         if not scores[i]:
             continue
+        kept[i] = scores[i]
+        n += 1
+        if n == keep:
+            break
         iw = np.clip(np.minimum(boxes[i, 2], boxes[:, 2]) - np.maximum(boxes[i, 0], boxes[:, 0]), 0, None)
         ih = np.clip(np.minimum(boxes[i, 3], boxes[:, 3]) - np.maximum(boxes[i, 1], boxes[:, 1]), 0, None)
         inter = iw * ih
         iou = inter / (area[i] + area - inter)
         iou[i] = -1.0
         scores[iou > _QUERY_NMS] = 0.0
-    return scores
+    return kept
 
 
-def _owl_backend_batch(targets: list[np.ndarray], queries: list[np.ndarray], topk: int) -> list[list[tuple[dict, float]]]:
+def _owl_backend_batch(targets: list[np.ndarray], queries: list[np.ndarray], topk: int, size: int = INPUT_SIZE) -> list[list[tuple[dict, float]]]:
     """The default backend for several frames at once: each frame is encoded once and matched against every
-    exemplar, whose embeddings were encoded once for the whole run."""
+    exemplar, whose embeddings were encoded once for the whole run. ``size`` is the side the pictures are scaled to
+    (a smaller one is faster and gives less exact boxes)."""
     from PIL import Image  # noqa: PLC0415
 
     torch, processor, model, device = _load_owl()
-    embeds = _query_embeds(queries)
+    embeds = _query_embeds(queries, size)
+    interp = size != INPUT_SIZE
     images = [Image.fromarray(cv2.cvtColor(t, cv2.COLOR_BGR2RGB)) for t in targets]
-    pv = processor(images=images, return_tensors="pt")["pixel_values"].to(device, model.dtype)
+    pv = processor(images=images, return_tensors="pt", **_size_kwargs(size))["pixel_values"].to(device, model.dtype)
     with torch.no_grad():
-        fmap = model.image_embedder(pixel_values=pv)[0]
+        fmap = model.image_embedder(pixel_values=pv, interpolate_pos_encoding=interp)[0]
         n, hh, ww, dim = fmap.shape
         feats = torch.reshape(fmap, (n, hh * ww, dim))
-        centre = model.box_predictor(feats, fmap).float().cpu().numpy()  # (frames, patches, cx cy w h)
+        centre = model.box_predictor(feats, fmap, interp).float().cpu().numpy()  # (frames, patches, cx cy w h)
         logits = [model.class_predictor(image_feats=feats, query_embeds=e.expand(n, -1, -1))[0].float().max(dim=-1).values.cpu().numpy()
                   for e in embeds]  # per exemplar: (frames, patches)
     corners = np.stack([centre[..., 0] - centre[..., 2] / 2, centre[..., 1] - centre[..., 3] / 2,
@@ -198,7 +226,8 @@ def _owl_backend_batch(targets: list[np.ndarray], queries: list[np.ndarray], top
     for f, target in enumerate(targets):
         height, width = target.shape[:2]
         found: list[tuple[dict, float]] = []
-        for per_query in logits:
+        for q, per_query in zip(queries, logits):
+            qh, qw = q.shape[:2]
             scores = _boxes_above_nms(1.0 / (1.0 + np.exp(-per_query[f])), corners[f])  # single precision, as the model does: ties saturate at 1.0
             if not scores.any():
                 continue
@@ -209,7 +238,7 @@ def _owl_backend_batch(targets: list[np.ndarray], queries: list[np.ndarray], top
                 x0, y0 = max(0.0, x0), max(0.0, y0)
                 x1, y1 = min(float(width), x1), min(float(height), y1)
                 if x1 > x0 and y1 > y0:
-                    found.append(({"x": x0 / width, "y": y0 / height, "w": (x1 - x0) / width, "h": (y1 - y0) / height}, float(alpha[i])))
+                    found.append((sized_like_exemplar((x0, y0, x1, y1), (qw, qh), (width, height)), float(alpha[i])))
         out.append(merge(found, topk))
     return out
 
@@ -221,8 +250,40 @@ def _owl_backend(target: np.ndarray, queries: list[np.ndarray], topk: int):
 _DEFAULT_BACKEND = _owl_backend  # ``run`` batches frames only while this one is in use
 
 
-def _get_backend() -> Backend:
-    return _backend or _owl_backend
+TEMPLATE_PEAK_SUPPRESS = 1.0  # a found peak hides the region of this many template sizes around it from the next peak
+
+
+def _template_backend(target: np.ndarray, queries: list[np.ndarray], topk: int) -> list[tuple[dict, float]]:
+    """Template matching: slide each exemplar crop over the frame and report where it matches best.
+
+    For a fixed camera and an object of constant size this is exact: the box has the exemplar's own size and its
+    position is the best match. The score is the normalised correlation (1 = identical), an absolute measure, so the
+    confidence threshold means something. Up to ``topk`` separate peaks per exemplar are reported.
+    """
+    height, width = target.shape[:2]
+    found: list[tuple[dict, float]] = []
+    for query in queries:
+        qh, qw = query.shape[:2]
+        if qh > height or qw > width or qh < 1 or qw < 1:
+            continue
+        if float(query.std()) < 1.0:  # no texture: correlation is undefined, and a flat patch "matches" any flat area
+            continue
+        result = np.nan_to_num(cv2.matchTemplate(target, query, cv2.TM_CCOEFF_NORMED), nan=-1.0, posinf=-1.0, neginf=-1.0)
+        rh, rw = result.shape
+        for _ in range(topk):
+            _, score, _, (x, y) = cv2.minMaxLoc(result)
+            if score <= 0:
+                break
+            found.append(({"x": x / width, "y": y / height, "w": qw / width, "h": qh / height}, float(min(score, 1.0))))
+            ry, rx = int(qh * TEMPLATE_PEAK_SUPPRESS), int(qw * TEMPLATE_PEAK_SUPPRESS)
+            result[max(0, y - ry + 1) : min(rh, y + ry), max(0, x - rx + 1) : min(rw, x + rx)] = -1.0  # next peak elsewhere
+    return merge(found, topk)
+
+
+def _get_backend(method: str = "model") -> Backend:
+    if _backend is not None:
+        return _backend
+    return _template_backend if method == "template" else _owl_backend
 
 
 def _filtered_crop(camera: str, roi, frame: str, settings: dict) -> np.ndarray:
@@ -256,7 +317,8 @@ def run(
 ) -> dict:
     """Detect the object in every frame of ``feature`` that no human has decided yet.
 
-    The model is only downloaded when ``allow_download`` is set (the user confirmed it).
+    The method is the detector setting ``method``: template matching (default) or the OWL-ViT model, which is only
+    downloaded when ``allow_download`` is set (the user confirmed it).
     """
     global _allow_download  # noqa: PLW0603
     _allow_download = allow_download
@@ -264,7 +326,8 @@ def run(
     det = settings["detector"]
     if not det or not det["exemplars"]:
         raise DetectorError("Add at least one exemplar first")
-    if _backend is None:
+    method = det.get("method", "template")
+    if _backend is None and method == "model":  # template matching needs no model
         if not model_cached():
             if not allow_download:
                 raise DetectorError(
@@ -273,7 +336,7 @@ def run(
                 )
             report({"phase": "downloading"})
         _load_owl()  # loads (and, once confirmed, downloads) before the frame loop
-    backend = _get_backend()
+    backend = _get_backend(method)
     queries = exemplar_crops(camera, feature, settings)
     sig = vision_settings.detection_signature(settings)
     roi = engine.resolve_roi(camera, feature)
@@ -288,7 +351,7 @@ def run(
             return
         crops = [c for _, c in pending]
         if backend is _DEFAULT_BACKEND:
-            results = _owl_backend_batch(crops, queries, det["topk"])
+            results = _owl_backend_batch(crops, queries, det["topk"], det.get("size", INPUT_SIZE))
         else:  # a replacement backend (tests, other models) takes one frame at a time
             results = [backend(c, queries, det["topk"]) for c in crops]
         for (h, _), found in zip(pending, results):
