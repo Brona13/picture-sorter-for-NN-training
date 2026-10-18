@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { lastSession } from "../lastSession";
+import { RankContext } from "../RankContext";
 import ClassifyView from "./ClassifyView";
 
 const baseState = (over: Record<string, unknown> = {}) => ({
@@ -1053,12 +1054,12 @@ test("in the viewer of a found picture the Product buttons and the feature's OK 
 // --- the options panel on the right ---------------------------------------------------------------------------------
 const panel = () => screen.getByRole("complementary", { name: "Options" });
 
-test("the Grid view's properties are in the options panel on the right: Show, Rank using, Order by, and the bulk tools", async () => {
+test("the Grid view's properties are in the options panel on the right: Show, Order by, and the bulk tools", async () => {
   render(<ClassifyView camera="camA" />);
   await cardEl("a.png");
   const grid = within(panel()).getByTestId("grid-controls");
   expect(within(grid).getByRole("combobox", { name: /Show/ })).toBeInTheDocument();
-  expect(within(grid).getByRole("combobox", { name: /Rank using/ })).toBeInTheDocument();
+  expect(within(grid).queryByRole("combobox", { name: /Rank using/ })).toBeNull(); // it is in the top bar now
   expect(within(grid).getByRole("combobox", { name: /Order by/ })).toBeInTheDocument();
   expect(within(grid).getByText(/Bulk-label a selection/)).toBeInTheDocument();
   expect(within(grid).getByText(/Auto-assign by leaning/)).toBeInTheDocument();
@@ -1144,4 +1145,26 @@ test("collapsed, the Scatter and Outliers views show no controls (the hints poin
   } finally {
     lastSession.setPanelCollapsed(false);
   }
+});
+
+// --- the method to rank by comes from the top bar ----------------------------------------------------------------------
+const renderRanked = (rank: string) => render(<RankContext.Provider value={{ rank }}><ClassifyView camera="camA" /></RankContext.Provider>);
+
+test("the grid ranks by the method chosen in the top bar", async () => {
+  renderRanked("cpu");
+  await cardEl("a.png");
+  expect(calls.find((c) => c.url.includes("/classify/grid?"))!.url).toContain("rank=cpu");
+});
+
+test("with no choice, or a method that is no longer in use, it ranks by the server's default", async () => {
+  renderRanked("resnet18"); // the state lists cpu and resnet50 only
+  await cardEl("a.png");
+  expect(calls.find((c) => c.url.includes("/classify/grid?"))!.url).toContain("rank=resnet50");
+});
+
+test("changing the choice in the top bar reloads the grid under the new method", async () => {
+  const { rerender } = render(<RankContext.Provider value={{ rank: "" }}><ClassifyView camera="camA" /></RankContext.Provider>);
+  await cardEl("a.png");
+  rerender(<RankContext.Provider value={{ rank: "cpu" }}><ClassifyView camera="camA" /></RankContext.Provider>);
+  await waitFor(() => expect(gridCalls().at(-1)!.url).toContain("rank=cpu"));
 });

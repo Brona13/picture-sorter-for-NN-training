@@ -396,3 +396,69 @@ test("the product list in the top bar follows a change made elsewhere", async ()
   window.dispatchEvent(new Event("picturesorter:changed"));
   expect(await within(screen.getByLabelText("Product")).findByRole("option", { name: "P3" })).toBeInTheDocument();
 });
+
+// --- Rank using in the top bar ------------------------------------------------------------------------------------------
+const METHODS = {
+  methods: [
+    { id: "cpu", label: "Classical (CPU)", tag: "CPU", description: "", installed: true, active: true, reason: null },
+    { id: "resnet50", label: "ResNet 50", tag: "R50", description: "", installed: true, active: true, reason: null },
+  ],
+  device: "cpu",
+  device_label: "CPU",
+};
+const withMethods = (extra: Record<string, unknown> = {}) =>
+  mockFetch({
+    "/api/cameras": ["camA", "camB"],
+    "/api/cameras/camA/products": ["P1", "P2"],
+    "/api/cameras/camB/products": [],
+    "/api/config/methods": METHODS,
+    ...extra,
+  });
+
+test("Rank using sits in the top bar next to Camera and Product on the Classify page", async () => {
+  withMethods();
+  render(<MemoryRouter initialEntries={["/classify"]}><App /></MemoryRouter>);
+  const bar = within(screen.getByRole("navigation", { name: "Sections" }));
+  const select = await bar.findByLabelText("Rank using");
+  expect(select).toHaveValue("resnet50");
+  expect(Array.from(select.querySelectorAll("option")).map((o) => o.textContent)).toEqual(["Classical (CPU)", "ResNet 50"]);
+  expect(bar.getByLabelText("Camera")).toBeInTheDocument();
+  expect(bar.getByLabelText("Product")).toBeInTheDocument();
+});
+
+test("Rank using is on the Classify page only", async () => {
+  withMethods();
+  render(<MemoryRouter initialEntries={["/overview"]}><App /></MemoryRouter>);
+  await screen.findByLabelText("Camera");
+  await new Promise((r) => setTimeout(r, 50));
+  expect(screen.queryByLabelText("Rank using")).toBeNull();
+});
+
+test("the choice is remembered across a reload", async () => {
+  withMethods();
+  const first = render(<MemoryRouter initialEntries={["/classify"]}><App /></MemoryRouter>);
+  await userEvent.selectOptions(await screen.findByLabelText("Rank using"), "cpu");
+  expect(localStorage.getItem("picturesorter.rank")).toBe("cpu");
+  first.unmount();
+  render(<MemoryRouter initialEntries={["/classify"]}><App /></MemoryRouter>);
+  await waitFor(() => expect(screen.getByLabelText("Rank using")).toHaveValue("cpu"));
+  localStorage.removeItem("picturesorter.rank");
+});
+
+test("with one method in use there is nothing to choose, so no picker", async () => {
+  withMethods({ "/api/config/methods": { ...METHODS, methods: [METHODS.methods[0]] } });
+  render(<MemoryRouter initialEntries={["/classify"]}><App /></MemoryRouter>);
+  await screen.findByLabelText("Camera");
+  await new Promise((r) => setTimeout(r, 50));
+  expect(screen.queryByLabelText("Rank using")).toBeNull();
+});
+
+test("the picker follows a change made on the Configuration page", async () => {
+  withMethods({ "/api/config/methods": { ...METHODS, methods: [METHODS.methods[0]] } });
+  render(<MemoryRouter initialEntries={["/classify"]}><App /></MemoryRouter>);
+  await screen.findByLabelText("Camera");
+  expect(screen.queryByLabelText("Rank using")).toBeNull();
+  withMethods();
+  window.dispatchEvent(new Event("picturesorter:changed"));
+  expect(await screen.findByLabelText("Rank using")).toBeInTheDocument();
+});

@@ -1,9 +1,11 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 import { lastSession } from "./lastSession";
-import { api, ApiError, DATA_CHANGED, DeviceInfo, PipelineStage, PRODUCTS_RENAMED, RoiInfo } from "./api";
+import { api, ApiError, DATA_CHANGED, DeviceInfo, MethodInfo, PipelineStage, PRODUCTS_RENAMED, RoiInfo } from "./api";
 import HardwareBadge from "./HardwareBadge";
 import ProductSelect from "./ProductSelect";
+import { RankContext } from "./RankContext";
+import RankSelect from "./RankSelect";
 import { FeatureContext } from "./SharedFeature";
 import StatusBar from "./StatusBar";
 import ToolIcon from "./ToolIcon";
@@ -73,6 +75,30 @@ export default function App() {
       window.removeEventListener(PRODUCTS_RENAMED, onRenamed);
     };
   }, [camera]);
+
+  // The scoring method the Classify grid ranks by; the methods in use come from the Configuration page and follow its changes.
+  const [rank, setRank] = useState(lastSession.rank);
+  const [methods, setMethods] = useState<MethodInfo[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const load = () =>
+      api
+        .configMethods()
+        .then((c) => !cancelled && setMethods(c.methods))
+        .catch(() => undefined); // cosmetic: the picker simply stays hidden
+    load();
+    const onChange = () => {
+      clearTimeout(timer);
+      timer = setTimeout(load, 400);
+    };
+    window.addEventListener(DATA_CHANGED, onChange);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      window.removeEventListener(DATA_CHANGED, onChange);
+    };
+  }, []);
 
   const [info, setInfo] = useState<{ version: string; released: string } | null>(null);
   const [device, setDevice] = useState<DeviceInfo | null>(null);
@@ -208,6 +234,7 @@ export default function App() {
 
   return (
     <FeatureContext.Provider value={{ feature, setFeature: (f) => { lastSession.setFeature(camera, f); setSelected({ camera, feature: f }); } }}>
+    <RankContext.Provider value={{ rank }}>
     <div className="app">
       <header className="topbar" ref={topbarRef}>
         <nav aria-label="Sections" className="topbar-row">
@@ -234,6 +261,16 @@ export default function App() {
             </select>
           </label>
           <ProductSelect products={products} value={product} onChange={(p) => chooseProduct(camera, p)} />
+          {pathname === "/classify" && (
+            <RankSelect
+              methods={methods}
+              value={rank}
+              onChange={(r) => {
+                lastSession.setRank(r);
+                setRank(r);
+              }}
+            />
+          )}
           <div className="topbar-foot">
             <NavLink to={`/${CONFIG_VIEW.path}`} className="config-link"
               aria-label={CONFIG_VIEW.label}
@@ -327,6 +364,7 @@ export default function App() {
       </main>
       <StatusBar camera={camera} product={product} feature={feature} info={info} device={device} />
     </div>
+    </RankContext.Provider>
     </FeatureContext.Provider>
   );
 }

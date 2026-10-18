@@ -22,6 +22,9 @@ export const lastSession = {
   /** Product and ROI are remembered per camera. */
   product: (camera: string) => get(`product.${camera}`),
   setProduct: (camera: string, v: string) => set(`product.${camera}`, v),
+  /** The method the Classify grid ranks by (the top bar's "Rank using"). */
+  rank: () => get("rank"),
+  setRank: (v: string) => set("rank", v),
   feature: (camera: string) => get(`feature.${camera}`),
   setFeature: (camera: string, v: string) => set(`feature.${camera}`, v),
   page: () => get("page"),

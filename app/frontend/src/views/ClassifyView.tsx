@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import ClassifyKpis from "../classify/ClassifyKpis";
 import ClassifyOutliers from "../classify/ClassifyOutliers";
 import ClassifyScatter from "../classify/ClassifyScatter";
+import { RankContext } from "../RankContext";
 import { usePublishFeature, useSharedFeature } from "../SharedFeature";
 import { api, CardData, CardUpdate, ClassifyState, GridQuery, GridResponse } from "../api";
 import AutoPanel, { AutoFilter } from "../classify/AutoPanel";
@@ -49,7 +50,9 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
   usePublishFeature(feature, shared.publish);
   const [st, setSt] = useState<ClassifyState | null>(null);
   const [view, setView] = useState("All");
-  const [rank, setRank] = useState("");
+  // The method to rank by is chosen in the top bar ("Rank using"); until it is, or when it is not in use, the server's default.
+  const chosen = useContext(RankContext).rank;
+  const rank = st && chosen && st.methods.includes(chosen) ? chosen : "";
   const [order, setOrder] = useState("Most novel first");
   const [showMuted, setShowMuted] = useState(false);
   const [auto, setAuto] = useState<AutoFilter>({ on: false, classes: [], minMargin: null });
@@ -124,7 +127,6 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
   // --- switching feature resets view controls ---
   useEffect(() => {
     setView("All");
-    setRank("");
     setOrder("Most novel first");
     setShowMuted(false);
     setPage(1);
@@ -309,14 +311,6 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
                     .map((v) => (
                       <option key={v}>{v}</option>
                     ))}
-                </select>
-              </label>
-              <label>
-                Rank using{" "}
-                <select value={query.rank} disabled={!st.scored} onChange={(e) => setRank(e.target.value)}>
-                  {st.methods.map((m) => (
-                    <option key={m}>{m}</option>
-                  ))}
                 </select>
               </label>
               <label>
