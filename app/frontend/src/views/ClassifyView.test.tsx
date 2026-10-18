@@ -96,6 +96,10 @@ function install() {
           counts: { OK: 2, golden_OK: 1, NG: 0, golden_NG: 0, unlabeled: 1, total: 3 },
         });
       }
+      if (url.endsWith("/classify/restore")) {
+        const b = JSON.parse(init!.body as string);
+        return ok({ card: { frame: b.frame, label: null, golden: null, deleted: false }, counts: { OK: 1, golden_OK: 1, NG: 0, golden_NG: 0, unlabeled: 2, total: 3 } });
+      }
       if (url.includes("/classify/deleted"))
         return ok({ items: [{ frame: "x.png", deleted_at: new Date(2026, 9, 14, 10, 0).getTime() / 1000, note: "foreign object" }] });
       if (url.includes("/classify/delete"))
@@ -224,14 +228,81 @@ test("star sends golden=true and counts update from the response", async () => {
   expect(screen.getByText("Frames").nextSibling).toHaveTextContent("3");
 });
 
-test("delete reloads the grid so the frame leaves the view", async () => {
+test("a deleted card fades and stays where it is: the grid is not reloaded, nothing moves, Restore is on the card", async () => {
   render(<ClassifyView camera="camA" />);
   const a = await cardEl("a.png");
   const before = calls.filter((c) => c.url.includes("/classify/grid?")).length;
-  grid = () => gridBody([card("b.png", { label: "OK", golden: "OK", bars: null })]);
   await userEvent.click(within(a).getByRole("button", { name: "Delete frame" }));
+  await waitFor(() => expect(within(screen.getByTestId("card-a.png")).getByRole("button", { name: "Restore frame" })).toBeInTheDocument());
+  expect(screen.getAllByTestId(/^card-/).map((e) => e.getAttribute("data-testid"))).toEqual(["card-a.png", "card-b.png"]);
+  expect(calls.filter((c) => c.url.includes("/classify/grid?")).length).toBe(before); // no reload
+});
+
+test("the deleted card leaves when the grid is turned: another page, another View", async () => {
+  render(<ClassifyView camera="camA" />);
+  const a = await cardEl("a.png");
+  await userEvent.click(within(a).getByRole("button", { name: "Delete frame" }));
+  await within(screen.getByTestId("card-a.png")).findByRole("button", { name: "Restore frame" });
+  grid = () => gridBody([card("b.png", { label: "OK", golden: "OK", bars: null })]); // what the server answers now
+  await userEvent.selectOptions(screen.getByRole("combobox", { name: /Show/ }), "Unlabeled");
   await waitFor(() => expect(screen.queryByTestId("card-a.png")).toBeNull());
-  expect(calls.filter((c) => c.url.includes("/classify/grid?")).length).toBeGreaterThan(before);
+});
+
+test("a deleted card can be restored in place", async () => {
+  render(<ClassifyView camera="camA" />);
+  const a = await cardEl("a.png");
+  await userEvent.click(within(a).getByRole("button", { name: "Delete frame" }));
+  await userEvent.click(await within(screen.getByTestId("card-a.png")).findByRole("button", { name: "Restore frame" }));
+  await waitFor(() => expect(within(screen.getByTestId("card-a.png")).getByRole("button", { name: "Delete frame" })).toBeInTheDocument());
+  expect(calls.some((c) => c.url.endsWith("/classify/restore"))).toBe(true);
+});
+
+test("the numbers are read again once the deletes have settled", async () => {
+  render(<ClassifyView camera="camA" />);
+  const a = await cardEl("a.png");
+  const states = () => calls.filter((c) => c.url.includes("/classify/state")).length;
+  const before = states();
+  await userEvent.click(within(a).getByRole("button", { name: "Delete frame" }));
+  await waitFor(() => expect(states()).toBeGreaterThan(before));
+});
+
+test("holding Delete and sweeping deletes the unlabeled cards, skips labeled and golden ones, once each; they fade in place", async () => {
+  grid = () => gridBody([card("a.png"), card("b.png", { label: "OK" }), card("c.png"), card("d.png", { label: "OK", golden: "OK", bars: null })]);
+  render(<ClassifyView camera="camA" />);
+  await cardEl("a.png");
+  const sweep = (f: string) => fireEvent.mouseMove(screen.getByTestId(`card-${f}`), { movementX: 6, movementY: 2 });
+  fireEvent.keyDown(window, { key: "Delete" });
+  for (const f of ["a.png", "b.png", "c.png", "d.png"]) sweep(f);
+  sweep("a.png"); // again in the same stroke: nothing more
+  await waitFor(() => expect(calls.filter((c) => c.url.endsWith("/classify/delete")).map((c) => c.body.frame)).toEqual(["a.png", "c.png"]));
+  fireEvent.keyUp(window, { key: "Delete" });
+  expect(screen.getAllByTestId(/^card-/)).toHaveLength(4); // nothing moved
+});
+
+test("X clears a labeled card by pressing and by sweeping; golden cards are skipped by the sweep", async () => {
+  grid = () => gridBody([card("a.png", { label: "OK" }), card("b.png", { label: "NG" }), card("c.png", { label: "OK", golden: "OK", bars: null }), card("d.png")]);
+  render(<ClassifyView camera="camA" />);
+  await cardEl("a.png");
+  const sweep = (f: string) => fireEvent.mouseMove(screen.getByTestId(`card-${f}`), { movementX: 6, movementY: 2 });
+  const clears = () => calls.filter((c) => c.method === "PUT" && c.url.endsWith("/classify/label") && c.body.cls === null).map((c) => c.body.frame);
+  fireEvent.keyDown(window, { key: "x" });
+  for (const f of ["a.png", "b.png", "c.png", "d.png"]) sweep(f);
+  await waitFor(() => expect(clears()).toEqual(["a.png", "b.png"])); // c is golden, d has no label
+  fireEvent.keyUp(window, { key: "x" });
+  // a single press on the hovered card
+  fireEvent.mouseEnter(screen.getByTestId("card-c.png"));
+  fireEvent.keyDown(window, { key: "X" });
+  await waitFor(() => expect(clears()).toEqual(["a.png", "b.png", "c.png"]));
+});
+
+test("a sweep with a class key still only fills unlabeled cards", async () => {
+  grid = () => gridBody([card("a.png", { label: "OK" }), card("b.png")]);
+  render(<ClassifyView camera="camA" />);
+  await cardEl("a.png");
+  fireEvent.keyDown(window, { key: "2" });
+  fireEvent.mouseMove(screen.getByTestId("card-a.png"), { movementX: 6, movementY: 2 });
+  fireEvent.mouseMove(screen.getByTestId("card-b.png"), { movementX: 6, movementY: 2 });
+  await waitFor(() => expect(calls.filter((c) => c.method === "PUT" && c.url.endsWith("/classify/label")).map((c) => c.body.frame)).toEqual(["b.png"]));
 });
 
 test("no-results hint (and no cold-start text)", async () => {

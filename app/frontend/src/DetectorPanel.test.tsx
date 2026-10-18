@@ -547,7 +547,7 @@ test("pressing A on a hovered card accepts it and the sweep carries on from ther
   expect(puts()).toHaveLength(2);
 });
 
-test("holding X and sweeping clears the boxes, never clears a box you accepted, and Delete is never painted", async () => {
+test("holding X and sweeping clears the boxes and never clears a box you accepted", async () => {
   detections = sweepRows();
   install({ exemplars: [EXEMPLAR], topk: 1, threshold: 0.3 });
   await openReview();
@@ -557,13 +557,48 @@ test("holding X and sweeping clears the boxes, never clears a box you accepted, 
   for (const f of ["a.png", "c.png", "b.png"]) sweep(f);
   await waitFor(() => expect(deletes()).toEqual(["a.png", "b.png"]));
   fireEvent.keyUp(window, { key: "x" });
-  fireEvent.keyDown(window, { key: "Delete" }); // deleting a picture is a hover key only
-  sweep("d.png");
-  await new Promise((r) => setTimeout(r, 50));
-  fireEvent.keyUp(window, { key: "Delete" });
   expect(deletes()).toEqual(["a.png", "b.png"]);
   expect(pictureDeletes()).toEqual([]);
   expect(puts()).toEqual([]);
+});
+
+test("holding Delete and sweeping deletes the pictures you have not decided, never one you decided, once each", async () => {
+  detections = sweepRows();
+  install({ exemplars: [EXEMPLAR], topk: 1, threshold: 0.3 });
+  await openReview();
+  await userEvent.selectOptions(await screen.findByLabelText("Show"), "all");
+  await screen.findByTestId("review-card-c.png");
+  fireEvent.keyDown(window, { key: "Delete" });
+  for (const f of ["a.png", "c.png", "b.png"]) sweep(f);
+  sweep("a.png"); // again in the same stroke: nothing more
+  await waitFor(() => expect(pictureDeletes()).toEqual(["a.png", "b.png"])); // c.png was decided
+  fireEvent.keyUp(window, { key: "Delete" });
+  expect(puts()).toEqual([]);
+  expect(deletes()).toEqual([]);
+});
+
+test("pictures deleted by a sweep fade and stay in place; turning the grid drops them, decided cards stay", async () => {
+  detections = sweepRows();
+  install({ exemplars: [EXEMPLAR], topk: 1, threshold: 0.3 });
+  await openReview();
+  await userEvent.selectOptions(await screen.findByLabelText("Show"), "all");
+  await screen.findByTestId("review-card-c.png");
+  fireEvent.keyDown(window, { key: "Delete" });
+  sweep("a.png");
+  sweep("b.png");
+  fireEvent.keyUp(window, { key: "Delete" });
+  await waitFor(() => expect(pictureDeletes()).toEqual(["a.png", "b.png"]));
+  // nothing moved: all four cards are still there, the deleted ones dimmed
+  expect(screen.getAllByTestId(/^review-card-/).map((e) => e.getAttribute("data-testid"))).toEqual([
+    "review-card-a.png", "review-card-b.png", "review-card-c.png", "review-card-d.png",
+  ]);
+  expect(screen.getByTestId("review-card-a.png")).toHaveStyle({ opacity: "0.55" });
+  // turning the grid (here: the page size) drops the deleted ones; the decided c.png and untouched d.png stay
+  await userEvent.selectOptions(screen.getAllByLabelText("Per page review top")[0], "24");
+  await waitFor(() => expect(screen.queryByTestId("review-card-a.png")).toBeNull());
+  expect(screen.queryByTestId("review-card-b.png")).toBeNull();
+  expect(screen.getByTestId("review-card-c.png")).toBeInTheDocument();
+  expect(screen.getByTestId("review-card-d.png")).toBeInTheDocument();
 });
 
 test("moving the mouse without the key held, or a scroll under a still pointer, does nothing", async () => {

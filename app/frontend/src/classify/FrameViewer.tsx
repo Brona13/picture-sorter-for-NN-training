@@ -5,6 +5,7 @@ import PictureViewer from "./PictureViewer";
 import { useBrowse } from "./useBrowse";
 import { classColor } from "./colors";
 import { MAX_SHORTCUT_CLASSES } from "./Card";
+import { isClearKey } from "./paint";
 
 interface Props {
   camera: string;
@@ -35,7 +36,7 @@ interface Props {
 /**
  * Full-size look at the frames of a grid: the shared `PictureViewer` with the full frame in a zoom pane (wheel zoom,
  * pan, the same pane the ROI editor uses), the ROI outline, and the card's own actions for the frame on screen
- * (1-9 label, 0 clear, the key left of 1 golden, Delete).
+ * (1-9 label, 0 or X clear, the key left of 1 golden, Delete).
  */
 export default function FrameViewer({ camera, feature, frames, start, classes, marks, busy, onLabel, onGolden, onDelete, deleted, onRestore, labelsLocked, extra, onShow, onClose }: Props) {
   const [roi, setRoi] = useState<RoiInfo | null>(null);
@@ -62,13 +63,16 @@ export default function FrameViewer({ camera, feature, frames, start, classes, m
     const isGolden = e.code === "Backquote";
     const isDelete = e.key === "Delete";
     const digit = /^[0-9]$/.test(e.key);
-    if (!isGolden && !isDelete && !digit) return false;
+    const clear = isClearKey(e);
+    if (!isGolden && !isDelete && !digit && !clear) return false;
     if (e.repeat || cur.busy || !cur.frame || cur.deleted?.(cur.frame)) return true; // a deleted frame takes no label
     if (!isDelete && cur.labelsLocked?.(cur.frame)) return true; // nor does a frame outside the ROI's scope
     const m = cur.marks(cur.frame);
     if (isDelete) cur.onDelete(cur.frame);
     else if (isGolden) {
       if (m.label !== null) cur.onGolden(cur.frame, !m.golden);
+    } else if (clear) {
+      if (m.label !== null) cur.onLabel(cur.frame, null);
     } else {
       const n = Number(e.key);
       if (n === 0) {
@@ -96,7 +100,7 @@ export default function FrameViewer({ camera, feature, frames, start, classes, m
       onGo={go}
       onClose={onClose}
       onKey={onKey}
-      hint="Wheel zooms · drag pans · ← → browse · 1-9 label · 0 clear · ` golden · Delete deletes · Esc closes"
+      hint="Wheel zooms · drag pans · ← → browse · 1-9 label · 0 / X clear · ` golden · Delete deletes · Esc closes"
       toolbar={
         <div style={{ flex: 1 }}>
         <div role="group" aria-label="Label" style={{ display: "flex", gap: 6, alignItems: "center", flex: 1 }}>

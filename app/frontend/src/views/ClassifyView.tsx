@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ClassifyKpis from "../classify/ClassifyKpis";
 import ClassifyOutliers from "../classify/ClassifyOutliers";
 import ClassifyScatter from "../classify/ClassifyScatter";
@@ -179,6 +179,17 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
       setBusy(null);
     }
   }
+
+  // A delete or a restore changes the card in place (it fades, or comes back) and nothing else moves: the grid is only reloaded
+  // when the user turns it. The numbers above are read again once the actions have settled, since quick ones answer out of order.
+  const settleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refreshSoon = () => {
+    if (settleTimer.current) clearTimeout(settleTimer.current);
+    settleTimer.current = setTimeout(() => void loadState(), 400);
+  };
+  useEffect(() => () => void (settleTimer.current && clearTimeout(settleTimer.current)), []);
+  const deleteInPlace = (frame: string) => act(frame, () => api.deleteFrame(camera, feature, frame)).then(refreshSoon);
+  const restoreInPlace = (frame: string) => act(frame, () => api.restoreFrame(camera, feature, frame)).then(refreshSoon);
 
   async function act(frame: string, call: () => Promise<CardUpdate>, reloadGrid = false) {
     setBusy(frame);
@@ -501,8 +512,8 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
                     onOpen={() => setViewing(card.frame)}
                     onLabel={(cls) => act(card.frame, () => api.setLabel(camera, feature, card.frame, cls))}
                     onGolden={(on) => act(card.frame, () => api.setGolden(camera, feature, card.frame, on))}
-                    onDelete={() => act(card.frame, () => api.deleteFrame(camera, feature, card.frame), true)}
-                    onRestore={() => act(card.frame, () => api.restoreFrame(camera, feature, card.frame), true)}
+                    onDelete={() => deleteInPlace(card.frame)}
+                    onRestore={() => restoreInPlace(card.frame)}
                     onSimilar={
                       st.methods.some((m) => m.startsWith("resnet"))
                         ? () => card.label && setSimilarSeed({ frame: card.frame, label: card.label })
@@ -525,9 +536,9 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
                   busy={busy !== null}
                   onLabel={(f, cls) => act(f, () => api.setLabel(camera, feature, f, cls))}
                   onGolden={(f, on) => act(f, () => api.setGolden(camera, feature, f, on))}
-                  onDelete={(f) => act(f, () => api.deleteFrame(camera, feature, f), true)}
+                  onDelete={(f) => deleteInPlace(f)}
                   deleted={(f) => !!grid.items.find((x) => x.frame === f)?.deleted}
-                  onRestore={(f) => act(f, () => api.restoreFrame(camera, feature, f), true)}
+                  onRestore={(f) => restoreInPlace(f)}
                   labelsLocked={(f) => !!grid.items.find((x) => x.frame === f)?.outside}
                   extra={(f) => {
                     const c = grid.items.find((x) => x.frame === f);

@@ -104,7 +104,7 @@ export function OutlierResults({
   if (!result) return null;
 
   const rows = result.scores.filter((s) => !gone.has(s.frame));
-  const score = new Map(rows.map((r) => [r.frame, r.score]));
+  const score = new Map(result.scores.map((r) => [r.frame, r.score])); // a deleted card stays in place, so every score is kept
   const cardOf = (frame: string): CardData => ({
     frame,
     label: marks[frame]?.label ?? null,
@@ -141,6 +141,15 @@ export function OutlierResults({
         onDeleted={(f) => {
           setGone((g) => new Set(g).add(f));
           onDeleted(f);
+        }}
+        onRestored={(f) => {
+          setGone((g) => {
+            const next = new Set(g);
+            next.delete(f);
+            return next;
+          });
+          setMarks((m) => ({ ...m, [f]: { label: null, golden: null } }));
+          onChanged?.();
         }}
         onError={o.onError}
       />

@@ -34,6 +34,7 @@ export default function CardGrid<T>({
   label,
   serverPage,
   search,
+  onGridChange,
   container = "ul",
 }: {
   items: T[];
@@ -51,6 +52,8 @@ export default function CardGrid<T>({
   serverPage?: PagerGrid;
   /** Server-side search by file name (see above). */
   search?: GridSearch;
+  /** The user turned the grid: another page, size or columns, or a search. Pictures deleted in place are dropped then. */
+  onGridChange?: () => void;
   /** The element holding the cards: a list when each card is an `<li>`, a div for other cards. */
   container?: "ul" | "div";
 }) {
@@ -78,15 +81,26 @@ export default function CardGrid<T>({
         onClose: () => {
           setOpen(false);
           setDraft("");
+          onGridChange?.();
           if (search) search.onChange("");
           else onPage(1);
         },
         onChange: (value: string) => {
           setDraft(value);
+          onGridChange?.();
           if (!search) onPage(1);
         },
       }
     : undefined;
+
+  const turnPage = (p: number) => {
+    onGridChange?.();
+    onPage(p);
+  };
+  const turnSettings = (perPage: number, cols: number) => {
+    onGridChange?.();
+    onSettings(perPage, cols);
+  };
 
   const perPage = settings.per_page;
   const nPages = Math.max(1, Math.ceil(list.length / perPage));
@@ -98,7 +112,7 @@ export default function CardGrid<T>({
   return (
     <div aria-label={label}>
       {header}
-      <Pager grid={pagerGrid} settings={settings} onPage={onPage} onSettings={onSettings} where={name("top")} search={pagerSearch} />
+      <Pager grid={pagerGrid} settings={settings} onPage={turnPage} onSettings={turnSettings} where={name("top")} search={pagerSearch} />
       {searching && shown.length === 0 ? (
         <p role="status">Not found</p>
       ) : (
@@ -108,7 +122,7 @@ export default function CardGrid<T>({
           ))}
         </Container>
       )}
-      <Pager grid={pagerGrid} settings={settings} onPage={onPage} onSettings={onSettings} where={name("bottom")} search={pagerSearch} />
+      <Pager grid={pagerGrid} settings={settings} onPage={turnPage} onSettings={turnSettings} where={name("bottom")} search={pagerSearch} />
     </div>
   );
 }

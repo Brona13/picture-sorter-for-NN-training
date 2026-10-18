@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, CardData, CardUpdate } from "../api";
 import Card from "./Card";
 import FrameViewer from "./FrameViewer";
@@ -21,6 +21,10 @@ export interface GridExtras {
  * tool, which is how the tool bar knows the tool has been used; and every successful change is reported once,
  * through `onChanged` (label, golden, restore) or `onDeleted`. The tool owns the frames, the marks and the page.
  * Classify (server-paged, richer cards) and Verdict (decision cards) keep their own grids.
+ *
+ * A picture deleted here fades and **stays where it is** (nothing moves, so a sweep or a run of deletes keeps its focus),
+ * with Restore when the tool can take it back, until the user turns the grid (another page, size, columns or search) or
+ * the tool replaces the list; then it is gone, as Classify's server-paged grid does on its next load.
  */
 export default function PictureGrid({
   camera,
@@ -40,6 +44,7 @@ export default function PictureGrid({
   restorable = false,
   onChanged,
   onDeleted,
+  onRestored,
   onError,
 }: {
   camera: string;
@@ -64,12 +69,34 @@ export default function PictureGrid({
   restorable?: boolean;
   onChanged: (frame: string, card: CardUpdate["card"]) => void;
   onDeleted: (frame: string, card: CardUpdate["card"]) => void;
+  /** The tool can take a picture back into its list. When given, a card deleted here can be restored in place. */
+  onRestored?: (frame: string, card: CardUpdate["card"]) => void;
   onError: (message: string) => void;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [viewing, setViewing] = useState<string | null>(null);
+  // Deleted here and kept in place (a snapshot of the card), and restored from there (kept in place as normal cards).
+  const [ghosts, setGhosts] = useState<Map<string, CardData>>(new Map());
+  const [revived, setRevived] = useState<Set<string>>(new Set());
+  const shown = useRef<string[]>(frames);
 
   const perPage = grid.per_page;
+  const sticky = ghosts.size > 0 || revived.size > 0;
+  const incoming = new Set(frames);
+  const known = new Set(shown.current);
+  // A list that brings frames the grid did not show is a new list: nothing is kept in place for it.
+  const replaced = sticky && frames.some((f) => !known.has(f));
+  const display = sticky && !replaced ? shown.current.filter((f) => incoming.has(f) || ghosts.has(f) || revived.has(f)) : frames;
+  shown.current = display;
+  const settle = () => {
+    setGhosts(new Map());
+    setRevived(new Set());
+  };
+  useEffect(() => {
+    if (replaced) settle();
+  }, [replaced]);
+  const cardAt = (f: string): CardData => ghosts.get(f) ?? cardOf(f);
+  const canRestore = restorable || !!onRestored;
 
   async function act(frame: string, call: () => Promise<CardUpdate>, then: (card: CardUpdate["card"]) => void) {
     setBusy(frame);
@@ -83,18 +110,38 @@ export default function PictureGrid({
   }
   const label = (f: string, cls: string | null) => act(f, () => api.setLabel(camera, feature, f, cls, via), (c) => onChanged(f, c));
   const golden = (f: string, on: boolean) => act(f, () => api.setGolden(camera, feature, f, on), (c) => onChanged(f, c));
-  const del = (f: string) => act(f, () => api.deleteFrame(camera, feature, f, via), (c) => onDeleted(f, c));
-  const restore = (f: string) => (restorable ? act(f, () => api.restoreFrame(camera, feature, f), (c) => onChanged(f, c)) : undefined);
+  const del = (f: string) =>
+    act(f, () => api.deleteFrame(camera, feature, f, via), (c) => {
+      const before = cardAt(f);
+      setGhosts((g) => new Map(g).set(f, { ...before, ...c, label: null, golden: null, deleted: true }));
+      onDeleted(f, c);
+    });
+  const restore = (f: string) => {
+    if (!canRestore || !(ghosts.has(f) || restorable)) return undefined;
+    return act(f, () => api.restoreFrame(camera, feature, f), (c) => {
+      if (ghosts.has(f)) {
+        setGhosts((g) => {
+          const next = new Map(g);
+          next.delete(f);
+          return next;
+        });
+        setRevived((r) => new Set(r).add(f));
+      }
+      if (onRestored) onRestored(f, c);
+      else onChanged(f, c);
+    });
+  };
 
   return (
     <>
       <CardGrid
-        items={frames}
+        items={display}
         keyOf={(f) => f}
         settings={grid}
         onSettings={onGrid}
         page={page}
         onPage={onPage}
+        onGridChange={settle}
         where={where}
         renderCard={(f) => {
           const x = extras?.(f) ?? {};
@@ -104,7 +151,7 @@ export default function PictureGrid({
               feature={feature}
               classes={classes}
               methods={methods}
-              card={cardOf(f)}
+              card={cardAt(f)}
               busy={busy === f}
               fullSize={viewer}
               onOpen={viewer ? () => setViewing(f) : undefined}
@@ -115,6 +162,7 @@ export default function PictureGrid({
               onGolden={(on) => golden(f, on)}
               onDelete={() => del(f)}
               onRestore={() => restore(f)}
+              canRestore={canRestore}
             />
           );
         }}
@@ -123,21 +171,21 @@ export default function PictureGrid({
         <FrameViewer
           camera={camera}
           feature={feature}
-          frames={frames}
+          frames={display}
           start={viewing}
           classes={classes}
           marks={(f) => {
-            const c = cardOf(f);
+            const c = cardAt(f);
             return { label: c.label, golden: c.golden };
           }}
           busy={busy !== null}
           onLabel={label}
           onGolden={golden}
           onDelete={del}
-          deleted={restorable ? (f) => cardOf(f).deleted : undefined}
-          onRestore={restorable ? (f) => void restore(f) : undefined}
+          deleted={(f) => cardAt(f).deleted}
+          onRestore={canRestore ? (f) => void restore(f) : undefined}
           onShow={(f) => {
-            const at = frames.indexOf(f);
+            const at = display.indexOf(f);
             if (at >= 0) onPage(Math.floor(at / perPage) + 1);
           }}
           onClose={() => setViewing(null)}

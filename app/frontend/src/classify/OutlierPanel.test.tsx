@@ -37,6 +37,7 @@ beforeEach(() => {
       if (url === "/api/jobs/o1") return ok({ id: "o1", status: "done", progress: {}, result, error: null });
       if (url.endsWith("/classify/label")) return ok({ card: { frame: body.frame, label: body.cls, golden: null, deleted: false }, counts: {} });
       if (url.endsWith("/classify/delete")) return ok({ card: { frame: body.frame, label: null, golden: null, deleted: true }, counts: {} });
+      if (url.endsWith("/classify/restore")) return ok({ card: { frame: body.frame, label: null, golden: null, deleted: false }, counts: {} });
       return new Response("{}", { status: 404 });
     }),
   );
@@ -76,14 +77,34 @@ test("the k slider is sent with the request", async () => {
   expect(calls.find((c) => c.url.endsWith("/dedup/outliers"))?.body.k).toBe(7);
 });
 
-test("deleting a card removes it from the list and reports it", async () => {
+test("deleting a card fades it in place, reports it, and turning the grid drops it", async () => {
   const user = await score();
   const cards = screen.getAllByRole("listitem");
   await user.click(within(cards[0]).getByRole("button", { name: /delete/i }));
   await waitFor(() => expect(onDeleted).toHaveBeenCalledWith("far.png"));
   expect(calls.find((c) => c.url.endsWith("/classify/delete"))?.body).toMatchObject({ frame: "far.png", via: "Outliers" }); // stamped with the tool
-  expect(screen.queryByText("outlier 0.420")).toBeNull();
+  // nothing moves: the deleted card stays in its place, dimmed, with Restore, and the count above has dropped
+  expect(screen.getByText("outlier 0.420")).toBeInTheDocument();
+  expect(screen.getAllByRole("listitem").map((li) => li.getAttribute("data-testid"))).toEqual(["card-far.png", "card-mid.png", "card-near.png"]);
+  expect(within(screen.getByTestId("card-far.png")).getByRole("button", { name: "Restore frame" })).toBeEnabled();
   expect(screen.getByRole("status").textContent).toContain("2 frame(s)");
+  // turning the grid (here: the page size) drops it
+  await user.selectOptions(screen.getAllByLabelText("Per page outliers top")[0], "24");
+  await waitFor(() => expect(screen.queryByText("outlier 0.420")).toBeNull());
+  expect(screen.getAllByRole("listitem")).toHaveLength(2);
+});
+
+test("a card deleted here can be restored in place, and the list takes it back", async () => {
+  const user = await score();
+  await user.click(within(screen.getByTestId("card-far.png")).getByRole("button", { name: /delete/i }));
+  await waitFor(() => expect(onDeleted).toHaveBeenCalledWith("far.png"));
+  await user.click(within(screen.getByTestId("card-far.png")).getByRole("button", { name: "Restore frame" }));
+  await waitFor(() => expect(screen.getByRole("status").textContent).toContain("3 frame(s)"));
+  expect(calls.some((c) => c.url.endsWith("/classify/restore"))).toBe(true);
+  expect(screen.getAllByRole("listitem")).toHaveLength(3);
+  await user.selectOptions(screen.getAllByLabelText("Per page outliers top")[0], "24"); // it was restored, so it stays
+  expect(screen.getByTestId("card-far.png")).toBeInTheDocument();
+  expect(within(screen.getByTestId("card-far.png")).getByRole("button", { name: "Delete frame" })).toBeEnabled();
 });
 
 test("outlier shades scale against the 95th percentile and cap at 1", () => {

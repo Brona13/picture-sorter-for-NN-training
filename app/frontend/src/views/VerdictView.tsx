@@ -30,8 +30,10 @@ const STATUS_TEXT: Record<string, string> = {
   stale: "stale",
 };
 
-/** Painting on the Verdict grid: hold 1 (OK), 2 (NG) or 0 (clear my decision) and move over the cards. */
-const verdictPainter = createPainter<string>((e) => (/^[012]$/.test(e.key) ? e.key : null));
+/** Painting on the Verdict grid: hold 1 (OK), 2 (NG) or 0 / X (clear my decision) and move over the cards. */
+const verdictPainter = createPainter<string>((e) => (/^[012]$/.test(e.key) ? e.key : e.key === "x" || e.key === "X" ? "0" : null));
+const isVerdictKey = (e: { key: string }) => /^[012xX]$/.test(e.key);
+const isClear = (e: { key: string }) => e.key === "0" || e.key === "x" || e.key === "X";
 
 const DEFAULT_SETTINGS = { per_page: 24, cols: 4, per_page_options: [12, 24, 48, 96], cols_options: [3, 4, 5, 6, 8] };
 
@@ -42,8 +44,8 @@ function Card({ camera, item, busy, onDecide, onOpen }: { camera: string; item: 
   // of yours: 1 and 2 only decide cards you have not decided, 0 only clears cards you have.
   const { props } = useGridCard(verdictPainter, item.frame, {
     onKey: (e) => {
-      if (!/^[012]$/.test(e.key) || busy) return false;
-      if (e.key === "0") {
+      if (!isVerdictKey(e) || busy) return false;
+      if (isClear(e)) {
         if (item.decision) onDecide(null);
       } else onDecide(e.key === "1" ? "OK" : "NG");
       verdictPainter.mark(item.frame);
@@ -117,7 +119,7 @@ function Card({ camera, item, busy, onDecide, onOpen }: { camera: string; item: 
           </button>
         ))}
         {item.decision && (
-          <button disabled={busy} title="Hover the card and press 0." aria-label={`Clear my decision for ${item.frame}`} onClick={() => onDecide(null)}>
+          <button disabled={busy} title="Hover the card and press 0 or X." aria-label={`Clear my decision for ${item.frame}`} onClick={() => onDecide(null)}>
             Clear
           </button>
         )}
@@ -152,10 +154,10 @@ function VerdictViewer({
   const latest = useRef({ frame, item, busy, onDecide });
   latest.current = { frame, item, busy, onDecide };
   const onKey = (e: KeyboardEvent): boolean => {
-    if (!/^[012]$/.test(e.key)) return false;
+    if (!isVerdictKey(e)) return false;
     const cur = latest.current;
     if (e.repeat || cur.busy || !cur.item) return true;
-    if (e.key === "0") {
+    if (isClear(e)) {
       if (cur.item.decision) cur.onDecide(cur.frame, null);
     } else cur.onDecide(cur.frame, e.key === "1" ? "OK" : "NG");
     return true;
@@ -172,7 +174,7 @@ function VerdictViewer({
       onGo={go}
       onClose={onClose}
       onKey={onKey}
-      hint="Wheel zooms · drag pans · ← → browse · 1 OK · 2 NG · 0 clears my decision · Esc closes"
+      hint="Wheel zooms · drag pans · ← → browse · 1 OK · 2 NG · 0 / X clears my decision · Esc closes"
       toolbar={
         <div role="group" aria-label="Decide" style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
           {(["OK", "NG"] as const).map((c, i) => (

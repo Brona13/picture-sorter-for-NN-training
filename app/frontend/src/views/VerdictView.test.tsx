@@ -159,3 +159,33 @@ test("hover keys decide: 1 = OK, 2 = NG, 0 clears an existing decision", async (
   await userEvent.keyboard("0");
   await waitFor(() => expect(calls.filter((c) => c.url.includes("/verdicts/decision")).at(-1)?.body).toEqual({ frame: "a.png", cls: null }));
 });
+
+test("X clears a decision like 0: by pressing on the card and by sweeping, never a card you have not decided", async () => {
+  list = () => ({
+    status: "contradiction", page: 1, per_page: 24, n_pages: 1, total: 3,
+    items: [item("a.png", { decision: "OK" }), item("b.png"), item("c.png", { decision: "NG" })],
+  });
+  render(<VerdictView camera="camA" />);
+  await screen.findByTestId("verdict-card-a.png");
+  const sweep = (f: string) => fireEvent.mouseMove(screen.getByTestId(`verdict-card-${f}`), { movementX: 6, movementY: 2 });
+  const decisions = () => calls.filter((c) => c.url.includes("/verdicts/decision")).map((c) => `${c.body.frame}:${c.body.cls}`);
+  fireEvent.keyDown(window, { key: "x" });
+  for (const f of ["a.png", "b.png", "c.png"]) sweep(f);
+  await waitFor(() => expect(decisions()).toEqual(["a.png:null", "c.png:null"])); // b has no decision of yours
+  fireEvent.keyUp(window, { key: "x" });
+  // the sweep cursor is the grey cross, as for 0
+  fireEvent.keyDown(window, { key: "X" });
+  fireEvent.mouseEnter(screen.getByTestId("verdict-card-a.png"));
+  const cursor = decodeURIComponent(document.documentElement.style.getPropertyValue("--paint-cursor"));
+  expect(cursor).toContain("#555");
+  fireEvent.keyUp(window, { key: "X" });
+});
+
+test("X in the viewer clears my decision too", async () => {
+  list = () => ({ status: "contradiction", page: 1, per_page: 24, n_pages: 1, total: 1, items: [item("a.png", { decision: "OK" })] });
+  render(<VerdictView camera="camA" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Open a.png" }));
+  await screen.findByTestId("verdict-viewer");
+  fireEvent.keyDown(window, { key: "x" });
+  await waitFor(() => expect(calls.find((c) => c.url.includes("/verdicts/decision"))?.body).toEqual({ frame: "a.png", cls: null }));
+});

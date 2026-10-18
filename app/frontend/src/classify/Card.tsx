@@ -1,7 +1,7 @@
 import { CardData, frameImageUrl } from "../api";
 import { methodTag } from "../methodTags";
 import { classColor, clusterColor } from "./colors";
-import { cursorFor, labelPainter, markPainted } from "./paint";
+import { cursorFor, DELETE_MODE, isClearKey, labelPainter, markPainted } from "./paint";
 import { useGridCard } from "./useGridCard";
 
 interface Props {
@@ -15,6 +15,8 @@ interface Props {
   onGolden: (on: boolean) => void;
   onDelete: () => void;
   onRestore: () => void;
+  /** False when a deleted card cannot be restored from this grid (the button is then disabled and says where to restore it). */
+  canRestore?: boolean;
   /** Dedup cluster browser only: marks the card the representative of its cluster. */
   isRep?: boolean;
   onSetRep?: () => void;
@@ -44,12 +46,12 @@ const badge = (bg: string): React.CSSProperties => ({
 
 /**
  * Keyboard shortcuts act on the hovered card: 1-9 pick the class in that position (again to
- * remove it), 0 clears, the key left of 1 (``Backquote``, whatever it prints) toggles golden, and
- * Delete soft-deletes the frame.
+ * remove it), 0 or X clears, the key left of 1 (``Backquote``, whatever it prints) toggles golden, and
+ * Delete soft-deletes the frame. Held while the mouse moves over cards, the same keys sweep (see `paint.ts`).
  */
 export const MAX_SHORTCUT_CLASSES = 9;
 
-export default function Card({ camera, feature, classes, methods, card, busy, onLabel, onGolden, onDelete, onRestore, isRep, onSetRep, fullSize, onOpen, caption, onSimilar }: Props) {
+export default function Card({ camera, feature, classes, methods, card, busy, onLabel, onGolden, onDelete, onRestore, canRestore = true, isRep, onSetRep, fullSize, onOpen, caption, onSimilar }: Props) {
   const { frame, label, golden, deleted, bars, leanings, cluster, edge } = card;
   // Search results only: a picture outside this ROI's scope gets a red frame and cannot be labeled here until its
   // product fits (open it to change the product); a muted one gets a dark grey dashed frame.
@@ -69,9 +71,10 @@ export default function Card({ camera, feature, classes, methods, card, busy, on
     onKey: (e) => {
       const isGoldenKey = e.code === "Backquote";
       const isDeleteKey = e.key === "Delete";
-      if (!isGoldenKey && !isDeleteKey && !/^[0-9]$/.test(e.key)) return false;
-      if (busy || deleted || outside) return false;
-      if (!isGoldenKey && !isDeleteKey) markPainted(frame);
+      const clear = isClearKey(e);
+      if (!isGoldenKey && !isDeleteKey && !clear && !/^[0-9]$/.test(e.key)) return false;
+      if (busy || deleted || (outside && !isDeleteKey)) return false;
+      if (!isGoldenKey) markPainted(frame);
       if (isDeleteKey) {
         onDelete();
         return true;
@@ -79,6 +82,10 @@ export default function Card({ camera, feature, classes, methods, card, busy, on
       if (isGoldenKey) {
         if (label === null) return false; // a golden is always a labeled frame
         onGolden(!golden);
+        return true;
+      }
+      if (clear) {
+        if (label !== null) onLabel(null);
         return true;
       }
       const n = Number(e.key);
@@ -91,9 +98,15 @@ export default function Card({ camera, feature, classes, methods, card, busy, on
       }
       return true;
     },
-    // Painting: a class key labels unlabeled cards, 0 clears labeled non-golden ones; goldens never change.
+    // Painting: a class key labels unlabeled cards, 0 / X clear labeled non-golden ones, Delete deletes unlabeled non-golden
+    // ones (a labeled picture is deleted by a single press only); a picture outside the ROI keeps its labels, so it is never swept.
     paint: (mode) => {
       if (busy || deleted || golden || outside) return false;
+      if (mode === DELETE_MODE) {
+        if (label !== null) return false;
+        onDelete();
+        return true;
+      }
       const n = Number(mode);
       if (n >= 1 && (n > MAX_SHORTCUT_CLASSES || classes[n - 1] === undefined)) return false;
       if (n === 0 ? label === null : label !== null) return false;
@@ -244,7 +257,7 @@ export default function Card({ camera, feature, classes, methods, card, busy, on
         {classes.map((c, i) => (
           <button
             key={c}
-            disabled={busy || outside}
+            disabled={busy || outside || deleted}
             aria-pressed={label === c}
             title={
               (outside ? "Outside this ROI: set the picture's product first (open it). " : "") +
@@ -264,7 +277,7 @@ export default function Card({ camera, feature, classes, methods, card, busy, on
         ))}
         <button
           aria-label={golden ? "Remove golden" : "Make golden"}
-          disabled={busy || label === null || outside}
+          disabled={busy || label === null || outside || deleted}
           title={
             label === null
               ? "Label the frame first, then star it to make it a golden reference for that class. Shortcut: the key left of 1."
@@ -300,11 +313,13 @@ export default function Card({ camera, feature, classes, methods, card, busy, on
         )}
         <button
           aria-label={deleted ? "Restore frame" : "Delete frame"}
-          disabled={busy}
+          disabled={busy || (deleted && !canRestore)}
           title={
             deleted
-              ? "Restore this frame — it comes back into view across every ROI on this camera."
-              : "Soft-delete (camera-wide; shortcut: hover and press Delete). The file stays on disk; switch Show to Deleted to see it again."
+              ? canRestore
+                ? "Restore this frame — it comes back into view across every ROI on this camera."
+                : "Deleted. Restore it in Classify, under Show: Deleted."
+              : "Soft-delete (camera-wide; shortcut: hover and press Delete, or hold Delete and move over unlabeled cards). The file stays on disk; Show: Deleted lists it again."
           }
           onClick={deleted ? onRestore : onDelete}
         >

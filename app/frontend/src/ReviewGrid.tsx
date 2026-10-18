@@ -68,13 +68,21 @@ function ReviewCard({
         onClear();
         return true;
       }
-      if (key === "delete") return onDelete(), true; // as on every grid; never painted
+      if (key === "delete") {
+        markReviewPainted(row.frame);
+        return onDelete(), true; // as on every grid; held while moving the mouse it sweeps
+      }
       if (key === "e") return onAdjust(), true;
       return false;
     },
-    // Painting: A accepts, X clears, only on cards with a box that are not already your decision.
+    // Painting: A accepts, X clears (only on cards with a box), Delete deletes; only on cards that are not already your decision.
     paint: (mode) => {
-      if (gone || !box || row.state === "human") return false;
+      if (gone || row.state === "human") return false;
+      if (mode === "delete") {
+        onDelete();
+        return true;
+      }
+      if (!box) return false;
       if (mode === "accept") onAccept();
       else onClear();
       return true;
@@ -151,8 +159,9 @@ function ReviewCard({
  * and confidence, and its own Accept / Clear buttons. A decision shows at once and the card stays where it is, marked
  * as decided (the save runs in the background); **Remove decided** tidies the grid when you want to. Hover keys act on
  * the card under the mouse: Enter or A accepts, X clears the box, Delete deletes the picture (as on every grid), Z undoes,
- * E opens the editor to adjust the box. Holding A or X and moving the mouse over the cards paints the action across them (see
- * `reviewPaint.ts`); deleting and undoing are never painted.
+ * E opens the editor to adjust the box. Holding A, X or Delete and moving the mouse over the cards paints the action across
+ * them (see `reviewPaint.ts`); undoing is never painted. Turning the grid (another page, size or columns) drops the deleted
+ * cards (`onGridChange`); the decided ones stay until Remove decided.
  */
 export default function ReviewGrid({
   camera,
@@ -165,6 +174,7 @@ export default function ReviewGrid({
   onUndo,
   onAdjust,
   onRemoveDecided,
+  onGridChange,
 }: {
   camera: string;
   feature: string;
@@ -176,6 +186,8 @@ export default function ReviewGrid({
   onUndo: (frame: string) => void;
   onAdjust: (frame: string) => void;
   onRemoveDecided: () => void;
+  /** The user turned the grid: the deleted cards are no longer kept in place. */
+  onGridChange?: () => void;
 }) {
   const [settings, setSettings] = useGridSettings();
   const [page, setPage] = useState(1);
@@ -189,6 +201,7 @@ export default function ReviewGrid({
       onSettings={setSettings}
       page={page}
       onPage={setPage}
+      onGridChange={onGridChange}
       where="review"
       header={
         decided > 0 && (

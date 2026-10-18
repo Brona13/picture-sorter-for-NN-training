@@ -773,6 +773,11 @@ export default function DetectorView({ camera, product }: { camera: string; prod
                   onUndo={undoRow}
                   onAdjust={adjust}
                   onRemoveDecided={() => setReseed((n) => n + 1)}
+                  onGridChange={() => {
+                    // Turning the grid drops the pictures deleted in place; decided cards stay until "Remove decided".
+                    setOrder((o) => o.filter((f) => !ghosts[f]));
+                    setGhosts({});
+                  }}
                 />
               )}
             </>

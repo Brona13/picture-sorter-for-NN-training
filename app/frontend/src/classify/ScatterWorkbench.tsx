@@ -156,6 +156,10 @@ export function ScatterMapView({
             onChanged();
           }}
           onError={onError}
+          onRestored={(frame) => {
+            setOverrides((o) => ({ ...o, [frame]: { label: null, golden: null } }));
+            onChanged();
+          }}
           onLabeled={(frames, cls) => {
             onNotice(`Labeled ${frames.length} frame(s) as ${cls}.`);
             setOverrides((o) => ({
@@ -200,6 +204,7 @@ export function ScatterSelection({
   onGrid,
   onMark,
   onRemoved,
+  onRestored,
   onDeleted,
   onLabeled,
   onError,
@@ -212,6 +217,8 @@ export function ScatterSelection({
   onGrid: (perPage: number, cols: number) => void;
   onMark: (frame: string, mark: Mark) => void;
   onRemoved: (frame: string) => void;
+  /** A picture deleted from the selection was restored there: it is back on the map, unlabeled. */
+  onRestored: (frame: string) => void;
   onDeleted: (r: DeleteResult, frames: string[]) => void;
   onLabeled: (frames: string[], cls: string) => void;
   onError: (m: string) => void;
@@ -339,7 +346,7 @@ export function ScatterSelection({
             onPage={setPage}
             where="selection"
             extras={(f) => {
-              const p = rows.find((q) => q.frame === f);
+              const p = points.find((q) => q.frame === f);
               return { caption: !p || p.cluster === null ? undefined : p.cluster < 0 ? "unique" : `cluster ${p.cluster}${p.representative ? " · rep" : ""}` };
             }}
             onChanged={(f, c) => {
@@ -350,6 +357,15 @@ export function ScatterSelection({
             onDeleted={(f) => {
               setGone((g) => new Set(g).add(f));
               onRemoved(f);
+            }}
+            onRestored={(f) => {
+              setGone((g) => {
+                const next = new Set(g);
+                next.delete(f);
+                return next;
+              });
+              setMarks((cur) => ({ ...cur, [f]: { label: null, golden: null } }));
+              onRestored(f);
             }}
             onError={onError}
           />
