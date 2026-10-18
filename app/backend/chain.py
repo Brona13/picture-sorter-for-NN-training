@@ -1,13 +1,15 @@
 """Chain canvas: a per-camera map of the processing chain (Ingest -> product ROI -> feature ROIs).
 
 The map is a *view* of the ROI definitions, not a second copy of them. Every box is Ingest, one row of ``rois``,
-or the Classify box of the product-sorting ROI (the labeling that tells which picture belongs to which product; it
-exists whenever that ROI does). Every arrow is derived from those rows:
+or the Classify box of an ROI (the labeling step; it exists whenever its ROI does). The Classify box of the
+product-sorting ROI tells which picture belongs to which product; that of a feature ROI labels its classes
+(OK / NG). Every arrow is derived from those rows:
 
   * Ingest -> the product-sorting (classify) ROI -> its Classify box;
   * Ingest -> a feature ROI that applies to the whole camera;
-  * a product handle of the Classify box -> a feature ROI scoped to that product, either by name
-    (``"<product>::<roi>"``, locked) or through the ROI's ``products`` list.
+  * a product handle of the product ROI's Classify box -> a feature ROI scoped to that product, either by name
+    (``"<product>::<roi>"``, locked) or through the ROI's ``products`` list;
+  * every feature ROI -> its own Classify box.
 
 Only the layout (box positions, display names, viewport) is stored, as the camera setting ``chain.canvas``.
 Creating, connecting and deleting boxes goes through the existing ROI endpoints, so the invariants live in one place.
@@ -140,7 +142,8 @@ def _classify_node(camera: str, roi: datamodel.ROI, stored: dict) -> dict:
     current = labels.current_labels(camera, roi.name)
     classes = list(datamodel.classes_for(camera, roi.name))
     counts = {c: sum(1 for v in current.values() if v == c) for c in classes}
-    frames = _frame_count(camera, None)
+    # The product-sorting ROI labels every picture of the camera; a feature ROI only those it applies to.
+    frames = _frame_count(camera, None if roi.role == "classify" else roi.name)
     return {
         "id": classify_node_id(roi.name),
         "kind": "classify",
@@ -148,7 +151,7 @@ def _classify_node(camera: str, roi: datamodel.ROI, stored: dict) -> dict:
         "label": stored.get("label") or "Classify",
         "x": stored.get("x"),
         "y": stored.get("y"),
-        "role": "classify",
+        "role": roi.role,
         "scope": None,
         "product": None,
         "products": [],
@@ -179,6 +182,7 @@ def _edges(camera: str, rois: list[datamodel.ROI], classify: str | None) -> list
     for roi in rois:
         if roi.role == "classify":
             continue
+        add(roi_node_id(roi.name), classify_node_id(roi.name), locked=True)
         target = roi_node_id(roi.name)
         owner = datamodel.split_feature(roi.name)[0]
         if classify_id and owner:
@@ -192,11 +196,11 @@ def _edges(camera: str, rois: list[datamodel.ROI], classify: str | None) -> list
 
 
 def _column(node: dict) -> int:
-    """The chain level a box belongs to: 0 Ingest, 1 the product-sorting ROI, 2 its Classify box, 3 the feature ROIs."""
+    """The chain level of a box: 0 Ingest, 1 product ROI, 2 its Classify box, 3 feature ROIs, 4 their Classify boxes."""
     if node["kind"] == "ingest":
         return 0
     if node["kind"] == "classify":
-        return 2
+        return 2 if node["role"] == "classify" else 4
     return 1 if node["role"] == "classify" else 3
 
 
@@ -242,8 +246,7 @@ def get_canvas(camera: str) -> dict:
     }]
     for roi in rois:
         nodes.append(_roi_node(camera, roi, stored.get(roi_node_id(roi.name), {})))
-        if roi.role == "classify":
-            nodes.append(_classify_node(camera, roi, stored.get(classify_node_id(roi.name), {})))
+        nodes.append(_classify_node(camera, roi, stored.get(classify_node_id(roi.name), {})))
     _place_missing(nodes)
     return {
         "camera": camera,

@@ -71,7 +71,7 @@ function Box({ data, selected }: NodeProps<BoxNode>) {
         node.classes.map((product) => (
           <div className="chain-node-product" key={product}>
             {product}: {node.product_counts[product] ?? 0}
-            <Handle type="source" position={Position.Right} id={productHandle(product)} />
+            {node.role === "classify" && <Handle type="source" position={Position.Right} id={productHandle(product)} />}
           </div>
         ))}
       {isClassify && node.unlabeled > 0 && <div className="chain-node-sub">{node.unlabeled} not labeled yet</div>}
@@ -266,7 +266,12 @@ function Canvas({ camera, onOpenRoi }: { camera: string; onOpenRoi?: OpenRoi }) 
       <h3>Selected box</h3>
       {!selectedLive && <p className="muted">Click a box. Double-click its name to rename it. Drag from a handle to draw an arrow.</p>}
       {selectedLive?.kind === "classify" && (
-        <p className="muted">Label the pictures here to tell which product each one is. It goes when its ROI is deleted.</p>
+        <p className="muted">
+          {selectedLive.role === "classify"
+            ? "Label the pictures here to tell which product each one is."
+            : "Label this ROI's pictures here (OK / NG)."}{" "}
+          It goes when its ROI is deleted.
+        </p>
       )}
       {selectedLive && (
         <div className="chain-selected">

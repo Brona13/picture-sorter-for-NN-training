@@ -18,11 +18,13 @@ const canvas = (over: Record<string, unknown> = {}) => ({
     node({ id: "ingest", kind: "ingest", ref: null, label: "Ingest", role: null, scope: null }),
     node({ id: "roi:type", ref: "type", label: "type", x: 280, role: "classify", scope: "classify", classes: ["A", "B"] }),
     node({ id: "classify:type", kind: "classify", ref: "type", label: "Classify", x: 560, role: "classify", scope: null, classes: ["A", "B"], labeled: 3, unlabeled: 1, product_counts: { A: 2, B: 1 } }),
+    node({ id: "classify:seal", kind: "classify", ref: "seal", label: "Classify", x: 1120, role: "quality", scope: null, classes: ["OK", "NG"], frames: 4, labeled: 3, unlabeled: 1, product_counts: { OK: 2, NG: 1 } }),
     node({ id: "roi:seal", ref: "seal", label: "seal", x: 840, scope: "products", products: ["A"] }),
   ],
   edges: [
     { id: "e1", source: "ingest", source_handle: null, target: "roi:type", locked: false },
     { id: "e1b", source: "roi:type", source_handle: null, target: "classify:type", locked: true },
+    { id: "e3", source: "roi:seal", source_handle: null, target: "classify:seal", locked: true },
     { id: "e2", source: "classify:type", source_handle: "p:A", target: "roi:seal", locked: false },
   ],
   ...over,
@@ -89,6 +91,22 @@ test("Keep it closes the confirmation without deleting", async () => {
   await user.click(await screen.findByRole("button", { name: "Keep it" }));
   expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   expect(calls.some((c) => c.method === "DELETE")).toBe(false);
+});
+
+test("a feature ROI has its own Classify box with its classes, and no product handles", async () => {
+  const onOpenRoi = vi.fn();
+  renderView(onOpenRoi);
+  const box = await screen.findByTestId("chain-node-classify:seal");
+  expect(box).toHaveTextContent("OK: 2");
+  expect(box).toHaveTextContent("NG: 1");
+  expect(box).toHaveTextContent("1 not labeled yet");
+  expect(box.querySelectorAll('[data-handleid^="p:"]')).toHaveLength(0);
+  expect(screen.getByTestId("chain-node-classify:type").querySelectorAll('[data-handleid^="p:"]')).toHaveLength(2);
+  fireEvent.click(box);
+  expect(screen.getByText(/Label this ROI's pictures here \(OK \/ NG\)/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Open Classify" }));
+  expect(onOpenRoi).toHaveBeenLastCalledWith("seal", "classify");
+  expect(screen.queryByRole("button", { name: /Delete…/ })).not.toBeInTheDocument();
 });
 
 test("the Classify box opens the Classify page and cannot be deleted on its own", async () => {

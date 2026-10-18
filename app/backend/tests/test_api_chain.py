@@ -49,6 +49,9 @@ class ChainApiTests(ApiTestCase):
             ("classify:type", "p:A", "roi:seal"),
             ("ingest", None, "roi:edge"),
             ("classify:type", "p:B", "roi:B::rod"),
+            ("roi:seal", None, "classify:seal"),
+            ("roi:edge", None, "classify:edge"),
+            ("roi:B::rod", None, "classify:B::rod"),
         })
         locked = {e["target"]: e["locked"] for e in self.canvas()["edges"]}
         self.assertTrue(locked["roi:B::rod"])
@@ -62,13 +65,13 @@ class ChainApiTests(ApiTestCase):
 
     def test_without_classify_roi_features_hang_from_ingest(self) -> None:
         datamodel.save_rois(CAM, [ROI("seal", 0, 0, 1, 1)])
-        self.assertEqual(self.edges(), {("ingest", None, "roi:seal")})
+        self.assertEqual(self.edges(), {("ingest", None, "roi:seal"), ("roi:seal", None, "classify:seal")})
 
     def test_boxes_without_stored_position_are_placed_in_columns(self) -> None:
         self.make_chain()
         nodes = {n["id"]: n for n in self.canvas()["nodes"]}
         self.assertEqual((nodes["ingest"]["x"], nodes["roi:type"]["x"], nodes["classify:type"]["x"]), (0, 280, 560))
-        self.assertEqual(nodes["roi:seal"]["x"], 840)
+        self.assertEqual((nodes["roi:seal"]["x"], nodes["classify:seal"]["x"]), (840, 1120))
         ys = sorted(nodes[i]["y"] for i in ("roi:seal", "roi:edge", "roi:B::rod"))
         self.assertEqual(len(set(ys)), 3)
 
@@ -79,6 +82,7 @@ class ChainApiTests(ApiTestCase):
         }})
         datamodel.save_rois(CAM, [*datamodel.load_rois(CAM), ROI("extra", 0, 0, 1, 1)])
         self.assertEqual((self.node("roi:extra")["x"], self.node("roi:extra")["y"]), (840, 450))
+        self.assertEqual(self.node("classify:extra")["x"], 1120)
         self.assertEqual(self.node("roi:seal")["y"], 0)
 
     def test_the_classify_box_exists_with_the_product_roi_and_counts_the_products(self) -> None:
@@ -92,10 +96,31 @@ class ChainApiTests(ApiTestCase):
         self.assertEqual(box["product_counts"], {"A": 2, "B": 1})
         self.assertEqual((box["labeled"], box["unlabeled"], box["frames"]), (3, 1, 4))
 
-    def test_only_the_product_roi_gets_a_classify_box(self) -> None:
+    def test_every_roi_gets_its_own_classify_box(self) -> None:
         self.make_chain()
-        ids = [n["id"] for n in self.canvas()["nodes"] if n["kind"] == "classify"]
-        self.assertEqual(ids, ["classify:type"])
+        ids = sorted(n["id"] for n in self.canvas()["nodes"] if n["kind"] == "classify")
+        self.assertEqual(ids, ["classify:B::rod", "classify:edge", "classify:seal", "classify:type"])
+
+    def test_a_feature_classify_box_counts_its_own_classes_over_its_own_pictures(self) -> None:
+        self.make_chain()
+        labels.set_label(CAM, "edge", self.frames[0], "OK")
+        labels.set_label(CAM, "edge", self.frames[1], "NG")
+        labels.set_label(CAM, "edge", self.frames[2], "NG")
+        box = self.node("classify:edge")
+        self.assertEqual(box["classes"], ["OK", "NG"])
+        self.assertEqual(box["product_counts"], {"OK": 1, "NG": 2})
+        self.assertEqual((box["labeled"], box["unlabeled"], box["frames"]), (3, 1, 4))
+        self.assertEqual(box["role"], "quality")  # only the product ROI's box carries product handles
+        self.assertEqual(self.node("classify:type")["role"], "classify")
+
+    def test_a_product_scoped_feature_classify_box_only_counts_that_products_pictures(self) -> None:
+        self.make_chain()
+        labels.set_label(CAM, "type", self.frames[0], "B")
+        labels.set_label(CAM, "type", self.frames[1], "B")
+        labels.set_label(CAM, "type", self.frames[2], "A")
+        self.assertEqual(self.node("classify:B::rod")["frames"], 2)
+        self.assertEqual(self.node("classify:seal")["frames"], 1)  # seal applies to product A
+        self.assertEqual(self.node("classify:edge")["frames"], 4)  # whole camera
 
     def test_the_classify_box_goes_with_its_roi_and_keeps_a_stored_name(self) -> None:
         self.make_chain()
