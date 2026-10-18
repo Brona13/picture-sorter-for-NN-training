@@ -220,11 +220,56 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
       </button>
     </div>
   );
-  const classes = st?.classes ?? [];
   const progress = job?.progress ?? {};
   const phase = String(progress.phase ?? "");
   const done = Number(progress.done ?? 0);
   const total = Number(progress.total ?? 0);
+  // Refreshing the scores belongs to the grid, so it sits on the navigation line while the grid is shown, with what the
+  // page has to say about the scores (stale, missing, running) to its right.
+  const refreshRow =
+    mode === "grid" && st ? (
+      <>
+        <span aria-hidden="true" style={{ width: 14 }} />
+        <button
+          disabled={refreshing}
+          onClick={() => {
+            setNotice(null);
+            api
+              .classifyRefresh(camera, feature)
+              .then((j) => setJobId(j.id))
+              .catch((e: unknown) => setError(msg(e)));
+          }}
+        >
+          🔄 Refresh scores
+        </button>
+        {refreshing && (
+          <span aria-live="polite">
+            <progress value={done} max={total || undefined} /> {PHASES[phase] ?? "Queued…"}
+            {total ? ` ${done}/${total}` : ""}
+            {progress.detail ? ` · ${String(progress.detail)}` : ""}
+          </span>
+        )}
+        {!st.has_results && !refreshing && <span>Click Refresh scores to evaluate the inbox.</span>}
+        {st.stale.goldens && (
+          <span role="status">
+            ⭐ Goldens changed since the last refresh — hit <strong>Refresh scores</strong> to re-evaluate everything against them.
+          </span>
+        )}
+        {st.missing_methods && st.missing_methods.length > 0 && (
+          <span role="status">
+            ⚙️ {st.missing_methods.map(methodTag).join(", ")} switched on since the last refresh — hit <strong>Refresh scores</strong> so{" "}
+            {st.missing_methods.length > 1 ? "they get" : "it gets"} scores.
+          </span>
+        )}
+        {!st.stale.goldens && st.stale.frames && (
+          <span role="status">
+            🆕 The frame set changed since the last refresh (ingest or delete) — hit <strong>Refresh scores</strong> to score the new set.
+          </span>
+        )}
+      </>
+    ) : null;
+  const navRow = { display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", margin: "8px 0" } as const;
+  const classes = st?.classes ?? [];
   const counts = st?.counts ?? {};
 
   return (
@@ -235,12 +280,13 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
       </h2>
       {focus && (
         // Locked to one ROI: the way back and the three views are all navigation, so they share one line.
-        <div style={{ display: "flex", gap: 6, alignItems: "center", margin: "8px 0" }}>
+        <div style={navRow}>
           <button type="button" onClick={focus.onBack}>
             ← Back to chain
           </button>
           {st && <span aria-hidden="true" style={{ width: 14 }} />}
           {st && viewSwitch}
+          {refreshRow}
         </div>
       )}
       {error && <p role="alert">{error}</p>}
@@ -259,14 +305,6 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
         </label>
       )}
 
-      {st?.shared_products && (
-        <p>
-          🔗 <strong>Shared ROI</strong> — one golden set and one label set covering <strong>{st.shared_products.join(", ")}</strong>. The grid shows
-          every frame of those products, whichever one the sidebar is on.
-          {st.frames_seen !== st.inbox_total &&
-            ` It covers ${st.frames_seen} of ${st.inbox_total} frames — the other ${st.inbox_total - st.frames_seen} have no product yet, so sort them under All frames — product sort first.`}
-        </p>
-      )}
       {product && st && st.frames_seen === 0 && (
         <p>
           No frames are classified as <strong>{product}</strong> yet. Switch the sidebar to <strong>All frames</strong>, label some frames with this
@@ -291,7 +329,12 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
         </dl>
       )}
 
-      {st && !focus && <div style={{ margin: "8px 0" }}>{viewSwitch}</div>}
+      {st && !focus && (
+        <div style={navRow}>
+          {viewSwitch}
+          {refreshRow}
+        </div>
+      )}
 
       {mode === "scatter" && st && (
         <ClassifyScatter camera={camera} feature={feature} grid={st.settings} onGrid={changeSetting} onChanged={bump} onNotice={setNotice} onError={setError} />
@@ -303,57 +346,6 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
 
       {mode === "grid" && (
         <>
-      {st?.cold_start && (
-        <p>
-          <strong>Start here:</strong> mark a few reference frames ({classes.slice(0, 2).map((c) => `⭐${c}`).join(" / ")}, …). Then hit Refresh — every
-          frame gets scored against your goldens and shows which class it leans toward.
-        </p>
-      )}
-
-      <div>
-        <button
-          disabled={!st || refreshing}
-          onClick={() => {
-            setNotice(null);
-            api
-              .classifyRefresh(camera, feature)
-              .then((j) => setJobId(j.id))
-              .catch((e: unknown) => setError(msg(e)));
-          }}
-        >
-          🔄 Refresh scores
-        </button>{" "}
-        {st && (
-          <small>
-            Methods: {st.methods.join(", ")} · neural device: {st.device_label} · cached — only the first pass over a new batch is slow.
-          </small>
-        )}
-        {refreshing && (
-          <p aria-live="polite">
-            <progress value={done} max={total || undefined} /> {PHASES[phase] ?? "Queued…"}
-            {total ? ` ${done}/${total}` : ""}
-            {progress.detail ? ` · ${String(progress.detail)}` : ""}
-          </p>
-        )}
-      </div>
-
-      {st && !st.has_results && !refreshing && <p>Click Refresh scores to evaluate the inbox.</p>}
-      {st?.stale.goldens && (
-        <p role="status">
-          ⭐ Goldens changed since the last refresh — mark as many as you like, then hit <strong>Refresh scores</strong> to re-evaluate everything against them.
-        </p>
-      )}
-      {st && st.missing_methods && st.missing_methods.length > 0 && (
-        <p role="status">
-          ⚙️ {st.missing_methods.map(methodTag).join(", ")} switched on since the last refresh — hit <strong>Refresh scores</strong> so {st.missing_methods.length > 1 ? "they get" : "it gets"} scores.
-        </p>
-      )}
-      {st && !st.stale.goldens && st.stale.frames && (
-        <p role="status">
-          🆕 The frame set changed since the last refresh (ingest or delete) — hit <strong>Refresh scores</strong> to score the new set.
-        </p>
-      )}
-
       {st && st.has_results && (
         <>
           <div style={{ display: "flex", gap: 16, flexWrap: "wrap", margin: "8px 0" }}>
@@ -410,13 +402,7 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
             />
           )}
 
-          {!st.scored ? (
-            <p>
-              ℹ️ <em>Rank using</em> and <em>Order by</em> are greyed out, and no scores appear under the pictures, because <strong>nothing is scored yet</strong> —
-              scoring needs reference frames. Mark at least one <strong>☆OK</strong> (and ideally one <strong>☆NG</strong>) on a picture below, then press{" "}
-              <strong>🔄 Refresh scores</strong>.
-            </p>
-          ) : (
+          {st.scored && (
             <p>
               Bars under each picture show how close that frame is to each class's ⭐goldens under <strong>{query.rank}</strong> — longest bar = nearest
               class = the leaning. Near-equal bars (or <strong>⚠ close call</strong>) mean the machine can't separate them: those are the frames worth your

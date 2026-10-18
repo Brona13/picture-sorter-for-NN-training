@@ -234,11 +234,11 @@ test("delete reloads the grid so the frame leaves the view", async () => {
   expect(calls.filter((c) => c.url.includes("/classify/grid?")).length).toBeGreaterThan(before);
 });
 
-test("cold start hint, no-results hint, and stale warnings", async () => {
+test("no-results hint (and no cold-start text)", async () => {
   state = baseState({ cold_start: true, has_results: false, scored: false });
   render(<ClassifyView camera="camA" />);
-  expect(await screen.findByText(/Start here:/)).toBeInTheDocument();
-  expect(screen.getByText(/Click Refresh scores to evaluate the inbox/)).toBeInTheDocument();
+  expect(await screen.findByText(/Click Refresh scores to evaluate the inbox/)).toBeInTheDocument();
+  expect(screen.queryByText(/Start here:/)).toBeNull();
   expect(screen.queryByRole("combobox", { name: /Show/ })).toBeNull();
 });
 
@@ -776,7 +776,7 @@ test("locked to a ROI, the way back and the three views share one line; the plai
   const views = screen.getByRole("group", { name: "View" });
   expect(views.parentElement).toBe(back.parentElement); // one row
   expect(within(back.parentElement as HTMLElement).getAllByRole("button").map((b) => b.textContent)).toEqual([
-    "← Back to chain", "▦ Grid", "✦ Scatter", "◎ Outliers",
+    "← Back to chain", "▦ Grid", "✦ Scatter", "◎ Outliers", "🔄 Refresh scores",
   ]);
   await userEvent.click(within(views).getByRole("button", { name: /Scatter/ }));
   expect(await screen.findByRole("img", { name: /2D scatter/ })).toBeInTheDocument();
@@ -786,4 +786,65 @@ test("locked to a ROI, the way back and the three views share one line; the plai
   await cardEl("a.png");
   expect(screen.queryByRole("button", { name: /Back to chain/ })).toBeNull();
   expect(screen.getAllByRole("group", { name: "View" })).toHaveLength(1);
+});
+
+// --- the page says less, and Refresh sits on the navigation line ---------------------------------------------------
+test("the explanatory texts are gone: shared ROI, start here, methods and device, the greyed-out hint", async () => {
+  state = baseState({ shared_products: ["type A"], frames_seen: 2, inbox_total: 5, cold_start: true, scored: false });
+  render(<ClassifyView camera="camA" />);
+  await cardEl("a.png");
+  expect(screen.queryByText(/Shared ROI/)).toBeNull();
+  expect(screen.queryByText(/one golden set and one label set/)).toBeNull();
+  expect(screen.queryByText(/Start here/)).toBeNull();
+  expect(screen.queryByText(/Methods:/)).toBeNull();
+  expect(screen.queryByText(/neural device/)).toBeNull();
+  expect(screen.queryByText(/greyed out/)).toBeNull();
+  expect(screen.queryByText(/nothing is scored yet/)).toBeNull();
+});
+
+test("the bars hint stays when pictures are scored", async () => {
+  render(<ClassifyView camera="camA" />);
+  await cardEl("a.png");
+  expect(screen.getByText(/Bars under each picture show how close/)).toBeInTheDocument();
+});
+
+test("Refresh scores shares the line with Back to chain and the views, and the stale text sits to its right", async () => {
+  state = baseState({ stale: { goldens: false, frames: true } });
+  render(<ClassifyView camera="camA" focus={{ feature: "seal", onBack: () => {} }} />);
+  await cardEl("a.png");
+  const back = screen.getByRole("button", { name: /Back to chain/ });
+  const refresh = screen.getByRole("button", { name: /Refresh scores/ });
+  expect(refresh.parentElement).toBe(back.parentElement);
+  const status = screen.getByText(/The frame set changed since the last refresh/);
+  expect(status.parentElement).toBe(back.parentElement);
+  const row = Array.from((back.parentElement as HTMLElement).children);
+  expect(row.indexOf(status)).toBeGreaterThan(row.indexOf(refresh));
+});
+
+test("on the plain page Refresh sits next to the views under the counts", async () => {
+  render(<ClassifyView camera="camA" />);
+  await cardEl("a.png");
+  const views = screen.getByRole("group", { name: "View" });
+  expect(screen.getByRole("button", { name: /Refresh scores/ }).parentElement).toBe(views.parentElement);
+});
+
+test("Refresh is a grid thing: Scatter and Outliers do not show it", async () => {
+  render(<ClassifyView camera="camA" />);
+  await cardEl("a.png");
+  const views = screen.getByRole("group", { name: "View" });
+  await userEvent.click(within(views).getByRole("button", { name: /Scatter/ }));
+  expect(screen.queryByRole("button", { name: /Refresh scores/ })).toBeNull();
+  await userEvent.click(within(views).getByRole("button", { name: /Outliers/ }));
+  expect(screen.queryByRole("button", { name: /Refresh scores/ })).toBeNull();
+  await userEvent.click(within(views).getByRole("button", { name: /Grid/ }));
+  expect(screen.getByRole("button", { name: /Refresh scores/ })).toBeInTheDocument();
+});
+
+test("Refresh scores on the navigation line starts the job and reports it", async () => {
+  render(<ClassifyView camera="camA" focus={{ feature: "seal", onBack: () => {} }} />);
+  await cardEl("a.png");
+  const button = screen.getByRole("button", { name: /Refresh scores/ });
+  await userEvent.click(button);
+  await waitFor(() => expect(calls.some((c) => c.url.endsWith("/classify/refresh"))).toBe(true));
+  expect(await screen.findByText(/Scores refreshed/)).toBeInTheDocument();
 });
