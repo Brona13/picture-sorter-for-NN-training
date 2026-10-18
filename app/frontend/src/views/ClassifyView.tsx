@@ -55,6 +55,8 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
   const [mode, setMode] = useState<"grid" | "scatter" | "outliers">("grid");
   const [similarSeed, setSimilarSeed] = useState<{ frame: string; label: string } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // What the last refresh did; it is shown on the Refresh line, not as a notice under it.
+  const [refreshNote, setRefreshNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const job = useJob<{ frames: number; scored: boolean }>(jobId);
   const refreshing = jobId !== null && (job === null || job.status === "queued" || job.status === "running");
@@ -120,6 +122,7 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
     setPage(1);
     setJobId(null);
     setNotice(null);
+    setRefreshNote(null);
     setSt(null);
     setGrid(null);
     loadState();
@@ -151,7 +154,7 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
 
   useEffect(() => {
     if (job?.status === "done") {
-      setNotice(`Scores refreshed — ${job.result?.frames ?? 0} frames.`);
+      setRefreshNote(`Scores refreshed — ${job.result?.frames ?? 0} frames.`);
       loadState();
       setRevision((r) => r + 1);
     } else if (job?.status === "error") setError(job.error);
@@ -234,6 +237,7 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
           disabled={refreshing}
           onClick={() => {
             setNotice(null);
+            setRefreshNote(null);
             api
               .classifyRefresh(camera, feature)
               .then((j) => setJobId(j.id))
@@ -249,6 +253,7 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
             {progress.detail ? ` · ${String(progress.detail)}` : ""}
           </span>
         )}
+        {refreshNote && <span role="status">{refreshNote}</span>}
         {!st.has_results && !refreshing && <span>Click Refresh scores to evaluate the inbox.</span>}
         {st.stale.goldens && (
           <span role="status">

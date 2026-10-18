@@ -848,3 +848,23 @@ test("Refresh scores on the navigation line starts the job and reports it", asyn
   await waitFor(() => expect(calls.some((c) => c.url.endsWith("/classify/refresh"))).toBe(true));
   expect(await screen.findByText(/Scores refreshed/)).toBeInTheDocument();
 });
+
+test("the result of a refresh shows on the Refresh line, to the right of the button, not as a line under it", async () => {
+  render(<ClassifyView camera="camA" focus={{ feature: "seal", onBack: () => {} }} />);
+  await cardEl("a.png");
+  const button = screen.getByRole("button", { name: /Refresh scores/ });
+  await userEvent.click(button);
+  const note = await screen.findByText(/Scores refreshed — 3 frames/);
+  expect(note.parentElement).toBe(button.parentElement);
+  const row = Array.from((button.parentElement as HTMLElement).children);
+  expect(row.indexOf(note)).toBeGreaterThan(row.indexOf(button));
+});
+
+test("the refresh result goes away when another ROI or camera is opened", async () => {
+  const { rerender } = render(<ClassifyView camera="camA" focus={{ feature: "seal", onBack: () => {} }} />);
+  await cardEl("a.png");
+  await userEvent.click(screen.getByRole("button", { name: /Refresh scores/ }));
+  await screen.findByText(/Scores refreshed/);
+  rerender(<ClassifyView camera="camB" focus={{ feature: "seal", onBack: () => {} }} />);
+  await waitFor(() => expect(screen.queryByText(/Scores refreshed/)).toBeNull());
+});
