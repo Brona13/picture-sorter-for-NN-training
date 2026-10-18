@@ -54,7 +54,8 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 // d3-drag (inside React Flow) cannot take user-event's mousedown in jsdom, so boxes are clicked with fireEvent.
-const renderView = () => render(<MemoryRouter><ChainView camera="camA" /></MemoryRouter>);
+const renderView = (onOpenRoi?: (feature: string, view: "roi" | "classify") => void) =>
+  render(<MemoryRouter><ChainView camera="camA" onOpenRoi={onOpenRoi} /></MemoryRouter>);
 
 test("draws a box for Ingest, each ROI and the Classify box with the product counts", async () => {
   renderView();
@@ -95,6 +96,17 @@ test("the Classify box opens the Classify page and cannot be deleted on its own"
   fireEvent.click(await screen.findByTestId("chain-node-classify:type"));
   expect(screen.getByRole("button", { name: "Open Classify" })).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: /Delete…/ })).not.toBeInTheDocument();
+});
+
+test("Open Classify and Open in ROI editor hand the ROI and the page to the app, which sets the product scope", async () => {
+  const onOpenRoi = vi.fn();
+  renderView(onOpenRoi);
+  fireEvent.click(await screen.findByTestId("chain-node-classify:type"));
+  fireEvent.click(screen.getByRole("button", { name: "Open Classify" }));
+  expect(onOpenRoi).toHaveBeenLastCalledWith("type", "classify");
+  fireEvent.click(screen.getByTestId("chain-node-roi:seal"));
+  fireEvent.click(screen.getByRole("button", { name: "Open in ROI editor" }));
+  expect(onOpenRoi).toHaveBeenLastCalledWith("seal", "roi");
 });
 
 test("Ingest has no Delete button", async () => {

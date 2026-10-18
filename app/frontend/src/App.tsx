@@ -147,6 +147,17 @@ export default function App() {
     navigate(`/${stage.view}`);
   };
 
+  // From the Chain canvas: work on this ROI on the ROI editor or Classify page. The page lists the ROIs of the chosen
+  // product scope only, so the scope is set to the ROI's own (the camera level for the product-sorting ROI).
+  const openRoi = (feature: string, view: "roi" | "classify") => {
+    const owner = feature.includes("::") ? feature.split("::")[0] : "";
+    lastSession.setProduct(camera, owner);
+    lastSession.setFeature(camera, feature);
+    setProduct(owner);
+    setSelected({ camera, feature });
+    navigate(`/${view}`);
+  };
+
   return (
     <FeatureContext.Provider value={{ feature, setFeature: (f) => { lastSession.setFeature(camera, f); setSelected({ camera, feature: f }); } }}>
     <div className="app">
@@ -230,7 +241,7 @@ export default function App() {
               />
             }
           />
-          <Route path="/chain" element={<ChainView camera={camera} />} />
+          <Route path="/chain" element={<ChainView camera={camera} onOpenRoi={openRoi} />} />
           <Route path="/status" element={<StatusView camera={camera} />} />
           <Route
             path="/versions"

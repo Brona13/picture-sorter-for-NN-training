@@ -97,7 +97,9 @@ function toFlowEdge(e: ChainCanvas["edges"][number]): Edge {
   };
 }
 
-function Canvas({ camera }: { camera: string }) {
+type OpenRoi = (feature: string, view: "roi" | "classify") => void;
+
+function Canvas({ camera, onOpenRoi }: { camera: string; onOpenRoi?: OpenRoi }) {
   const navigate = useNavigate();
   const shared = useSharedFeature();
   const [canvas, setCanvas] = useState<ChainCanvas | null>(null);
@@ -223,8 +225,17 @@ function Canvas({ camera }: { camera: string }) {
   };
 
   const openInEditor = (n: ChainNode) => {
-    if (n.ref) shared.publish(n.ref);
-    navigate(n.kind === "ingest" ? "/ingest" : n.kind === "classify" ? "/classify" : "/roi");
+    if (n.kind === "ingest" || !n.ref) {
+      navigate("/ingest");
+      return;
+    }
+    const view = n.kind === "classify" ? "classify" : "roi";
+    if (onOpenRoi) {
+      onOpenRoi(n.ref, view);
+    } else {
+      shared.publish(n.ref);
+      navigate(`/${view}`);
+    }
   };
 
   const panel = (
@@ -339,11 +350,11 @@ function Canvas({ camera }: { camera: string }) {
 }
 
 /** The chain canvas: a per-camera map of the processing chain, drawn from the ROI definitions. */
-export default function ChainView({ camera }: { camera: string }) {
+export default function ChainView({ camera, onOpenRoi }: { camera: string; onOpenRoi?: OpenRoi }) {
   return (
     <ReactFlowProvider>
       <h2>Chain</h2>
-      {camera ? <Canvas camera={camera} /> : <p className="muted">Pick a camera first.</p>}
+      {camera ? <Canvas camera={camera} onOpenRoi={onOpenRoi} /> : <p className="muted">Pick a camera first.</p>}
     </ReactFlowProvider>
   );
 }
