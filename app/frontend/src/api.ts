@@ -320,6 +320,8 @@ export interface DetectionRow {
   state: DetectionState;
   status: string | null;
   boxes: (Box & { conf: number })[];
+  /** Set on this screen only: the picture was deleted from the review and is kept in its place until the list is refreshed. */
+  deleted?: boolean;
 }
 export interface DetectionList {
   threshold: number;

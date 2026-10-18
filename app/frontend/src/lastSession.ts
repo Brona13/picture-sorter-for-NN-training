@@ -29,6 +29,11 @@ export const lastSession = {
   /** The right-hand options panel is open unless the user collapsed it (shared by every page that has one). */
   hardwareStyle: () => get("hardware.style"),
   setHardwareStyle: (v: string) => set("hardware.style", v),
+  /** The Detector review's filter and order. */
+  reviewFilter: () => get("review.filter"),
+  setReviewFilter: (v: string) => set("review.filter", v),
+  reviewSort: () => get("review.sort"),
+  setReviewSort: (v: string) => set("review.sort", v),
   /** The Detector review grid's "per page x columns", e.g. "24x4". */
   reviewGrid: () => get("review.grid"),
   setReviewGrid: (v: string) => set("review.grid", v),

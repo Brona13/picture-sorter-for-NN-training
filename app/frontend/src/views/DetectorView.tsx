@@ -2,13 +2,13 @@ import { ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { usePublishFeature, useSharedFeature } from "../SharedFeature";
 import { api, DetectionList, DetectionRow, DetectorChoice, DetectorInfo, FilterChoice, FilterSpec, MaskChoice } from "../api";
 import {
-  byConfidence,
   EMPTY_DETECTOR,
   FrameStrip,
-  needsLook,
   ReviewPanel,
   RunBar,
 } from "../DetectorPanel";
+import { lastSession } from "../lastSession";
+import { countByFilter, isReviewFilter, isReviewSort, ReviewFilter, reviewRows, ReviewSort } from "../reviewList";
 import PictureViewer from "../classify/PictureViewer";
 import PictureSizeSlider, { usePictureSize } from "../PictureSize";
 import ReviewGrid from "../ReviewGrid";
@@ -32,7 +32,7 @@ type View = "original" | "filtered" | "masked";
 const TABS: { id: Tab; label: string; purpose: string }[] = [
   { id: "filter", label: "Filter", purpose: "Clean up every frame of this feature before anything is computed (optional)." },
   { id: "detector", label: "Detector", purpose: "Show the detector what the object looks like: draw a box on the preview, then run detection." },
-  { id: "review", label: "Review", purpose: "Check the frames the detector is unsure about — fix the box on the preview and accept it." },
+  { id: "review", label: "Review", purpose: "Check the boxes the detector found." },
   { id: "mask", label: "Mask", purpose: "Blank everything around the object so features describe the object only (optional)." },
 ];
 
@@ -94,7 +94,16 @@ export default function DetectorView({ camera, product }: { camera: string; prod
   const [draft, setDraft] = useState<Box | null>(null);
   const [list, setList] = useState<DetectionList | null>(null);
   const [tick, setTick] = useState(0);
-  const [showAll, setShowAll] = useState(false);
+  const [reviewFilter, setReviewFilterState] = useState<ReviewFilter>(() => (isReviewFilter(lastSession.reviewFilter()) ? (lastSession.reviewFilter() as ReviewFilter) : "needs"));
+  const [reviewSort, setReviewSortState] = useState<ReviewSort>(() => (isReviewSort(lastSession.reviewSort()) ? (lastSession.reviewSort() as ReviewSort) : "least"));
+  const setReviewFilter = (f: ReviewFilter) => {
+    lastSession.setReviewFilter(f);
+    setReviewFilterState(f);
+  };
+  const setReviewSort = (v: ReviewSort) => {
+    lastSession.setReviewSort(v);
+    setReviewSortState(v);
+  };
   const [reviewBox, setReviewBox] = useState<Box | null>(null);
   const [editing, setEditing] = useState(false); // the box editor opened over the review grid
   const [jobId, setJobId] = useState<string | null>(null);
@@ -167,10 +176,11 @@ export default function DetectorView({ camera, product }: { camera: string; prod
   }, [camera, feature, hasExemplars, jobDone, tick]);
 
   const rows = useMemo(() => new Map((list?.frames ?? []).map((r) => [r.frame, r])), [list]);
-  const queue = useMemo(() => {
-    const all = list?.frames ?? [];
-    return showAll ? [...all].sort(byConfidence) : all.filter(needsLook);
-  }, [list, showAll]);
+  // The first exemplar's centre: the position sorts compare each detected box with where the object was marked.
+  const exemplarBox = detector?.exemplars[0]?.box;
+  const exemplarCentre = useMemo(() => (exemplarBox ? { x: exemplarBox.x + exemplarBox.w / 2, y: exemplarBox.y + exemplarBox.h / 2 } : null), [exemplarBox]);
+  const queue = useMemo(() => reviewRows(list?.frames ?? [], reviewFilter, reviewSort, exemplarCentre), [list, reviewFilter, reviewSort, exemplarCentre]);
+  const filterCounts = useMemo(() => countByFilter(list?.frames ?? []), [list]);
 
   // --- the review grid: a decision shows at once and the card stays where it is ---
   // `order` is the frames in the grid, kept stable while you decide (decided cards stay until "Remove decided", leaving the
@@ -178,11 +188,12 @@ export default function DetectorView({ camera, product }: { camera: string; prod
   const [order, setOrder] = useState<string[]>([]);
   const [overrides, setOverrides] = useState<Record<string, DetectionRow>>({});
   const [undoRows, setUndoRows] = useState<Record<string, DetectionRow>>({});
+  const [ghosts, setGhosts] = useState<Record<string, DetectionRow>>({}); // pictures deleted from the review: kept in place, dimmed, until the list is refreshed
   const [reseed, setReseed] = useState(0);
   const seeded = useRef("");
   const pending = useRef(new Set<string>());
   const listSeq = useRef(0);
-  const seedKey = `${tab}|${showAll}|${feature}|${jobDone}|${reseed}`;
+  const seedKey = `${tab}|${reviewFilter}|${reviewSort}|${feature}|${jobDone}|${reseed}`;
   useEffect(() => {
     if (tab !== "review") {
       seeded.current = ""; // coming back to the step starts from a fresh queue
@@ -193,9 +204,10 @@ export default function DetectorView({ camera, product }: { camera: string; prod
     setOrder(queue.map((r) => r.frame));
     setOverrides({});
     setUndoRows({});
+    setGhosts({});
   }, [tab, list, queue, seedKey]);
-  const rowOf = (f: string): DetectionRow | undefined => overrides[f] ?? rows.get(f);
-  const shownRows = useMemo(() => order.map((f) => overrides[f] ?? rows.get(f)).filter((r): r is DetectionRow => !!r), [order, overrides, rows]);
+  const rowOf = (f: string): DetectionRow | undefined => ghosts[f] ?? overrides[f] ?? rows.get(f);
+  const shownRows = useMemo(() => order.map((f) => ghosts[f] ?? overrides[f] ?? rows.get(f)).filter((r): r is DetectionRow => !!r), [order, ghosts, overrides, rows]);
   const navFrames = useMemo(() => (tab === "review" ? order : frames), [tab, order, frames]);
   const editorOpen = tab === "review" && editing && order.length > 0;
   useEffect(() => {
@@ -333,7 +345,40 @@ export default function DetectorView({ camera, product }: { camera: string; prod
     if (!row?.boxes[0]) return;
     decision(f, { ...row, state: "none", status: null, boxes: [] }, () => api.deleteDetection(camera, feature, f));
   };
+  // Deleting a picture is the same soft delete as on every page; the card stays, dimmed, and undo brings the picture back.
+  const deleteRow = (f: string) => {
+    const row = rowOf(f);
+    if (!row || row.deleted) return;
+    setGhosts((g) => ({ ...g, [f]: { ...row, deleted: true } }));
+    api
+      .deleteFrame(camera, feature, f, "Detector")
+      .then(() => refreshList())
+      .catch((e: unknown) => {
+        setGhosts((g) => {
+          const n = { ...g };
+          delete n[f];
+          return n;
+        });
+        setError(msg(e));
+      });
+  };
   const undoRow = (f: string) => {
+    const gone = ghosts[f];
+    if (gone) {
+      setGhosts((g) => {
+        const n = { ...g };
+        delete n[f];
+        return n;
+      });
+      api
+        .restoreFrame(camera, feature, f)
+        .then(() => refreshList())
+        .catch((e: unknown) => {
+          setGhosts((g) => ({ ...g, [f]: gone }));
+          setError(msg(e));
+        });
+      return;
+    }
     const prev = undoRows[f];
     if (!prev) return;
     setUndoRows((u) => {
@@ -368,11 +413,16 @@ export default function DetectorView({ camera, product }: { camera: string; prod
     clearRow(frame);
     advance();
   };
+  const deleteEditor = () => {
+    deleteRow(frame);
+    advance();
+  };
   const editorKey = (e: KeyboardEvent): boolean => {
     const key = e.key.toLowerCase();
     if (e.repeat) return key === "enter" || key === "a" || key === "delete" || key === "x" || key === "z";
     if (key === "enter" || key === "a") acceptEditor();
-    else if (key === "delete" || key === "x") clearEditor();
+    else if (key === "x") clearEditor();
+    else if (key === "delete") deleteEditor();
     else if (key === "z") undoRow(frame);
     else return false;
     return true;
@@ -708,7 +758,7 @@ export default function DetectorView({ camera, product }: { camera: string; prod
 
           {tab === "review" && (
             <>
-              <ReviewPanel list={list} queue={shownRows} showAll={showAll} onShowAll={setShowAll}>
+              <ReviewPanel list={list} counts={filterCounts} filter={reviewFilter} onFilter={setReviewFilter} sort={reviewSort} onSort={setReviewSort} shown={shownRows.length}>
                 {runBar}
               </ReviewPanel>
               {order.length > 0 && (
@@ -716,9 +766,10 @@ export default function DetectorView({ camera, product }: { camera: string; prod
                   camera={camera}
                   feature={feature}
                   rows={shownRows}
-                  canUndo={(f) => !!undoRows[f]}
+                  canUndo={(f) => !!undoRows[f] || !!ghosts[f]}
                   onAccept={acceptRow}
                   onClear={clearRow}
+                  onDelete={deleteRow}
                   onUndo={undoRow}
                   onAdjust={adjust}
                   onRemoveDecided={() => setReseed((n) => n + 1)}
@@ -785,18 +836,21 @@ export default function DetectorView({ camera, product }: { camera: string; prod
           onGo={(i) => order[i] && setFrame(order[i])}
           onClose={() => setEditing(false)}
           onKey={editorKey}
-          hint="Drag the box to move it, drag a corner to resize it, or draw a new one · Enter or A accepts and moves on · Delete or X clears · Z undoes · ← → browse · Esc closes"
+          hint="Drag the box to move it, drag a corner to resize it, or draw a new one · Enter or A accepts and moves on · X clears the box · Delete deletes the picture · Z undoes · ← → browse · Esc closes"
           toolbar={
             <div role="group" aria-label="Decide" style={{ display: "flex", gap: 6, alignItems: "center" }}>
-              <button disabled={!reviewBox} onClick={acceptEditor} title="Accept the box (Enter or A)">
-                ✓ Accept box
+              <button aria-label="Accept box" disabled={!reviewBox} onClick={acceptEditor} title="Accept the box (Enter or A)">
+                ✓
               </button>
-              <button disabled={!rowOf(frame)?.boxes[0]} onClick={clearEditor} title="Clear the box (Delete or X)">
-                ✕ Clear
+              <button aria-label="Clear box" disabled={!rowOf(frame)?.boxes[0]} onClick={clearEditor} title="Clear the box (X)">
+                ✕
               </button>
-              {undoRows[frame] && (
-                <button onClick={() => undoRow(frame)} title="Undo this decision (Z)">
-                  ↶ Undo
+              <button aria-label="Delete picture" onClick={deleteEditor} title="Delete the picture (Delete)">
+                🗑
+              </button>
+              {(undoRows[frame] || ghosts[frame]) && (
+                <button aria-label="Undo" onClick={() => undoRow(frame)} title="Undo the last decision on this frame (Z)">
+                  ↶
                 </button>
               )}
             </div>

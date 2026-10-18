@@ -1,5 +1,7 @@
 import { ReactNode, useEffect, useRef, useState } from "react";
 import { DetectionList, DetectionRow, DetectorChoice, DetectorInfo } from "./api";
+import InfoTip from "./InfoTip";
+import { REVIEW_FILTERS, REVIEW_SORTS, ReviewFilter, ReviewSort } from "./reviewList";
 import { thumbUrl } from "./classify/Card";
 
 export const EMPTY_DETECTOR: DetectorChoice = { exemplars: [], topk: 1, threshold: 0.3, method: "template", size: 768 };
@@ -12,12 +14,6 @@ const METHOD_HELP =
   "Template matching slides your exemplar over each frame: exact position and your drawn size, no model to download. It suits a fixed camera and an object of constant size. The model (OWL-ViT) tolerates a different look, but its boxes are often much bigger than the object, and its confidence is only relative. Changing the method makes the stored detections stale."
 
 const SIZE_LABEL: Record<number, string> = { 768: "768 (precise)", 512: "512 (about 2x faster, boxes less exact)" };
-
-/** Frames the detector is unsure about (or found nothing in) – the review queue. */
-export const needsLook = (r: DetectionRow) => r.state === "review" || r.state === "none";
-/** Frames without a box first, then the least confident. */
-export const byConfidence = (a: DetectionRow, b: DetectionRow) =>
-  (a.boxes[0]?.conf ?? -1) - (b.boxes[0]?.conf ?? -1);
 
 const STATE_COLOR: Record<string, string> = {
   trusted: "#2e9e5b",
@@ -261,52 +257,58 @@ export function RunBar({
   );
 }
 
-/** Review queue header: the counts, the filter, the hints and the run controls; the frames are in the grid below. */
+/** Review queue header: which frames to list and in what order. The keys are in the hover hints, not repeated here. */
 export function ReviewPanel({
   list,
-  queue,
-  showAll,
-  onShowAll,
+  counts,
+  filter,
+  onFilter,
+  sort,
+  onSort,
+  shown,
   children,
 }: {
   list: DetectionList | null;
-  queue: DetectionRow[];
-  showAll: boolean;
-  onShowAll: (v: boolean) => void;
+  counts: Record<ReviewFilter, number>;
+  filter: ReviewFilter;
+  onFilter: (f: ReviewFilter) => void;
+  sort: ReviewSort;
+  onSort: (s: ReviewSort) => void;
+  shown: number;
   children?: ReactNode;
 }) {
-  if (!list) return <p>Add exemplars and run the detector first — its uncertain frames show up here.</p>;
-  const toCheck = (list.counts.review ?? 0) + (list.counts.none ?? 0);
-  const confidences = queue.map((f) => f.boxes[0]?.conf).filter((c): c is number => c !== undefined);
+  if (!list) return <p>Add exemplars and run the detector first.</p>;
   return (
     <section aria-label="Review queue">
-      <h4 style={{ margin: "4px 0" }}>
-        Review ({toCheck} to check
-        {list.counts.trusted ? `, ${list.counts.trusted} trusted` : ""}
-        {list.counts.human ? `, ${list.counts.human} decided` : ""})
-      </h4>
-      <label>
-        <input type="checkbox" checked={showAll} onChange={(e) => onShowAll(e.target.checked)} /> Show all
-        frames, least confident first
-      </label>
-      {showAll && confidences.length > 0 && (
-        <p>
-          Confidence of the shown boxes: {Math.round(Math.min(...confidences) * 100)}% to{" "}
-          {Math.round(Math.max(...confidences) * 100)}% (threshold {Math.round(list.threshold * 100)}%).
-        </p>
-      )}
-      {queue.length === 0 ? (
-        <p>Nothing to review.</p>
-      ) : (
-        <p>
-          <em>
-            Hover a card: <kbd>Enter</kbd> or <kbd>A</kbd> accepts its box, <kbd>Delete</kbd> or <kbd>X</kbd> clears it,{" "}
-            <kbd>Z</kbd> undoes, <kbd>E</kbd> (or a click on the picture) opens it to adjust the box. A decision shows at once and
-            the card stays where it is until you press Remove decided. Adjusted boxes are saved as manual and kept when
-            detection is re-run.
-          </em>
-        </p>
-      )}
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", margin: "4px 0" }}>
+        <label>
+          Show{" "}
+          <select aria-label="Show" value={filter} onChange={(e) => onFilter(e.target.value as ReviewFilter)}>
+            {REVIEW_FILTERS.map(([id, text]) => (
+              <option key={id} value={id}>
+                {text} ({counts[id]})
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Sort{" "}
+          <select aria-label="Sort" value={sort} onChange={(e) => onSort(e.target.value as ReviewSort)}>
+            {REVIEW_SORTS.map(([id, text]) => (
+              <option key={id} value={id}>
+                {text}
+              </option>
+            ))}
+          </select>
+        </label>
+        <InfoTip label="Review keys">
+          Hover a card: <kbd>Enter</kbd> or <kbd>A</kbd> accepts its box, <kbd>X</kbd> clears it, <kbd>Delete</kbd> deletes the picture,{" "}
+          <kbd>Z</kbd> undoes, <kbd>E</kbd> or a click opens it to adjust the box. Hold <kbd>A</kbd> or <kbd>X</kbd> and move the mouse across the
+          cards to accept or clear many. A decision shows at once and the card stays until you remove it; adjusted boxes are kept when detection
+          is run again.
+        </InfoTip>
+      </div>
+      {shown === 0 && <p>Nothing here.</p>}
       {children}
     </section>
   );

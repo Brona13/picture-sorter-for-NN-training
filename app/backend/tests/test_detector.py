@@ -359,6 +359,70 @@ class ApiTests(DetectorBase):
         self.assertFalse(np.array_equal(shifted, unshifted))
 
 
+class FilterBeforeDetectionTests(DetectorBase):
+    """The feature's pre-processing filter is applied to every frame and to the exemplars before anything is detected."""
+
+    FILTER = {"name": "gaussian", "params": {"sigma": 2.0}}
+
+    def textured(self) -> None:
+        rng = np.random.default_rng(4)
+        for name in self.frames:
+            cv2.imwrite(str(datamodel.unsorted_dir("camA") / name), rng.integers(0, 255, (40, 60, 3), dtype=np.uint8))
+        ingest.rebuild_index("camA")
+
+    def record(self, method: str, filter_: dict | None):
+        self.textured()
+        body = {"detector": {"exemplars": [EXEMPLAR], "topk": 1, "threshold": 0.3, "method": method}}
+        if filter_:
+            body["filter"] = filter_
+        self.assertEqual(self.client.put(self.url, json=body).status_code, 200)
+        seen: list[tuple[np.ndarray, list[np.ndarray]]] = []
+
+        def backend(target, queries, topk):
+            seen.append((target.copy(), [q.copy() for q in queries]))
+            return [(box_at(0.4, 0.4), 0.9)]
+
+        detector.set_backend(backend)
+        detector.run("camA", "seal")
+        return seen
+
+    def crop(self, frame: str, apply_filter: bool) -> np.ndarray:
+        import curation  # noqa: PLC0415
+        import preprocess  # noqa: PLC0415
+
+        roi = engine.resolve_roi("camA", "seal")
+        crop = roi.crop(curation.load_image(datamodel.unsorted_dir("camA") / frame))
+        return preprocess.apply(crop, self.FILTER["name"], self.FILTER["params"]) if apply_filter else crop
+
+    def test_frames_and_exemplars_reach_the_detector_filtered(self) -> None:
+        seen = self.record("template", self.FILTER)
+        self.assertEqual(len(seen), 3)
+        for (target, queries), frame in zip(seen, self.frames):
+            self.assertTrue(np.array_equal(target, self.crop(frame, True)))
+            self.assertFalse(np.array_equal(target, self.crop(frame, False)))  # it really is not the raw crop
+        exemplar = seen[0][1][0]
+        raw = self.crop(EXEMPLAR["frame"], False)
+        h, w = raw.shape[:2]
+        b = EXEMPLAR["box"]
+        raw_exemplar = raw[int(b["y"] * h) : int((b["y"] + b["h"]) * h), int(b["x"] * w) : int((b["x"] + b["w"]) * w)]
+        filtered = self.crop(EXEMPLAR["frame"], True)
+        self.assertTrue(np.array_equal(exemplar, filtered[int(b["y"] * h) : int((b["y"] + b["h"]) * h), int(b["x"] * w) : int((b["x"] + b["w"]) * w)]))
+        self.assertFalse(np.array_equal(exemplar, raw_exemplar))
+
+    def test_the_model_method_gets_the_same_filtered_crops(self) -> None:
+        seen = self.record("model", self.FILTER)
+        for (target, _), frame in zip(seen, self.frames):
+            self.assertTrue(np.array_equal(target, self.crop(frame, True)))
+
+    def test_without_a_filter_the_raw_crops_are_used_and_the_signature_follows_the_filter(self) -> None:
+        seen = self.record("template", None)
+        for (target, _), frame in zip(seen, self.frames):
+            self.assertTrue(np.array_equal(target, self.crop(frame, False)))
+        raw_sig = vision_settings.detection_signature(vision_settings.get("camA", "seal"))
+        self.record("template", self.FILTER)
+        self.assertNotEqual(vision_settings.detection_signature(vision_settings.get("camA", "seal")), raw_sig)  # a new filter makes the stored detections stale
+
+
 class RestoreTests(DetectorBase):
     """Undo of a review decision: the frame's detections come back as they were."""
 

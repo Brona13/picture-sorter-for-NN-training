@@ -1,7 +1,8 @@
 import { createPainter } from "./classify/painter";
 
 /**
- * Painting on the Detector review grid: hold A to accept, or X (or Delete) to clear, and move the mouse over the cards. Each
+ * Painting on the Detector review grid: hold A to accept, or X to clear the box, and move the mouse over the cards. Deleting
+ * a picture (the Delete key) and undoing (Z) are never painted. Each
  * card the pointer enters gets the action, once per stroke, and only cards nobody has decided yet (see `ReviewGrid`), so a
  * sweep never overrides an earlier decision. The holding, stroke and cursor logic is the shared `classify/painter.ts`;
  * this is only the key map and the look of the cursor.
@@ -10,7 +11,7 @@ export type PaintMode = "accept" | "clear";
 
 export const reviewPainter = createPainter<PaintMode>((e) => {
   const k = e.key.toLowerCase();
-  return k === "a" ? "accept" : k === "x" || k === "delete" ? "clear" : null;
+  return k === "a" ? "accept" : k === "x" ? "clear" : null;
 });
 
 export const markReviewPainted = (frame: string) => reviewPainter.mark(frame);

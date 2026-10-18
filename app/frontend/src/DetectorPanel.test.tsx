@@ -27,6 +27,11 @@ function install(savedDetector: any) {
         );
         return new Response(JSON.stringify({ ...detections, frames }));
       }
+      if (url.includes("/classify/delete") || url.includes("/classify/restore")) {
+        if (saveFails) return new Response(JSON.stringify({ detail: "disk full" }), { status: 500 });
+        const frame = JSON.parse(init!.body as string).frame;
+        return new Response(JSON.stringify({ card: { frame, label: null, golden: null, deleted: url.includes("/delete") }, counts: {} }));
+      }
       if (url.includes("/detections") && method !== "GET") {
         if (saveGate) await saveGate;
         if (saveFails) return new Response(JSON.stringify({ detail: "disk full" }), { status: 500 });
@@ -119,7 +124,8 @@ test("running detection reports the result; the review queue accepts a box", asy
   await userEvent.click(screen.getByRole("button", { name: "Go to Review" }));
 
   const queue = await screen.findByRole("region", { name: "Review queue" });
-  expect(within(queue).getByText(/Review \(1 to check, 2 trusted/)).toBeInTheDocument();
+  expect(within(queue).getByRole("option", { name: "Needs review (1)" })).toBeInTheDocument();
+  expect(within(queue).getByRole("option", { name: "Trusted (0)" })).toBeInTheDocument(); // counted from the frames listed
   await userEvent.click(within(await screen.findByTestId("review-card-f1.png")).getByRole("button", { name: /Accept/ }));
   await waitFor(() => {
     const put = calls.find((c) => c.method === "PUT" && c.url.includes("/detections/f1.png"));
@@ -196,7 +202,7 @@ test("template matching needs no model: no download prompt and no missing-depend
   expect(calls.find((c) => c.url.endsWith("/detect"))?.body?.accept_download).not.toBe(true); // nothing to confirm
 });
 
-test("show-all lists every frame least confident first, with the confidence range", async () => {
+test("All frames lists every frame, least confident first by default", async () => {
   const frame = (name: string, conf: number, state: string) => ({
     frame: name, state, status: "auto", boxes: [{ x: 0.1, y: 0.1, w: 0.3, h: 0.3, conf }],
   });
@@ -208,10 +214,10 @@ test("show-all lists every frame least confident first, with the confidence rang
   install({ exemplars: [EXEMPLAR], topk: 1, threshold: 0.5 });
   render(<DetectorView camera="camA" />);
   await userEvent.click(await screen.findByRole("tab", { name: /Review/ }));
-  expect(await screen.findByText(/Review \(0 to check, 2 trusted/)).toBeInTheDocument();
-  expect(screen.getByText("Nothing to review.")).toBeInTheDocument();
-  await userEvent.click(screen.getByLabelText(/Show all frames/));
-  expect(await screen.findByText(/71% to 97% \(threshold 50%\)/)).toBeInTheDocument();
+  expect(await screen.findByRole("option", { name: "Needs review (0)" })).toBeInTheDocument();
+  expect(screen.getByRole("option", { name: "Trusted (2)" })).toBeInTheDocument();
+  expect(screen.getByText("Nothing here.")).toBeInTheDocument();
+  await userEvent.selectOptions(screen.getByLabelText("Show"), "all");
   const cards = within(await screen.findByLabelText("Review grid")).getAllByTestId(/^review-card-/);
   expect(cards.map((c) => c.getAttribute("data-testid"))).toEqual(["review-card-mid.png", "review-card-hi.png"]); // least confident first
 });
@@ -265,7 +271,7 @@ test("a decision shows at once and the card stays where it is, even while the sa
   const card = await screen.findByTestId("review-card-a.png");
   await userEvent.click(within(card).getByRole("button", { name: /Accept/ }));
   expect(card).toHaveTextContent("decided"); // before the server has answered
-  expect(within(card).getByRole("button", { name: "✓ Accepted" })).toBeDisabled();
+  expect(within(card).getByRole("button", { name: "Accept box" })).toBeDisabled();
   expect(screen.getByTestId("review-card-a.png")).toBe(card); // the same card, in the same place
   expect(screen.getByTestId("review-card-b.png")).toBeInTheDocument();
   release();
@@ -277,10 +283,10 @@ test("Remove decided takes the decided cards out of the grid", async () => {
   detections = reviewRows();
   install({ exemplars: [EXEMPLAR], topk: 1, threshold: 0.3 });
   await openReview();
-  expect(screen.queryByRole("button", { name: "Remove decided" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Remove them" })).toBeNull();
   detections = { ...reviewRows(), counts: { review: 1, human: 1 }, frames: [{ ...reviewRows().frames[0], state: "human", status: "reviewed" }, reviewRows().frames[1]] }; // what the server will say
   await userEvent.click(within(await screen.findByTestId("review-card-a.png")).getByRole("button", { name: /Accept/ }));
-  const remove = await screen.findByRole("button", { name: "Remove decided" });
+  const remove = await screen.findByRole("button", { name: "Remove them" });
   expect(screen.getByTestId("review-card-a.png")).toBeInTheDocument();
   await userEvent.click(remove);
   await waitFor(() => expect(screen.queryByTestId("review-card-a.png")).toBeNull());
@@ -314,7 +320,7 @@ test("a failed save puts the card back and says so", async () => {
   await userEvent.click(within(card).getByRole("button", { name: /Accept/ }));
   expect(await screen.findByRole("alert")).toHaveTextContent(/disk full/);
   await waitFor(() => expect(card).toHaveTextContent("unsure · 20%"));
-  expect(within(card).getByRole("button", { name: "✓ Accept" })).toBeEnabled();
+  expect(within(card).getByRole("button", { name: "Accept box" })).toBeEnabled();
 });
 
 test("deciding in the grid renders no preview of the frame behind it", async () => {
@@ -328,6 +334,129 @@ test("deciding in the grid renders no preview of the frame behind it", async () 
   await userEvent.click(within(screen.getByTestId("review-card-b.png")).getByRole("button", { name: /Clear/ }));
   await new Promise((r) => setTimeout(r, 400));
   expect(calls.some((c) => c.url.endsWith("/preview"))).toBe(false);
+});
+
+test("the card buttons are icons only, with what they do and the key in the hover hint", async () => {
+  detections = reviewRows();
+  install({ exemplars: [EXEMPLAR], topk: 1, threshold: 0.3 });
+  await openReview();
+  const card = await screen.findByTestId("review-card-a.png");
+  const buttons = within(card).getAllByRole("button").filter((b) => !/^Adjust /.test(b.getAttribute("aria-label") ?? ""));
+  expect(buttons.map((b) => b.textContent)).toEqual(["✓", "✕", "🗑"]); // no words; the undo icon only once there is something to undo
+  expect(within(card).getByRole("button", { name: "Accept box" })).toHaveAttribute("title", expect.stringContaining("Enter or A"));
+  expect(within(card).getByRole("button", { name: "Clear box" })).toHaveAttribute("title", expect.stringContaining("X"));
+  expect(within(card).getByRole("button", { name: "Delete picture" })).toHaveAttribute("title", expect.stringContaining("Delete"));
+  await userEvent.click(within(card).getByRole("button", { name: "Accept box" }));
+  expect(within(card).getByRole("button", { name: "Undo" })).toHaveTextContent("↶");
+});
+
+test("Delete on a hovered card or its button deletes the picture like everywhere else; the card stays, dimmed, and Z or the undo icon brings it back", async () => {
+  detections = reviewRows();
+  install({ exemplars: [EXEMPLAR], topk: 1, threshold: 0.3 });
+  await openReview();
+  await userEvent.hover(await screen.findByTestId("review-card-a.png"));
+  await userEvent.keyboard("{Delete}");
+  await waitFor(() => expect(calls.find((c) => c.url.endsWith("/classify/delete"))?.body).toEqual({ feature: "seal", frame: "a.png", via: "Detector" }));
+  const card = screen.getByTestId("review-card-a.png"); // still in its place
+  expect(card).toHaveTextContent("deleted");
+  expect(within(card).getByRole("button", { name: "Accept box" })).toBeDisabled();
+  expect(within(card).getByRole("button", { name: "Delete picture" })).toBeDisabled();
+  expect(calls.some((c) => c.method === "DELETE" && c.url.includes("/detections/"))).toBe(false); // the box is not cleared, the picture is deleted
+  await userEvent.keyboard("a"); // a deleted card takes nothing but undo
+  expect(calls.some((c) => c.method === "PUT" && c.url.includes("/detections/"))).toBe(false);
+  await userEvent.keyboard("z");
+  await waitFor(() => expect(calls.find((c) => c.url.endsWith("/classify/restore"))?.body).toMatchObject({ frame: "a.png" }));
+  await waitFor(() => expect(card).not.toHaveTextContent("deleted"));
+  await userEvent.click(within(card).getByRole("button", { name: "Delete picture" }));
+  await waitFor(() => expect(calls.filter((c) => c.url.endsWith("/classify/delete")).length).toBe(2));
+});
+
+test("a failed delete puts the card back and says so", async () => {
+  detections = reviewRows();
+  saveFails = true;
+  install({ exemplars: [EXEMPLAR], topk: 1, threshold: 0.3 });
+  await openReview();
+  const card = await screen.findByTestId("review-card-a.png");
+  await userEvent.click(within(card).getByRole("button", { name: "Delete picture" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(/disk full/);
+  await waitFor(() => expect(card).not.toHaveTextContent("deleted"));
+});
+
+test("undoing is never painted: holding Z and sweeping over decided cards does nothing", async () => {
+  detections = reviewRows();
+  install({ exemplars: [EXEMPLAR], topk: 1, threshold: 0.3 });
+  await openReview();
+  await userEvent.click(within(await screen.findByTestId("review-card-a.png")).getByRole("button", { name: "Accept box" }));
+  await userEvent.click(within(screen.getByTestId("review-card-b.png")).getByRole("button", { name: "Accept box" }));
+  await waitFor(() => expect(puts()).toEqual(["a.png", "b.png"]));
+  fireEvent.mouseLeave(screen.getByTestId("review-card-a.png")); // the pointer is on no card: only a sweep could act
+  fireEvent.mouseLeave(screen.getByTestId("review-card-b.png"));
+  fireEvent.keyDown(window, { key: "z" });
+  sweep("a.png");
+  sweep("b.png");
+  await new Promise((r) => setTimeout(r, 50));
+  fireEvent.keyUp(window, { key: "z" });
+  expect(calls.filter((c) => c.url.endsWith("/restore")).map((c) => c.url)).toEqual([]);
+});
+
+test("the filter lists what you ask for and says how many each has; the order can be changed; both are remembered", async () => {
+  const row = (frame: string, state: string, status: string | null, conf: number | null, x = 0.1) => ({ frame, state, status, boxes: conf === null ? [] : [{ x, y: 0.1, w: 0.2, h: 0.2, conf }] });
+  detections = {
+    threshold: 0.3,
+    counts: { review: 2, trusted: 1, human: 2, none: 1 },
+    frames: [row("u1.png", "review", "auto", 0.2), row("u2.png", "review", "auto", 0.4, 0.6), row("t.png", "trusted", "auto", 0.9), row("acc.png", "human", "reviewed", 0.7), row("adj.png", "human", "manual", 0.5), row("n.png", "none", null, null)],
+  };
+  install({ exemplars: [EXEMPLAR], topk: 1, threshold: 0.3 });
+  await openReview();
+  const show = await screen.findByLabelText("Show");
+  const names = () => within(screen.getByLabelText("Review grid")).queryAllByTestId(/^review-card-/).map((c) => c.getAttribute("data-testid")!.replace("review-card-", ""));
+  expect(within(show).getAllByRole("option").map((o) => o.textContent)).toEqual([
+    "Needs review (3)", "Unsure (2)", "No detection (1)", "Trusted (1)", "Accepted (1)", "Adjusted by me (1)", "All frames (6)",
+  ]);
+  expect(names()).toEqual(["n.png", "u1.png", "u2.png"]); // needs review, least confident first
+  await userEvent.selectOptions(show, "trusted");
+  expect(names()).toEqual(["t.png"]);
+  await userEvent.selectOptions(show, "accepted");
+  expect(names()).toEqual(["acc.png"]);
+  await userEvent.selectOptions(show, "adjusted");
+  expect(names()).toEqual(["adj.png"]);
+  await userEvent.selectOptions(show, "all");
+  await userEvent.selectOptions(screen.getByLabelText("Sort"), "most");
+  expect(names()).toEqual(["t.png", "acc.png", "adj.png", "u2.png", "u1.png", "n.png"]);
+  await userEvent.selectOptions(screen.getByLabelText("Sort"), "name");
+  expect(names()).toEqual(["acc.png", "adj.png", "n.png", "t.png", "u1.png", "u2.png"]);
+  await userEvent.selectOptions(screen.getByLabelText("Sort"), "far"); // the exemplar's centre is (0.3, 0.3)
+  expect(names()[0]).toBe("u2.png"); // the box at x 0.6 is the furthest
+  expect(names().at(-1)).toBe("n.png"); // no box: last
+  // remembered for the next visit
+  expect(localStorage.getItem("picturesorter.review.filter")).toBe("all");
+  expect(localStorage.getItem("picturesorter.review.sort")).toBe("far");
+});
+
+test("the editor deletes the picture on Delete and the box on X, and undoes on Z", async () => {
+  detections = reviewRows();
+  install({ exemplars: [EXEMPLAR], topk: 1, threshold: 0.3 });
+  await openReview();
+  await userEvent.click(await screen.findByRole("button", { name: "Adjust a.png" }));
+  const viewer = await screen.findByTestId("box-editor");
+  expect(within(within(viewer).getByRole("group", { name: "Decide" })).getAllByRole("button").map((b) => b.textContent)).toEqual(["✓", "✕", "🗑"]); // icons only
+  await userEvent.keyboard("{Delete}");
+  await waitFor(() => expect(calls.find((c) => c.url.endsWith("/classify/delete"))?.body).toMatchObject({ frame: "a.png", via: "Detector" }));
+  await waitFor(() => expect(within(viewer).getByTestId("viewer-filename")).toHaveTextContent("b.png")); // moved on
+  await userEvent.keyboard("x");
+  await waitFor(() => expect(calls.some((c) => c.method === "DELETE" && c.url.includes("/detections/b.png"))).toBe(true));
+});
+
+test("the review header has the two choices and a hover hint, and no keys written out on the page", async () => {
+  detections = reviewRows();
+  install({ exemplars: [EXEMPLAR], topk: 1, threshold: 0.3 });
+  await openReview();
+  const panel = await screen.findByRole("region", { name: "Review queue" });
+  expect(within(panel).getByLabelText("Show")).toBeInTheDocument();
+  expect(within(panel).getByLabelText("Sort")).toBeInTheDocument();
+  const tip = within(panel).getByRole("button", { name: "Info: Review keys" });
+  expect(tip).toHaveAccessibleDescription(/Hold A or X and move the mouse across the cards/);
+  expect(screen.queryByText(/Shortcuts/)).toBeNull();
 });
 
 test("the editor is the shared picture viewer: file name under the picture, position, hints", async () => {
@@ -346,7 +475,7 @@ test("the editor is the shared picture viewer: file name under the picture, posi
   await waitFor(() => expect(screen.queryByTestId("box-editor")).toBeNull());
 });
 
-test("hover keys act on the card under the mouse: Enter or A accepts, Delete or X clears", async () => {
+test("hover keys act on the card under the mouse: Enter or A accepts, X clears the box", async () => {
   detections = reviewRows();
   install({ exemplars: [EXEMPLAR], topk: 1, threshold: 0.3 });
   render(<DetectorView camera="camA" />);
@@ -359,7 +488,7 @@ test("hover keys act on the card under the mouse: Enter or A accepts, Delete or 
   });
   await userEvent.unhover(screen.getByTestId("review-card-a.png"));
   await userEvent.hover(screen.getByTestId("review-card-b.png"));
-  await userEvent.keyboard("{Delete}");
+  await userEvent.keyboard("x");
   await waitFor(() => expect(calls.some((c) => c.method === "DELETE" && c.url.includes("/detections/b.png"))).toBe(true));
   expect(calls.some((c) => c.method === "DELETE" && c.url.includes("/detections/a.png"))).toBe(false); // only the hovered card
 });
@@ -370,13 +499,14 @@ const sweepRows = () => {
 };
 const sweep = (frame: string) => fireEvent.mouseMove(screen.getByTestId(`review-card-${frame}`), { movementX: 6, movementY: 2 });
 const puts = () => calls.filter((c) => c.method === "PUT" && c.url.includes("/detections/")).map((c) => c.url.split("/detections/")[1]);
+const pictureDeletes = () => calls.filter((c) => c.url.endsWith("/classify/delete")).map((c) => c.body.frame);
 const deletes = () => calls.filter((c) => c.method === "DELETE").map((c) => c.url.split("/detections/")[1]);
 
 test("holding A and sweeping the mouse over the cards accepts each one the pointer enters, once, and leaves decided cards alone", async () => {
   detections = sweepRows();
   install({ exemplars: [EXEMPLAR], topk: 1, threshold: 0.3 });
   await openReview();
-  await userEvent.click(await screen.findByLabelText(/Show all frames/)); // the decided card is only listed then
+  await userEvent.selectOptions(await screen.findByLabelText("Show"), "all"); // the decided card is only listed then
   await screen.findByTestId("review-card-c.png");
   fireEvent.keyDown(window, { key: "a" });
   for (const f of ["a.png", "b.png", "c.png", "d.png"]) sweep(f);
@@ -417,20 +547,22 @@ test("pressing A on a hovered card accepts it and the sweep carries on from ther
   expect(puts()).toHaveLength(2);
 });
 
-test("holding X (or Delete) and sweeping clears the cards, and never clears a box you accepted", async () => {
+test("holding X and sweeping clears the boxes, never clears a box you accepted, and Delete is never painted", async () => {
   detections = sweepRows();
   install({ exemplars: [EXEMPLAR], topk: 1, threshold: 0.3 });
   await openReview();
-  await userEvent.click(await screen.findByLabelText(/Show all frames/));
+  await userEvent.selectOptions(await screen.findByLabelText("Show"), "all");
   await screen.findByTestId("review-card-c.png");
   fireEvent.keyDown(window, { key: "x" });
   for (const f of ["a.png", "c.png", "b.png"]) sweep(f);
   await waitFor(() => expect(deletes()).toEqual(["a.png", "b.png"]));
   fireEvent.keyUp(window, { key: "x" });
-  fireEvent.keyDown(window, { key: "Delete" });
+  fireEvent.keyDown(window, { key: "Delete" }); // deleting a picture is a hover key only
   sweep("d.png");
-  await waitFor(() => expect(deletes()).toEqual(["a.png", "b.png", "d.png"]));
+  await new Promise((r) => setTimeout(r, 50));
   fireEvent.keyUp(window, { key: "Delete" });
+  expect(deletes()).toEqual(["a.png", "b.png"]);
+  expect(pictureDeletes()).toEqual([]);
   expect(puts()).toEqual([]);
 });
 
@@ -488,7 +620,7 @@ test("while the editor is open the hover keys do not act on the cards behind it"
   await userEvent.hover(await screen.findByTestId("review-card-b.png"));
   await userEvent.click(await screen.findByRole("button", { name: "Adjust a.png" }));
   await screen.findByRole("dialog", { name: "Adjust detection" });
-  await userEvent.keyboard("{Delete}"); // clears the editor's frame (a.png), not the hovered card
+  await userEvent.keyboard("x"); // clears the editor's frame (a.png), not the hovered card
   await waitFor(() => expect(calls.some((c) => c.method === "DELETE" && c.url.includes("/detections/a.png"))).toBe(true));
   expect(calls.some((c) => c.method === "DELETE" && c.url.includes("/detections/b.png"))).toBe(false);
 });

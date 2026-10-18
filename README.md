@@ -350,20 +350,27 @@ Pipeline for every frame of the feature, in this order:
    detected object is from the exemplar's position (translation only, no resizing). Changing the method
    (or the exemplars, or the model's input size) makes the stored detections stale, so run again.
 
-Detections are suggestions. A box is *trusted* when its confidence is at or above the
-threshold slider; otherwise it waits in the **review queue**, a paged grid of cards like the other pages.
-Each card shows the frame with the detected box drawn on it, its state and confidence, and its own
-**Accept** and **Clear** buttons. Hover a card and press **Enter** or **A** to accept its box, **Delete** or
-**X** to clear it, **Z** to undo, **E** (or click the picture) to open the viewer and adjust the box: drag it,
-drag the corners or draw a new one, then **Enter** accepts and moves to the next card, **← →** switch card
-and **Esc** closes. **Hold A** (or **X**) and move the mouse across the cards to accept (or clear) every card the
-pointer enters, once, exactly like painting labels on Classify (a green tick or red cross follows the mouse while the key is held);
-cards you already decided are left alone. A decision shows at once and the card stays where it is, marked as decided (the save runs in the
-background); **Remove decided** takes the decided cards out of the grid when you want a shorter list, as does
-leaving the step or switching **Show all frames**.
-Boxes you accepted or adjusted are never overwritten by a re-run. **Show all
-frames, least confident first** lists every frame with the confidence range, so you can
-check the confident ones too. Frames without a trusted box keep the mask where it was drawn.
+Detection always runs on the filtered pictures: the filter you set on the Filter step is applied to every frame and to your
+exemplars before anything is detected, by both methods (Run saves unsaved settings first, and changing the filter makes the
+stored detections stale).
+
+Detections are suggestions. A box is *trusted* when its confidence is at or above the threshold slider; otherwise it waits
+in the **review queue**, a paged grid of cards like the other pages. Each card shows the frame with the detected box drawn
+on it, its state and confidence, and four icon buttons (hover them for what they do and the key): **✓** accept the box,
+**✕** clear the box, **🗑** delete the picture (the same soft delete as everywhere) and, once there is something to undo,
+**↶**. Keys on the card under the mouse: **Enter** or **A** accepts, **X** clears the box, **Delete** deletes the picture,
+**Z** undoes (a decision, or a delete), **E** (or a click on the picture) opens the viewer to adjust the box: drag it, drag
+the corners or draw a new one, then **Enter** accepts and moves to the next card, **← →** switch card and **Esc** closes.
+**Hold A** (or **X**) and move the mouse across the cards to accept (or clear) every card the pointer enters, once, exactly like
+painting labels on Classify (a green tick or red cross follows the mouse while the key is held); cards you already decided
+are left alone, and deleting and undoing are never painted. A decision shows at once and the card stays where it is,
+marked as decided or deleted (dimmed), until you press **Remove them**, change the filter or leave the step.
+
+**Show** picks which frames are listed, with how many each has: *Needs review* (the default), *Unsure*, *No detection*,
+*Trusted*, *Accepted*, *Adjusted by me* or *All frames*. **Sort** orders them: least or most confident first, by file name,
+or by how far the detected box is from the first exemplar's position (furthest first is a quick way to spot a box that
+landed somewhere odd). Both choices are remembered. Boxes you accepted or adjusted are never overwritten by a re-run.
+Frames without a trusted box keep the mask where it was drawn.
 
 Changing any setting or accepting a box makes cached scores for that feature recompute (only
 the affected frames for a moved box). Freezing a version stores the settings in the version
