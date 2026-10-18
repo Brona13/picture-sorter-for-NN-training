@@ -55,6 +55,7 @@ Today ROI chaining is implicit: the `role="classify"` ROI assigns frames to prod
 - Manual check with the first test case (Ingest -> ROI product -> ROI feature) against a temp camera root using `run.sh` with temp directories.
 
 ## Later (parked, not in v1)
+- Bundle size warning from `vite build` (680 kB): silence it or lazy-load `ChainView`; to discuss.
 - Filter and detector boxes bound to `vision.<feature>`, hanging from a feature ROI.
 - Merge box for A/B branches. It joins variants (ROI / detector); it must never blend classical and ResNet scores.
 - One-button "run the whole chain".

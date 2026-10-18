@@ -1,5 +1,6 @@
 import "@xyflow/react/dist/style.css";
 import {
+  applyNodeChanges,
   Background,
   Controls,
   Handle,
@@ -309,14 +310,7 @@ function Canvas({ camera }: { camera: string }) {
             isValidConnection={isValidConnection}
             onNodeClick={(_, n) => setSelectedId(n.id)}
             onPaneClick={() => setSelectedId(null)}
-            onNodesChange={(changes) => {
-              setNodes((current) =>
-                current.map((n) => {
-                  const move = changes.find((c) => c.type === "position" && c.id === n.id);
-                  return move && move.type === "position" && move.position ? { ...n, position: move.position } : n;
-                }),
-              );
-            }}
+            onNodesChange={(changes) => setNodes((current) => applyNodeChanges(changes, current))}
             onNodeDragStop={() => saveLayout(nodesRef.current)}
             onMoveEnd={(_, v) => {
               viewport.current = { x: v.x, y: v.y, zoom: v.zoom };

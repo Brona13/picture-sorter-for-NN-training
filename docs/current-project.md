@@ -415,7 +415,7 @@ Listed in recommended priority order:
 9. Add browser-level (end-to-end) tests for the React views; current frontend tests mock the API and cannot exercise real pointer interaction.
 10. Build the `setup_torch.sh` / `setup_torch.ps1` hardware detect-or-ask helper; investigate the flaky `test_clean_schema.py::MigrationV3ToV4Tests::test_parallel_first_connects_all_succeed`. See `memory/gpu-backends-rocm.md`.
 
-Deferred (discussed, not planned): embedding drift over time (filenames carry `dd.mm.yyyy_hh.mm.ss`), reorganizing the menu into tabs or branches, further rule-based tools (object counting, presence in a zone, colour threshold, blob area).
+Deferred (discussed, not planned): **frontend bundle size** (v1.51.0: 680 kB, 210 kB gzipped, so `vite build` warns above 500 kB; the Chain canvas library is most of the growth; options: raise `build.chunkSizeWarningLimit`, or load `ChainView` lazily with a dynamic `import()`; to discuss), embedding drift over time (filenames carry `dd.mm.yyyy_hh.mm.ss`), reorganizing the menu into tabs or branches, further rule-based tools (object counting, presence in a zone, colour threshold, blob area).
 
 ## Explicitly out of scope
 
