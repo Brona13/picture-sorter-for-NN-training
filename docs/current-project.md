@@ -76,6 +76,8 @@ See [[data-model]] for the canonical entities and invariants.
 
 ### Cameras and tags
 
+- **Delete a camera (v1.52.0):** each camera on the Overview has **Delete camera…**. The warning lists what goes (files and size on disk, pictures, ROIs, labels, goldens, versions, detections, other records) and the **Delete camera permanently** button stays disabled until the camera's name is typed again; the API repeats that check (`DELETE /api/cameras/{camera}?confirm=<name>`, preview at `GET /api/cameras/{camera}/delete-preview`). `db.delete_camera_rows` removes, in one transaction, every row of every table that has a `camera` column (found from the schema, so a table added later is covered), the version items and results, and the `score_cache` vectors that only this camera's pictures use (a vector another camera's identical picture also uses stays); `datamodel.delete_camera` then removes the camera folder (pictures and exports) and the in-memory caches. A camera with a queued or running job is refused (409). Irreversible: there is no trash.
+
 - Cameras are created on the Overview page (**New camera** wizard: name, tags, then straight to Ingest); the Ingest page no longer has a create form (v1.25.0)
 - Tags per camera (`tags.py`, `settings` key `tags`, `GET /api/tags`, `GET/PUT /api/cameras/{camera}/tags`, `tags` in `/api/overview` and in `POST /api/cameras`); case-insensitive, at most 20 tags of 40 characters; Overview filters by tags with combined logic: each chip cycles off → required (✓) → excluded (✕), and a camera is shown when it has every required tag and none of the excluded ones (v1.28.0) (`TagEditor.tsx`, `OverviewView.tsx`)
 - The **New camera** form lays name, tags and the two buttons on one line across the page (wrapping on narrow windows)

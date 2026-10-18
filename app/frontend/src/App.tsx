@@ -219,6 +219,10 @@ export default function App() {
                 camera={camera}
                 onSelectCamera={setCamera}
                 onOpenStage={openStage}
+                onCameraDeleted={(name) => {
+                  if (name === camera) setCamera("");
+                  loadCameras();
+                }}
                 onCameraCreated={(name) => {
                   loadCameras(name);
                   navigate("/ingest");

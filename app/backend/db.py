@@ -538,6 +538,64 @@ def replace_rois(camera: str, entries: list[dict]) -> None:
         con.close()
 
 
+def _camera_tables(con: sqlite3.Connection) -> list[str]:
+    """Every table that has a ``camera`` column, found from the schema so a table added later is covered too."""
+    names = [r["name"] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")]
+    return [n for n in names if any(c["name"] == "camera" for c in con.execute(f"PRAGMA table_info({n})"))]
+
+
+def camera_row_counts(camera: str) -> dict[str, int]:
+    """Rows the camera owns, per table (tables with none are left out)."""
+    con = connect()
+    try:
+        counts = {t: con.execute(f"SELECT COUNT(*) FROM {t} WHERE camera=?", (camera,)).fetchone()[0] for t in _camera_tables(con)}
+        return {t: n for t, n in counts.items() if n}
+    finally:
+        con.close()
+
+
+def delete_camera_rows(camera: str) -> dict[str, int]:
+    """Remove everything the database holds for one camera, in one transaction.
+
+    That is every row of every table with a ``camera`` column (frames, ROIs, labels, goldens, versions with their
+    items and results, settings of all pages, caches, detections ...) and the vectors in ``score_cache`` that belong
+    only to this camera's pictures. That cache is keyed by picture content, so a vector that another camera's
+    identical picture also uses stays.
+    """
+    con = connect()
+    try:
+        con.execute("BEGIN IMMEDIATE")
+        removed: dict[str, int] = {}
+        exclusive = [
+            r[0]
+            for r in con.execute(
+                "SELECT DISTINCT hash FROM frames WHERE camera=? AND hash NOT IN (SELECT hash FROM frames WHERE camera<>?)",
+                (camera, camera),
+            )
+        ]
+        con.execute("CREATE TEMP TABLE IF NOT EXISTS camera_delete_hashes(h TEXT PRIMARY KEY)")
+        con.execute("DELETE FROM camera_delete_hashes")
+        con.executemany("INSERT OR IGNORE INTO camera_delete_hashes VALUES (?)", [(h,) for h in exclusive])
+        # A cached vector is keyed by the picture hash, optionally followed by "@dx,dy" (an anchored mask).
+        removed["score_cache"] = con.execute(
+            "DELETE FROM score_cache WHERE CASE WHEN instr(hash,'@')>0 THEN substr(hash,1,instr(hash,'@')-1) ELSE hash END "
+            "IN (SELECT h FROM camera_delete_hashes)"
+        ).rowcount
+        con.execute("DROP TABLE camera_delete_hashes")
+        version_ids = "(SELECT id FROM versions WHERE camera=?)"
+        removed["version_items"] = con.execute(f"DELETE FROM version_items WHERE version_id IN {version_ids}", (camera,)).rowcount
+        removed["version_results"] = con.execute(f"DELETE FROM version_results WHERE version_id IN {version_ids}", (camera,)).rowcount
+        for table in _camera_tables(con):
+            removed[table] = con.execute(f"DELETE FROM {table} WHERE camera=?", (camera,)).rowcount
+        con.commit()
+        return {t: n for t, n in removed.items() if n}
+    except Exception:
+        con.rollback()
+        raise
+    finally:
+        con.close()
+
+
 def delete_roi_row(camera: str, name: str) -> bool:
     """Remove one ROI; return True if a row was actually deleted."""
     con = connect()

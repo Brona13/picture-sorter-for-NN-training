@@ -7,7 +7,6 @@ import {
   Position,
   ReactFlow,
   ReactFlowProvider,
-  useReactFlow,
   type Connection,
   type Edge,
   type Node,
@@ -100,7 +99,6 @@ function toFlowEdge(e: ChainCanvas["edges"][number]): Edge {
 function Canvas({ camera }: { camera: string }) {
   const navigate = useNavigate();
   const shared = useSharedFeature();
-  const flow = useReactFlow();
   const [canvas, setCanvas] = useState<ChainCanvas | null>(null);
   const [nodes, setNodes] = useState<BoxNode[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -237,9 +235,6 @@ function Canvas({ camera }: { camera: string }) {
         </button>
         <button type="button" disabled={!canvas} onClick={() => void addFeature()}>
           + ROI feature
-        </button>
-        <button type="button" onClick={() => void flow.fitView({ duration: 200 })}>
-          Fit to view
         </button>
       </div>
       {canvas?.classify && <p className="muted">The camera already has its product-sorting ROI.</p>}

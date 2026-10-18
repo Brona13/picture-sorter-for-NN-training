@@ -95,6 +95,46 @@ def unsorted_dir(camera: str) -> Path:
     return camera_dir(camera) / config.UNSORTED_DIRNAME
 
 
+def disk_usage(camera: str) -> dict[str, int]:
+    """Files and bytes under the camera's folder (pictures and exports)."""
+    files = size = 0
+    for path in camera_dir(camera).rglob("*"):
+        if path.is_file():
+            files += 1
+            size += path.stat().st_size
+    return {"files": files, "bytes": size}
+
+
+def delete_camera(camera: str) -> dict:
+    """Remove a camera completely: its database rows and its folder (pictures and exports). Irreversible.
+
+    The database goes first, in one transaction. If removing the folder then fails, the camera is still listed and
+    the delete can simply be repeated.
+    """
+    import shutil
+
+    folder = camera_dir(camera)
+    if folder.parent.resolve() != config.CAMERAS_ROOT.resolve():
+        raise ValueError(f"Not a camera folder: {camera}")
+    usage = disk_usage(camera)
+    rows = db.delete_camera_rows(camera)
+    if folder.is_symlink():
+        folder.unlink()
+    else:
+        shutil.rmtree(folder)
+    _forget_camera(camera)
+    return {"rows": rows, **usage}
+
+
+def _forget_camera(camera: str) -> None:
+    """Drop every in-memory snapshot of the camera and the thumbnail caches."""
+    _invalidate_snapshot(camera, {"cameras", "unsorted", "rois", "product_membership", "product_frames", "feature_frames"})
+    import thumbs
+
+    thumbs._cached_thumb_data_uri.cache_clear()
+    thumbs._cached_cutout_thumb.cache_clear()
+
+
 # --- enumeration -------------------------------------------------------------
 def list_cameras() -> list[str]:
     def load():

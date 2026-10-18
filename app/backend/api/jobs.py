@@ -92,6 +92,11 @@ class JobRegistry:
                 setattr(job, key, value)
             job.updated = time.time()
 
+    def busy(self, camera: str) -> bool:
+        """Whether a job of this camera is queued or running."""
+        with self._lock:
+            return any(j.camera == camera and j.status in (QUEUED, RUNNING) for j in self._jobs.values())
+
     def get(self, job_id: str) -> dict[str, Any] | None:
         with self._lock:
             job = self._jobs.get(job_id)

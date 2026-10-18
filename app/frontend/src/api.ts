@@ -259,6 +259,14 @@ export interface RoiUpsert {
   shared_with?: string[];
 }
 
+/** What deleting a camera would remove: rows per database table, and the files and bytes of its folder. */
+export interface CameraDeletePreview {
+  camera: string;
+  rows: Record<string, number>;
+  files: number;
+  bytes: number;
+}
+
 /** One box of the chain canvas: Ingest, or one ROI (see `chain.py`). */
 export interface ChainNode {
   id: string;
@@ -879,6 +887,13 @@ export const api = {
     request<ExportReport>(`/cameras/${encodeURIComponent(camera)}/project-versions/${id}/export`, post()),
   job: <R = unknown>(id: string) => request<Job<R>>(`/jobs/${encodeURIComponent(id)}`),
   createCamera: (name: string, tags: string[] = []) => request<{ name: string; tags: string[] }>("/cameras", post({ name, tags })),
+  cameraDeletePreview: (camera: string) =>
+    request<CameraDeletePreview>(`/cameras/${encodeURIComponent(camera)}/delete-preview`),
+  deleteCamera: (camera: string) =>
+    request<{ removed: { rows: Record<string, number>; files: number; bytes: number } }>(
+      `/cameras/${encodeURIComponent(camera)}?confirm=${encodeURIComponent(camera)}`,
+      send("DELETE"),
+    ),
   tags: () => request<{ tag: string; count: number }[]>("/tags"),
   setCameraTags: (camera: string, tags: string[]) =>
     request<string[]>(`/cameras/${encodeURIComponent(camera)}/tags`, send("PUT", { tags })),

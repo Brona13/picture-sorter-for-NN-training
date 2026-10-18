@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import config
 import datamodel
+import db
 import tags as camera_tags
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -33,6 +34,26 @@ def require_feature(camera: str, feature: str) -> str:
 @router.get("/cameras")
 def list_cameras() -> list[str]:
     return datamodel.list_cameras()
+
+
+@router.get("/cameras/{camera}/delete-preview")
+def delete_preview(camera: str) -> dict:
+    """What deleting the camera would remove, for the confirmation."""
+    require_camera(camera)
+    return {"camera": camera, "rows": db.camera_row_counts(camera), **datamodel.disk_usage(camera)}
+
+
+@router.delete("/cameras/{camera}")
+def delete_camera(camera: str, confirm: str = "") -> dict:
+    """Delete a camera with everything related to it (irreversible). ``confirm`` must repeat the camera's name."""
+    from api import jobs
+
+    require_camera(camera)
+    if confirm != camera:
+        raise HTTPException(status_code=422, detail="Type the camera's name to confirm the delete.")
+    if jobs.registry.busy(camera):
+        raise HTTPException(status_code=409, detail="A job is still running on this camera; wait for it to finish.")
+    return {"removed": datamodel.delete_camera(camera)}
 
 
 @router.get("/cameras/{camera}/products")

@@ -1,5 +1,6 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { api, OverviewCamera, PipelineStage, RoiInfo } from "../api";
+import CameraDelete from "../CameraDelete";
 import { thumbUrl } from "../classify/Card";
 import PictureSizeSlider, { usePictureSize } from "../PictureSize";
 import PipelineChips, { LabelProgress } from "../PipelineChips";
@@ -82,12 +83,14 @@ export default function OverviewView({
   onSelectCamera,
   onOpenStage,
   onCameraCreated,
+  onCameraDeleted,
 }: {
   camera: string;
   onSelectCamera: (camera: string) => void;
   onOpenStage?: (camera: string, roi: RoiInfo, stage: PipelineStage) => void;
   /** Called after a camera was created from the wizard (select it and go and add pictures). */
   onCameraCreated?: (name: string) => void;
+  onCameraDeleted?: (name: string) => void;
 }) {
   const [cams, setCams] = useState<OverviewCamera[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -274,6 +277,14 @@ export default function OverviewView({
               >
                 {selected ? "✓ Selected" : "Select"}
               </button>
+              <CameraDelete
+                camera={cam.camera}
+                onDeleted={(name) => {
+                  setCams((list) => (list ?? []).filter((c) => c.camera !== name));
+                  loadTags();
+                  onCameraDeleted?.(name);
+                }}
+              />
             </header>
             {cam.verdicts && cam.frame_count > 0 && <VerdictBar summary={cam.verdicts} />}
             <div style={{ display: "flex", flexWrap: "wrap", gap: 16, marginTop: 10, alignItems: "flex-start" }}>
