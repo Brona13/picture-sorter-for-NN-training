@@ -224,12 +224,12 @@ function Canvas({ camera, onOpenRoi }: { camera: string; onOpenRoi?: OpenRoi }) 
     await reload();
   };
 
-  const openInEditor = (n: ChainNode) => {
+  // Opens the page for a box: Ingest, or the ROI editor / Classify on the box's ROI.
+  const openPage = (n: ChainNode, view: "roi" | "classify") => {
     if (n.kind === "ingest" || !n.ref) {
       navigate("/ingest");
       return;
     }
-    const view = n.kind === "classify" ? "classify" : "roi";
     if (onOpenRoi) {
       onOpenRoi(n.ref, view);
     } else {
@@ -278,9 +278,21 @@ function Canvas({ camera, onOpenRoi }: { camera: string; onOpenRoi?: OpenRoi }) 
           <p><strong>{selectedLive.label}</strong></p>
           <p className="muted">{describeNode(selectedLive)}</p>
           {selectedLive.ref && <p className="muted">ROI: {selectedLive.ref}</p>}
-          <button type="button" onClick={() => openInEditor(selectedLive)}>
-            {selectedLive.kind === "ingest" ? "Open Ingest" : selectedLive.kind === "classify" ? "Open Classify" : "Open in ROI editor"}
-          </button>
+          {selectedLive.kind === "ingest" && (
+            <button type="button" onClick={() => openPage(selectedLive, "roi")}>
+              Ingest
+            </button>
+          )}
+          {selectedLive.kind === "roi" && (
+            <button type="button" onClick={() => openPage(selectedLive, "roi")}>
+              ROI editor
+            </button>
+          )}
+          {selectedLive.kind !== "ingest" && (
+            <button type="button" onClick={() => openPage(selectedLive, "classify")}>
+              Classify
+            </button>
+          )}
           {selectedLive.kind === "roi" && (
             <button type="button" className="danger" onClick={() => requestDelete(selectedLive.id)}>
               Delete…

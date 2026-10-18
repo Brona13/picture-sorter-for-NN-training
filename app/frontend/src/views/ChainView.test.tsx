@@ -104,7 +104,7 @@ test("a feature ROI has its own Classify box with its classes, and no product ha
   expect(screen.getByTestId("chain-node-classify:type").querySelectorAll('[data-handleid^="p:"]')).toHaveLength(2);
   fireEvent.click(box);
   expect(screen.getByText(/Label this ROI's pictures here \(OK \/ NG\)/)).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Open Classify" }));
+  fireEvent.click(screen.getByRole("button", { name: "Classify" }));
   expect(onOpenRoi).toHaveBeenLastCalledWith("seal", "classify");
   expect(screen.queryByRole("button", { name: /Delete…/ })).not.toBeInTheDocument();
 });
@@ -112,19 +112,35 @@ test("a feature ROI has its own Classify box with its classes, and no product ha
 test("the Classify box opens the Classify page and cannot be deleted on its own", async () => {
   renderView();
   fireEvent.click(await screen.findByTestId("chain-node-classify:type"));
-  expect(screen.getByRole("button", { name: "Open Classify" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Classify" })).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: /Delete…/ })).not.toBeInTheDocument();
 });
 
-test("Open Classify and Open in ROI editor hand the ROI and the page to the app, which sets the product scope", async () => {
+test("ROI editor and Classify hand the ROI and the page to the app, which sets the product scope", async () => {
   const onOpenRoi = vi.fn();
   renderView(onOpenRoi);
   fireEvent.click(await screen.findByTestId("chain-node-classify:type"));
-  fireEvent.click(screen.getByRole("button", { name: "Open Classify" }));
+  fireEvent.click(screen.getByRole("button", { name: "Classify" }));
   expect(onOpenRoi).toHaveBeenLastCalledWith("type", "classify");
   fireEvent.click(screen.getByTestId("chain-node-roi:seal"));
-  fireEvent.click(screen.getByRole("button", { name: "Open in ROI editor" }));
+  fireEvent.click(screen.getByRole("button", { name: "ROI editor" }));
   expect(onOpenRoi).toHaveBeenLastCalledWith("seal", "roi");
+  fireEvent.click(screen.getByRole("button", { name: "Classify" })); // an ROI box has both
+  expect(onOpenRoi).toHaveBeenLastCalledWith("seal", "classify");
+});
+
+test("every ROI box, the product ROI too, offers both ROI editor and Classify; the Classify box only Classify; Ingest only Ingest", async () => {
+  renderView(vi.fn());
+  for (const [id, wanted, absent] of [
+    ["roi:type", ["ROI editor", "Classify"], ["Ingest"]],
+    ["roi:seal", ["ROI editor", "Classify"], ["Ingest"]],
+    ["classify:seal", ["Classify"], ["ROI editor", "Ingest"]],
+    ["ingest", ["Ingest"], ["ROI editor", "Classify"]],
+  ] as [string, string[], string[]][]) {
+    fireEvent.click(await screen.findByTestId(`chain-node-${id}`));
+    for (const name of wanted) expect(screen.getByRole("button", { name })).toBeInTheDocument();
+    for (const name of absent) expect(screen.queryByRole("button", { name })).not.toBeInTheDocument();
+  }
 });
 
 test("Ingest has no Delete button", async () => {
@@ -132,7 +148,7 @@ test("Ingest has no Delete button", async () => {
   renderView();
   fireEvent.click(await screen.findByTestId("chain-node-ingest"));
   expect(screen.queryByRole("button", { name: /Delete…/ })).not.toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Open Ingest" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Ingest" })).toBeInTheDocument();
 });
 
 test("+ ROI feature creates a real ROI with a free name", async () => {
