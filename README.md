@@ -356,7 +356,8 @@ Each card shows the frame with the detected box drawn on it, its state and confi
 **Accept** and **Clear** buttons. Hover a card and press **Enter** or **A** to accept its box, **Delete** or
 **X** to clear it, **Z** to undo, **E** (or click the picture) to open the viewer and adjust the box: drag it,
 drag the corners or draw a new one, then **Enter** accepts and moves to the next card, **← →** switch card
-and **Esc** closes. A decision shows at once and the card stays where it is, marked as decided (the save runs in the
+and **Esc** closes. **Hold A** (or **X**) and move the mouse across the cards to accept (or clear) every card the
+pointer enters, once, like painting labels on the other pages; cards you already decided are left alone. A decision shows at once and the card stays where it is, marked as decided (the save runs in the
 background); **Remove decided** takes the decided cards out of the grid when you want a shorter list, as does
 leaving the step or switching **Show all frames**.
 Boxes you accepted or adjusted are never overwritten by a re-run. **Show all

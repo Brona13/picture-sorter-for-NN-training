@@ -1,6 +1,7 @@
 import { createEvent, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { endReviewPaint } from "./reviewPaint";
 import DetectorView from "./views/DetectorView";
 
 const EXEMPLAR = { frame: "f1.png", box: { x: 0.2, y: 0.2, w: 0.2, h: 0.2 } };
@@ -76,7 +77,10 @@ beforeEach(() => {
     left: 0, top: 0, width: 200, height: 100, right: 200, bottom: 100, x: 0, y: 0, toJSON() {},
   } as DOMRect);
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  endReviewPaint();
+  vi.unstubAllGlobals();
+});
 
 test("drawing a box adds an exemplar that is saved with the settings", async () => {
   install(null);
@@ -358,6 +362,72 @@ test("hover keys act on the card under the mouse: Enter or A accepts, Delete or 
   await userEvent.keyboard("{Delete}");
   await waitFor(() => expect(calls.some((c) => c.method === "DELETE" && c.url.includes("/detections/b.png"))).toBe(true));
   expect(calls.some((c) => c.method === "DELETE" && c.url.includes("/detections/a.png"))).toBe(false); // only the hovered card
+});
+
+const sweepRows = () => {
+  const row = (frame: string, state: string, status: string) => ({ frame, state, status, boxes: [{ x: 0.1, y: 0.1, w: 0.3, h: 0.3, conf: 0.2 }] });
+  return { threshold: 0.3, counts: { review: 3, human: 1 }, frames: [row("a.png", "review", "auto"), row("b.png", "review", "auto"), row("c.png", "human", "reviewed"), row("d.png", "review", "auto")] };
+};
+const sweep = (frame: string) => fireEvent.mouseMove(screen.getByTestId(`review-card-${frame}`), { movementX: 6, movementY: 2 });
+const puts = () => calls.filter((c) => c.method === "PUT" && c.url.includes("/detections/")).map((c) => c.url.split("/detections/")[1]);
+const deletes = () => calls.filter((c) => c.method === "DELETE").map((c) => c.url.split("/detections/")[1]);
+
+test("holding A and sweeping the mouse over the cards accepts each one the pointer enters, once, and leaves decided cards alone", async () => {
+  detections = sweepRows();
+  install({ exemplars: [EXEMPLAR], topk: 1, threshold: 0.3 });
+  await openReview();
+  await userEvent.click(await screen.findByLabelText(/Show all frames/)); // the decided card is only listed then
+  await screen.findByTestId("review-card-c.png");
+  fireEvent.keyDown(window, { key: "a" });
+  for (const f of ["a.png", "b.png", "c.png", "d.png"]) sweep(f);
+  await waitFor(() => expect(puts()).toEqual(["a.png", "b.png", "d.png"])); // c.png was already decided
+  sweep("a.png");
+  sweep("b.png"); // again in the same stroke: nothing more
+  expect(puts()).toHaveLength(3);
+  fireEvent.keyUp(window, { key: "a" });
+  expect(document.body.style.cursor).toBe("");
+});
+
+test("pressing A on a hovered card accepts it and the sweep carries on from there", async () => {
+  detections = sweepRows();
+  install({ exemplars: [EXEMPLAR], topk: 1, threshold: 0.3 });
+  await openReview();
+  await userEvent.hover(await screen.findByTestId("review-card-a.png"));
+  fireEvent.keyDown(window, { key: "a" });
+  await waitFor(() => expect(puts()).toEqual(["a.png"]));
+  sweep("a.png"); // the pointer jittering on the card the key was pressed on does not act again
+  sweep("b.png");
+  await waitFor(() => expect(puts()).toEqual(["a.png", "b.png"]));
+  expect(puts()).toHaveLength(2);
+});
+
+test("holding X (or Delete) and sweeping clears the cards, and never clears a box you accepted", async () => {
+  detections = sweepRows();
+  install({ exemplars: [EXEMPLAR], topk: 1, threshold: 0.3 });
+  await openReview();
+  await userEvent.click(await screen.findByLabelText(/Show all frames/));
+  await screen.findByTestId("review-card-c.png");
+  fireEvent.keyDown(window, { key: "x" });
+  for (const f of ["a.png", "c.png", "b.png"]) sweep(f);
+  await waitFor(() => expect(deletes()).toEqual(["a.png", "b.png"]));
+  fireEvent.keyUp(window, { key: "x" });
+  fireEvent.keyDown(window, { key: "Delete" });
+  sweep("d.png");
+  await waitFor(() => expect(deletes()).toEqual(["a.png", "b.png", "d.png"]));
+  fireEvent.keyUp(window, { key: "Delete" });
+  expect(puts()).toEqual([]);
+});
+
+test("moving the mouse without the key held, or a scroll under a still pointer, does nothing", async () => {
+  detections = sweepRows();
+  install({ exemplars: [EXEMPLAR], topk: 1, threshold: 0.3 });
+  await openReview();
+  await screen.findByTestId("review-card-a.png");
+  sweep("a.png");
+  fireEvent.keyDown(window, { key: "a" });
+  fireEvent.mouseMove(screen.getByTestId("review-card-b.png"), { movementX: 0, movementY: 0 }); // cards scrolled under the pointer
+  await new Promise((r) => setTimeout(r, 50));
+  expect(puts()).toEqual([]);
 });
 
 test("a card with nothing detected cannot be accepted, only adjusted", async () => {

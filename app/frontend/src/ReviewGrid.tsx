@@ -3,6 +3,7 @@ import { DetectionRow } from "./api";
 import { thumbUrl } from "./classify/Card";
 import Pager, { PagerSettings } from "./classify/Pager";
 import { lastSession } from "./lastSession";
+import { markReviewPainted, reviewPaintAction, trackReviewPaint } from "./reviewPaint";
 
 const STATE_COLOR: Record<string, string> = { trusted: "#2e9e5b", human: "#1a73e8", review: "#e08a00", none: "#c0392b" };
 const STATE_TEXT: Record<string, string> = { trusted: "trusted", human: "decided", review: "unsure", none: "no detection" };
@@ -78,9 +79,10 @@ function ReviewCard({
   const [hovered, setHovered] = useState(false);
   const box = row.boxes[0];
   const canAccept = !!box && row.state !== "human";
+  useEffect(trackReviewPaint, []);
   useCardKeys(hovered, {
-    accept: canAccept ? onAccept : undefined,
-    clear: () => !!box && onClear(),
+    accept: canAccept ? () => { markReviewPainted(row.frame); onAccept(); } : undefined,
+    clear: () => { if (!box) return; markReviewPainted(row.frame); onClear(); },
     adjust: onAdjust,
     undo: canUndo ? onUndo : undefined,
   });
@@ -94,6 +96,12 @@ function ReviewCard({
       data-testid={`review-card-${row.frame}`}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      onMouseMove={(e) => {
+        // holding A / X and sweeping over the cards accepts / clears each one the pointer enters
+        const act = reviewPaintAction(e.nativeEvent, row);
+        if (act === "accept") onAccept();
+        else if (act === "clear") onClear();
+      }}
       style={{ listStyle: "none", border: `2px solid ${color}`, borderRadius: "var(--radius)", background: "var(--panel)", padding: 4 }}
     >
       <button
@@ -148,7 +156,8 @@ function ReviewCard({
  * The review queue as a paged grid of cards, like the other pages: each shows the frame with the detected box, its state
  * and confidence, and its own Accept / Clear buttons. A decision shows at once and the card stays where it is, marked
  * as decided (the save runs in the background); **Remove decided** tidies the grid when you want to. Hover keys act on
- * the card under the mouse: Enter or A accepts, Delete or X clears, Z undoes, E opens the editor to adjust the box.
+ * the card under the mouse: Enter or A accepts, Delete or X clears, Z undoes, E opens the editor to adjust the box. Holding A
+ * or X and moving the mouse over the cards paints the action across them (see `reviewPaint.ts`).
  */
 export default function ReviewGrid({
   camera,
