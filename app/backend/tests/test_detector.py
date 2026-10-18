@@ -313,6 +313,67 @@ class ModelDownloadTests(DetectorBase):
         self.assertEqual(phases[0], {"phase": "downloading"})
 
 
+class BatchingTests(DetectorBase):
+    """The default backend takes frames in batches; a replacement backend still takes them one at a time."""
+
+    def run_default(self, batch: int) -> tuple[dict, list[int]]:
+        sizes: list[int] = []
+
+        def fake_batch(crops, queries, topk):
+            sizes.append(len(crops))
+            return [[(box_at(0.4, 0.4), 0.9)] for _ in crops]
+
+        self.save()
+        with (
+            mock.patch.object(detector, "model_cached", return_value=True),
+            mock.patch.object(detector, "_load_owl"),
+            mock.patch.object(detector, "_owl_backend_batch", fake_batch),
+            mock.patch.object(detector, "BATCH", batch),
+        ):
+            return detector.run("camA", "seal"), sizes
+
+    def test_frames_go_to_the_default_backend_in_batches(self) -> None:
+        result, sizes = self.run_default(batch=2)
+        self.assertEqual(sizes, [2, 1])  # three frames, batches of two
+        self.assertEqual(result["detected"], 3)
+
+    def test_one_batch_when_it_is_big_enough_and_progress_still_reaches_the_total(self) -> None:
+        phases: list[dict] = []
+        self.save()
+        with (
+            mock.patch.object(detector, "model_cached", return_value=True),
+            mock.patch.object(detector, "_load_owl"),
+            mock.patch.object(detector, "_owl_backend_batch", lambda crops, q, k: [[] for _ in crops]),
+        ):
+            result = detector.run("camA", "seal", phases.append)
+        self.assertEqual(result["detected"], 3)
+        self.assertEqual(result["needs_review"], 3)  # nothing found
+        self.assertEqual(phases[-1], {"done": 3, "total": 3})
+
+    def test_a_replacement_backend_is_called_once_per_frame(self) -> None:
+        self.save()
+        stub = StubBackend([[(box_at(0.4, 0.4), 0.9)]])
+        detector.set_backend(stub)
+        with mock.patch.object(detector, "_owl_backend_batch") as batch:
+            detector.run("camA", "seal")
+        self.assertEqual(stub.calls, 3)
+        batch.assert_not_called()
+
+
+class NonMaximumSuppressionTests(DetectorBase):
+    def test_a_weaker_box_overlapping_a_kept_one_is_suppressed_and_distant_ones_survive(self) -> None:
+        boxes = np.array([[0, 0, 10, 10], [1, 1, 11, 11], [50, 50, 60, 60]], dtype=np.float32)
+        scores = np.array([0.9, 0.8, 0.5], dtype=np.float32)
+        kept = detector._boxes_above_nms(scores, boxes)
+        self.assertEqual(kept.tolist(), [np.float32(0.9), 0.0, np.float32(0.5)])
+        self.assertEqual(scores.tolist(), [np.float32(0.9), np.float32(0.8), np.float32(0.5)])  # the input is untouched
+
+    def test_zero_scores_are_skipped(self) -> None:
+        boxes = np.array([[0, 0, 10, 10], [0, 0, 10, 10]], dtype=np.float32)
+        kept = detector._boxes_above_nms(np.array([0.0, 0.7], dtype=np.float32), boxes)
+        self.assertEqual(kept.tolist(), [0.0, np.float32(0.7)])
+
+
 class MaskReachesEmbeddingsTests(DetectorBase):
     """Dedup, scatter and suggestions all embed through ``dedup.fetch_embeddings``."""
 

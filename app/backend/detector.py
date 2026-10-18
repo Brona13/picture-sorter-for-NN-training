@@ -12,6 +12,7 @@ where ``box`` is ``{x, y, w, h}`` normalised to the target crop.
 """
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Callable
 from functools import lru_cache
 
@@ -31,6 +32,9 @@ MODEL_ID = "google/owlvit-base-patch32"
 MODEL_SOURCE = "huggingface.co"
 MODEL_DOWNLOAD_MB = 600  # approximate size of the weights, shown to the user before downloading
 NMS_IOU = 0.5
+BATCH = 8  # frames encoded together on the default (OWL-ViT) backend
+HALF = False  # half precision on a GPU is about 1.4x faster but changes which boxes win on ambiguous frames; opt in here
+_QUERY_NMS = 0.3  # overlap above which a weaker box of one exemplar is dropped (as the model's own post-processing did)
 
 Backend = Callable[[np.ndarray, list[np.ndarray], int], list[tuple[dict, float]]]
 
@@ -126,34 +130,95 @@ def _load_owl():
             ) from exc
         raise DetectorError(f"Could not download the detector model: {exc}") from exc
     model = model.to(device).eval()
+    if device == "cuda" and HALF:
+        model = model.half()
     return torch, processor, model, device
 
 
-def _owl_backend(target: np.ndarray, queries: list[np.ndarray], topk: int):
+_query_cache: dict[bytes, object] = {}  # exemplar crops -> their query embeddings (they do not change during a run)
+
+
+def _query_embeds(queries: list[np.ndarray]):
+    """One query embedding per exemplar, encoded once and kept while the same exemplars are used."""
     from PIL import Image  # noqa: PLC0415
 
     torch, processor, model, device = _load_owl()
-    height, width = target.shape[:2]
-    image = Image.fromarray(cv2.cvtColor(target, cv2.COLOR_BGR2RGB))
-    found: list[tuple[dict, float]] = []
-    for query in queries:
-        query_image = Image.fromarray(cv2.cvtColor(query, cv2.COLOR_BGR2RGB))
-        inputs = processor(images=image, query_images=query_image, return_tensors="pt").to(device)
+    key = hashlib.sha1(b"".join(q.tobytes() + repr(q.shape).encode() for q in queries)).digest() + bytes([HALF])
+    if key not in _query_cache:
+        if len(_query_cache) > 8:
+            _query_cache.clear()
+        embeds = []
         with torch.no_grad():
-            outputs = model.image_guided_detection(**inputs)
-        sizes = torch.tensor([[height, width]], device=device)
-        result = processor.post_process_image_guided_detection(
-            outputs=outputs, threshold=0.0, nms_threshold=0.3, target_sizes=sizes
-        )[0]
-        for (x0, y0, x1, y1), score in zip(result["boxes"].tolist(), result["scores"].tolist()):
-            x0, y0 = max(0.0, x0), max(0.0, y0)
-            x1, y1 = min(float(width), x1), min(float(height), y1)
-            if x1 > x0 and y1 > y0:
-                found.append(
-                    ({"x": x0 / width, "y": y0 / height, "w": (x1 - x0) / width, "h": (y1 - y0) / height},
-                     float(score))
-                )
-    return merge(found, topk)
+            for q in queries:
+                image = Image.fromarray(cv2.cvtColor(q, cv2.COLOR_BGR2RGB))
+                pv = processor(images=image, return_tensors="pt")["pixel_values"].to(device, model.dtype)
+                fmap = model.image_embedder(pixel_values=pv)[0]
+                feats = torch.reshape(fmap, (1, fmap.shape[1] * fmap.shape[2], fmap.shape[3]))
+                embeds.append(model.embed_image_query(feats, fmap)[0])
+        _query_cache[key] = embeds
+    return _query_cache[key]
+
+
+def _boxes_above_nms(scores: np.ndarray, boxes: np.ndarray) -> np.ndarray:
+    """Greedy non-maximum suppression as the model's post-processing does it: best first, each kept box zeroes the
+    scores of the boxes overlapping it by more than ``_QUERY_NMS``. Returns the scores left (0 = suppressed)."""
+    scores = scores.copy()
+    area = (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])
+    for i in np.argsort(-scores, kind="stable"):
+        if not scores[i]:
+            continue
+        iw = np.clip(np.minimum(boxes[i, 2], boxes[:, 2]) - np.maximum(boxes[i, 0], boxes[:, 0]), 0, None)
+        ih = np.clip(np.minimum(boxes[i, 3], boxes[:, 3]) - np.maximum(boxes[i, 1], boxes[:, 1]), 0, None)
+        inter = iw * ih
+        iou = inter / (area[i] + area - inter)
+        iou[i] = -1.0
+        scores[iou > _QUERY_NMS] = 0.0
+    return scores
+
+
+def _owl_backend_batch(targets: list[np.ndarray], queries: list[np.ndarray], topk: int) -> list[list[tuple[dict, float]]]:
+    """The default backend for several frames at once: each frame is encoded once and matched against every
+    exemplar, whose embeddings were encoded once for the whole run."""
+    from PIL import Image  # noqa: PLC0415
+
+    torch, processor, model, device = _load_owl()
+    embeds = _query_embeds(queries)
+    images = [Image.fromarray(cv2.cvtColor(t, cv2.COLOR_BGR2RGB)) for t in targets]
+    pv = processor(images=images, return_tensors="pt")["pixel_values"].to(device, model.dtype)
+    with torch.no_grad():
+        fmap = model.image_embedder(pixel_values=pv)[0]
+        n, hh, ww, dim = fmap.shape
+        feats = torch.reshape(fmap, (n, hh * ww, dim))
+        centre = model.box_predictor(feats, fmap).float().cpu().numpy()  # (frames, patches, cx cy w h)
+        logits = [model.class_predictor(image_feats=feats, query_embeds=e.expand(n, -1, -1))[0].float().max(dim=-1).values.cpu().numpy()
+                  for e in embeds]  # per exemplar: (frames, patches)
+    corners = np.stack([centre[..., 0] - centre[..., 2] / 2, centre[..., 1] - centre[..., 3] / 2,
+                        centre[..., 0] + centre[..., 2] / 2, centre[..., 1] + centre[..., 3] / 2], axis=-1)
+    out: list[list[tuple[dict, float]]] = []
+    for f, target in enumerate(targets):
+        height, width = target.shape[:2]
+        found: list[tuple[dict, float]] = []
+        for per_query in logits:
+            scores = _boxes_above_nms(1.0 / (1.0 + np.exp(-per_query[f])), corners[f])  # single precision, as the model does: ties saturate at 1.0
+            if not scores.any():
+                continue
+            top = scores.max() + 1e-6
+            alpha = np.clip((scores - top * 0.1) / (top * 0.9), 0.0, 1.0)
+            for i in np.flatnonzero(alpha > 0):
+                x0, y0, x1, y1 = (float(v) for v in corners[f, i] * np.array([width, height, width, height], dtype=np.float32))
+                x0, y0 = max(0.0, x0), max(0.0, y0)
+                x1, y1 = min(float(width), x1), min(float(height), y1)
+                if x1 > x0 and y1 > y0:
+                    found.append(({"x": x0 / width, "y": y0 / height, "w": (x1 - x0) / width, "h": (y1 - y0) / height}, float(alpha[i])))
+        out.append(merge(found, topk))
+    return out
+
+
+def _owl_backend(target: np.ndarray, queries: list[np.ndarray], topk: int):
+    return _owl_backend_batch([target], queries, topk)[0]
+
+
+_DEFAULT_BACKEND = _owl_backend  # ``run`` batches frames only while this one is in use
 
 
 def _get_backend() -> Backend:
@@ -215,6 +280,26 @@ def run(
     hmap = labels.hash_map(camera)
     frames = datamodel.frames_for_feature(camera, feature)
     detected = skipped = unreadable = needs_review = 0
+    pending: list[tuple[str, np.ndarray]] = []  # (frame hash, crop) waiting for the next batch
+
+    def flush() -> None:
+        nonlocal detected, skipped, needs_review
+        if not pending:
+            return
+        crops = [c for _, c in pending]
+        if backend is _DEFAULT_BACKEND:
+            results = _owl_backend_batch(crops, queries, det["topk"])
+        else:  # a replacement backend (tests, other models) takes one frame at a time
+            results = [backend(c, queries, det["topk"]) for c in crops]
+        for (h, _), found in zip(pending, results):
+            if not detections.save_auto(camera, feature, h, found, sig):
+                skipped += 1
+                continue
+            detected += 1
+            if not found or found[0][1] < det["threshold"]:
+                needs_review += 1
+        pending.clear()
+
     for i, frame in enumerate(frames):
         report({"done": i, "total": len(frames)})
         h = labels.frame_hash(camera, frame, hmap)
@@ -223,13 +308,10 @@ def run(
         except FileNotFoundError:
             unreadable += 1
             continue
-        found = backend(crop, queries, det["topk"])
-        if not detections.save_auto(camera, feature, h, found, sig):
-            skipped += 1
-            continue
-        detected += 1
-        if not found or found[0][1] < det["threshold"]:
-            needs_review += 1
+        pending.append((h, crop))
+        if len(pending) >= BATCH:
+            flush()
+    flush()
     report({"done": len(frames), "total": len(frames)})
     vision_settings.purge_derived(camera, feature)
     return {"detected": detected, "skipped_human": skipped, "unreadable": unreadable,
