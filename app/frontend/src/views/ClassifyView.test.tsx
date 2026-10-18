@@ -504,12 +504,26 @@ test("the key left of 1 toggles golden on a labeled card and is ignored without 
   expect(goldenCalls()[0].body).toEqual({ feature: "seal", frame: "b.png", golden: true });
 });
 
-test("class buttons show their shortcut number in their hint, and no shortcut text sits above the grid", async () => {
+test("class buttons carry only their label; the shortcut number is in the hint, and no shortcut text sits above the grid", async () => {
   render(<ClassifyView camera="camA" />);
   const a = await cardEl("a.png");
-  expect(within(a).getByRole("button", { name: "NG" })).toHaveAttribute("title", expect.stringContaining("press 2"));
-  expect(within(a).getByRole("button", { name: "NG" })).toHaveAttribute("title", expect.stringContaining("paint"));
+  const ng = within(a).getByRole("button", { name: "NG" });
+  expect(ng).toHaveTextContent(/^NG$/); // no number on the button
+  expect(a.querySelector("kbd")).toBeNull();
+  expect(ng).toHaveAttribute("title", expect.stringContaining("press 2"));
+  expect(ng).toHaveAttribute("title", expect.stringContaining("paint"));
+  expect(ng).toHaveAttribute("title", expect.stringContaining("X or 0 clears"));
   expect(screen.queryByText(/Hover a card and press/)).toBeNull();
+});
+
+test("the viewer's label buttons carry only their label too, with the number in the hint", async () => {
+  render(<ClassifyView camera="camA" />);
+  fireEvent.click(within(await cardEl("a.png")).getByRole("link"));
+  const viewer = await screen.findByRole("dialog", { name: "Full-size picture" });
+  const ng = within(within(viewer).getByRole("group", { name: "Label" })).getByRole("button", { name: "NG" });
+  expect(ng).toHaveTextContent(/^NG$/);
+  expect(viewer.querySelector("kbd")).toBeNull();
+  expect(ng).toHaveAttribute("title", "Shortcut: press 2.");
 });
 
 test("the Deleted view lists deleted frames per day instead of the card grid", async () => {

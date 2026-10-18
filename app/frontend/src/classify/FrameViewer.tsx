@@ -119,11 +119,10 @@ export default function FrameViewer({ camera, feature, frames, start, classes, m
               type="button"
               disabled={busy || isDeleted || locked}
               aria-pressed={mark.label === c}
-              title={i < MAX_SHORTCUT_CLASSES ? `Press ${i + 1}.` : undefined}
+              title={i < MAX_SHORTCUT_CLASSES ? `Shortcut: press ${i + 1}.` : undefined}
               onClick={() => onLabel(frame, mark.label === c ? null : c)}
               style={mark.label === c ? { background: classColor(c, classes), color: "#fff" } : undefined}
             >
-              {i < MAX_SHORTCUT_CLASSES && <kbd style={{ opacity: 0.6, marginRight: 4, fontSize: 10 }}>{i + 1}</kbd>}
               {c}
             </button>
           ))}

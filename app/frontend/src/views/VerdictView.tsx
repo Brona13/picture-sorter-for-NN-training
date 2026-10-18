@@ -114,12 +114,12 @@ function Card({ camera, item, busy, onDecide, onOpen }: { camera: string; item: 
       </ul>
       <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
         {(["OK", "NG"] as const).map((c) => (
-          <button key={c} disabled={busy} title={`Hover the card and press ${c === "OK" ? 1 : 2}.`} aria-label={item.status === "stale" && item.decision === c ? `Keep ${c} for ${item.frame}` : `Decide ${c} for ${item.frame}`} aria-pressed={item.kind === "manual" && item.verdict === c} onClick={() => onDecide(c)}>
+          <button key={c} disabled={busy} title={`Shortcut: hover the card and press ${c === "OK" ? 1 : 2}.`} aria-label={item.status === "stale" && item.decision === c ? `Keep ${c} for ${item.frame}` : `Decide ${c} for ${item.frame}`} aria-pressed={item.kind === "manual" && item.verdict === c} onClick={() => onDecide(c)}>
             {item.status === "stale" && item.decision === c ? `Keep ${c}` : c}
           </button>
         ))}
         {item.decision && (
-          <button disabled={busy} title="Hover the card and press 0 or X." aria-label={`Clear my decision for ${item.frame}`} onClick={() => onDecide(null)}>
+          <button disabled={busy} title="Shortcut: hover the card and press 0 or X." aria-label={`Clear my decision for ${item.frame}`} onClick={() => onDecide(null)}>
             Clear
           </button>
         )}
@@ -183,16 +183,15 @@ function VerdictViewer({
               type="button"
               disabled={busy}
               aria-pressed={item.kind === "manual" && verdict === c}
-              title={`Press ${i + 1}.`}
+              title={`Shortcut: press ${i + 1}.`}
               onClick={() => onDecide(frame, c)}
               style={item.kind === "manual" && verdict === c ? { background: classColor(c), color: "#fff" } : undefined}
             >
-              <kbd style={{ opacity: 0.6, marginRight: 4, fontSize: 10 }}>{i + 1}</kbd>
               {item.status === "stale" && item.decision === c ? `Keep ${c}` : c}
             </button>
           ))}
           {item.decision && (
-            <button type="button" disabled={busy} title="Press 0." onClick={() => onDecide(frame, null)}>
+            <button type="button" disabled={busy} title="Shortcut: press 0 or X." onClick={() => onDecide(frame, null)}>
               Clear
             </button>
           )}

@@ -189,3 +189,15 @@ test("X in the viewer clears my decision too", async () => {
   fireEvent.keyDown(window, { key: "x" });
   await waitFor(() => expect(calls.find((c) => c.url.includes("/verdicts/decision"))?.body).toEqual({ frame: "a.png", cls: null }));
 });
+
+test("the Verdict buttons and its viewer carry only OK / NG, with the shortcut in the hint", async () => {
+  list = () => ({ status: "contradiction", page: 1, per_page: 24, n_pages: 1, total: 1, items: [item("a.png")] });
+  render(<VerdictView camera="camA" />);
+  const card = await screen.findByTestId("verdict-card-a.png");
+  expect(card.querySelector("kbd")).toBeNull();
+  expect(within(card).getByRole("button", { name: "Decide NG for a.png" })).toHaveAttribute("title", expect.stringContaining("press 2"));
+  fireEvent.click(await screen.findByRole("button", { name: "Open a.png" }));
+  const viewer = await screen.findByTestId("verdict-viewer");
+  expect(viewer.querySelector("kbd")).toBeNull();
+  expect(within(viewer).getByRole("button", { name: "NG" })).toHaveAttribute("title", "Shortcut: press 2.");
+});

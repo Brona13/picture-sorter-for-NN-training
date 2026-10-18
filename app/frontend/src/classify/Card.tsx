@@ -262,16 +262,11 @@ export default function Card({ camera, feature, classes, methods, card, busy, on
             title={
               (outside ? "Outside this ROI: set the picture's product first (open it). " : "") +
               (label === c ? "Click to remove the label. " : "") +
-              (i < MAX_SHORTCUT_CLASSES ? `Hover the card and press ${i + 1}. Hold the key and move the mouse over cards to paint it on unlabeled ones.` : "")
+              (i < MAX_SHORTCUT_CLASSES ? `Shortcut: hover the card and press ${i + 1} (X or 0 clears). Hold the key and move the mouse over cards to paint it on unlabeled ones.` : "")
             }
             onClick={() => onLabel(label === c ? null : c)}
             style={label === c ? { background: classColor(c, classes), color: "#fff" } : undefined}
           >
-            {i < MAX_SHORTCUT_CLASSES && (
-              <kbd aria-hidden="true" style={{ opacity: 0.6, marginRight: 4, fontSize: 10 }}>
-                {i + 1}
-              </kbd>
-            )}
             {c}
           </button>
         ))}

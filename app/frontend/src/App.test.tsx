@@ -422,8 +422,8 @@ test("Rank using sits in the top bar next to Camera and Product on the Classify 
   const select = await bar.findByLabelText("Rank using");
   expect(select).toHaveValue("resnet50");
   expect(Array.from(select.querySelectorAll("option")).map((o) => o.textContent)).toEqual(["Classical (CPU)", "ResNet 50"]);
-  expect(bar.getByLabelText("Camera")).toBeInTheDocument();
-  expect(bar.getByLabelText("Product")).toBeInTheDocument();
+  expect(await bar.findByLabelText("Camera")).toBeInTheDocument();
+  expect(await bar.findByLabelText("Product")).toBeInTheDocument(); // the product list arrives a moment later
 });
 
 test("Rank using is on the Classify page only", async () => {
