@@ -511,29 +511,18 @@ def restore_frame(camera: str, body: DeleteBody) -> dict:
     return _result(camera, body.feature, body.frame, classes)
 
 
-class MuteBody(BaseModel):
+class UnmuteBody(BaseModel):
     feature: str
     frame: str
-    muted: bool
 
 
-@router.put("/cameras/{camera}/classify/mute")
-def mute_frame(camera: str, body: MuteBody) -> dict:
-    """Hide one picture from this ROI's grid (dedup mute), or bring it back. The cluster Apply may undo a mute later.
-
-    A labeled or golden picture is never muted (the dedup invariant), nor is a deleted one.
-    """
+@router.post("/cameras/{camera}/classify/unmute")
+def unmute_frame(camera: str, body: UnmuteBody) -> dict:
+    """Bring a picture hidden by the duplicate step (a dedup mute) back into this ROI's grid. Nothing happens if it was not muted."""
     require_feature(camera, body.feature)
     frame_path(camera, body.frame)
-    if body.muted:
-        if db.is_frame_deleted(camera, body.frame):
-            raise HTTPException(status_code=409, detail="Restore the picture before muting it.")
-        if body.frame in labels.current_labels(camera, body.feature) or labels.current_golden_for_frame(camera, body.feature, body.frame):
-            raise HTTPException(status_code=409, detail="A labeled picture stays visible: clear its label first.")
-        db.add_dedup_mutes(camera, body.feature, [(body.frame, labels.frame_hash(camera, body.frame), -1)], source="Classify")
-    else:
-        db.add_dedup_unmutes(camera, body.feature, [body.frame])
-    return {"frame": body.frame, "muted": body.muted, "muted_count": len(db.muted_frames(camera, body.feature))}
+    db.add_dedup_unmutes(camera, body.feature, [body.frame])
+    return {"frame": body.frame, "muted": False, "muted_count": len(db.muted_frames(camera, body.feature))}
 
 
 class FramesBody(BaseModel):

@@ -132,7 +132,7 @@ function install() {
           },
         });
       if (url.endsWith("/classify/label-bulk")) return ok({ labeled: 1 });
-      if (url.endsWith("/classify/mute")) return ok({ frame: "x", muted: true, muted_count: 1 });
+      if (url.endsWith("/classify/unmute")) return ok({ frame: "x", muted: false, muted_count: 0 });
       if (url.endsWith("/dedup/outliers")) return ok({ id: "o1", status: "queued", progress: {}, result: null, error: null });
       if (url === "/api/jobs/o1")
         return ok({
@@ -803,24 +803,47 @@ test("the OK / NG keys do nothing on an outside picture in the viewer", async ()
   expect(calls.some((c) => c.method === "PUT" && c.url.endsWith("/classify/label"))).toBe(false);
 });
 
-test("a muted picture inside the ROI offers only Unmute in the viewer, and it unmutes for the open ROI", async () => {
+test("a muted picture's viewer has a Show again button on the label line, which unmutes it for the open ROI; the note says why it was hidden", async () => {
   searchable();
   await typeSearch("red");
   fireEvent.click(within(await screen.findByTestId("card-red_1.png")).getByRole("link"));
   const viewer = await screen.findByRole("dialog", { name: "Full-size picture" });
   expect(within(viewer).getByRole("group", { name: "Product" })).toBeInTheDocument(); // which product it is in
-  expect(within(viewer).queryByRole("button", { name: "Mute" })).toBeNull(); // only Unmute for a muted picture in the scope
-  await userEvent.click(within(viewer).getByRole("button", { name: "Unmute" }));
-  await waitFor(() => expect(calls.find((c) => c.url.endsWith("/classify/mute"))?.body).toEqual({ feature: "seal", frame: "red_1.png", muted: false }));
+  expect(within(viewer).getByTestId("search-note")).toHaveTextContent("Hidden by duplicate removal.");
+  const show = within(within(viewer).getByRole("group", { name: "Label" })).getByRole("button", { name: "Show again" });
+  await userEvent.click(show);
+  await waitFor(() => expect(calls.find((c) => c.url.endsWith("/classify/unmute"))?.body).toEqual({ feature: "seal", frame: "red_1.png" }));
 });
 
-test("an outside picture can be muted from the viewer", async () => {
+test("there is no button to mute a picture by hand: Delete is how a picture is got rid of", async () => {
   searchable();
   await typeSearch("red");
   fireEvent.click(within(await screen.findByTestId("card-red_0.png")).getByRole("link"));
   const viewer = await screen.findByRole("dialog", { name: "Full-size picture" });
-  await userEvent.click(within(viewer).getByRole("button", { name: "Mute" }));
-  await waitFor(() => expect(calls.find((c) => c.url.endsWith("/classify/mute"))?.body).toEqual({ feature: "seal", frame: "red_0.png", muted: true }));
+  expect(within(viewer).queryByRole("button", { name: /^Mute$/ })).toBeNull();
+  expect(within(viewer).queryByRole("button", { name: "Show again" })).toBeNull(); // it is not muted
+  expect(within(viewer).getByRole("button", { name: "Delete frame" })).toBeInTheDocument();
+});
+
+test("the feature's buttons are captioned Feature next to the Product row", async () => {
+  searchable();
+  await typeSearch("red");
+  fireEvent.click(within(await screen.findByTestId("card-red_0.png")).getByRole("link"));
+  const viewer = await screen.findByRole("dialog", { name: "Full-size picture" });
+  expect(within(within(viewer).getByRole("group", { name: "Label" })).getByText("Feature")).toBeInTheDocument();
+});
+
+test("the outside warning is on the zoom line, so nothing in the viewer changes height when it appears", async () => {
+  searchable();
+  await typeSearch("red");
+  fireEvent.click(within(await screen.findByTestId("card-red_0.png")).getByRole("link"));
+  const viewer = await screen.findByRole("dialog", { name: "Full-size picture" });
+  const note = within(viewer).getByTestId("search-note");
+  expect(note).toHaveTextContent("Outside this ROI: in product B");
+  expect(within(viewer).getByTestId("zoom-level").parentElement).toBe(note.parentElement!.parentElement); // on the zoom controls line
+  // an inside picture has no note and the same rows
+  fireEvent.keyDown(window, { key: "ArrowRight" });
+  expect(within(viewer).queryByText(/Outside this ROI/)).toBeNull();
 });
 
 test("a picture found by search that is inside the ROI and not muted looks like any other card and its viewer shows its product", async () => {
@@ -830,7 +853,7 @@ test("a picture found by search that is inside the ROI and not muted looks like 
   expect(c).toHaveStyle({ border: "1px solid #ccc" });
   fireEvent.click(within(c).getByRole("link"));
   const viewer = await screen.findByRole("dialog", { name: "Full-size picture" });
-  // no alarm: no red note, no Mute; just which product it is in, with the ROI's own buttons enabled
+  // no alarm: no red note; just which product it is in, with the ROI's own buttons enabled
   expect(within(viewer).queryByText(/Outside this ROI/)).toBeNull();
   expect(within(viewer).getByRole("button", { name: "A" })).toHaveAttribute("aria-pressed", "true");
   expect(within(viewer).queryByRole("button", { name: "Mute" })).toBeNull();
@@ -1022,6 +1045,6 @@ test("in the viewer of a found picture the Product buttons and the feature's OK 
   expect(product.parentElement).toBe(labels.parentElement);
   const row = Array.from((labels.parentElement as HTMLElement).children);
   expect(row.indexOf(product)).toBeLessThan(row.indexOf(labels));
-  // the note and Mute are under that line
-  expect(within(viewer).getByTestId("search-extras").parentElement).not.toBe(labels.parentElement);
+  // nothing is stacked under that line
+  expect(labels.parentElement!.parentElement!.children).toHaveLength(1);
 });

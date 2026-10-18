@@ -214,7 +214,7 @@ export default function ZoomPane({
         <span data-testid="zoom-level" style={{ minWidth: 44 }}>
           {Math.round(scale * 100)}%
         </span>
-        {info && <span style={{ color: "var(--muted)" }}>{info}</span>}
+        {info && <span style={{ color: "var(--muted)", flex: "1 1 0", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{info}</span>}
       </div>
       <div
         style={{

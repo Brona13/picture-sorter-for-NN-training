@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { ReactNode, useRef, useState } from "react";
 import { frameImageUrl } from "../api";
 import { FIT_VIEW, View } from "../zoomGeometry";
 import ZoomPane from "../ZoomPane";
@@ -16,12 +16,12 @@ export interface Outline {
  * optional yellow outline. The zoom and pan are kept when the frame changes, so the same spot can be compared across
  * pictures. Shared by the viewers that show a plain frame.
  */
-export default function FramePane({ camera, frame, width, outline }: { camera: string; frame: string; width: number; outline?: Outline | null }) {
+export default function FramePane({ camera, frame, width, outline, info }: { camera: string; frame: string; width: number; outline?: Outline | null; info?: ReactNode }) {
   const [size, setSize] = useState({ w: 4, h: 3 });
   const [view, setView] = useState<View>(FIT_VIEW);
   const contentRef = useRef<HTMLDivElement>(null);
   return (
-    <ZoomPane imageSize={size} width={width} view={view} onViewChange={setView} panOnBackground contentRef={contentRef} resetOnZero={false}>
+    <ZoomPane imageSize={size} width={width} view={view} onViewChange={setView} panOnBackground contentRef={contentRef} resetOnZero={false} info={info}>
       <img
         key={frame}
         src={frameImageUrl(camera, frame)}

@@ -6,9 +6,9 @@ type SearchInfo = NonNullable<GridResponse["search"]>;
 /**
  * The **Product** buttons the picture viewer shows for a picture found by the Classify search, at the start of the label
  * line: the product-sorting ROI's classes with the picture's own product pressed, so you can see which product it is in
- * and correct it on the spot, followed on the same line by the open ROI's own OK / NG buttons. Shown in a feature ROI for
- * every found picture, inside the scope or not; in the product-sorting ROI itself there is none, its own buttons are the
- * products (`productRow` is false there). A deleted picture is restored first.
+ * and correct it on the spot, followed on the same line by the open ROI's own buttons (captioned "Feature"). Shown in a
+ * feature ROI for every found picture, inside the scope or not; in the product-sorting ROI itself there is none, its own
+ * buttons are the products (`productRow` is false there). A deleted picture is restored first.
  */
 export function ProductRow({
   card,
@@ -25,7 +25,7 @@ export function ProductRow({
   onProduct: (cls: string | null) => void;
 }) {
   const classes = search.product_classes;
-  if (card.deleted || !productRow || classes.length === 0) return null;
+  if (!showsProductRow(card, search, productRow)) return null;
   return (
     <div role="group" aria-label="Product" style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
       <span style={{ fontSize: 12 }}>Product</span>
@@ -47,49 +47,37 @@ export function ProductRow({
   );
 }
 
+/** Whether the Product row is shown for this card (the viewer then also captions the feature's own buttons). */
+export const showsProductRow = (card: CardData, search: SearchInfo, productRow: boolean) =>
+  productRow && !card.deleted && search.product_classes.length > 0;
+
 /**
- * What the viewer adds under the label line for a found picture: for one outside the open ROI's scope a red note (its
- * OK / NG buttons stay locked until its product fits) and Mute / Unmute for this ROI (a labeled picture cannot be muted);
- * inside the scope only Unmute, when the picture is muted. Its labels, golden and Restore are the viewer's own.
+ * The button on the label line for a found picture that the duplicate step has hidden from this ROI's grid (it is
+ * "muted"): it shows the picture in the grid again. There is no button to hide a picture by hand; Delete does that job.
  */
-export default function SearchExtras({
-  card,
-  onMute,
-  busy,
-}: {
-  card: CardData;
-  busy: boolean;
-  onMute: (muted: boolean) => void;
-}) {
-  if (card.deleted) return null;
-  const outside = !!card.outside;
-  const muted = !!card.muted;
-  if (!outside && !muted) return null;
-  const canMute = card.label === null && card.golden === null;
+export function ShowAgain({ card, busy, onUnmute }: { card: CardData; busy: boolean; onUnmute: () => void }) {
+  if (card.deleted || !card.muted) return null;
   return (
-    <div data-testid="search-extras" style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 4 }}>
-      {outside && (
-        <span style={{ fontSize: 12, color: "#c62828" }}>
-          Outside this ROI: {card.product ? `in product ${card.product}` : "no product yet"}. Set its product first; its OK / NG buttons unlock when it fits.
-        </span>
-      )}
-      <div role="group" aria-label="Visibility" style={{ display: "flex", gap: 6, alignItems: "center" }}>
-        {muted ? (
-          <button type="button" disabled={busy} title="Show the picture in this ROI's grid again." onClick={() => onMute(false)}>
-            Unmute
-          </button>
-        ) : (
-          <button
-            type="button"
-            disabled={busy || !canMute}
-            title={canMute ? "Hide the picture from this ROI's grid." : "A labeled picture stays visible: clear its label first."}
-            onClick={() => onMute(true)}
-          >
-            Mute
-          </button>
-        )}
-        {muted && <span style={{ fontSize: 12 }}>Muted for this ROI.</span>}
-      </div>
-    </div>
+    <button type="button" disabled={busy} title="This picture is muted: the duplicate step hid it from this ROI's grid. Show it there again." onClick={onUnmute}>
+      Show again
+    </button>
+  );
+}
+
+/**
+ * What the zoom line says about a found picture, on one line so nothing below it moves: that it is outside the open ROI's
+ * scope (its OK / NG buttons are locked until its product fits) and/or hidden by the duplicate step.
+ */
+export function SearchNote({ card }: { card: CardData }) {
+  if (card.deleted) return null;
+  const parts: string[] = [];
+  if (card.outside) parts.push(`Outside this ROI: ${card.product ? `in product ${card.product}` : "no product yet"}. Set its product first.`);
+  if (card.muted) parts.push("Hidden by duplicate removal.");
+  if (parts.length === 0) return null;
+  const text = parts.join(" ");
+  return (
+    <span data-testid="search-note" title={card.outside ? `${text} Its OK / NG buttons unlock when it fits.` : text} style={{ color: card.outside ? "#c62828" : undefined }}>
+      {text}
+    </span>
   );
 }

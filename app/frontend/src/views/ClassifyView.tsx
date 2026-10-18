@@ -13,7 +13,7 @@ import { methodTag } from "../methodTags";
 import ClearPanel from "../classify/ClearPanel";
 import CardGrid from "../classify/CardGrid";
 import DeletedByDay from "../classify/DeletedByDay";
-import SearchExtras, { ProductRow } from "../classify/SearchExtras";
+import { ProductRow, SearchNote, ShowAgain, showsProductRow } from "../classify/SearchExtras";
 import SuggestPanel from "../classify/SuggestPanel";
 import { useJob } from "../useJob";
 
@@ -554,10 +554,19 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
                       />
                     );
                   }}
-                  extra={(f) => {
+                  leadCaption={(f) => {
+                    const c = grid.items.find((x) => x.frame === f);
+                    const info = grid.search;
+                    return c && info && showsProductRow(c, info, !!info.classify_feature && info.classify_feature !== feature) ? "Feature" : null;
+                  }}
+                  trail={(f) => {
                     const c = grid.items.find((x) => x.frame === f);
                     if (!c || !grid.search) return null;
-                    return <SearchExtras card={c} busy={busy !== null} onMute={(muted) => actElsewhere(f, () => api.muteFrame(camera, feature, f, muted))} />;
+                    return <ShowAgain card={c} busy={busy !== null} onUnmute={() => actElsewhere(f, () => api.unmuteFrame(camera, feature, f))} />;
+                  }}
+                  note={(f) => {
+                    const c = grid.items.find((x) => x.frame === f);
+                    return c && grid.search ? <SearchNote card={c} /> : null;
                   }}
                   onClose={() => setViewing(null)}
                 />

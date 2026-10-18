@@ -992,11 +992,11 @@ export const api = {
     request<CardUpdate>(`/cameras/${encodeURIComponent(camera)}/classify/golden`, send("PUT", { feature, frame, golden })),
   deleteFrame: (camera: string, feature: string, frame: string, via?: string) =>
     request<CardUpdate>(`/cameras/${encodeURIComponent(camera)}/classify/delete`, post({ feature, frame, via })),
-  /** Hide one picture from this ROI's grid (dedup mute), or bring it back. */
-  muteFrame: (camera: string, feature: string, frame: string, muted: boolean) =>
+  /** Bring a picture the duplicate step hid (a dedup mute) back into this ROI's grid. */
+  unmuteFrame: (camera: string, feature: string, frame: string) =>
     request<{ frame: string; muted: boolean; muted_count: number }>(
-      `/cameras/${encodeURIComponent(camera)}/classify/mute`,
-      send("PUT", { feature, frame, muted }),
+      `/cameras/${encodeURIComponent(camera)}/classify/unmute`,
+      post({ feature, frame }),
     ),
   restoreFrame: (camera: string, feature: string, frame: string) =>
     request<CardUpdate>(`/cameras/${encodeURIComponent(camera)}/classify/restore`, post({ feature, frame })),

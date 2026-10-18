@@ -129,40 +129,48 @@ class ClassifySearchTests(ApiTestCase):
         self.assertNotIn("search", body)
         self.assertEqual(set(body["items"][0]), {"frame", "label", "golden", "deleted", "leanings", "bars", "cluster", "edge"})
 
-    # --- muting one picture -----------------------------------------------------------------------------------
-    def mute(self, frame: str, muted: bool, feature: str = "seal"):
-        return self.client.put(f"{self.base}/mute", json={"feature": feature, "frame": frame, "muted": muted})
+    # --- bringing a muted picture back ------------------------------------------------------------------------
+    def mute(self, frame: str, feature: str = "edge") -> None:
+        """What the duplicate step does: hide the picture from the ROI's grid."""
+        db.add_dedup_mutes(CAM, feature, [(frame, "", 3)])
 
-    def test_mute_hides_the_picture_from_the_grid_and_the_search_says_so(self) -> None:
-        r = self.mute("red_3.png", True, "edge")
-        self.assertEqual((r.status_code, r.json()["muted"], r.json()["muted_count"]), (200, True, 1))
-        self.assertIn("red_3.png", db.muted_frames(CAM, "edge"))
+    def unmute(self, frame: str, feature: str = "edge"):
+        return self.client.post(f"{self.base}/unmute", json={"feature": feature, "frame": frame})
+
+    def test_the_search_says_which_pictures_are_muted_for_the_roi(self) -> None:
+        self.mute("red_3.png")
         self.assertTrue(self.card("red_3.png", "edge")["muted"])
         self.assertFalse(self.card("red_2.png", "edge")["muted"])
+        self.assertFalse(self.card("red_3.png", "seal")["muted"])  # muted per ROI
 
     def test_unmute_brings_it_back(self) -> None:
-        self.mute("red_3.png", True, "edge")
-        r = self.mute("red_3.png", False, "edge")
-        self.assertEqual((r.status_code, r.json()["muted_count"]), (200, 0))
+        self.mute("red_3.png")
+        r = self.unmute("red_3.png")
+        self.assertEqual((r.status_code, r.json()["muted"], r.json()["muted_count"]), (200, False, 0))
         self.assertFalse(self.card("red_3.png", "edge")["muted"])
-
-    def test_a_labeled_or_golden_picture_cannot_be_muted(self) -> None:
-        labels.set_label(CAM, "edge", "red_3.png", "OK")
-        self.assertEqual(self.mute("red_3.png", True, "edge").status_code, 409)
         self.assertEqual(db.muted_frames(CAM, "edge"), set())
 
-    def test_a_deleted_picture_cannot_be_muted_but_a_muted_one_can_be_unmuted(self) -> None:
-        self.client.post(f"{self.base}/delete", json={"feature": "edge", "frame": "red_3.png"})
-        self.assertEqual(self.mute("red_3.png", True, "edge").status_code, 409)
-        self.assertEqual(self.mute("red_3.png", False, "edge").status_code, 200)
+    def test_unmute_touches_only_that_picture_and_that_roi(self) -> None:
+        self.mute("red_3.png")
+        self.mute("red_2.png")
+        self.mute("red_3.png", "seal")
+        self.unmute("red_3.png")
+        self.assertEqual(db.muted_frames(CAM, "edge"), {"red_2.png"})
+        self.assertEqual(db.muted_frames(CAM, "seal"), {"red_3.png"})
 
-    def test_mute_is_per_roi(self) -> None:
-        self.mute("red_3.png", True, "edge")
-        self.assertFalse(self.card("red_3.png", "seal")["muted"])
+    def test_unmuting_a_picture_that_is_not_muted_is_harmless(self) -> None:
+        r = self.unmute("red_3.png")
+        self.assertEqual((r.status_code, r.json()["muted_count"]), (200, 0))
 
-    def test_mute_rejects_unknown_frames_and_rois(self) -> None:
-        self.assertEqual(self.mute("nope.png", True).status_code, 404)
-        self.assertEqual(self.mute("red_3.png", True, "nope").status_code, 404)
+    def test_unmute_rejects_unknown_frames_and_rois(self) -> None:
+        self.assertEqual(self.unmute("nope.png").status_code, 404)
+        self.assertEqual(self.unmute("red_3.png", "nope").status_code, 404)
+
+    def test_there_is_no_manual_mute(self) -> None:
+        """Hiding a picture by hand was removed: Delete is how a picture is got rid of, the duplicate step does the muting."""
+        r = self.client.put(f"{self.base}/mute", json={"feature": "edge", "frame": "red_3.png", "muted": True})
+        self.assertIn(r.status_code, (404, 405))
+        self.assertEqual(db.muted_frames(CAM, "edge"), set())
 
 
 if __name__ == "__main__":

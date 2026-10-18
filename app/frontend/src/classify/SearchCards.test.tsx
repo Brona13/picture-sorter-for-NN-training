@@ -4,7 +4,7 @@ import { expect, test, vi } from "vitest";
 import { CardData } from "../api";
 import Card from "./Card";
 import FrameViewer from "./FrameViewer";
-import SearchExtras, { ProductRow } from "./SearchExtras";
+import { ProductRow, SearchNote, ShowAgain } from "./SearchExtras";
 
 const base = (over: Partial<CardData> = {}): CardData => ({
   frame: "blue_0.png", label: null, golden: null, deleted: false, leanings: {}, bars: null, cluster: null, ...over,
@@ -67,12 +67,6 @@ const renderProduct = (card: CardData, productRow = true) => {
   const view = render(<ProductRow card={card} search={info} productRow={productRow} busy={false} {...h} />);
   return { ...h, ...view };
 };
-const renderExtras = (card: CardData) => {
-  const h = { onMute: vi.fn() };
-  const view = render(<SearchExtras card={card} busy={false} {...h} />);
-  return { ...h, ...view };
-};
-
 test("in a feature ROI every found picture shows which product it is in, outside the scope or not, and the product can be changed", async () => {
   for (const outside of [false, true]) {
     const { onProduct, unmount } = renderProduct(base({ outside, product: "A" }));
@@ -103,39 +97,49 @@ test("a deleted picture has no Product row: it is restored first", () => {
   expect(container).toBeEmptyDOMElement();
 });
 
-test("an inside picture that is not muted has no extras under the label line", () => {
-  const { container } = renderExtras(base({ outside: false, product: "A" }));
-  expect(container).toBeEmptyDOMElement();
+test("a muted picture gets a Show again button, which unmutes it; there is no button to mute one", async () => {
+  const onUnmute = vi.fn();
+  render(<ShowAgain card={base({ muted: true })} busy={false} onUnmute={onUnmute} />);
+  await userEvent.click(screen.getByRole("button", { name: "Show again" }));
+  expect(onUnmute).toHaveBeenCalled();
+  expect(screen.queryByRole("button", { name: /^Mute$/ })).toBeNull();
 });
 
-test("an inside muted picture offers only Unmute", async () => {
-  const h = renderExtras(base({ muted: true }));
-  expect(screen.queryByRole("button", { name: "Mute" })).toBeNull();
-  expect(screen.queryByText(/Outside this ROI/)).toBeNull();
-  await userEvent.click(screen.getByRole("button", { name: "Unmute" }));
-  expect(h.onMute).toHaveBeenCalledWith(false);
+test("a picture that is not muted, or is deleted, has no Show again button", () => {
+  for (const card of [base(), base({ muted: true, deleted: true })]) {
+    const { container, unmount } = render(<ShowAgain card={card} busy={false} onUnmute={vi.fn()} />);
+    expect(container).toBeEmptyDOMElement();
+    unmount();
+  }
 });
 
-test("an outside picture gets the red note naming its product, and Mute", async () => {
-  const h = renderExtras(base({ outside: true, product: "B" }));
-  expect(screen.getByText(/Outside this ROI: in product B/)).toBeInTheDocument();
-  await userEvent.click(screen.getByRole("button", { name: "Mute" }));
-  expect(h.onMute).toHaveBeenCalledWith(true);
+test("the zoom-line note names the product of a picture outside the scope, in red, on one line", () => {
+  render(<SearchNote card={base({ outside: true, product: "B" })} />);
+  const note = screen.getByTestId("search-note");
+  expect(note).toHaveTextContent("Outside this ROI: in product B. Set its product first.");
+  expect(note).toHaveStyle({ color: "#c62828" });
+  expect(note).toHaveAttribute("title", expect.stringContaining("OK / NG buttons unlock"));
 });
 
 test("no product yet is said in the note", () => {
-  renderExtras(base({ outside: true, product: null }));
-  expect(screen.getByText(/no product yet/)).toBeInTheDocument();
+  render(<SearchNote card={base({ outside: true, product: null })} />);
+  expect(screen.getByTestId("search-note")).toHaveTextContent("no product yet");
 });
 
-test("a labeled picture cannot be muted", () => {
-  renderExtras(base({ outside: true, product: "B", label: "OK" }));
-  expect(screen.getByRole("button", { name: "Mute" })).toBeDisabled();
+test("a muted picture says it was hidden by duplicate removal; both can be said together", () => {
+  const { unmount } = render(<SearchNote card={base({ muted: true })} />);
+  expect(screen.getByTestId("search-note")).toHaveTextContent("Hidden by duplicate removal.");
+  unmount();
+  render(<SearchNote card={base({ muted: true, outside: true, product: "B" })} />);
+  expect(screen.getByTestId("search-note")).toHaveTextContent("Outside this ROI: in product B. Set its product first. Hidden by duplicate removal.");
 });
 
-test("a deleted picture gets no extras: it is restored first", () => {
-  const { container } = renderExtras(base({ outside: true, deleted: true }));
-  expect(container).toBeEmptyDOMElement();
+test("a picture inside the scope that is not muted has no note, and neither has a deleted one", () => {
+  for (const card of [base({ outside: false, product: "A" }), base({ outside: true, deleted: true })]) {
+    const { container, unmount } = render(<SearchNote card={card} />);
+    expect(container).toBeEmptyDOMElement();
+    unmount();
+  }
 });
 
 // --- the viewer ---
@@ -176,11 +180,13 @@ test("browsing to an unlocked picture unlocks the labels again", () => {
   expect(h.onLabel).toHaveBeenCalledWith("b.png", "OK");
 });
 
-test("the viewer shows the extras of the picture on screen under the label buttons", () => {
-  renderViewer({ extra: (f: string) => <div data-testid="extra">{`extras for ${f}`}</div> });
-  expect(screen.getByTestId("extra")).toHaveTextContent("extras for a.png");
+test("the viewer asks for the lead and the trail of the picture on screen, so they follow when browsing", () => {
+  renderViewer({ lead: (f: string) => <div role="group" aria-label="Product">{`lead ${f}`}</div>, trail: (f: string) => <span data-testid="trail">{`trail ${f}`}</span> });
+  expect(screen.getByRole("group", { name: "Product" })).toHaveTextContent("lead a.png");
+  expect(screen.getByTestId("trail")).toHaveTextContent("trail a.png");
   fireEvent.keyDown(window, { key: "ArrowRight" });
-  expect(screen.getByTestId("extra")).toHaveTextContent("extras for b.png");
+  expect(screen.getByRole("group", { name: "Product" })).toHaveTextContent("lead b.png");
+  expect(screen.getByTestId("trail")).toHaveTextContent("trail b.png");
 });
 
 test("the viewer puts the lead (the Product buttons) first on the label line, then the OK / NG buttons, in one row", () => {
@@ -192,8 +198,29 @@ test("the viewer puts the lead (the Product buttons) first on the label line, th
   expect(row.indexOf(product)).toBeLessThan(row.indexOf(labels)); // product first, then the feature's buttons
 });
 
-test("the extras sit under that line, not in it", () => {
-  renderViewer({ lead: () => <div role="group" aria-label="Product" />, extra: () => <div data-testid="under">under</div> });
+test("the Feature caption starts the feature's buttons when the Product row precedes them", () => {
+  renderViewer({ lead: () => <div role="group" aria-label="Product" />, leadCaption: () => "Feature" });
+  expect(within(screen.getByRole("group", { name: "Label" })).getByText("Feature")).toBeInTheDocument();
+});
+
+test("with no Product row there is no caption", () => {
+  renderViewer({ leadCaption: () => null });
+  expect(screen.queryByText("Feature")).toBeNull();
+});
+
+test("the trail (Show again) ends the label line, after the golden star", () => {
+  renderViewer({ trail: () => <button>Show again</button> });
   const labels = screen.getByRole("group", { name: "Label" });
-  expect(screen.getByTestId("under").parentElement).not.toBe(labels.parentElement);
+  const row = Array.from(labels.children);
+  expect(row.at(-1)).toHaveTextContent("Show again");
+  expect(within(labels).getByRole("button", { name: "Make golden" })).toBeInTheDocument();
+});
+
+test("the note goes on the zoom line above the picture and the viewer has no second row under the label line", () => {
+  renderViewer({ note: () => <span data-testid="the-note">hello</span>, lead: () => <div role="group" aria-label="Product" /> });
+  const note = screen.getByTestId("the-note");
+  const percent = screen.getByTestId("zoom-level");
+  expect(note.parentElement!.parentElement).toBe(percent.parentElement); // on the zoom controls line
+  const labels = screen.getByRole("group", { name: "Label" });
+  expect(labels.parentElement!.parentElement!.children).toHaveLength(1); // nothing is stacked under the label line
 });

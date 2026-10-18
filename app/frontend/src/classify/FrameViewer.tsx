@@ -28,8 +28,12 @@ interface Props {
   labelsLocked?: (frame: string) => boolean;
   /** Controls that start the label line, before the OK / NG buttons (a found picture's Product buttons). */
   lead?: (frame: string) => ReactNode;
-  /** More controls for the frame on screen, under the label line (the search's note and Mute). */
-  extra?: (frame: string) => ReactNode;
+  /** The caption of the OK / NG buttons when something precedes them on the line ("Feature"), or null for none. */
+  leadCaption?: (frame: string) => string | null;
+  /** Controls that end the label line, after the buttons (a found picture's "Show again"). */
+  trail?: (frame: string) => ReactNode;
+  /** A short note for the zoom line above the picture (one line, so nothing moves when it appears). */
+  note?: (frame: string) => ReactNode;
   /** Called whenever the shown frame changes, so the grid can turn to the page that holds it. */
   onShow?: (frame: string) => void;
   onClose: () => void;
@@ -40,7 +44,7 @@ interface Props {
  * pan, the same pane the ROI editor uses), the ROI outline, and the card's own actions for the frame on screen
  * (1-9 label, 0 or X clear, the key left of 1 golden, Delete).
  */
-export default function FrameViewer({ camera, feature, frames, start, classes, marks, busy, onLabel, onGolden, onDelete, deleted, onRestore, labelsLocked, lead, extra, onShow, onClose }: Props) {
+export default function FrameViewer({ camera, feature, frames, start, classes, marks, busy, onLabel, onGolden, onDelete, deleted, onRestore, labelsLocked, lead, leadCaption, trail, note, onShow, onClose }: Props) {
   const [roi, setRoi] = useState<RoiInfo | null>(null);
   const [showRoi, setShowRoi] = useState(true);
   useEffect(() => {
@@ -108,6 +112,7 @@ export default function FrameViewer({ camera, feature, frames, start, classes, m
         <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
         {lead?.(frame)}
         <div role="group" aria-label="Label" style={{ display: "flex", gap: 6, alignItems: "center", flex: 1 }}>
+          {leadCaption?.(frame) && <span style={{ fontSize: 12 }}>{leadCaption(frame)}</span>}
           {classes.map((c, i) => (
             <button
               key={c}
@@ -131,9 +136,9 @@ export default function FrameViewer({ camera, feature, frames, start, classes, m
           >
             {mark.golden ? "⭐" : "☆"}
           </button>
+          {trail?.(frame)}
         </div>
         </div>
-        {extra?.(frame)}
         </div>
       }
       tools={
@@ -162,7 +167,7 @@ export default function FrameViewer({ camera, feature, frames, start, classes, m
         </>
       }
     >
-      {(width) => <FramePane camera={camera} frame={frame} width={width} outline={roi && showRoi ? roi : null} />}
+      {(width) => <FramePane camera={camera} frame={frame} width={width} outline={roi && showRoi ? roi : null} info={note?.(frame)} />}
     </PictureViewer>
   );
 }
