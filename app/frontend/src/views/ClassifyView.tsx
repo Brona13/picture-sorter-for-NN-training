@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import ClassifyOutliers from "../classify/ClassifyOutliers";
 import ClassifyScatter from "../classify/ClassifyScatter";
 import { usePublishFeature, useSharedFeature } from "../SharedFeature";
 import { api, CardData, CardUpdate, ClassifyState, GridQuery, GridResponse } from "../api";
@@ -40,7 +41,7 @@ export default function ClassifyView({ camera, product }: { camera: string; prod
   const [busy, setBusy] = useState<string | null>(null);
   const [viewing, setViewing] = useState<string | null>(null); // the picture viewer, on a frame of this page
   const [revision, setRevision] = useState(0);
-  const [mode, setMode] = useState<"grid" | "scatter">("grid");
+  const [mode, setMode] = useState<"grid" | "scatter" | "outliers">("grid");
   const [similarSeed, setSimilarSeed] = useState<{ frame: string; label: string } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -241,11 +242,18 @@ export default function ClassifyView({ camera, product }: { camera: string; prod
           <button type="button" aria-pressed={mode === "scatter"} onClick={() => setMode("scatter")}>
             ✦ Scatter
           </button>
+          <button type="button" aria-pressed={mode === "outliers"} onClick={() => setMode("outliers")}>
+            ◎ Outliers
+          </button>
         </div>
       )}
 
       {mode === "scatter" && st && (
         <ClassifyScatter camera={camera} feature={feature} grid={st.settings} onGrid={changeSetting} onChanged={bump} onNotice={setNotice} onError={setError} />
+      )}
+
+      {mode === "outliers" && st && (
+        <ClassifyOutliers camera={camera} feature={feature} grid={st.settings} onGrid={changeSetting} onChanged={bump} onNotice={setNotice} onError={setError} />
       )}
 
       {mode === "grid" && (

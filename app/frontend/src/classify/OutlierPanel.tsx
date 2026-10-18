@@ -91,11 +91,14 @@ export function OutlierResults({
   grid,
   onGrid,
   onDeleted,
+  onChanged,
 }: {
   o: OutlierState;
   grid: PagerSettings;
   onGrid: (perPage: number, cols: number) => void;
   onDeleted: (frame: string) => void;
+  /** A card was labeled, marked golden or restored here (a delete goes to `onDeleted`). */
+  onChanged?: () => void;
 }) {
   const { camera, feature, result, marks, setMarks, gone, setGone, page, setPage } = o;
   if (!result) return null;
@@ -131,7 +134,10 @@ export function OutlierResults({
         onPage={setPage}
         where="outliers"
         extras={(f) => ({ caption: `outlier ${(score.get(f) ?? 0).toFixed(3)}` })}
-        onChanged={(f, c) => setMarks((m) => ({ ...m, [f]: { label: c.label, golden: c.golden } }))}
+        onChanged={(f, c) => {
+          setMarks((m) => ({ ...m, [f]: { label: c.label, golden: c.golden } }));
+          onChanged?.();
+        }}
         onDeleted={(f) => {
           setGone((g) => new Set(g).add(f));
           onDeleted(f);

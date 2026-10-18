@@ -128,6 +128,12 @@ function install() {
           },
         });
       if (url.endsWith("/classify/label-bulk")) return ok({ labeled: 1 });
+      if (url.endsWith("/dedup/outliers")) return ok({ id: "o1", status: "queued", progress: {}, result: null, error: null });
+      if (url === "/api/jobs/o1")
+        return ok({
+          id: "o1", status: "done", progress: {}, error: null,
+          result: { method: "resnet50", k: 5, scores: [{ frame: "a.png", score: 0.3 }], summary: { min: 0.3, median: 0.3, p95: 0.3, max: 0.3 }, marks: {}, classes: ["OK", "NG"] },
+        });
       return new Response("{}", { status: 404 });
     }),
   );
@@ -566,4 +572,39 @@ test("the map's selection uses the same grid size and columns as the grid, and a
   await waitFor(() => expect(calls.some((c) => c.url.includes("/classify/grid-settings"))).toBe(true));
   expect(calls.some((c) => c.url.includes("/dedup/grid-settings"))).toBe(false);
   expect(calls.find((c) => c.url.includes("/classify/grid-settings"))!.body).toMatchObject({ feature: "seal", cols: 6 });
+});
+
+test("Outliers sits next to Grid and Scatter, lists the most unusual pictures, and a label from there reloads the counts", async () => {
+  render(<ClassifyView camera="camA" />);
+  await cardEl("a.png");
+  const group = screen.getByRole("group", { name: "View" });
+  expect(within(group).getAllByRole("button").map((b) => b.textContent)).toEqual(["▦ Grid", "✦ Scatter", "◎ Outliers"]);
+  expect(calls.some((c) => c.url.endsWith("/dedup/outliers"))).toBe(false);
+
+  await userEvent.click(within(group).getByRole("button", { name: /Outliers/ }));
+  expect(within(group).getByRole("button", { name: /Outliers/ })).toHaveAttribute("aria-pressed", "true");
+  expect(screen.queryByTestId("card-b.png")).toBeNull(); // the grid is replaced
+  await userEvent.click(await screen.findByRole("button", { name: "Score outliers" }));
+  const card = await screen.findByTestId("card-a.png");
+  expect(within(card).getByText("outlier 0.300")).toBeInTheDocument();
+
+  const before = calls.filter((c) => c.url.includes("/classify/state")).length;
+  await userEvent.click(within(card).getByRole("button", { name: /NG/ }));
+  await waitFor(() => expect(calls.filter((c) => c.url.includes("/classify/state")).length).toBeGreaterThan(before));
+
+  await userEvent.click(within(group).getByRole("button", { name: /Grid/ }));
+  expect(await screen.findByTestId("card-b.png")).toBeInTheDocument();
+});
+
+test("the outliers list uses Classify's grid settings too", async () => {
+  render(<ClassifyView camera="camA" />);
+  await cardEl("a.png");
+  await userEvent.click(screen.getByRole("button", { name: /Outliers/ }));
+  await userEvent.click(await screen.findByRole("button", { name: "Score outliers" }));
+  await screen.findByTestId("card-a.png");
+  const perPage = (await screen.findAllByLabelText("Per page outliers top"))[0];
+  expect(perPage).toHaveValue(String(state.settings.per_page));
+  await userEvent.selectOptions((await screen.findAllByLabelText("Columns outliers top"))[0], "6");
+  await waitFor(() => expect(calls.some((c) => c.url.includes("/classify/grid-settings"))).toBe(true));
+  expect(calls.some((c) => c.url.includes("/dedup/grid-settings"))).toBe(false);
 });

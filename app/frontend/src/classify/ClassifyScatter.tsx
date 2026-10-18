@@ -1,16 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
-import { api, DedupState } from "../api";
+import { useState } from "react";
 import { PagerSettings } from "./Pager";
 import { ColourBy } from "./Scatter";
 import { effectiveColour, ScatterMapView, useScatterMap } from "./ScatterWorkbench";
-
-const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
-
-const BLOCKED: Record<NonNullable<DedupState["reason"]>, string> = {
-  no_embeddings: "The map needs ResNet embeddings. Install the neural dependencies (pip install -r requirements-embedding.txt), then return here.",
-  methods_off: "No ResNet method is switched on, and the map works on ResNet embeddings. Tick ResNet18 or ResNet50 on the Configuration page.",
-  no_sklearn: "scikit-learn isn't installed. Run pip install -r requirements-embedding.txt and reload the app.",
-};
+import { EmbeddingSelect, useDedupState } from "./useDedupState";
 
 /**
  * Classify's Scatter view: the 2D map of this ROI's pictures, to select many at once (drag a rectangle) and label or
@@ -36,45 +28,19 @@ export default function ClassifyScatter({
   onNotice: (message: string) => void;
   onError: (message: string) => void;
 }) {
-  const [dst, setDst] = useState<DedupState | null>(null);
+  const embed = useDedupState(camera, feature, onError);
+  const { dst, method, blocked } = embed;
   const [colourBy, setColourBy] = useState<ColourBy>("label");
-  const method = dst?.params.method ?? "";
-  const map = useScatterMap({ camera, feature, method, auto: !!dst && !dst.reason, onError });
-
-  useEffect(() => {
-    setDst(null);
-    api
-      .dedupState(camera, feature)
-      .then(setDst)
-      .catch((e: unknown) => onError(msg(e)));
-  }, [camera, feature]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const changeMethod = useCallback(
-    (next: string) => {
-      if (!dst) return;
-      const params = { ...dst.params, method: next };
-      setDst({ ...dst, params });
-      api.dedupSaveSettings(camera, feature, params).catch((e: unknown) => onError(msg(e)));
-    },
-    [camera, feature, dst, onError],
-  );
+  const map = useScatterMap({ camera, feature, method, auto: !!dst && !blocked, onError });
 
   if (!dst) return <p>Loading the map…</p>;
-  if (dst.reason) return <p role="status">{BLOCKED[dst.reason]}</p>;
-  if (dst.frames < 2) return <p>This ROI needs at least two pictures for a map.</p>;
+  if (blocked) return <p role="status">{blocked}</p>;
 
   const { colour, note } = effectiveColour(colourBy, map.scatter, null);
   return (
     <div data-testid="classify-scatter">
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center", margin: "8px 0" }}>
-        <label>
-          Embedding{" "}
-          <select value={method} onChange={(e) => changeMethod(e.target.value)}>
-            {dst.backbones.map((b) => (
-              <option key={b}>{b}</option>
-            ))}
-          </select>
-        </label>
+        <EmbeddingSelect state={embed} />
         <fieldset style={{ border: 0, padding: 0, margin: 0 }}>
           <legend className="visually-hidden">Projection</legend>
           {dst.projections.map((p) => (
