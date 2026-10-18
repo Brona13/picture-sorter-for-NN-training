@@ -1,9 +1,9 @@
 ---
 name: ui-navigation-restructure
-description: Restructure the UI into Overview / Management / Manipulation / Export with a tool bar, status bar, tool icons and a shared picture grid (phases 1-4; 1-4 built as v1.42-v1.45, parked items open)
+description: Restructure the UI into Overview / Management / Manipulation / Export with a tool bar, status bar, tool icons and a shared picture grid (phases 1-4 built as v1.42-v1.45; follow-ups v1.46-v1.50 done; parked items open)
 status: shipped
 document_type: plan
-last_updated: 2026-10-17
+last_updated: 2026-10-18
 ---
 
 # Plan: restructure Picture Sorter navigation (from the UI navigation handover)
@@ -54,6 +54,9 @@ Tests: backend unit tests for each trace rule and for the `via`/`source` tagging
 
 ### Phase 4 — Shared picture grid (built as v1.45.0; scope narrowed: Scatter selection, Clusters, Outliers and Insights use `PictureGrid`; Classify and Verdict keep their own grids because their cards are server-paged / decision cards)
 - Extract one grid component from the card grids in Classify, Insights, Outliers, Verdict, Dedup cluster browser (`classify/Card.tsx`, `ClusterBrowser.tsx`, `Pager.tsx`, `paint.ts`). Labeling/golden/delete go through it; it emits one "frames changed" event. Preserve domain invariants (docs/data-model.md); keep domain logic in backend modules.
+
+### Follow-up work done after phase 4 (v1.45.1-v1.50.0, not in the original plan)
+Detector speed-up and input size, template matching as the default method, the review as a card grid, a shared picture viewer (`PictureViewer`) for every page, a shared painter / card hook / grid layout so every grid behaves the same, and the review's delete, icon buttons, filter and sort. See `memory/navigation-and-detector-rework.md`.
 
 ### Parked (not in this plan)
 Background precompute of scatter/clustering, "ready / needs refresh" indicator, final tool names, Detector page rework, progress bar rework, visual design.

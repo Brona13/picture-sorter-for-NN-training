@@ -3,7 +3,7 @@ name: MEMORY
 description: Portable index of project memory files
 status: current
 document_type: index
-last_updated: 2026-10-17
+last_updated: 2026-10-18
 ---
 
 # Project Memory Index
@@ -43,3 +43,4 @@ Portable memory for the *Picture Sorter for NN Training* project. Kept inside th
 - [Camera tags + verdicts, 1.25.0-1.27.0 (2026-10-16)](camera-tags-and-verdict-plan.md) — New camera wizard and tags (1.25.0); verdict model, Verdict page, progress bar (1.26.0, schema v8); project versions and export from verdicts (1.27.0); plans/project-verdict-plan.md; unverified in a browser.
 - [Laptop patches and UX round, 1.23.0-1.30.0 (2026-10-16)](laptop-patches-and-ux-round.md) — laptop patches applied (schema v8); Dedup after Ingest, tag filter, painting labels, Deleted/Verdict pagers, remembered session; build/restart and commit-hygiene lessons; unverified in a browser.
 - [Dedup redesign trial, 1.31.0-1.41.0 (2026-10-17)](dedup-redesign-panel.md) — right options panel, one active function, scatter as a function, picture viewer, info tips, hardware badge, product-picker rollout rule, wheel sliders; decisions, open points, dictation glossary; the pattern to copy to other pages.
+- [Navigation restructure and Detector rework, 1.42.0-1.50.0 (2026-10-18)](navigation-and-detector-rework.md) — top bar + tool bar + status bar, tool icons, shared grid / viewer / painter, Detector: 10x faster, template matching default, review card grid with delete, filter and sort; decisions, measured numbers, open points; unverified in a browser.

@@ -3,7 +3,7 @@ name: current-project
 description: Authoritative snapshot of the current purpose, architecture, capabilities, limitations, and open work
 status: current
 document_type: project-status
-last_updated: 2026-10-16
+last_updated: 2026-10-18
 ---
 
 # Current project
@@ -204,7 +204,7 @@ set at once.
 - Most isolated frames listed first as cards (label, golden, delete); the 2D projection can be coloured by the score
 - Derived on demand (`outliers.py`, `api/outliers_api.py`, `classify/OutlierPanel.tsx`); no stored state. A review aid, not a verdict; independent of the clustering parameters
 
-### Navigation (v1.42.0-v1.45.0)
+### Navigation (v1.42.0-v1.50.0)
 
 The sidebar is gone. A top bar holds the four sections (Overview, Management, Manipulation, Export; working names), the camera and product pickers and, on the right, ⚙️. Overview and Manipulation show a second-level bar of their pages/tools under it; the section button returns to the page last open in that section. A slim fixed **status bar** at the bottom (`StatusBar.tsx`) shows camera › product › ROI on the left and the hardware badge and app version on the right. The ROI editor is a Manipulation tool (a helper for focusing on a detail), not a setup step. In Manipulation, **Scatter, Clusters, Outliers** (group label "Duplicates", `/dedup/:tool`, `/dedup` redirects to Scatter) are three separate tools in the second-level bar. The right options panel scrolls independently of the centre (`.right-panel-body`; the column height follows the measured top-bar height in `--top-h`). **Tool icons (v1.44.0):** each tool in the second-level bar has a drawn two-tone icon (`ToolIcon.tsx`), muted grey until the tool has left a trace on the camera, in its own colour after (Overview and Status are always colourful). Used means: stored settings/results (Clusters mutes or snapshot, ROIs, Detector filter/mask/detector, Edge angle rule, Augmentation settings, versions, Verdict decisions) or an action made from the tool (a label whose `labels.via`, or a delete whose `deleted_frames.source`, names it). Just opening a tool does not count. `tools_used.py` derives it on read (no stored state, no schema change), `GET /api/cameras/{camera}/tools-used`; `App.tsx` reloads it on camera change and after data changes. Scatter, Clusters, Outliers and Insights now pass `via` with their label/delete calls (optional `via` on `PUT classify/label`, `POST classify/delete` and `delete-bulk`). Limit: a frame has one label row, so a later relabel by another tool overwrites `via`, and older labels/deletes stay unattributed. **Shared picture grid (v1.45.0):** `classify/PictureGrid.tsx` is the one component behind the card grids that show a client-side list of frames: the Scatter selection, Clusters, Outliers and the Insights matrix cell. It owns the pager (above and below), the card grid, the busy state and the picture viewer, and sends every label, golden and delete through one place, stamped with the tool name (`via`). Each successful change is reported once: `onChanged(frame, card)` (label, golden, restore) or `onDeleted(frame, card)`; the tool keeps the frames, marks and page. Insights runs it with `viewer={false}` and `restorable` (its cells keep deleted cards, as before). Classify (server-paged cards with scores) and Verdict (decision cards) keep their own grids; the app-wide "something changed" event is still `DATA_CHANGED` in `api.ts` (fired by every non-GET request). Still to do from `discussions/picture-sorter-ui-navigation-handover.md`: the "frame position" part of the status bar (not found in the app; only camera/product/ROI are shown), then the other pages' options panels.
 
@@ -358,9 +358,11 @@ See [[findings-real-data-method-comparison]] for the recorded measurements.
 
 ### Detector
 
-- The OWL-ViT path has been run on real frames once (275 frames, none below a 50% threshold) but its confidence scores are not calibrated or validated; a high score does not prove the box is right. Check boxes with "Show all frames".
+- **Template matching** (default since v1.47.0) assumes a fixed camera and an object of constant size and appearance: it copes with small light changes but not with a rotated, scaled or differently seen object. It was checked on shifted photographs and synthetic frames only, **not on the real cameras**.
+- The **model** (OWL-ViT) path has been run on real frames once (275 frames, none below a 50% threshold). Its confidence is relative to each frame's best box and not calibrated, and its boxes are often much bigger than the object (the stored box now takes the exemplar's size, centred where the model put its own box, which fixes the size but not a wrong position). On shifted photographs it found the object in 0-100% of the copies depending on the picture. Check boxes in the review with *Show: All frames*.
 - The mask follows the detected object by translation only; rotation and scale changes are not followed.
-- Detection uses the saved settings, not unsaved edits.
+- Detection uses the saved settings, not unsaved edits (Run saves them first), and runs on the filtered crops of the frames and the exemplars.
+- Half precision (`HALF`) is off because it changed which boxes win; the 512 input size is less exact than 768; neither was judged on real frames.
 
 ### Metric calibration
 
@@ -392,7 +394,7 @@ The project folder is portable, but `.venv/` is machine-specific and must be rec
 
 Listed in recommended priority order:
 
-1. **Look at the 2026-10-16/17 Dedup redesign in a browser on real data** (v1.31.0-v1.41.0: options panel, active functions, scatter function, picture viewer, hardware badge, info tips) and judge it; then roll the layout out to the other pages (remember the product picker rule above), choose the hardware badge look, and convert the other pages' explanatory text to info tips. `discussions/picture-sorter-ui-navigation-handover.md` (user's discussion, not implemented) describes a larger navigation restructure (Overview / Management / Manipulation / Export, a slim bottom status bar, tool icons, a shared picture grid component, background precompute of scatter and clustering).
+1. **Look at the UI restructure and the Detector rework in a browser on real data** (v1.31.0-v1.50.0: top bar and tool bar, status bar, tool icons, Scatter / Clusters / Outliers as tools, the shared picture viewer and card grids with painting, the Detector's method choice, the review grid with delete, undo, filter and sort) and judge it; run detection again (the default method is now template matching, so earlier detections are stale) and compare the boxes with the 768 / 512 model sizes if you keep the model. Then: choose the hardware badge look, roll the options-panel layout out to the other tools, convert their explanatory text to info tips, and decide on the parked items from `discussions/picture-sorter-ui-navigation-handover.md` (background precompute of scatter and clustering with a "ready / needs refresh" indicator, the status bar's frame position, final names for Management and Manipulation, the Detector page's remaining steps). Possible follow-up: do not drop the scatter / cluster / result caches on every accepted box when the mask is off (`vision_settings.purge_derived`).
 2. **Try the 2026-10-15 tools on real data** (nothing in v1.15.0-v1.20.0 has been used on the real cameras or in a browser): Overview stage chips and the step bar, Outliers, Find similar, the edge-angle rule (angle, band width), augmentation ranges (the "not measured" counts), the downstream results form. See `memory/handover-new-tools.md`.
 3. Find out which quality metrics the downstream system reports, then refine the Downstream results form (today: free-text metric names).
 4. Add focused automated tests for product-scope, version, and export invariants.
