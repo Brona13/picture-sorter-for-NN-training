@@ -63,7 +63,8 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 const renderScatter = (over: Record<string, unknown> = {}) => {
-  const props = { onChanged: vi.fn(), onNotice: vi.fn(), onError: vi.fn(), ...over };
+  const grid = { per_page: 48, cols: 6, per_page_options: [12, 24, 48], cols_options: [4, 6, 8] };
+  const props = { grid, onGrid: vi.fn(), onChanged: vi.fn(), onNotice: vi.fn(), onError: vi.fn(), ...over };
   render(<ClassifyScatter camera="camA" feature="type" {...(props as any)} />);
   return props;
 };
@@ -144,4 +145,18 @@ test("too few pictures for a map", async () => {
   state = dedupState({ frames: 1 });
   renderScatter();
   expect(await screen.findByText(/at least two pictures/)).toBeInTheDocument();
+});
+
+test("the selection's grid is the one passed in (Classify's), and changing it goes back to the page", async () => {
+  const props = renderScatter();
+  const svg = await openMap();
+  fireEvent.mouseDown(svg, { button: 0, clientX: 0, clientY: 0 });
+  fireEvent.mouseMove(window, { clientX: 100, clientY: 100 });
+  fireEvent.mouseUp(window, { clientX: 100, clientY: 100 });
+  const panel = await screen.findByTestId("scatter-selection");
+  expect((await within(panel).findAllByLabelText("Per page selection top"))[0]).toHaveValue("48");
+  expect((await within(panel).findAllByLabelText("Columns selection top"))[0]).toHaveValue("6");
+  await userEvent.selectOptions((await within(panel).findAllByLabelText("Columns selection top"))[0], "8");
+  expect(props.onGrid).toHaveBeenCalledWith(48, 8);
+  expect(calls.some((c) => c.url.includes("grid-settings"))).toBe(false); // no second, separate setting
 });

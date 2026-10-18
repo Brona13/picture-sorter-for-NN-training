@@ -245,7 +245,7 @@ export default function ClassifyView({ camera, product }: { camera: string; prod
       )}
 
       {mode === "scatter" && st && (
-        <ClassifyScatter camera={camera} feature={feature} onChanged={bump} onNotice={setNotice} onError={setError} />
+        <ClassifyScatter camera={camera} feature={feature} grid={st.settings} onGrid={changeSetting} onChanged={bump} onNotice={setNotice} onError={setError} />
       )}
 
       {mode === "grid" && (

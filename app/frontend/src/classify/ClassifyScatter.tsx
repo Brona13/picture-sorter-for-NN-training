@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, DedupState } from "../api";
+import { PagerSettings } from "./Pager";
 import { ColourBy } from "./Scatter";
 import { effectiveColour, ScatterMapView, useScatterMap } from "./ScatterWorkbench";
 
@@ -14,17 +15,22 @@ const BLOCKED: Record<NonNullable<DedupState["reason"]>, string> = {
 /**
  * Classify's Scatter view: the 2D map of this ROI's pictures, to select many at once (drag a rectangle) and label or
  * delete them in one go. It is the same map and selection as the Scatter page (`ScatterWorkbench`). A map that is
- * already computed appears at once; otherwise it is computed on request.
+ * already computed appears at once; otherwise it is computed on request. The selection's grid is Classify's own grid
+ * (its size and columns are one setting of the ROI), so the page passes it in.
  */
 export default function ClassifyScatter({
   camera,
   feature,
+  grid,
+  onGrid,
   onChanged,
   onNotice,
   onError,
 }: {
   camera: string;
   feature: string;
+  grid: PagerSettings;
+  onGrid: (perPage: number, cols: number) => void;
   /** A label or delete was made from the map: reload the page's counts and grid. */
   onChanged: () => void;
   onNotice: (message: string) => void;
@@ -109,13 +115,8 @@ export default function ClassifyScatter({
         feature={feature}
         map={map}
         colourBy={colour}
-        grid={dst.grid}
-        onGrid={(perPage, cols) =>
-          api
-            .dedupGridSettings(camera, feature, perPage, cols)
-            .then((g) => setDst((x) => (x ? { ...x, grid: g } : x)))
-            .catch((e: unknown) => onError(msg(e)))
-        }
+        grid={grid}
+        onGrid={onGrid}
         onNotice={onNotice}
         onError={onError}
         onChanged={onChanged}

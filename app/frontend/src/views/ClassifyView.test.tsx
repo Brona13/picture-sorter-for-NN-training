@@ -549,3 +549,21 @@ test("labeling a selection on the map reloads the page's counts", async () => {
   await waitFor(() => expect(calls.filter((c) => c.url.includes("/classify/state")).length).toBeGreaterThan(before));
   expect(calls.find((c) => c.url.endsWith("/classify/label-bulk"))!.body).toMatchObject({ feature: "seal", cls: "NG" });
 });
+
+test("the map's selection uses the same grid size and columns as the grid, and a change is saved as Classify's setting", async () => {
+  render(<ClassifyView camera="camA" />);
+  await cardEl("a.png");
+  await userEvent.click(screen.getByRole("button", { name: /Scatter/ }));
+  const svg = await screen.findByRole("img", { name: /2D scatter/ });
+  svg.getBoundingClientRect = () => ({ left: 0, top: 0, width: 720, height: 420, right: 720, bottom: 420, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
+  fireEvent.mouseDown(svg, { button: 0, clientX: 0, clientY: 0 });
+  fireEvent.mouseMove(window, { clientX: 100, clientY: 100 });
+  fireEvent.mouseUp(window, { clientX: 100, clientY: 100 });
+  const panel = await screen.findByTestId("scatter-selection");
+  expect((await within(panel).findAllByLabelText("Per page selection top"))[0]).toHaveValue(String(state.settings.per_page));
+  expect((await within(panel).findAllByLabelText("Columns selection top"))[0]).toHaveValue(String(state.settings.cols));
+  await userEvent.selectOptions((await within(panel).findAllByLabelText("Columns selection top"))[0], "6");
+  await waitFor(() => expect(calls.some((c) => c.url.includes("/classify/grid-settings"))).toBe(true));
+  expect(calls.some((c) => c.url.includes("/dedup/grid-settings"))).toBe(false);
+  expect(calls.find((c) => c.url.includes("/classify/grid-settings"))!.body).toMatchObject({ feature: "seal", cols: 6 });
+});
