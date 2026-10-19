@@ -1,14 +1,14 @@
 ---
 name: detector-calc-chain
 description: Detectors, a calculation step and a tolerance check as chain boxes: find two named targets, cascade a second detector inside their boxes, compute an angle, compare it with nominal +- tolerance
-status: proposed
+status: built (v1.66.0), to be calibrated on real frames
 document_type: plan
 last_updated: 2026-10-19
 ---
 
 # Detector, calculation and tolerance boxes in the chain
 
-> **Status (2026-10-19).** Approved by the user ("run the plan"). Phase 1 (the search engine, `rotsearch.py`) is built in v1.65.0. Items marked **Open** are taken as proposed unless the user says otherwise: the result shows on the ROI feature the Tolerance box is connected to, the filter stays a per-ROI pre-step.
+> **Status (2026-10-19).** Approved by the user ("run the plan"). Phases 1-4 are built: the search engine (`rotsearch.py`), detector boxes and their page, the Calculate box, and the Tolerance box with Classify badges and filters (v1.66.0). Still open: nominal by clicking a picture, band dragging on the histogram. Items marked **Open** are taken as proposed unless the user says otherwise: the result shows on the ROI feature the Tolerance box is connected to, the filter stays a per-ROI pre-step.
 
 ## Real example that drives the design
 

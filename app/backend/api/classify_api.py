@@ -11,6 +11,7 @@ import datamodel
 import db
 import dedup
 import edge_angle
+import flow
 import embedding
 import engine
 import labels
@@ -113,6 +114,21 @@ def _edge_state(camera: str, feature: str) -> dict:
     return {"measured": measured, "verdicts": verdicts}
 
 
+def _measure_state(camera: str, feature: str) -> dict:
+    """What the Tolerance boxes arrowed into this feature's Classify box say, by frame name: one verdict per
+    frame (a fail beats undetermined, which beats pass) and every box's measured value."""
+    boxes = flow.feature_opinions(camera, feature)["boxes"]
+    verdicts: dict[str, str] = {}
+    values: dict[str, list[dict]] = {}
+    rank = {"pass": 0, "undetermined": 1, "fail": 2}
+    for b in boxes:
+        for frame, v in b["verdicts"].items():
+            if frame not in verdicts or rank[v] > rank[verdicts[frame]]:
+                verdicts[frame] = v
+            values.setdefault(frame, []).append({"value": b["values"].get(frame), "unit": b["unit"], "nominal": b["nominal"], "tolerance": b["tolerance"], "verdict": v})
+    return {"verdicts": verdicts, "values": values}
+
+
 # --- shared context ----------------------------------------------------------
 @dataclasses.dataclass
 class Ctx:
@@ -128,6 +144,7 @@ class Ctx:
     scored: bool
     items: list
     edge: dict
+    measure: dict = dataclasses.field(default_factory=lambda: {"verdicts": {}, "values": {}})
 
 
 def _build(camera: str, q: GridQuery, *, apply_auto_preview: bool = True) -> Ctx:
@@ -138,7 +155,8 @@ def _build(camera: str, q: GridQuery, *, apply_auto_preview: bool = True) -> Ctx
     if rank not in methods:
         raise HTTPException(status_code=422, detail=f"Unknown rank method: {rank}")
     edge = _edge_state(camera, q.feature)
-    if q.view not in cv.valid_views(classes, edge_angle=bool(edge["verdicts"])):
+    measure = _measure_state(camera, q.feature)
+    if q.view not in cv.valid_views(classes, edge_angle=bool(edge["verdicts"]), measurement=bool(measure["verdicts"])):
         raise HTTPException(status_code=422, detail=f"Unknown view: {q.view}")
     if q.order not in cv.ORDERS:
         raise HTTPException(status_code=422, detail=f"Unknown order: {q.order}")
@@ -155,8 +173,9 @@ def _build(camera: str, q: GridQuery, *, apply_auto_preview: bool = True) -> Ctx
     items = cv.filter_and_sort(
         visible, view=q.view, rank_method=rank, order=q.order, scored=scored,
         methods=methods, lab=lab, gold=gold, deleted=deleted, edge_verdicts=edge["verdicts"],
+        measure_verdicts=measure["verdicts"],
     )
-    ctx = Ctx(camera, q.feature, classes, methods, rank, results, gold, lab, deleted, scored, items, edge)
+    ctx = Ctx(camera, q.feature, classes, methods, rank, results, gold, lab, deleted, scored, items, edge, measure)
     if apply_auto_preview and q.auto_preview and scored:
         picks = _auto_picks(ctx, q.auto_classes, q.auto_min_margin)[0]
         keep = {r.frame for rs in picks.values() for r in rs}
@@ -223,7 +242,10 @@ def state(camera: str, feature: str) -> dict:
         "default_rank": cv.default_rank_method(methods),
         "device": embedding.active_device(),
         "device_label": embedding.device_label(),
-        "views": cv.valid_views(classes, edge_angle=bool(_edge_state(camera, feature)["verdicts"])),
+        "views": cv.valid_views(
+            classes, edge_angle=bool(_edge_state(camera, feature)["verdicts"]),
+            measurement=bool(_measure_state(camera, feature)["verdicts"]),
+        ),
         "orders": cv.ORDERS,
         "has_results": results is not None,
         "scored": bool(results) and any(r.per_method for r in results),
@@ -309,6 +331,7 @@ def _grid_card(ctx: Ctx, fs, snapshot: dict | None) -> dict:
         "bars": None if golden or not ms else cv.bars(ms.dists, ctx.classes),
         "cluster": {"id": chip[0], "is_rep": chip[1]} if chip else None,
         "edge": _edge_card(ctx.edge, fs.frame),
+        "measure": ctx.measure["values"].get(fs.frame),
     }
 
 
@@ -343,6 +366,7 @@ def _search_grid(camera: str, q: GridQuery, page: int, per_page: int) -> dict:
         camera, q.feature, classes, methods, rank, results, labels.current_goldens(camera, q.feature),
         labels.current_labels(camera, q.feature), db.deleted_frames_of(camera),
         bool(results) and any(r.per_method for r in results), [], _edge_state(camera, q.feature),
+        _measure_state(camera, q.feature),
     )
     snapshot = dedup.load_snapshot(camera, q.feature)
     in_scope = set(datamodel.frames_for_feature(camera, q.feature))

@@ -25,6 +25,9 @@ function rulesSummary(stats: VersionInfo["stats"]): string {
     const e = edge.settings.expected;
     parts.push(e ? `edge ${e.angle.toFixed(1)}°±${e.tolerance} ${e.polarity}` : "edge (measure only)");
   }
+  for (const m of stats.rules?.measurement ?? []) {
+    parts.push(m.nominal === null ? "measurement (no nominal)" : `measurement ${m.nominal}±${m.tolerance}: ${m.counts.pass} pass, ${m.counts.fail} fail`);
+  }
   const aug = stats.augmentation;
   if (aug) {
     const r = aug.ranges;

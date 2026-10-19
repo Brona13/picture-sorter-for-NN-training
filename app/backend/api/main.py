@@ -19,7 +19,7 @@ from fastapi.responses import FileResponse, JSONResponse  # noqa: E402
 
 import appinfo  # noqa: E402
 import db  # noqa: E402
-from api import cameras, chain_api, classify_api, config_api, dedup_api, frames_api, ingest_api, insights_api, jobs, motion_api, outliers_api, overview_api, roi_api, rules_api, similar_api, status, verdicts_api, versions_api, vision_api  # noqa: E402
+from api import cameras, chain_api, classify_api, config_api, dedup_api, flow_api, frames_api, ingest_api, insights_api, jobs, motion_api, outliers_api, overview_api, roi_api, rules_api, similar_api, status, verdicts_api, versions_api, vision_api  # noqa: E402
 
 
 def frontend_dist() -> Path:
@@ -78,6 +78,7 @@ def create_app() -> FastAPI:
     app.include_router(frames_api.router, prefix="/api")
     app.include_router(roi_api.router, prefix="/api")
     app.include_router(chain_api.router, prefix="/api")
+    app.include_router(flow_api.router, prefix="/api")
     app.include_router(classify_api.router, prefix="/api")
     app.include_router(insights_api.router, prefix="/api")
     app.include_router(dedup_api.router, prefix="/api")

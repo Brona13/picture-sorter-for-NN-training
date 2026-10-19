@@ -77,8 +77,49 @@ export function layoutOf(
 export function describeNode(n: ChainNode): string {
   if (n.kind === "ingest") return `${n.frames} picture${n.frames === 1 ? "" : "s"}`;
   if (n.kind === "classify") return `${n.labeled}/${n.frames} labeled`;
+  if (n.kind === "detector") {
+    const f = n.flow;
+    const targets = f?.targets?.length ?? 0;
+    const state = f?.status === "fresh" ? `${f.complete ?? 0}/${f.frames ?? 0} complete` : f?.status === "stale" ? "run again" : "not run";
+    return `${targets} target${targets === 1 ? "" : "s"} · ${state}`;
+  }
+  if (n.kind === "calc") return n.flow?.a && n.flow?.b ? `${n.flow.op ?? "angle"} ${n.flow.a} → ${n.flow.b}` : "connect a detector";
+  if (n.kind === "tolerance") {
+    const f = n.flow;
+    if (f?.nominal == null) return "set the nominal";
+    const c = f.counts;
+    return `${f.nominal} ± ${f.tolerance}${f.unit ? ` ${f.unit}` : ""}${c ? ` · ${c.pass} pass, ${c.fail} fail` : ""}`;
+  }
   if (n.scope === "classify") return `${n.classes.length} products`;
   const where =
     n.scope === "name" ? n.product ?? "" : n.scope === "products" ? n.products.join(", ") : "whole camera";
   return `${where} · ${n.labeled}/${n.frames} labeled`;
+}
+
+export const FLOW_KINDS = ["detector", "calc", "tolerance"] as const;
+export const isFlowKind = (kind: string | undefined): boolean => !!kind && (FLOW_KINDS as readonly string[]).includes(kind);
+
+/**
+ * An arrow that involves a detector, Calculate or Tolerance box. `null` when the arrow is not a flow arrow at all
+ * (the ROI rules in `connectAction` decide), `{ error }` when it is one that does not fit, else the arrow to store.
+ * The types mirror `flow.edge_allowed`: Ingest or a detector feeds a detector, a detector feeds Calculate, Calculate
+ * feeds Tolerance, Tolerance feeds a Classify box.
+ */
+export function flowConnect(canvas: ChainCanvas, c: Connection): { source: string; target: string } | { error: string } | null {
+  const source = featureOf(canvas, c.source);
+  const target = featureOf(canvas, c.target);
+  if (!source || !target) return { error: "Unknown box." };
+  if (!isFlowKind(source.kind) && !isFlowKind(target.kind)) return null;
+  const ok =
+    (source.kind === "ingest" && target.kind === "detector") ||
+    (source.kind === "detector" && (target.kind === "detector" || target.kind === "calc")) ||
+    (source.kind === "calc" && target.kind === "tolerance") ||
+    (source.kind === "tolerance" && target.kind === "classify" && target.role !== "classify");
+  if (!ok) {
+    return {
+      error: `${source.label} cannot feed ${target.label}. Ingest or a detector feeds a detector, a detector feeds Calculate, Calculate feeds Tolerance, Tolerance feeds a feature's Classify box.`,
+    };
+  }
+  if (c.source === c.target) return { error: "A box cannot feed itself." };
+  return { source: c.source, target: c.target };
 }

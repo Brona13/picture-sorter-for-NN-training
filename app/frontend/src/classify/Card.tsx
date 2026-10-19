@@ -52,7 +52,7 @@ const badge = (bg: string): React.CSSProperties => ({
 export const MAX_SHORTCUT_CLASSES = 9;
 
 export default function Card({ camera, feature, classes, methods, card, busy, onLabel, onGolden, onDelete, onRestore, canRestore = true, isRep, onSetRep, fullSize, onOpen, caption, onSimilar }: Props) {
-  const { frame, label, golden, deleted, bars, leanings, cluster, edge } = card;
+  const { frame, label, golden, deleted, bars, leanings, cluster, edge, measure } = card;
   // Search results only: a picture outside this ROI's scope gets a red frame and cannot be labeled here until its
   // product fits (open it to change the product); a muted one gets a dark grey dashed frame.
   const outside = !!card.outside;
@@ -238,6 +238,17 @@ export default function Card({ camera, feature, classes, methods, card, busy, on
           </span>
         </div>
       )}
+
+      {measure?.map((m, i) => (
+        <div key={i} style={{ margin: "2px 0 4px", fontSize: 10 }} data-testid="measure-badge">
+          <span
+            title="Measurement from the chain (detector, Calculate, Tolerance). A rule-based opinion, not blended with the scores."
+            style={badge(m.verdict === "pass" ? "#1a7f37" : m.verdict === "fail" ? "#c62828" : "#777")}
+          >
+            {m.value === null ? "not measured" : `${m.value.toFixed(1)}${m.unit ? ` ${m.unit}` : ""}`} · {m.verdict}
+          </span>
+        </div>
+      ))}
 
       {caption && (
         <div style={{ margin: "2px 0 4px", fontSize: 10 }}>

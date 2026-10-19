@@ -127,7 +127,7 @@ class ClassifySearchTests(ApiTestCase):
         wait_for_job(self.client, r.json()["id"])
         body = self.client.get(f"{self.base}/grid", params={"feature": "edge"}).json()
         self.assertNotIn("search", body)
-        self.assertEqual(set(body["items"][0]), {"frame", "label", "golden", "deleted", "leanings", "bars", "cluster", "edge"})
+        self.assertEqual(set(body["items"][0]), {"frame", "label", "golden", "deleted", "leanings", "bars", "cluster", "edge", "measure"})
 
     # --- bringing a muted picture back ------------------------------------------------------------------------
     def mute(self, frame: str, feature: str = "edge") -> None:

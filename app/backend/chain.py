@@ -21,6 +21,7 @@ import math
 
 import datamodel
 import db
+import flow
 import labels
 
 SETTING_KEY = "chain.canvas"
@@ -195,10 +196,40 @@ def _edges(camera: str, rois: list[datamodel.ROI], classify: str | None) -> list
     return edges
 
 
+def _flow_nodes(camera: str, graph: dict, stored: dict) -> list[dict]:
+    """The detector / Calculate / Tolerance boxes, with a light summary each (details come from the flow API)."""
+    nodes = []
+    for node_id, node in sorted(graph["nodes"].items()):
+        kind = node["kind"]
+        summary: dict = {}
+        if kind == "detector":
+            summary = {"targets": [t["name"] for t in node["targets"]], "status": flow.status(camera, node_id, graph), **flow.summarize_detector(camera, node_id)}
+        elif kind == "calc":
+            a, b = flow.effective_points(graph, node_id)
+            summary = {"op": node["op"], "a": a, "b": b}
+        else:
+            state = flow.tolerance_state(camera, node_id)
+            summary = {"nominal": node["nominal"], "tolerance": node["tolerance"], "unit": state["unit"], "counts": state["counts"]}
+        default = {"detector": "Detector", "calc": "Calculate", "tolerance": "Tolerance"}[kind]
+        entry = stored.get(node_id, {})
+        nodes.append({
+            "id": node_id, "kind": kind, "ref": None, "label": entry.get("label") or f"{default} {node_id.split(':')[1]}",
+            "x": entry.get("x"), "y": entry.get("y"), "role": None, "scope": None, "product": None, "products": [],
+            "classes": [], "frames": 0, "labeled": 0, "product_counts": {}, "unlabeled": 0, "flow": summary,
+        })
+    return nodes
+
+
 def _column(node: dict) -> int:
     """The chain level of a box: 0 Ingest, 1 product ROI, 2 its Classify box, 3 feature ROIs, 4 their Classify boxes."""
     if node["kind"] == "ingest":
         return 0
+    if node["kind"] == "detector":
+        return 1
+    if node["kind"] == "calc":
+        return 3
+    if node["kind"] == "tolerance":
+        return 4
     if node["kind"] == "classify":
         return 2 if node["role"] == "classify" else 4
     return 1 if node["role"] == "classify" else 3
@@ -247,11 +278,18 @@ def get_canvas(camera: str) -> dict:
     for roi in rois:
         nodes.append(_roi_node(camera, roi, stored.get(roi_node_id(roi.name), {})))
         nodes.append(_classify_node(camera, roi, stored.get(classify_node_id(roi.name), {})))
+    graph = flow.load_graph(camera)
+    nodes.extend(_flow_nodes(camera, graph, stored))
     _place_missing(nodes)
+    edges = _edges(camera, rois, classify)
+    known = {n["id"] for n in nodes}
+    for e in graph["edges"]:
+        if e["source"] in known and e["target"] in known:
+            edges.append({"id": f"{e['source']}->{e['target']}", "source": e["source"], "source_handle": None, "target": e["target"], "locked": e["source"] == INGEST_ID})
     return {
         "camera": camera,
         "nodes": nodes,
-        "edges": _edges(camera, rois, classify),
+        "edges": edges,
         "products": datamodel.products(camera),
         "classify": classify,
         "viewport": layout["viewport"],

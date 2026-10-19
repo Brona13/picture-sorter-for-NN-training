@@ -14,8 +14,10 @@ import {
 } from "@xyflow/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api, ChainCanvas, ChainDeletePreview, ChainNode, ChainViewport } from "../api";
-import { INGEST_ID, connectAction, describeNode, disconnectAction, freshName, layoutOf, productHandle } from "../chain/chainModel";
+import { api, ChainCanvas, ChainDeletePreview, ChainNode, ChainViewport, FlowDeletePreview } from "../api";
+import { INGEST_ID, connectAction, describeNode, disconnectAction, flowConnect, freshName, isFlowKind, layoutOf, productHandle } from "../chain/chainModel";
+import FlowBoxPanel from "./FlowBoxPanel";
+import FlowDetectorPage from "./FlowDetectorPage";
 import { useSharedFeature } from "../SharedFeature";
 import SidePanel from "../SidePanel";
 
@@ -25,8 +27,8 @@ type BoxData = {
 };
 type BoxNode = Node<BoxData, "box">;
 
-const HUE = { ingest: 160, roi: 30, classify: 145 } as const;
-const hueOf = (n: ChainNode) => (n.kind === "ingest" ? HUE.ingest : n.kind === "classify" ? HUE.classify : HUE.roi);
+const HUE = { ingest: 160, roi: 30, classify: 145, detector: 265, calc: 200, tolerance: 340 } as const;
+const hueOf = (n: ChainNode) => HUE[n.kind];
 
 /** A box of the chain: a rounded two-tone rectangle with an inline-renamable title. */
 function Box({ data, selected }: NodeProps<BoxNode>) {
@@ -83,7 +85,7 @@ function Box({ data, selected }: NodeProps<BoxNode>) {
 const nodeTypes = { box: Box };
 
 function toFlowNode(n: ChainNode, onRename: BoxData["onRename"], selected: boolean): BoxNode {
-  return { id: n.id, type: "box", position: { x: n.x, y: n.y }, data: { node: n, onRename }, selected, deletable: n.kind === "roi" };
+  return { id: n.id, type: "box", position: { x: n.x, y: n.y }, data: { node: n, onRename }, selected, deletable: n.kind === "roi" || isFlowKind(n.kind) };
 }
 
 function toFlowEdge(e: ChainCanvas["edges"][number]): Edge {
@@ -109,6 +111,8 @@ function Canvas({ camera, onOpenRoi }: { camera: string; onOpenRoi?: OpenRoi }) 
   const [adding, setAdding] = useState<"product" | null>(null);
   const [productNames, setProductNames] = useState("");
   const [preview, setPreview] = useState<ChainDeletePreview | null>(null);
+  const [flowPreview, setFlowPreview] = useState<FlowDeletePreview | null>(null);
+  const [page, setPage] = useState<{ nodeId: string; target?: string } | null>(null);
   const viewport = useRef<ChainViewport | null>(null);
   const nodesRef = useRef<BoxNode[]>([]);
   nodesRef.current = nodes;
@@ -150,6 +154,8 @@ function Canvas({ camera, onOpenRoi }: { camera: string; onOpenRoi?: OpenRoi }) 
     setCanvas(null);
     setSelectedId(null);
     setPreview(null);
+    setFlowPreview(null);
+    setPage(null);
     setError(null);
     api.chain(camera).then(show).catch(fail);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -174,15 +180,40 @@ function Canvas({ camera, onOpenRoi }: { camera: string; onOpenRoi?: OpenRoi }) 
     await reload();
   };
 
-  const onConnect = (c: Connection) => {
-    if (canvas) void apply(connectAction(canvas, { source: c.source, sourceHandle: c.sourceHandle, target: c.target }));
+  const applyFlow = async (action: () => Promise<unknown>) => {
+    try {
+      await action();
+      setError(null);
+    } catch (e) {
+      fail(e);
+    }
+    await reload();
   };
 
-  const isValidConnection = (c: Connection | Edge) =>
-    canvas ? !("error" in connectAction(canvas, { source: c.source, sourceHandle: c.sourceHandle ?? null, target: c.target })) : false;
+  const onConnect = (c: Connection) => {
+    if (!canvas) return;
+    const link = { source: c.source, sourceHandle: c.sourceHandle, target: c.target };
+    const flowArrow = flowConnect(canvas, link);
+    if (flowArrow === null) void apply(connectAction(canvas, link));
+    else if ("error" in flowArrow) setError(flowArrow.error);
+    else void applyFlow(() => api.flowConnect(camera, flowArrow.source, flowArrow.target));
+  };
+
+  const isValidConnection = (c: Connection | Edge) => {
+    if (!canvas) return false;
+    const link = { source: c.source, sourceHandle: c.sourceHandle ?? null, target: c.target };
+    const flowArrow = flowConnect(canvas, link);
+    return flowArrow === null ? !("error" in connectAction(canvas, link)) : !("error" in flowArrow);
+  };
 
   const requestDelete = (id: string) => {
     const node = canvas?.nodes.find((n) => n.id === id);
+    if (node && isFlowKind(node.kind)) {
+      setSelectedId(id);
+      setPreview(null);
+      api.flowDeletePreview(camera, id).then(setFlowPreview).catch(fail);
+      return;
+    }
     if (node?.kind !== "roi" || !node.ref) return;
     setSelectedId(id);
     api.chainDeletePreview(camera, node.ref).then(setPreview).catch(fail);
@@ -198,6 +229,21 @@ function Canvas({ camera, onOpenRoi }: { camera: string; onOpenRoi?: OpenRoi }) 
     setPreview(null);
     setSelectedId(null);
     await reload();
+  };
+
+  const confirmFlowDelete = async () => {
+    if (!flowPreview) return;
+    const id = flowPreview.node;
+    setFlowPreview(null);
+    setSelectedId(null);
+    await applyFlow(() => api.flowDelete(camera, id));
+  };
+
+  const addFlowBox = async (kind: "detector" | "calc" | "tolerance") => {
+    await applyFlow(async () => {
+      const made = await api.flowCreate(camera, kind);
+      setSelectedId(made.id);
+    });
   };
 
   const addFeature = async () => {
@@ -248,6 +294,15 @@ function Canvas({ camera, onOpenRoi }: { camera: string; onOpenRoi?: OpenRoi }) 
         <button type="button" disabled={!canvas} onClick={() => void addFeature()}>
           + ROI feature
         </button>
+        <button type="button" disabled={!canvas} onClick={() => void addFlowBox("detector")}>
+          + Detector
+        </button>
+        <button type="button" disabled={!canvas} onClick={() => void addFlowBox("calc")}>
+          + Calculate
+        </button>
+        <button type="button" disabled={!canvas} onClick={() => void addFlowBox("tolerance")}>
+          + Tolerance
+        </button>
       </div>
       {canvas?.classify && <p className="muted">The camera already has its product-sorting ROI.</p>}
       {adding === "product" && (
@@ -278,6 +333,20 @@ function Canvas({ camera, onOpenRoi }: { camera: string; onOpenRoi?: OpenRoi }) 
           <p><strong>{selectedLive.label}</strong></p>
           <p className="muted">{describeNode(selectedLive)}</p>
           {selectedLive.ref && <p className="muted">ROI: {selectedLive.ref}</p>}
+          {isFlowKind(selectedLive.kind) && (
+            <>
+              <FlowBoxPanel
+                key={selectedLive.id}
+                camera={camera}
+                node={selectedLive}
+                onChanged={() => void reload()}
+                onOpenPage={(nodeId, target) => setPage({ nodeId, target })}
+              />
+              <button type="button" className="danger" onClick={() => requestDelete(selectedLive.id)}>
+                Delete…
+              </button>
+            </>
+          )}
           {selectedLive.kind === "ingest" && (
             <button type="button" onClick={() => openPage(selectedLive, "roi")}>
               Ingest
@@ -288,7 +357,7 @@ function Canvas({ camera, onOpenRoi }: { camera: string; onOpenRoi?: OpenRoi }) 
               ROI editor
             </button>
           )}
-          {selectedLive.kind !== "ingest" && (
+          {(selectedLive.kind === "roi" || selectedLive.kind === "classify") && (
             <button type="button" onClick={() => openPage(selectedLive, "classify")}>
               Classify
             </button>
@@ -298,6 +367,17 @@ function Canvas({ camera, onOpenRoi }: { camera: string; onOpenRoi?: OpenRoi }) 
               Delete…
             </button>
           )}
+        </div>
+      )}
+      {flowPreview && (
+        <div className="chain-delete" role="alertdialog" aria-label="Confirm delete">
+          <p><strong>Delete {flowPreview.node}?</strong> This cannot be undone.</p>
+          <ul>
+            <li>{flowPreview.arrows} arrows</li>
+            {flowPreview.kind === "detector" && <li>{flowPreview.detections} pictures with stored boxes</li>}
+          </ul>
+          <button type="button" className="danger" onClick={() => void confirmFlowDelete()}>Delete box</button>
+          <button type="button" onClick={() => setFlowPreview(null)}>Keep it</button>
         </div>
       )}
       {preview && (
@@ -319,6 +399,18 @@ function Canvas({ camera, onOpenRoi }: { camera: string; onOpenRoi?: OpenRoi }) 
       )}
     </div>
   );
+
+  if (page) {
+    return (
+      <FlowDetectorPage
+        camera={camera}
+        nodeId={page.nodeId}
+        target={page.target}
+        onClose={() => { setPage(null); void reload(); }}
+        onChanged={() => void reload()}
+      />
+    );
+  }
 
   return (
     <SidePanel panel={panel}>
@@ -352,7 +444,10 @@ function Canvas({ camera, onOpenRoi }: { camera: string; onOpenRoi?: OpenRoi }) 
             onEdgesDelete={(gone) => {
               if (canvas) for (const e of gone) {
                 const edge = canvas.edges.find((x) => x.id === e.id);
-                if (edge) void apply(disconnectAction(canvas, edge));
+                if (!edge) continue;
+                const ends = [edge.source, edge.target].map((id) => canvas.nodes.find((n) => n.id === id)?.kind);
+                if (ends.some((k) => isFlowKind(k))) void applyFlow(() => api.flowDisconnect(camera, edge.source, edge.target));
+                else void apply(disconnectAction(canvas, edge));
               }
             }}
             proOptions={{ hideAttribution: true }}

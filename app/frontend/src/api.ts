@@ -87,7 +87,10 @@ export interface VersionInfo {
   counts: Record<string, number>;
   stats: Record<string, Record<string, number>> & {
     vision?: VisionSnapshot;
-    rules?: { edge_angle?: { settings: EdgeAngleSettings; results: string; summary: EdgeSummary | null } };
+    rules?: {
+      edge_angle?: { settings: EdgeAngleSettings; results: string; summary: EdgeSummary | null };
+      measurement?: { box: string; nominal: number | null; tolerance: number; counts: { pass: number; fail: number; undetermined: number } }[];
+    };
     augmentation?: { ranges: MotionRanges; coverage: number; results: string; reference: string | null; unit: string };
   };
   active: boolean;
@@ -274,7 +277,7 @@ export interface CameraDeletePreview {
 /** One box of the chain canvas: Ingest, one ROI, or the Classify box of the product-sorting ROI (see `chain.py`). */
 export interface ChainNode {
   id: string;
-  kind: "ingest" | "roi" | "classify";
+  kind: "ingest" | "roi" | "classify" | "detector" | "calc" | "tolerance";
   /** The ROI's feature name (null for Ingest); for the Classify box, the product-sorting ROI it labels. */
   ref: string | null;
   label: string;
@@ -291,6 +294,80 @@ export interface ChainNode {
   /** Classify box only: pictures per product, and how many are not labeled yet. */
   product_counts: Record<string, number>;
   unlabeled: number;
+  /** Detector / Calculate / Tolerance boxes only: a light summary (see `flow.py`). */
+  flow?: FlowSummary;
+}
+
+export interface FlowSummary {
+  targets?: string[];
+  status?: "none" | "fresh" | "stale";
+  frames?: number;
+  complete?: number;
+  review?: number;
+  op?: string;
+  a?: string | null;
+  b?: string | null;
+  nominal?: number | null;
+  tolerance?: number;
+  unit?: string;
+  counts?: { pass: number; fail: number; undetermined: number };
+}
+
+export interface FlowExample {
+  frame: string;
+  box: [number, number, number, number];
+  png: string;
+}
+export interface FlowDetector {
+  kind: "detector";
+  input: string | null;
+  targets: { name: string; examples: FlowExample[] }[];
+  rotate: boolean;
+  angle_range: [number, number] | null;
+  pad: number;
+  status: "none" | "fresh" | "stale";
+  summary: { frames: number; found: Record<string, number>; complete: number; review: number };
+}
+export interface FlowCalc {
+  kind: "calc";
+  op: string;
+  operations: Record<string, string>;
+  points: string[];
+  a: string | null;
+  b: string | null;
+  clockwise: boolean;
+  measured: number;
+}
+export interface FlowTolerance {
+  kind: "tolerance";
+  nominal: number | null;
+  tolerance: number;
+  calc: string | null;
+  wrap: boolean;
+  unit: string;
+  counts: { pass: number; fail: number; undetermined: number };
+  histogram: { low: number; high: number; bins: number[] } | null;
+  features: string[];
+}
+export type FlowNodeDetail = FlowDetector | FlowCalc | FlowTolerance;
+export interface FlowBox {
+  x: number;
+  y: number;
+  angle: number;
+  score: number;
+  w: number;
+  h: number;
+  source: "auto" | "human";
+}
+export interface FlowBoxes {
+  boxes: Record<string, Record<string, FlowBox>>;
+  review: string[];
+}
+export interface FlowDeletePreview {
+  node: string;
+  kind: string;
+  detections: number;
+  arrows: number;
 }
 
 export interface ChainEdge {
@@ -505,6 +582,8 @@ export interface CardData {
   bars: { rows: BarRow[]; novelty: number; margin: number | null; close_call: boolean } | null;
   cluster: { id: number; is_rep: boolean } | null;
   /** Edge-angle rule result for this frame, when the rule has been run on the current settings. */
+  /** One entry per Tolerance box arrowed into this feature's Classify box (see `flow.py`). */
+  measure?: { value: number | null; unit: string; nominal: number | null; tolerance: number; verdict: "pass" | "fail" | "undetermined" }[] | null;
   edge?: { verdict: "pass" | "fail" | "undetermined" | null; status: "ok" | "none"; angle: number | null; polarity: "+" | "-" | null } | null;
   /** Search results only: the picture is outside this ROI's scope (another product, or none yet). */
   outside?: boolean;
@@ -971,6 +1050,49 @@ export const api = {
   chain: (camera: string) => request<ChainCanvas>(`/cameras/${encodeURIComponent(camera)}/chain`),
   saveChainLayout: (camera: string, layout: ChainLayout) =>
     request<ChainCanvas>(`/cameras/${encodeURIComponent(camera)}/chain/layout`, send("PUT", layout)),
+  flowCreate: (camera: string, kind: "detector" | "calc" | "tolerance") =>
+    request<{ id: string }>(`/cameras/${encodeURIComponent(camera)}/flow/nodes`, send("POST", { kind })),
+  flowNode: (camera: string, id: string) =>
+    request<FlowNodeDetail>(`/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}`),
+  flowUpdate: (camera: string, id: string, body: Record<string, unknown>) =>
+    request<FlowNodeDetail>(`/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}`, send("PUT", body)),
+  flowDeletePreview: (camera: string, id: string) =>
+    request<FlowDeletePreview>(`/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/delete-preview`),
+  flowDelete: (camera: string, id: string) =>
+    request<{ removed: string }>(`/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}`, send("DELETE")),
+  flowConnect: (camera: string, source: string, target: string) =>
+    request<{ source: string; target: string }>(`/cameras/${encodeURIComponent(camera)}/flow/edges`, send("POST", { source, target })),
+  flowDisconnect: (camera: string, source: string, target: string) =>
+    request<{ source: string; target: string }>(`/cameras/${encodeURIComponent(camera)}/flow/edges/remove`, send("POST", { source, target })),
+  flowAddTarget: (camera: string, id: string, name: string) =>
+    request<FlowNodeDetail>(`/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/targets`, send("POST", { name })),
+  flowRemoveTarget: (camera: string, id: string, name: string) =>
+    request<FlowNodeDetail>(
+      `/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/targets/${encodeURIComponent(name)}`,
+      send("DELETE"),
+    ),
+  flowAddExample: (camera: string, id: string, target: string, frame: string, box: number[]) =>
+    request<FlowNodeDetail>(
+      `/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/examples`,
+      send("POST", { target, frame, box }),
+    ),
+  flowRemoveExample: (camera: string, id: string, target: string, index: number) =>
+    request<FlowNodeDetail>(
+      `/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/examples/${encodeURIComponent(target)}/${index}`,
+      send("DELETE"),
+    ),
+  flowRun: (camera: string, id: string) =>
+    request<Job<unknown>>(`/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/run`, post()),
+  flowRunAll: (camera: string) => request<Job<unknown>>(`/cameras/${encodeURIComponent(camera)}/flow/run`, post()),
+  flowBoxes: (camera: string, id: string, onlyReview = false) =>
+    request<FlowBoxes>(
+      `/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/boxes${onlyReview ? "?only_review=true" : ""}`,
+    ),
+  flowSetBox: (camera: string, id: string, frame: string, target: string, x: number, y: number) =>
+    request<FlowBox>(
+      `/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/box`,
+      send("PUT", { frame, target, x, y }),
+    ),
   chainDeletePreview: (camera: string, feature: string) =>
     request<ChainDeletePreview>(
       `/cameras/${encodeURIComponent(camera)}/chain/delete-preview?feature=${encodeURIComponent(feature)}`,

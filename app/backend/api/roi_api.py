@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import config
 import datamodel
+import flow
 import labels
 import products as product_admin
 import versions
@@ -198,6 +199,7 @@ def delete_roi(camera: str, feature: str) -> dict:
     """Delete the ROI and purge its labels, goldens, versions and caches (irreversible)."""
     _require_roi(camera, feature)
     datamodel.delete_roi(camera, feature)
+    flow.drop_classify_edges(camera, feature)
     return {"removed": labels.purge_feature(camera, feature)}
 
 

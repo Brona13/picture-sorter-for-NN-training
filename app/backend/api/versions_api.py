@@ -8,6 +8,7 @@ import db
 import detections
 import edge_angle
 import engine
+import flow
 import labels
 import motion
 import verdicts
@@ -134,8 +135,14 @@ def freeze(camera: str, body: FreezeRequest) -> dict:
     if vision:
         stats["vision"] = vision  # frozen with the version so its vectors are reproducible
     rule = edge_angle.snapshot(camera, body.feature)
+    rules: dict = {}
     if rule:
-        stats["rules"] = {"edge_angle": rule}  # the rule-based opinion, as configured at freeze time
+        rules["edge_angle"] = rule  # the rule-based opinion, as configured at freeze time
+    measurement = flow.freeze_record(camera, body.feature)
+    if measurement:
+        rules["measurement"] = measurement  # Tolerance boxes arrowed into this feature: settings and counts
+    if rules:
+        stats["rules"] = rules
     augmentation = motion.snapshot(camera, body.feature)
     if augmentation:
         stats["augmentation"] = augmentation  # the chosen movement ranges; nothing is applied to images

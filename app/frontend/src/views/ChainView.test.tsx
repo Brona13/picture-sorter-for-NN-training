@@ -188,3 +188,40 @@ test("a feature ROI box has an output handle, so its fixed arrow to its Classify
   const classifyBox = screen.getByTestId("chain-node-classify:seal");
   expect(classifyBox.querySelectorAll(".source")).toHaveLength(0);
 });
+
+test("+ Detector creates a detector box through the flow API", async () => {
+  const user = userEvent.setup();
+  renderView();
+  await screen.findByTestId("chain-node-ingest");
+  await user.click(screen.getByRole("button", { name: "+ Detector" }));
+  await waitFor(() => expect(calls.some((c) => c.method === "POST" && c.url.endsWith("/flow/nodes") && c.body.kind === "detector")).toBe(true));
+});
+
+test("a detector box shows its targets and run state, and has a delete that asks first", async () => {
+  const user = userEvent.setup();
+  current = canvas();
+  current.nodes.push(node({
+    id: "det:1", kind: "detector", ref: null, label: "Detector 1", x: 300, y: 300, role: null, scope: null, classes: [],
+    flow: { targets: ["A", "B"], status: "none" },
+  }));
+  current.edges.push({ id: "ingest->det:1", source: "ingest", source_handle: null, target: "det:1", locked: true });
+  vi.mocked(fetch).mockImplementation(async (url: any, init?: RequestInit) => {
+    const method = init?.method ?? "GET";
+    calls.push({ url, method, body: init?.body ? JSON.parse(init.body as string) : undefined });
+    if (String(url).includes("/flow/nodes/det%3A1/delete-preview")) return new Response(JSON.stringify({ node: "det:1", kind: "detector", detections: 12, arrows: 2 }));
+    if (String(url).includes("/flow/nodes/det%3A1")) return new Response(JSON.stringify({
+      kind: "detector", input: "ingest", rotate: true, angle_range: null, pad: 0.3, status: "none",
+      targets: [], summary: { frames: 0, found: {}, complete: 0, review: 0 },
+    }));
+    if (String(url).endsWith("/chain")) return new Response(JSON.stringify(current));
+    return new Response("{}");
+  });
+  renderView();
+  const box = await screen.findByTestId("chain-node-det:1");
+  expect(box).toHaveTextContent("2 targets · not run");
+  fireEvent.click(box);
+  await user.click(await screen.findByRole("button", { name: /Delete…/ }));
+  const dialog = await screen.findByRole("alertdialog");
+  expect(dialog).toHaveTextContent("12 pictures with stored boxes");
+  expect(calls.some((c) => c.method === "DELETE")).toBe(false);
+});
