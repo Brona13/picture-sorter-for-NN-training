@@ -271,6 +271,18 @@ def current_goldens(camera: str, feature: str) -> dict[str, list[str]]:
     return output
 
 
+def quality_golden_frames(camera: str) -> set[str]:
+    """Frames with an OK / NG golden mark in any ROI of the camera (product-sorting goldens are not quality goldens)."""
+    con = db.connect()
+    try:
+        rows = con.execute(
+            "SELECT DISTINCT frame FROM goldens WHERE camera=? AND class IN ('OK','NG')", (camera,)
+        ).fetchall()
+    finally:
+        con.close()
+    return {r["frame"] for r in rows}
+
+
 def current_golden_for_frame(camera: str, feature: str, frame: str) -> str | None:
     perf.count("db.golden_frame_state.reads")
     con = db.connect()

@@ -278,6 +278,7 @@ These views evaluate the curation aid; they do not establish classifier accuracy
 - Keep one active version per camera and feature
 - Compare version counts with the preceding version
 - Replace working metadata from an earlier snapshot without deleting saved versions
+- **Only goldens (v1.64.0):** a project version freezes by default only the pictures that are golden (OK / NG) in at least one ROI and have a valid verdict (`versions.project_candidates`, `labels.quality_golden_frames`; product-sorting goldens do not count); the verdict decides the class and the golden mark decides that the picture is exported. A tick box **Only goldens** (default on, `goldens_only` in `POST /project-versions`) takes every verdict picture when unticked. The version records `not_golden` (verdict pictures left out for having no golden mark) in its counts and `stats.export.goldens_only`; `GET /project-versions` returns `golden_verdicts` (what a goldens-only freeze would take now). Earlier project versions (v1.27.0-v1.63.x) contain every verdict picture.
 - Project versions (v1.27.0): freeze the verdicts (`versions.freeze_project`, reserved feature `@project`, items of kind `verdict`), export OK / NG pictures into `exports/project/v<NNN>__<name>/<class>/` (`versions.export`, `GET/POST /api/cameras/{camera}/project-versions`, `POST .../{id}/export`), `ProjectVersions.tsx`. Pictures without a valid verdict are not in a version; no revert
 - Verify hashes during export
 - Report missing or changed source frames

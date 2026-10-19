@@ -156,7 +156,7 @@ def _delta_line(prev: dict | None, cur: dict) -> str:
     parts = []
     for key in cur:
         d = cur.get(key, 0) - prev.get(key, 0)
-        if d and key not in ("total", "unlabeled"):
+        if d and key not in ("total", "unlabeled", "not_golden"):
             parts.append(f"{'+' if d > 0 else ''}{d} {key.replace('golden_', 'golden ')}")
     return ", ".join(parts) if parts else "no changes"
 
@@ -255,16 +255,45 @@ class NothingToFreezeError(ValueError):
     """No picture has a valid OK / NG verdict yet."""
 
 
-def freeze_project(camera: str, name: str, notes: str = "") -> dict:
-    """Snapshot the current verdicts as the next project version. Returns ``{id, number, counts}``."""
+def project_candidates(camera: str, goldens_only: bool = True) -> tuple[list[tuple[str, str]], int]:
+    """The (frame, OK / NG verdict) pairs a project version would freeze, and how many verdict pictures
+    are left out only because they carry no golden mark. With ``goldens_only`` (the default) a picture must
+    be a golden of at least one ROI: the verdict decides its class, the golden mark decides that it is exported."""
     import verdicts
 
     records = verdicts.evaluate(camera)
-    chosen = [(r["frame"], r["verdict"]) for r in records if r["verdict"] in verdicts.CLASSES]
+    decided = [(r["frame"], r["verdict"]) for r in records if r["verdict"] in verdicts.CLASSES]
+    if not goldens_only:
+        return decided, 0
+    golden = labels.quality_golden_frames(camera)
+    chosen = [(f, cls) for f, cls in decided if f in golden]
+    return chosen, len(decided) - len(chosen)
+
+
+def golden_verdict_counts(camera: str) -> dict:
+    """What a goldens-only freeze would take now: ``{ok, ng}``."""
+    chosen, _ = project_candidates(camera, True)
+    return {"ok": sum(1 for _, c in chosen if c == "OK"), "ng": sum(1 for _, c in chosen if c == "NG")}
+
+
+def freeze_project(camera: str, name: str, notes: str = "", goldens_only: bool = True) -> dict:
+    """Snapshot the current verdicts as the next project version. Returns ``{id, number, counts}``.
+
+    The verdict is a decision step; what is exported is the golden pictures (``goldens_only``, the default).
+    With ``goldens_only=False`` every picture with a valid verdict is frozen.
+    """
+    import verdicts
+
+    chosen, not_golden = project_candidates(camera, goldens_only)
     if not chosen:
-        raise NothingToFreezeError("No picture has an OK or NG verdict yet.")
+        raise NothingToFreezeError(
+            "No golden picture has an OK or NG verdict yet." if goldens_only else "No picture has an OK or NG verdict yet."
+        )
     summary = verdicts.summary(camera)
-    counts = {k: summary[k] for k in ("ok", "ng", "contradiction", "stale", "open", "duplicates", "deleted", "total")}
+    counts = {k: summary[k] for k in ("contradiction", "stale", "open", "duplicates", "deleted", "total")}
+    counts["ok"] = sum(1 for _, c in chosen if c == "OK")
+    counts["ng"] = sum(1 for _, c in chosen if c == "NG")
+    counts["not_golden"] = not_golden
     hmap = labels.hash_map(camera)
     con = db.connect()
     try:
@@ -274,7 +303,8 @@ def freeze_project(camera: str, name: str, notes: str = "") -> dict:
         cur = con.execute(
             "INSERT INTO versions(camera, feature, number, name, notes, created, counts_json, stats_json, active) "
             "VALUES (?,?,?,?,?,?,?,?,1)",
-            (camera, PROJECT, number, name.strip() or f"v{number}", notes.strip(), time.time(), json.dumps(counts), json.dumps({})),
+            (camera, PROJECT, number, name.strip() or f"v{number}", notes.strip(), time.time(), json.dumps(counts),
+             json.dumps({"export": {"goldens_only": 1 if goldens_only else 0}})),
         )
         vid = cur.lastrowid
         con.executemany(

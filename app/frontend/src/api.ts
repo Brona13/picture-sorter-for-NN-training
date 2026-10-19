@@ -106,8 +106,10 @@ export interface VersionsResponse {
 }
 
 export interface ProjectVersionsResponse {
-  /** The live verdict counts (what a freeze would take). */
+  /** The live verdict counts (what a freeze without the goldens-only option would take). */
   summary: VerdictSummary;
+  /** What a goldens-only freeze would take now: golden pictures that have an OK / NG verdict. */
+  golden_verdicts?: { ok: number; ng: number };
   versions: VersionInfo[];
   result_names?: string[];
 }
@@ -897,10 +899,10 @@ export const api = {
       send("DELETE"),
     ),
   projectVersions: (camera: string) => request<ProjectVersionsResponse>(`/cameras/${encodeURIComponent(camera)}/project-versions`),
-  freezeProject: (camera: string, name: string, notes: string) =>
+  freezeProject: (camera: string, name: string, notes: string, goldensOnly = true) =>
     request<{ id: number; number: number; counts: Record<string, number> }>(
       `/cameras/${encodeURIComponent(camera)}/project-versions`,
-      post({ name, notes }),
+      post({ name, notes, goldens_only: goldensOnly }),
     ),
   exportProjectVersion: (camera: string, id: number) =>
     request<ExportReport>(`/cameras/${encodeURIComponent(camera)}/project-versions/${id}/export`, post()),

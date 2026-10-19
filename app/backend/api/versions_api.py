@@ -170,6 +170,7 @@ def list_project_versions(camera: str) -> dict:
     names = sorted({r["name"] for rs in recorded.values() for r in rs}, key=str.lower)
     return {
         "summary": verdicts.summary(camera),
+        "golden_verdicts": versions.golden_verdict_counts(camera),
         "versions": [{**v, "results": recorded.get(v["id"], [])} for v in versions.list_versions(camera, versions.PROJECT)],
         "result_names": names,
     }
@@ -178,20 +179,21 @@ def list_project_versions(camera: str) -> dict:
 class ProjectFreezeRequest(BaseModel):
     name: str = ""
     notes: str = ""
+    goldens_only: bool = True
 
 
 @router.post("/cameras/{camera}/project-versions", status_code=201)
 def freeze_project(camera: str, body: ProjectFreezeRequest) -> dict:
     require_camera(camera)
     try:
-        return versions.freeze_project(camera, body.name, body.notes)
+        return versions.freeze_project(camera, body.name, body.notes, body.goldens_only)
     except versions.NothingToFreezeError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post("/cameras/{camera}/project-versions/{version_id}/export")
 def export_project(camera: str, version_id: int) -> dict:
-    """Copy the version's OK / NG pictures into class folders under the camera's exports folder."""
+    """Copy the version's pictures (the goldens, by default) into OK / NG folders under the camera's exports folder."""
     require_camera(camera)
     _require_version(camera, versions.PROJECT, version_id)
     dest, report = versions.export(camera, version_id)

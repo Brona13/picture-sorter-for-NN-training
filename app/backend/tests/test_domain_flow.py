@@ -131,7 +131,7 @@ class EndToEndFlowTests(unittest.TestCase):
             labels.current_goldens(self.camera, self.feature),
         )
         # Export is done from project (verdict) versions: the two labelled frames carry OK / NG verdicts.
-        project = versions.freeze_project(self.camera, "verdicts")
+        project = versions.freeze_project(self.camera, "verdicts", goldens_only=False)
         destination, export_report = versions.export(self.camera, project["id"])
         self.assertEqual(len(expected_labels), export_report["written"])
         self.assertEqual([], export_report["missing"])

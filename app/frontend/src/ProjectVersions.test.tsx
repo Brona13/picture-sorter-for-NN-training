@@ -13,11 +13,11 @@ const pv = (id: number, number: number, active: boolean, over: Record<string, un
 });
 
 let calls: { url: string; method: string; body?: any }[];
-let state: { summary: ReturnType<typeof summary>; versions: ReturnType<typeof pv>[] };
+let state: { summary: ReturnType<typeof summary>; golden_verdicts: { ok: number; ng: number }; versions: ReturnType<typeof pv>[] };
 
 beforeEach(() => {
   calls = [];
-  state = { summary: summary(), versions: [pv(1, 1, false), pv(2, 2, true)] };
+  state = { summary: summary(), golden_verdicts: { ok: 3, ng: 1 }, versions: [pv(1, 1, false), pv(2, 2, true)] };
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, init?: RequestInit) => {
@@ -58,8 +58,30 @@ test("freeze posts the name and notes and reloads", async () => {
   await userEvent.type(screen.getByLabelText("Project version name"), "batch 1");
   await userEvent.type(screen.getByLabelText(/Project notes/), "first");
   await userEvent.click(screen.getByRole("button", { name: /Freeze verdicts/ }));
-  await waitFor(() => expect(calls.find((c) => c.method === "POST")?.body).toEqual({ name: "batch 1", notes: "first" }));
+  await waitFor(() => expect(calls.find((c) => c.method === "POST")?.body).toEqual({ name: "batch 1", notes: "first", goldens_only: true }));
   expect(await screen.findByText(/Froze project v3 — OK 4, NG 2/)).toBeInTheDocument();
+});
+
+test("goldens only is on by default: says how many are frozen and left out, and can be unticked", async () => {
+  render(<ProjectVersions camera="camA" />);
+  await screen.findByRole("table", { name: "Project version history" });
+  const box = screen.getByRole("checkbox", { name: /Only goldens/ });
+  expect(box).toBeChecked();
+  expect(screen.getByTestId("golden-info")).toHaveTextContent("4 golden picture(s) will be frozen (OK 3, NG 1). 2 picture(s) with a verdict but no golden mark are left out.");
+  await userEvent.click(box);
+  expect(screen.queryByTestId("golden-info")).toBeNull();
+  await userEvent.click(screen.getByRole("button", { name: /Freeze verdicts/ }));
+  await waitFor(() => expect(calls.find((c) => c.method === "POST")?.body).toMatchObject({ goldens_only: false }));
+});
+
+test("with goldens only, freezing needs at least one golden with a verdict", async () => {
+  state.golden_verdicts = { ok: 0, ng: 0 };
+  render(<ProjectVersions camera="camA" />);
+  await screen.findByRole("table", { name: "Project version history" });
+  expect(screen.getByRole("button", { name: /Freeze verdicts/ })).toBeDisabled();
+  expect(screen.getByText(/No golden picture has a verdict yet/)).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("checkbox", { name: /Only goldens/ }));
+  expect(screen.getByRole("button", { name: /Freeze verdicts/ })).toBeEnabled();
 });
 
 test("export reports what was written, missing and changed", async () => {

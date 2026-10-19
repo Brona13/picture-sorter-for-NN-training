@@ -25,8 +25,11 @@ class ProjectVersionTests(ApiTestCase):
         labels.set_label("camA", "roi2", self.f[4], "NG")
         self.client.put("/api/cameras/camA/verdicts/decision", json={"frame": self.f[4], "cls": "NG"})
 
-    def freeze(self, name: str = "first"):
-        return self.client.post("/api/cameras/camA/project-versions", json={"name": name, "notes": "n"})
+    def freeze(self, name: str = "first", goldens_only: bool = False):
+        """Most tests below are about the verdicts, so they freeze every verdict picture; goldens-only has its own."""
+        return self.client.post(
+            "/api/cameras/camA/project-versions", json={"name": name, "notes": "n", "goldens_only": goldens_only}
+        )
 
     def test_freeze_counts_and_listing(self) -> None:
         r = self.freeze()
@@ -51,6 +54,42 @@ class ProjectVersionTests(ApiTestCase):
         self.assertEqual(sorted(p.name for p in (dest / "OK").iterdir()), [self.f[0]])
         self.assertEqual(sorted(p.name for p in (dest / "NG").iterdir()), sorted([self.f[1], self.f[4]]))
         self.assertEqual(dest.parent.name, "project")
+
+    def mark_goldens(self) -> None:
+        labels.mark_golden("camA", "roi1", self.f[0], "OK")  # verdict OK
+        labels.mark_golden("camA", "roi1", self.f[1], "NG")  # verdict NG
+        labels.mark_golden("camA", "roi1", self.f[2], "OK")  # golden, but its ROIs contradict: no verdict
+
+    def test_goldens_only_is_the_default_and_exports_just_the_golden_pictures(self) -> None:
+        self.mark_goldens()
+        r = self.client.post("/api/cameras/camA/project-versions", json={"name": "g"})
+        self.assertEqual(r.status_code, 201, r.text)
+        c = r.json()["counts"]
+        self.assertEqual((c["ok"], c["ng"], c["not_golden"], c["contradiction"]), (1, 1, 1, 1))
+        out = self.client.post(f"/api/cameras/camA/project-versions/{r.json()['id']}/export").json()
+        self.assertEqual((out["written"], out["missing"], out["hash_mismatch"]), (2, [], []))
+        dest = Path(out["destination"])
+        self.assertEqual([p.name for p in (dest / "OK").iterdir()], [self.f[0]])
+        self.assertEqual([p.name for p in (dest / "NG").iterdir()], [self.f[1]])  # f4 has a verdict but no golden mark
+        v = self.client.get("/api/cameras/camA/project-versions").json()["versions"][0]
+        self.assertEqual(v["stats"]["export"]["goldens_only"], 1)
+
+    def test_goldens_only_needs_a_golden_with_a_verdict(self) -> None:
+        r = self.client.post("/api/cameras/camA/project-versions", json={"name": "none"})
+        self.assertEqual(r.status_code, 422)
+        self.assertIn("golden", r.json()["detail"])
+        labels.mark_golden("camA", "roi1", self.f[2], "OK")  # contradiction: no verdict, so still nothing
+        self.assertEqual(self.client.post("/api/cameras/camA/project-versions", json={"name": "none"}).status_code, 422)
+        self.assertEqual(self.freeze().status_code, 201)  # all verdicts can still be frozen on request
+
+    def test_listing_says_what_a_goldens_only_freeze_would_take(self) -> None:
+        self.assertEqual(self.client.get("/api/cameras/camA/project-versions").json()["golden_verdicts"], {"ok": 0, "ng": 0})
+        self.mark_goldens()
+        self.assertEqual(self.client.get("/api/cameras/camA/project-versions").json()["golden_verdicts"], {"ok": 1, "ng": 1})
+
+    def test_product_sorting_goldens_are_not_quality_goldens(self) -> None:
+        labels.mark_golden("camA", "roi1", self.f[0], "ProductA")
+        self.assertEqual(labels.quality_golden_frames("camA"), set())
 
     def test_export_is_reproducible_from_the_snapshot_and_leaves_sources_untouched(self) -> None:
         vid = self.freeze().json()["id"]

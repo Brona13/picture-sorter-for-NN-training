@@ -646,8 +646,12 @@ The **Versions** page has two kinds of versions.
 
 ### Project versions: freeze and export the verdicts
 
-At the top of the page, **Project versions (verdicts)** freezes the camera's verdicts (see *Project verdicts*):
-every picture with an OK or NG verdict at that moment is stored with its content hash. Open pictures,
+At the top of the page, **Project versions (verdicts)** freezes the camera's verdicts (see *Project verdicts*).
+The verdict is the decision step; what is exported is the **golden** pictures. The **Only goldens** box (on by default)
+freezes only pictures that are golden (OK or NG) in at least one ROI and have a valid verdict, in the OK or NG folder
+their verdict says; the line under the form says how many that is and how many verdict pictures are left out for
+having no golden mark. Untick the box to freeze every picture with an OK or NG verdict instead. Frozen pictures are
+stored with their content hash. Open pictures,
 contradictions, stale decisions and Dedup duplicates have no valid verdict and are left out; a warning above the
 form says how many. Deleted pictures are never in a version. Versions are numbered p1, p2, ...; the newest is
 "latest". An older one can be deleted (confirmation); the row stays greyed out and the number is not reused.
