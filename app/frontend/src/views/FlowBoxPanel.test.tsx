@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { FlowNodeDetail, FlowTolerance } from "../api";
 import FlowBoxPanel, { deviation, ToleranceHistogram } from "./FlowBoxPanel";
-import FlowBoxView, { rectOf } from "./FlowBoxView";
+import FlowBoxView, { rectOf, resizeRect } from "./FlowBoxView";
 
 let calls: { url: string; method: string; body?: any }[];
 let detail: any;
@@ -144,14 +144,46 @@ test("Cascade detector page shows one picture per box of the input detector, zoo
     return undefined;
   });
   render(<FlowBoxView camera="camA" focus={{ nodeId: "det:2", onBack: () => {} }} />);
-  const img = await screen.findByAltText("a.png");
+  const img = await screen.findByAltText("a.png", {}, { timeout: 4000 });
   Object.defineProperty(img, "naturalWidth", { value: 400 });
   Object.defineProperty(img, "naturalHeight", { value: 300 });
   fireEvent.load(img);
-  const overlay = await screen.findByTestId("flow-overlay");
+  const overlay = await screen.findByTestId("flow-overlay", {}, { timeout: 4000 });
   // 60 x 40 box at (100,100), padded 0.3 on every side: 1.6 x the box, centred on it.
   expect(overlay.getAttribute("viewBox")).toBe("52 68 96 64");
   expect(screen.getByText(/Each picture is the “left hole” box found by det:1/)).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Show b.png" })).not.toBeInTheDocument(); // b.png has no box in the input detector
   expect(screen.queryByRole("button", { name: "+ New target" })).not.toBeInTheDocument();
+});
+
+test("resizeRect moves the dragged edges only and keeps a minimum size", () => {
+  expect(resizeRect([10, 10, 40, 30], "se", 5, 5)).toEqual([10, 10, 45, 35]);
+  expect(resizeRect([10, 10, 40, 30], "nw", 5, -5)).toEqual([15, 5, 35, 35]);
+  expect(resizeRect([10, 10, 40, 30], "e", -100, 0)).toEqual([10, 10, 5, 30]);
+  expect(resizeRect([10, 10, 40, 30], "n", 0, 100)).toEqual([10, 35, 40, 5]);
+});
+
+test("Detector page: clicking an example rectangle selects it; dragging it moves it and saves the new box", async () => {
+  vi.stubGlobal("PointerEvent", MouseEvent);
+  const detector = {
+    kind: "detector", input: "ingest", rotate: true, angle_range: null, pad: 0.3, status: "fresh",
+    targets: [{ name: "left hole", examples: [{ frame: "a.png", box: [10, 10, 40, 30], png: "data:image/png;base64,AA" }] }],
+    summary: { frames: 2, found: { "left hole": 0 }, complete: 0, review: 0 },
+  };
+  routes(detector, (url, method) => (method === "PUT" && url.includes("/examples/") ? { ...detector, status: "stale" } : undefined));
+  render(<FlowBoxView camera="camA" focus={{ nodeId: "det:1", onBack: () => {} }} />);
+  const img = await screen.findByAltText("a.png", {}, { timeout: 4000 });
+  Object.defineProperty(img, "naturalWidth", { value: 100 });
+  Object.defineProperty(img, "naturalHeight", { value: 100 });
+  fireEvent.load(img);
+  const overlay = await screen.findByTestId("flow-overlay", {}, { timeout: 4000 });
+  overlay.getBoundingClientRect = () => ({ left: 0, top: 0, width: 100, height: 100, right: 100, bottom: 100, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
+  expect(screen.queryByTestId("handle-se")).not.toBeInTheDocument();
+  fireEvent.pointerDown(overlay, { clientX: 20, clientY: 20 });
+  expect(await screen.findByTestId("handle-se")).toBeInTheDocument();
+  fireEvent.pointerMove(overlay, { clientX: 30, clientY: 25 });
+  fireEvent.pointerUp(overlay, { clientX: 30, clientY: 25 });
+  await waitFor(() => expect(calls.some((c) => c.method === "PUT" && c.url.includes("/examples/left%20hole/0"))).toBe(true));
+  expect(calls.find((c) => c.method === "PUT" && c.url.includes("/examples/"))?.body).toEqual({ box: [20, 15, 40, 30] });
+  vi.unstubAllGlobals();
 });

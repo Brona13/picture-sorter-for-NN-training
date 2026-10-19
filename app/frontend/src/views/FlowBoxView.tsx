@@ -14,6 +14,25 @@ export function rectOf(a: { x: number; y: number }, b: { x: number; y: number })
   return [Math.round(x), Math.round(y), Math.round(Math.abs(a.x - b.x)), Math.round(Math.abs(a.y - b.y))];
 }
 
+export type Rect = [number, number, number, number];
+export type Handle = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
+const HANDLES: Handle[] = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
+
+/** The rectangle after dragging one of its handles by (dx, dy) picture pixels; it never gets smaller than `min`. */
+export function resizeRect(r: Rect, handle: Handle, dx: number, dy: number, min = 5): Rect {
+  let [x0, y0, x1, y1] = [r[0], r[1], r[0] + r[2], r[1] + r[3]];
+  if (handle.includes("w")) x0 = Math.min(x0 + dx, x1 - min);
+  if (handle.includes("e")) x1 = Math.max(x1 + dx, x0 + min);
+  if (handle.includes("n")) y0 = Math.min(y0 + dy, y1 - min);
+  if (handle.includes("s")) y1 = Math.max(y1 + dy, y0 + min);
+  return [x0, y0, x1 - x0, y1 - y0];
+}
+
+const handlePoint = (r: Rect, h: Handle) => ({
+  x: h.includes("w") ? r[0] : h.includes("e") ? r[0] + r[2] : r[0] + r[2] / 2,
+  y: h.includes("n") ? r[1] : h.includes("s") ? r[1] + r[3] : r[1] + r[3] / 2,
+});
+
 const TITLES = { detector: "Detector", calc: "Calculate", tolerance: "Tolerance" } as const;
 
 export type FlowFocus = { nodeId: string; onBack: () => void };
@@ -81,6 +100,8 @@ function DetectorWork(p: {
   const [mode, setMode] = useState<"draw" | "place">("draw");
   const [onlyReview, setOnlyReview] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [sel, setSel] = useState<{ name: string; index: number } | null>(null);
+  const [edit, setEdit] = useState<{ kind: "move" | Handle; start: { x: number; y: number }; orig: Rect; cur: Rect } | null>(null);
   const [pending, setPending] = useState<{ frame: string; box: [number, number, number, number] } | null>(null);
   const [newName, setNewName] = useState("");
   const [boxes, setBoxes] = useState<Record<string, Record<string, FlowBox>>>({});
@@ -127,7 +148,9 @@ function DetectorWork(p: {
   const strip60 = shown.slice(start, start + STRIP_WINDOW);
   const found = frame ? boxes[frame] ?? {} : {};
   const missing = names.filter((n) => !(n in found));
-  const examplesHere = detail.targets.flatMap((t, ti) => t.examples.filter((e) => e.frame === frame).map((e) => ({ name: t.name, ti, box: e.box })));
+  const examplesHere = detail.targets.flatMap((t, ti) =>
+    t.examples.flatMap((e, index) => (e.frame === frame ? [{ name: t.name, ti, index, box: e.box as Rect }] : [])),
+  );
   const statusOf = (f: string) => (detail.status === "none" ? "" : review.includes(f) ? "review" : f in boxes ? "ok" : "");
 
   // The part of the picture on show: all of it, or (cascade) the padded box the input detector found for this target.
@@ -149,6 +172,71 @@ function DetectorWork(p: {
     const r = svg.current!.getBoundingClientRect();
     const v = view!;
     return { x: v.x + ((e.clientX - r.left) / r.width) * v.w, y: v.y + ((e.clientY - r.top) / r.height) * v.h };
+  };
+
+  useEffect(() => { setSel(null); setEdit(null); }, [frame, mode]);
+  const selected = sel ? examplesHere.find((e) => e.name === sel.name && e.index === sel.index) : undefined;
+  const handleSize = view ? view.w / 70 : 4;
+  const boxOf = (e: { name: string; index: number; box: Rect }): Rect => (edit && sel && sel.name === e.name && sel.index === e.index ? edit.cur : e.box);
+
+  // What a press at q hits in draw mode: a handle of the selected example, else the inside of an example.
+  const hitExample = (q: { x: number; y: number }) => {
+    if (selected) {
+      const r = selected.box;
+      for (const h of HANDLES) {
+        const c = handlePoint(r, h);
+        if (Math.abs(q.x - c.x) <= handleSize && Math.abs(q.y - c.y) <= handleSize) return { e: selected, kind: h as "move" | Handle };
+      }
+    }
+    for (const e of [...examplesHere].reverse()) {
+      if (q.x >= e.box[0] && q.x <= e.box[0] + e.box[2] && q.y >= e.box[1] && q.y <= e.box[1] + e.box[3]) return { e, kind: "move" as "move" | Handle };
+    }
+    return null;
+  };
+
+  const commitEdit = async () => {
+    if (!edit || !sel) return;
+    const done = edit;
+    setEdit(null);
+    const [x, y, w, h] = done.cur;
+    const changed = done.cur.some((v, i) => Math.round(v) !== Math.round(done.orig[i]));
+    if (!changed || !size) return;
+    const box = [Math.max(0, Math.round(x)), Math.max(0, Math.round(y)), Math.round(w), Math.round(h)];
+    try {
+      p.setDetail(await api.flowUpdateExample(camera, nodeId, sel.name, sel.index, box));
+      p.onError(null);
+      p.onChanged();
+    } catch (e) { p.onError(msg(e)); }
+  };
+
+  const onDown = (e: React.PointerEvent<SVGSVGElement>) => {
+    const q = point(e);
+    (e.currentTarget as SVGSVGElement).setPointerCapture?.(e.pointerId);
+    const hit = mode === "draw" ? hitExample(q) : null;
+    if (hit) {
+      setSel({ name: hit.e.name, index: hit.e.index });
+      setEdit({ kind: hit.kind, start: q, orig: hit.e.box, cur: hit.e.box });
+      return;
+    }
+    setSel(null);
+    setDrag({ from: q, to: q });
+  };
+  const onMove = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (edit) {
+      const q = point(e);
+      const [dx, dy] = [q.x - edit.start.x, q.y - edit.start.y];
+      const [ox, oy, ow, oh] = edit.orig;
+      const cur: Rect = edit.kind === "move"
+        ? [Math.min(Math.max(0, ox + dx), (size?.w ?? Infinity) - ow), Math.min(Math.max(0, oy + dy), (size?.h ?? Infinity) - oh), ow, oh]
+        : resizeRect(edit.orig, edit.kind, dx, dy);
+      setEdit({ ...edit, cur });
+    } else if (drag) {
+      setDrag({ from: drag.from, to: point(e) });
+    }
+  };
+  const onUp = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (edit) void commitEdit();
+    else void finish(point(e));
   };
 
   const finish = async (to: { x: number; y: number }) => {
@@ -224,11 +312,11 @@ function DetectorWork(p: {
           : parentId && candidates.length === 0
             ? `The detector before this one has no box named “${chosen}” on any picture yet. Run it first.`
             : parentId && mode === "draw"
-              ? `Each picture is the “${chosen}” box found by ${parentId}, with its surroundings. Drag a rectangle around the hole (or whatever this detector looks for) in it.`
+              ? `Each picture is the “${chosen}” box found by ${parentId}, with its surroundings. Drag a rectangle around the hole (or whatever this detector looks for) in it. Click an example rectangle to move or resize it.`
               : naming
           ? "Drag a rectangle around what to find (one hole, say) and include the geometry that tells it from its twin. You name it next."
           : mode === "draw"
-            ? `Drag a rectangle around the “${chosen}”. Include the geometry that tells it from its twin.`
+            ? `Drag a rectangle around the “${chosen}”. Include the geometry that tells it from its twin. Click a rectangle to move or resize it; run again afterwards.`
             : chosen
               ? `Click where the centre of “${chosen}” is. Your box stays when the detector runs again.`
               : "Draw an example of a target first."}
@@ -259,14 +347,24 @@ function DetectorWork(p: {
               viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`}
               style={view.crop ? { aspectRatio: `${view.w} / ${view.h}` } : undefined}
               data-testid="flow-overlay"
-              onPointerDown={(e) => { const q = point(e); setDrag({ from: q, to: q }); (e.currentTarget as SVGSVGElement).setPointerCapture?.(e.pointerId); }}
-              onPointerMove={(e) => drag && setDrag({ from: drag.from, to: point(e) })}
-              onPointerUp={(e) => void finish(point(e))}
+              onPointerDown={onDown}
+              onPointerMove={onMove}
+              onPointerUp={onUp}
             >
               {view.crop && <image href={frameImageUrl(camera, frame)} x={0} y={0} width={size.w} height={size.h} />}
-              {examplesHere.map((e, i) => (
-                <rect key={`ex${i}`} x={e.box[0]} y={e.box[1]} width={e.box[2]} height={e.box[3]} fill="none" stroke={COLORS[e.ti % COLORS.length]} strokeDasharray="4 3" />
-              ))}
+              {examplesHere.map((e) => {
+                const b = boxOf(e);
+                const active = sel?.name === e.name && sel.index === e.index;
+                return (
+                  <g key={`ex${e.name}${e.index}`}>
+                    <rect x={b[0]} y={b[1]} width={b[2]} height={b[3]} fill={active ? "rgba(255,255,255,.08)" : "none"} stroke={COLORS[e.ti % COLORS.length]} strokeWidth={active ? 2 : 1} strokeDasharray={active ? undefined : "4 3"} vectorEffect="non-scaling-stroke" data-testid="example-rect" />
+                    {active && HANDLES.map((h) => {
+                      const c = handlePoint(b, h);
+                      return <rect key={h} data-testid={`handle-${h}`} x={c.x - handleSize / 2} y={c.y - handleSize / 2} width={handleSize} height={handleSize} fill="#fff" stroke={COLORS[e.ti % COLORS.length]} vectorEffect="non-scaling-stroke" />;
+                    })}
+                  </g>
+                );
+              })}
               {names.map((n, i) => {
                 const b = found[n];
                 if (!b) return null;

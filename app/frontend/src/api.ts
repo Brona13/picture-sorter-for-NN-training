@@ -1087,6 +1087,11 @@ export const api = {
       `/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/examples`,
       send("POST", { target, frame, box }),
     ),
+  flowUpdateExample: (camera: string, id: string, target: string, index: number, box: number[]) =>
+    request<FlowNodeDetail>(
+      `/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/examples/${encodeURIComponent(target)}/${index}`,
+      send("PUT", { box }),
+    ),
   flowRemoveExample: (camera: string, id: string, target: string, index: number) =>
     request<FlowNodeDetail>(
       `/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/examples/${encodeURIComponent(target)}/${index}`,

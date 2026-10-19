@@ -134,6 +134,22 @@ class FlowTests(ApiTestCase):
         self.post(f"/nodes/{d1}/examples", {"target": "A", "frame": self.names[0], "box": RIGHT_BOX})
         self.assertEqual(self.client.get(f"{self.base}/nodes/{d1}").json()["status"], "stale")
 
+    def test_example_rectangle_can_be_moved_and_resized_and_makes_results_stale(self) -> None:
+        d1 = self.detector({"A": LEFT_BOX})
+        self.run_all()
+        self.assertEqual(self.client.get(f"{self.base}/nodes/{d1}").json()["status"], "fresh")
+        before = self.client.get(f"{self.base}/nodes/{d1}").json()["targets"][0]["examples"][0]
+        r = self.client.put(f"{self.base}/nodes/{d1}/examples/A/0", json={"box": [28, 94, 70, 52]})
+        self.assertEqual(r.status_code, 200, r.text)
+        after = r.json()["targets"][0]["examples"][0]
+        self.assertEqual(after["box"], [28, 94, 70, 52])
+        self.assertEqual(after["frame"], before["frame"])
+        self.assertNotEqual(after["png"], before["png"])
+        self.assertEqual(r.json()["status"], "stale")
+        for bad in ([0, 0, 2, 2], [500, 500, 40, 40]):  # too small; entirely outside the picture
+            self.assertEqual(self.client.put(f"{self.base}/nodes/{d1}/examples/A/0", json={"box": bad}).status_code, 422)
+        self.assertEqual(self.client.put(f"{self.base}/nodes/{d1}/examples/A/5", json={"box": LEFT_BOX}).status_code, 422)
+
     def test_one_hole_found_goes_to_review(self) -> None:
         d1 = self.detector({"A": LEFT_BOX})
         self.post(f"/nodes/{d1}/targets", {"name": "B"})

@@ -297,17 +297,8 @@ def _read(camera: str, frame: str) -> np.ndarray:
     return curation.load_image(datamodel.unsorted_dir(camera) / frame)
 
 
-def add_example(camera: str, node_id: str, target: str, frame: str, box: list[float]) -> dict:
-    """Cut an example crop (pixels ``[x, y, w, h]`` of the frame) and keep it with the target."""
-    graph = load_graph(camera)
-    node = _node(graph, node_id)
-    if node["kind"] != "detector":
-        raise FlowError("Only a detector has examples.")
-    entry = next((t for t in node["targets"] if t["name"] == target), None)
-    if entry is None:
-        raise FlowError(f"Unknown target: {target}")
-    if len(entry["examples"]) >= MAX_EXAMPLES:
-        raise FlowError(f"A target can have at most {MAX_EXAMPLES} examples.")
+def _cut(camera: str, frame: str, box: list[float]) -> tuple[list[int], str]:
+    """The example crop of ``box`` (pixels ``[x, y, w, h]``) on ``frame``: the clipped box and the crop as base64 PNG."""
     if not isinstance(box, (list, tuple)) or len(box) != 4:
         raise FlowError("The example box is x, y, width, height.")
     image = _read(camera, frame)
@@ -324,13 +315,37 @@ def add_example(camera: str, node_id: str, target: str, frame: str, box: list[fl
     ok, buf = cv2.imencode(".png", crop)
     if not ok:
         raise FlowError("Cannot store the example.")
-    entry["examples"].append({
-        "frame": frame,
-        "box": [x0, y0, x1 - x0, y1 - y0],
-        "png": base64.b64encode(buf.tobytes()).decode(),
-    })
+    return [x0, y0, x1 - x0, y1 - y0], base64.b64encode(buf.tobytes()).decode()
+
+
+def add_example(camera: str, node_id: str, target: str, frame: str, box: list[float]) -> dict:
+    """Cut an example crop (pixels ``[x, y, w, h]`` of the frame) and keep it with the target."""
+    graph = load_graph(camera)
+    node = _node(graph, node_id)
+    if node["kind"] != "detector":
+        raise FlowError("Only a detector has examples.")
+    entry = next((t for t in node["targets"] if t["name"] == target), None)
+    if entry is None:
+        raise FlowError(f"Unknown target: {target}")
+    if len(entry["examples"]) >= MAX_EXAMPLES:
+        raise FlowError(f"A target can have at most {MAX_EXAMPLES} examples.")
+    clipped, png = _cut(camera, frame, box)
+    entry["examples"].append({"frame": frame, "box": clipped, "png": png})
     save_graph(camera, graph)
     return entry["examples"][-1]
+
+
+def update_example(camera: str, node_id: str, target: str, index: int, box: list[float]) -> dict:
+    """Move or resize an example rectangle on its own picture; the crop is cut again (the detector then needs a new run)."""
+    graph = load_graph(camera)
+    node = _node(graph, node_id)
+    entry = next((t for t in node.get("targets", []) if t["name"] == target), None)
+    if entry is None or not 0 <= index < len(entry["examples"]):
+        raise FlowError("There is no such example.")
+    example = entry["examples"][index]
+    example["box"], example["png"] = _cut(camera, example["frame"], box)
+    save_graph(camera, graph)
+    return example
 
 
 def remove_example(camera: str, node_id: str, target: str, index: int) -> None:

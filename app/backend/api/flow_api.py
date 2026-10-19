@@ -118,6 +118,17 @@ def add_example(camera: str, node_id: str, body: ExampleBody) -> dict:
     return flow.node_detail(camera, node_id)
 
 
+class ExampleBoxBody(BaseModel):
+    box: list[float]
+
+
+@router.put("/cameras/{camera}/flow/nodes/{node_id}/examples/{target}/{index}")
+def update_example(camera: str, node_id: str, target: str, index: int, body: ExampleBoxBody) -> dict:
+    _known(camera, node_id)
+    _guard(flow.update_example, camera, node_id, target, index, body.box)
+    return flow.node_detail(camera, node_id)
+
+
 @router.delete("/cameras/{camera}/flow/nodes/{node_id}/examples/{target}/{index}")
 def remove_example(camera: str, node_id: str, target: str, index: int) -> dict:
     _known(camera, node_id)
