@@ -286,7 +286,7 @@ button[aria-pressed="true"] { background: var(--info-bg); color: var(--info-fg);
 .flow-thumb.ok { border-bottom-color: #2e9e5b; }
 .flow-thumb.review { border-color: #e08a00; }
 .flow-thumb[aria-current="true"] { outline: 2px solid var(--fg); outline-offset: 1px; }
-.flow-histogram { display: flex; align-items: flex-end; gap: 1px; height: 120px; padding: 2px; border: 1px solid var(--border); border-radius: var(--radius); max-width: 760px; }
+.flow-histogram { position: relative; display: flex; align-items: flex-end; gap: 1px; height: 120px; padding: 2px; border: 1px solid var(--border); border-radius: var(--radius); max-width: 760px; }
 .flow-histogram-axis { display: flex; justify-content: space-between; max-width: 760px; font-size: 11px; color: var(--muted); }
 .flow-bar { flex: 1; min-width: 2px; padding: 0; border: 0; border-radius: 0; background: color-mix(in srgb, var(--fg) 30%, transparent); cursor: pointer; }
 .flow-bar.inside { background: hsl(140 55% 42%); }
@@ -302,3 +302,9 @@ button[aria-pressed="true"] { background: var(--info-bg); color: var(--info-fg);
 .flow-stage.crop svg { position: static; width: min(100%, 760px); height: auto; display: block; }
 .flow-stage.crop { width: min(100%, 760px); }
 .flow-stage.crop svg { width: 100%; }
+
+.flow-band { position: absolute; top: 0; bottom: 0; display: flex; border-left: 2px solid var(--accent, #2a7); border-right: 2px solid var(--accent, #2a7); background: rgba(40, 160, 110, 0.12); pointer-events: none; }
+.flow-band-mid { flex: 1; cursor: ew-resize; pointer-events: auto; touch-action: none; }
+.flow-band-edge { width: 8px; margin: 0 -5px; cursor: col-resize; pointer-events: auto; touch-action: none; }
+.flow-zoom-sel { position: absolute; top: 0; bottom: 0; background: rgba(60, 120, 220, 0.18); border-left: 1px solid #3c78dc; border-right: 1px solid #3c78dc; pointer-events: none; }
+.flow-histogram { user-select: none; }

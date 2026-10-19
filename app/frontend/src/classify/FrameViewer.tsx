@@ -60,6 +60,16 @@ export default function FrameViewer({ camera, feature, frames, start, classes, m
     };
   }, [camera, feature]);
   const { frame, index, go } = useBrowse(frames, start, onClose, onShow);
+  // A detector-anchored ROI sits somewhere else on every picture (or nowhere: the detector found no box).
+  const [placed, setPlaced] = useState<{ frame: string; rect: { x: number; y: number; w: number; h: number } | null } | null>(null);
+  useEffect(() => {
+    if (!feature || !roi?.anchored || !frame) { setPlaced(null); return; }
+    let cancelled = false;
+    api.roiRect(camera, feature, frame).then((r) => !cancelled && setPlaced({ frame, rect: r.rect })).catch(() => !cancelled && setPlaced(null));
+    return () => { cancelled = true; };
+  }, [camera, feature, frame, roi?.anchored]);
+  const outline = roi && showRoi ? (roi.anchored ? (placed && placed.frame === frame && placed.rect ? { ...roi, ...placed.rect } : null) : roi) : null;
+  const noAnchor = !!roi?.anchored && placed?.frame === frame && placed.rect === null;
 
   const latest = useRef({ frame, classes, busy, marks, onLabel, onGolden, onDelete, deleted, labelsLocked });
   latest.current = { frame, classes, busy, marks, onLabel, onGolden, onDelete, deleted, labelsLocked };
@@ -166,7 +176,7 @@ export default function FrameViewer({ camera, feature, frames, start, classes, m
         </>
       }
     >
-      {(width) => <FramePane camera={camera} frame={frame} width={width} outline={roi && showRoi ? roi : null} info={note?.(frame)} />}
+      {(width) => <FramePane camera={camera} frame={frame} width={width} outline={outline} info={noAnchor ? `${roi!.short_name}: the detector found no box here, so there is no ROI on this picture` : note?.(frame)} />}
     </PictureViewer>
   );
 }

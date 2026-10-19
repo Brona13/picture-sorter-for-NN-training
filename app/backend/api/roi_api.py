@@ -1,14 +1,17 @@
 """ROI (feature) CRUD for the editor: list, add/update, move, share, delete, products."""
 from __future__ import annotations
 
+import anchor
 import config
 import datamodel
+import engine
 import flow
 import labels
 import products as product_admin
 import versions
 from api.cameras import require_camera
 from fastapi import APIRouter, HTTPException
+from PIL import Image
 from pydantic import BaseModel
 from roi import ROI
 
@@ -80,6 +83,7 @@ def _describe(camera: str, r: ROI, inbox_total: int) -> dict:
         "goldens": sum(counts.get(f"golden_{c}", 0) for c in classes),
         "version_count": len(vl),
         "active_version": active,
+        "anchored": anchor.get_anchor(camera, r.name) is not None,
     }
 
 
@@ -194,11 +198,55 @@ def set_applies_to(camera: str, feature: str, body: ProductsUpdate) -> dict:
     return _describe(camera, roi, len(datamodel.list_unsorted(camera)))
 
 
+class AnchorBody(BaseModel):
+    detector: str
+    target: str
+    frame: str  # the picture the rectangle was drawn on (the detector must have found the target there)
+    follow_rotation: bool = False
+
+
+@router.put("/cameras/{camera}/rois/{feature}/anchor")
+def put_anchor(camera: str, feature: str, body: AnchorBody) -> dict:
+    """Anchor the ROI to a detector's box: its rectangle then follows that box on every picture (see ``anchor.py``)."""
+    _require_roi(camera, feature)
+    try:
+        return anchor.set_anchor(camera, feature, body.detector, body.target, body.frame, follow_rotation=body.follow_rotation)
+    except (anchor.AnchorError, FileNotFoundError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/cameras/{camera}/rois/{feature}/rect")
+def roi_rect(camera: str, feature: str, frame: str) -> dict:
+    """The rectangle of the ROI on one picture: its own, or - anchored - where the detector's box puts it (``rect`` is
+    ``None`` when the detector found no box there)."""
+    _require_roi(camera, feature)
+    path = datamodel.unsorted_dir(camera) / frame
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail=f"Unknown frame: {frame}")
+    spec = anchor.get_anchor(camera, feature)
+    if spec is None:
+        r = engine.resolve_roi(camera, feature)
+        return {"anchored": False, "rect": {"x": r.x, "y": r.y, "w": r.w, "h": r.h}}
+    with Image.open(path) as picture:
+        width, height = picture.size
+    placed = engine.resolve_roi_for_frame(camera, feature, labels.hash_map(camera).get(frame, ""), width, height)
+    return {"anchored": True, "rect": None if placed is None else {"x": placed.x, "y": placed.y, "w": placed.w, "h": placed.h}}
+
+
+@router.delete("/cameras/{camera}/rois/{feature}/anchor")
+def delete_anchor(camera: str, feature: str) -> dict:
+    """Back to the static rectangle."""
+    _require_roi(camera, feature)
+    anchor.clear_anchor(camera, feature)
+    return {"feature": feature, "anchor": None}
+
+
 @router.delete("/cameras/{camera}/rois/{feature}")
 def delete_roi(camera: str, feature: str) -> dict:
     """Delete the ROI and purge its labels, goldens, versions and caches (irreversible)."""
     _require_roi(camera, feature)
     datamodel.delete_roi(camera, feature)
+    anchor.clear_anchor(camera, feature)
     flow.drop_classify_edges(camera, feature)
     return {"removed": labels.purge_feature(camera, feature)}
 

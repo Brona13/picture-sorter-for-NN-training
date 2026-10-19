@@ -56,6 +56,11 @@ Feature rules:
 - Editing ROI geometry invalidates derived scores for that feature.
 - Deleting an ROI purges its labels, goldens, versions, settings, and derived caches.
 
+
+### Detector-anchored ROI (v1.67.0)
+
+An ROI may be **anchored** to one target of a detector box (`flow.py`). The `rois` row is unchanged and is the rectangle as drawn on an exemplar picture; the anchor is metadata in `settings` under `roi.anchor.<feature>` (detector id, target name, `follow_rotation`, the exemplar's detected angle, and the rectangle's centre offset and size in pixels relative to the detector's box). On every picture the rectangle is the same offset from the box the detector found there (translation only, or turned by the angle change with `follow_rotation`; the crop is the axis-aligned bounding rectangle, clipped to the picture). A picture on which the detector found no box has **no rectangle**: it gets no vectors, scores, thumbnail or measurement, and there is no fallback to the static rectangle. Labels and goldens stay scoped by camera, feature and frame. Cache keys carry the rule and the detector's signature (ROI key) and the detected centre (frame key suffix `@a=x,y[,angle]`). Deleting the detector or the target, or the ROI, removes the anchor. Resolution lives in `anchor.py` / `engine.resolve_roi_for_frame`.
+
 ## Product classification
 
 One ROI may use `role="classify"` and define a product class list. Its labels assign frames to products and establish quality-feature scope.

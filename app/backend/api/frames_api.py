@@ -4,15 +4,18 @@ from __future__ import annotations
 import io
 from pathlib import Path
 
+import anchor
 import config
 import cv2
 import datamodel
 import db
 import engine
+import labels
 import thumbs
 from api.cameras import require_camera
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import FileResponse
+from PIL import Image
 from pydantic import BaseModel
 
 router = APIRouter()
@@ -30,8 +33,17 @@ def frame_path(camera: str, frame: str) -> Path:
     return path
 
 
-def _roi_tuple(camera: str, feature: str | None) -> tuple:
-    roi = engine.resolve_roi(camera, feature or config.WHOLE_FRAME_FEATURE)
+def _roi_tuple(camera: str, feature: str | None, path: Path | None = None) -> tuple:
+    """The rectangle to cut: the ROI's own, or - for a detector-anchored ROI - the one placed on this picture."""
+    feature = feature or config.WHOLE_FRAME_FEATURE
+    roi = engine.resolve_roi(camera, feature)
+    if path is not None and anchor.get_anchor(camera, feature):
+        with Image.open(path) as picture:
+            width, height = picture.size
+        placed = engine.resolve_roi_for_frame(camera, feature, labels.hash_map(camera).get(path.name, ""), width, height)
+        if placed is None:
+            raise HTTPException(status_code=404, detail="The detector found no anchor on this picture.")
+        roi = placed
     return (roi.name, roi.x, roi.y, roi.w, roi.h)
 
 
@@ -100,7 +112,7 @@ def frame_thumb(
         raise HTTPException(status_code=422, detail="variant must be 'cutout' or 'square'")
     if not 16 <= size <= 512:
         raise HTTPException(status_code=422, detail="size must be between 16 and 512")
-    roi_tuple = _roi_tuple(camera, feature)
+    roi_tuple = _roi_tuple(camera, feature, path)
     mtime = path.stat().st_mtime
     etag = f'"{variant}-{size}-{mtime}-{hash(roi_tuple) & 0xFFFFFFFF:x}"'
     if request.headers.get("if-none-match") == etag:

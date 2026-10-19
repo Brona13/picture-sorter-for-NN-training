@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import math
 
+import anchor
 import datamodel
 import db
 import flow
@@ -135,6 +136,7 @@ def _roi_node(camera: str, roi: datamodel.ROI, stored: dict) -> dict:
         "labeled": len(labels.current_labels(camera, roi.name)),
         "product_counts": {},
         "unlabeled": 0,
+        "anchor": anchor.get_anchor(camera, roi.name),
     }
 
 
@@ -177,6 +179,7 @@ def _edges(camera: str, rois: list[datamodel.ROI], classify: str | None) -> list
         })
 
     classify_id = classify_node_id(classify) if classify else None
+    anchored = {r.name for r in rois if anchor.get_anchor(camera, r.name)}  # these hang from their detector instead
     if classify_id:
         add(INGEST_ID, roi_node_id(classify), locked=True)
         add(roi_node_id(classify), classify_id, locked=True)
@@ -191,13 +194,13 @@ def _edges(camera: str, rois: list[datamodel.ROI], classify: str | None) -> list
         elif classify_id and roi.products:
             for product in roi.products:
                 add(classify_id, target, product_handle(product))
-        else:
+        elif roi.name not in anchored:
             add(INGEST_ID, target)
     return edges
 
 
 def _flow_nodes(camera: str, graph: dict, stored: dict) -> list[dict]:
-    """The detector / Calculate / Tolerance boxes, with a light summary each (details come from the flow API)."""
+    """The detector / Calculate / Evaluation boxes, with a light summary each (details come from the flow API)."""
     nodes = []
     for node_id, node in sorted(graph["nodes"].items()):
         kind = node["kind"]
@@ -208,9 +211,9 @@ def _flow_nodes(camera: str, graph: dict, stored: dict) -> list[dict]:
             a, b = flow.effective_points(graph, node_id)
             summary = {"op": node["op"], "a": a, "b": b}
         else:
-            state = flow.tolerance_state(camera, node_id)
+            state = flow.evaluation_state(camera, node_id)
             summary = {"nominal": node["nominal"], "tolerance": node["tolerance"], "unit": state["unit"], "counts": state["counts"]}
-        default = {"detector": "Detector", "calc": "Calculate", "tolerance": "Tolerance"}[kind]
+        default = {"detector": "Detector", "calc": "Calculate", "evaluation": "Evaluation"}[kind]
         entry = stored.get(node_id, {})
         nodes.append({
             "id": node_id, "kind": kind, "ref": None, "label": entry.get("label") or f"{default} {node_id.split(':')[1]}",
@@ -228,7 +231,7 @@ def _column(node: dict) -> int:
         return 1
     if node["kind"] == "calc":
         return 2
-    if node["kind"] == "tolerance":
+    if node["kind"] == "evaluation":
         return 3
     if node["kind"] == "classify":
         return 2 if node["role"] == "classify" else 4
@@ -253,6 +256,7 @@ def _place_missing(nodes: list[dict]) -> None:
 
 def get_canvas(camera: str) -> dict:
     """The canvas as the UI draws it: boxes (stored layout + live status) and the arrows derived from the ROIs."""
+    graph = flow.load_graph(camera)  # first: an old graph is migrated here, together with the stored layout
     layout = load_layout(camera)
     rois = datamodel.load_rois(camera)
     classify = datamodel.classify_feature(camera)
@@ -278,7 +282,6 @@ def get_canvas(camera: str) -> dict:
     for roi in rois:
         nodes.append(_roi_node(camera, roi, stored.get(roi_node_id(roi.name), {})))
         nodes.append(_classify_node(camera, roi, stored.get(classify_node_id(roi.name), {})))
-    graph = flow.load_graph(camera)
     nodes.extend(_flow_nodes(camera, graph, stored))
     _place_missing(nodes)
     edges = _edges(camera, rois, classify)
@@ -286,6 +289,10 @@ def get_canvas(camera: str) -> dict:
     for e in graph["edges"]:
         if e["source"] in known and e["target"] in known:
             edges.append({"id": f"{e['source']}->{e['target']}", "source": e["source"], "source_handle": None, "target": e["target"], "locked": e["source"] == INGEST_ID})
+    for roi in rois:  # a detector-anchored ROI hangs from the detector too (the arrow is stored in the anchor)
+        spec = anchor.get_anchor(camera, roi.name)
+        if spec and spec["detector"] in known:
+            edges.append({"id": f"{spec['detector']}->{roi_node_id(roi.name)}", "source": spec["detector"], "source_handle": None, "target": roi_node_id(roi.name), "locked": False})
     return {
         "camera": camera,
         "nodes": nodes,

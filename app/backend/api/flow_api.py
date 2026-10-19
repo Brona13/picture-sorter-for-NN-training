@@ -1,6 +1,7 @@
-"""Measurement flow on the chain: detector, Calculate and Tolerance boxes (see ``flow.py``). Thin router."""
+"""Measurement flow on the chain: detector, Calculate and Evaluation boxes (see ``flow.py``). Thin router."""
 from __future__ import annotations
 
+import anchor
 import flow
 from api import jobs
 from api.cameras import require_camera, require_feature
@@ -80,6 +81,7 @@ def delete_preview(camera: str, node_id: str) -> dict:
 def delete_node(camera: str, node_id: str) -> dict:
     _known(camera, node_id)
     _guard(flow.delete_node, camera, node_id)
+    anchor.drop_for_detector(camera, node_id)  # a ROI anchored to it goes back to its static rectangle
     return {"removed": node_id}
 
 
@@ -108,6 +110,7 @@ def add_target(camera: str, node_id: str, body: TargetBody) -> dict:
 def remove_target(camera: str, node_id: str, name: str) -> dict:
     _known(camera, node_id)
     flow.remove_target(camera, node_id, name)
+    anchor.drop_for_detector(camera, node_id, name)
     return flow.node_detail(camera, node_id)
 
 
@@ -180,12 +183,12 @@ def put_box(camera: str, node_id: str, body: BoxBody) -> dict:
 
 @router.get("/cameras/{camera}/flow/nodes/{node_id}/values")
 def get_values(camera: str, node_id: str) -> dict:
-    """Per-frame measured number (Calculate) or value + verdict (Tolerance), by frame name."""
+    """Per-frame measured number (Calculate) or value + verdict (Evaluation), by frame name."""
     _known(camera, node_id)
     graph = flow.load_graph(camera)
     kind = graph["nodes"][node_id]["kind"]
-    if kind == "tolerance":
-        return flow.tolerance_state(camera, node_id)
+    if kind == "evaluation":
+        return flow.evaluation_state(camera, node_id)
     if kind == "calc":
         import labels  # noqa: PLC0415
 
@@ -197,6 +200,6 @@ def get_values(camera: str, node_id: str) -> dict:
 
 @router.get("/cameras/{camera}/flow/opinions/{feature:path}")
 def opinions(camera: str, feature: str) -> dict:
-    """The Tolerance boxes arrowed into this feature's Classify box: value and pass / fail / undetermined by frame."""
+    """The Evaluation boxes arrowed into this feature's Classify box: value and pass / fail / undetermined by frame."""
     require_feature(camera, feature)
     return flow.feature_opinions(camera, feature)

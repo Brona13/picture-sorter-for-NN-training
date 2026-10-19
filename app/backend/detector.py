@@ -286,19 +286,18 @@ def _get_backend(method: str = "model") -> Backend:
     return _template_backend if method == "template" else _owl_backend
 
 
-def _filtered_crop(camera: str, roi, frame: str, settings: dict) -> np.ndarray:
+def _filtered_crop(camera: str, feature: str, frame: str, settings: dict) -> np.ndarray:
     """The frame's ROI crop with the feature's pre-processing filter (never the mask)."""
-    crop = roi.crop(curation.load_image(datamodel.unsorted_dir(camera) / frame))
+    crop = engine.crop_for_frame(camera, feature, datamodel.unsorted_dir(camera) / frame)
     flt = settings["filter"]
     return preprocess.apply(crop, flt["name"], flt["params"]) if flt else crop
 
 
 def exemplar_crops(camera: str, feature: str, settings: dict) -> list[np.ndarray]:
-    roi = engine.resolve_roi(camera, feature)
     crops = []
     for ex in settings["detector"]["exemplars"]:
         try:
-            crop = _filtered_crop(camera, roi, ex["frame"], settings)
+            crop = _filtered_crop(camera, feature, ex["frame"], settings)
         except FileNotFoundError as exc:
             raise DetectorError(f"Exemplar frame {ex['frame']!r} no longer exists") from exc
         h, w = crop.shape[:2]
@@ -339,7 +338,6 @@ def run(
     backend = _get_backend(method)
     queries = exemplar_crops(camera, feature, settings)
     sig = vision_settings.detection_signature(settings)
-    roi = engine.resolve_roi(camera, feature)
     hmap = labels.hash_map(camera)
     frames = datamodel.frames_for_feature(camera, feature)
     detected = skipped = unreadable = needs_review = 0
@@ -367,7 +365,7 @@ def run(
         report({"done": i, "total": len(frames)})
         h = labels.frame_hash(camera, frame, hmap)
         try:
-            crop = _filtered_crop(camera, roi, frame, settings)
+            crop = _filtered_crop(camera, feature, frame, settings)
         except FileNotFoundError:
             unreadable += 1
             continue

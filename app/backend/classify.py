@@ -36,6 +36,7 @@ from dataclasses import dataclass, field
 import cv2
 import numpy as np
 
+import anchor
 import config
 import curation
 import datamodel
@@ -107,7 +108,9 @@ def _roi_cache_key(roi, camera: str | None = None, feature: str | None = None, c
     """Cache key for a ROI; carries the feature's vision-settings signature if any."""
     key = f"{roi.x:.4f},{roi.y:.4f},{roi.w:.4f},{roi.h:.4f}"
     sig = vision_settings.signature(camera, feature, con) if camera and feature else ""
-    return f"{key}|{sig}" if sig else key
+    key = f"{key}|{sig}" if sig else key
+    spec = anchor.get_anchor(camera, feature, con) if camera and feature else None
+    return f"{key}|{anchor.rule_key(spec, camera)}" if spec else key
 
 
 def _chunks(items: list, size: int):
@@ -177,8 +180,18 @@ def _prepare_vector_cache(
     offsets = detections.offsets(camera, feature, vision, con)
     frame_hashes: dict[str, str] = {}
     frame_offsets: dict[str, tuple[float, float]] = {}
+    spec = anchor.get_anchor(camera, feature, con)  # a detector-anchored ROI: its rectangle differs per picture
+    frame_entries: dict[str, dict] = {}
+    unavailable: set[str] = set()
     for f in frames:
         h = labels.frame_hash(camera, f, hmap)
+        if spec:
+            entry = anchor.entry_for(camera, spec, h)
+            if entry is None:  # the detector found nothing here: no rectangle, no vectors
+                unavailable.add(f)
+            else:
+                frame_entries[f] = entry
+                h = f"{h}@{anchor.frame_key(spec, entry)}"
         if h in offsets:  # the mask follows this frame's detection: its vectors are specific to it
             frame_offsets[f] = offsets[h]
             h = f"{h}@{offsets[h][0]:+.4f},{offsets[h][1]:+.4f}"
@@ -200,7 +213,6 @@ def _prepare_vector_cache(
     )
 
     reported: set[str] = set()
-    unavailable: set[str] = set()
     completed = 0
 
     def report_ready(frame: str) -> None:
@@ -217,18 +229,23 @@ def _prepare_vector_cache(
                 progress_cb(completed, len(frames))
 
     for frame in frames:
-        if not missing_by_frame[frame]:
+        if not missing_by_frame[frame] or frame in unavailable:
             report_ready(frame)
 
     prep_size = max(1, int(getattr(config, "SCORING_VECTOR_BATCH_SIZE", 32)))
-    frames_missing_any = [frame for frame in frames if missing_by_frame[frame]]
+    frames_missing_any = [frame for frame in frames if missing_by_frame[frame] and frame not in unavailable]
     for frame_batch in _chunks(frames_missing_any, prep_size):
         cutouts: dict[str, np.ndarray] = {}
         for frame in frame_batch:
             try:
                 with perf.span("features.image_load_and_crop"):
                     img = curation.load_image(datamodel.unsorted_dir(camera) / frame)
-                    cutouts[frame] = roi.crop(img)
+                    frame_roi = roi
+                    if frame in frame_entries:
+                        frame_roi = anchor.rect_for(spec, frame_entries[frame], roi.name, img.shape[1], img.shape[0])
+                        if frame_roi is None:  # the rectangle lies outside this picture
+                            raise FileNotFoundError(frame)
+                    cutouts[frame] = frame_roi.crop(img)
                     cutouts[frame] = vision_settings.apply_settings(
                         vision, cutouts[frame], frame_offsets.get(frame)
                     )

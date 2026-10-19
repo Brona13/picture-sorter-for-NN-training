@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { api, FlowCalc, FlowDetector, FlowNodeDetail, FlowTolerance } from "../api";
+import { useEffect, useRef, useState } from "react";
+import { api, FlowCalc, FlowDetector, FlowNodeDetail, FlowEvaluation } from "../api";
 import { PanelSection } from "../SidePanel";
 import { useJob } from "../useJob";
 
@@ -9,18 +9,123 @@ export function deviation(value: number, nominal: number, wrap: boolean): number
   return wrap ? ((((d + 180) % 360) + 360) % 360) - 180 : d;
 }
 
-/** Histogram of the measured values; the bars inside nominal +- tolerance are drawn as passing. Click a bar to take its value as the nominal. */
-export function ToleranceHistogram({ detail, onPick }: { detail: FlowTolerance; onPick: (value: number) => void }) {
+/** Nominal and tolerance after dragging one handle of the band to `value` (the tolerance never goes below 0). */
+export function dragBand(handle: "centre" | "low" | "high", value: number, nominal: number, tolerance: number): { nominal: number; tolerance: number } {
+  if (handle === "centre") return { nominal: value, tolerance };
+  return { nominal, tolerance: Math.max(0, Math.abs(value - nominal)) };
+}
+
+type Band = { nominal: number; tolerance: number };
+type Range = [number, number];
+
+/** How many of `values` fall into each of `bins` equal bins of `[low, high]` (the top edge belongs to the last bin). */
+export function rebin(values: number[], [low, high]: Range, bins: number): number[] {
+  const out = new Array<number>(bins).fill(0);
+  if (high <= low) return out;
+  for (const v of values) {
+    if (v < low || v > high) continue;
+    out[Math.min(bins - 1, Math.floor(((v - low) / (high - low)) * bins))] += 1;
+  }
+  return out;
+}
+
+const MIN_DRAG_PX = 4;
+
+/**
+ * Histogram of the measured values; the bars inside nominal +- tolerance are drawn as passing. Click a bar to take its
+ * value as the nominal; drag the middle of the band to move the nominal and either edge to change the tolerance
+ * (saved on release through `onBand`). Drag across the rest of the chart to zoom the x axis into that range (the
+ * values in it are binned again, so a peak shows its detail; `onRange` tells the page, which narrows its grid too),
+ * and right-click to see everything again.
+ */
+export function EvaluationHistogram({
+  detail, onPick, onBand, values, range = null, onRange,
+}: {
+  detail: FlowEvaluation;
+  onPick: (value: number) => void;
+  onBand?: (band: Band) => void;
+  /** The measured numbers, for binning again inside a zoomed range. */
+  values?: number[];
+  range?: Range | null;
+  onRange?: (range: Range | null) => void;
+}) {
   const h = detail.histogram;
+  const box = useRef<HTMLDivElement>(null);
+  const swallowClick = useRef(false);
+  const [drag, setDrag] = useState<Band | null>(null);
+  const [sel, setSel] = useState<Range | null>(null);
   if (!h) return <p className="muted">No measured values yet. Run the detectors.</p>;
-  const width = (h.high - h.low) / h.bins.length;
-  const max = Math.max(1, ...h.bins);
+  const view: Range = range ?? [h.low, h.high];
+  const counts = range && values ? rebin(values, view, h.bins.length) : h.bins;
+  const width = (view[1] - view[0]) / counts.length;
+  const max = Math.max(1, ...counts);
+  const band: Band | null = drag ?? (detail.nominal != null ? { nominal: detail.nominal, tolerance: detail.tolerance } : null);
+  const valueAt = (clientX: number) => {
+    const r = box.current!.getBoundingClientRect();
+    const f = Math.min(1, Math.max(0, (clientX - r.left) / (r.width || 1)));
+    return Number((view[0] + f * (view[1] - view[0])).toFixed(2));
+  };
+  const pct = (v: number) => `${Math.min(100, Math.max(0, ((v - view[0]) / (view[1] - view[0])) * 100))}%`;
+  const grab = (handle: "centre" | "low" | "high") => (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!band || !onBand) return;
+    e.preventDefault();
+    e.stopPropagation(); // not a zoom
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    const start = band;
+    let last: Band = start;
+    const move = (ev: PointerEvent) => {
+      const next = dragBand(handle, valueAt(ev.clientX), start.nominal, start.tolerance);
+      last = { nominal: next.nominal, tolerance: Number(next.tolerance.toFixed(2)) };
+      setDrag(last);
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      setDrag(null);
+      if (last !== start) onBand(last);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+  const startZoom = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!onRange || e.button !== 0) return;
+    swallowClick.current = false;
+    const x0 = e.clientX;
+    const from = valueAt(x0);
+    let moved = false;
+    const move = (ev: PointerEvent) => {
+      if (!moved && Math.abs(ev.clientX - x0) < MIN_DRAG_PX) return;
+      moved = true;
+      const to = valueAt(ev.clientX);
+      setSel([Math.min(from, to), Math.max(from, to)]);
+    };
+    const up = (ev: PointerEvent) => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      setSel(null);
+      if (!moved) return;
+      swallowClick.current = true; // the bar under the pointer must not also take its value as the nominal
+      const to = valueAt(ev.clientX);
+      const lo = Math.min(from, to), hi = Math.max(from, to);
+      if (hi - lo > (view[1] - view[0]) / 200) onRange([lo, hi]);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
   return (
     <div>
-      <div className="flow-histogram" role="img" aria-label="Histogram of the measured values">
-        {h.bins.map((count, i) => {
-          const centre = h.low + (i + 0.5) * width;
-          const inside = detail.nominal != null && Math.abs(deviation(centre, detail.nominal, detail.wrap)) <= detail.tolerance + width / 2;
+      <div
+        className="flow-histogram"
+        role="img"
+        aria-label="Histogram of the measured values"
+        ref={box}
+        onPointerDown={startZoom}
+        onContextMenu={(e) => { if (range && onRange) { e.preventDefault(); onRange(null); } }}
+        title={onRange ? "Drag across the chart to zoom in; right-click to see everything" : undefined}
+      >
+        {counts.map((count, i) => {
+          const centre = view[0] + (i + 0.5) * width;
+          const inside = band != null && Math.abs(deviation(centre, band.nominal, detail.wrap)) <= band.tolerance + width / 2;
           return (
             <button
               key={i}
@@ -29,14 +134,25 @@ export function ToleranceHistogram({ detail, onPick }: { detail: FlowTolerance; 
               title={`${centre.toFixed(1)} ${detail.unit}: ${count}`}
               aria-label={`Use ${centre.toFixed(1)} as nominal`}
               style={{ height: `${Math.max(2, (count / max) * 100)}%` }}
-              onClick={() => onPick(Number(centre.toFixed(2)))}
+              onClick={() => {
+                if (swallowClick.current) { swallowClick.current = false; return; }
+                onPick(Number(centre.toFixed(2)));
+              }}
             />
           );
         })}
+        {band && onBand && (
+          <div className="flow-band" style={{ left: pct(band.nominal - band.tolerance), right: `calc(100% - ${pct(band.nominal + band.tolerance)})` }} data-testid="tolerance-band">
+            <div className="flow-band-edge low" data-testid="band-low" title="Drag to change the tolerance" onPointerDown={grab("low")} />
+            <div className="flow-band-mid" data-testid="band-centre" title="Drag to move the nominal" onPointerDown={grab("centre")} />
+            <div className="flow-band-edge high" data-testid="band-high" title="Drag to change the tolerance" onPointerDown={grab("high")} />
+          </div>
+        )}
+        {sel && <div className="flow-zoom-sel" data-testid="zoom-selection" style={{ left: pct(sel[0]), right: `calc(100% - ${pct(sel[1])})` }} />}
       </div>
       <div className="flow-histogram-axis">
-        <span>{h.low}</span>
-        <span>{h.high} {detail.unit}</span>
+        <span>{view[0]}</span>
+        <span>{view[1]} {detail.unit}</span>
       </div>
     </div>
   );
@@ -52,7 +168,7 @@ type Props = {
   onChanged: () => void;
 };
 
-/** The options of a detector, Calculate or Tolerance box, as sections of the page's right-hand panel (data in `flow.py`). */
+/** The options of a detector, Calculate or Evaluation box, as sections of the page's right-hand panel (data in `flow.py`). */
 export default function FlowBoxPanel({ camera, nodeId, detail, onDetail, onChanged }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
@@ -107,7 +223,7 @@ export default function FlowBoxPanel({ camera, nodeId, detail, onDetail, onChang
         />
       )}
       {detail.kind === "calc" && <CalcOptions detail={detail} onUpdate={update} />}
-      {detail.kind === "tolerance" && <ToleranceOptions detail={detail} onUpdate={update} />}
+      {detail.kind === "evaluation" && <EvaluationOptions detail={detail} onUpdate={update} />}
     </>
   );
 }
@@ -224,10 +340,10 @@ function CalcOptions({ detail, onUpdate }: { detail: FlowCalc; onUpdate: (body: 
   );
 }
 
-function ToleranceOptions({ detail, onUpdate }: { detail: FlowTolerance; onUpdate: (body: Record<string, unknown>) => void }) {
+function EvaluationOptions({ detail, onUpdate }: { detail: FlowEvaluation; onUpdate: (body: Record<string, unknown>) => void }) {
   if (!detail.calc) {
     return (
-      <PanelSection title="Tolerance">
+      <PanelSection title="Evaluation">
         <p className="muted">Draw an arrow from a Calculate box into this box (on the Chain).</p>
       </PanelSection>
     );
@@ -249,7 +365,7 @@ function ToleranceOptions({ detail, onUpdate }: { detail: FlowTolerance; onUpdat
           ± Tolerance
           <input type="number" step="any" min={0} key={`t${detail.tolerance}`} defaultValue={detail.tolerance} onBlur={(e) => onUpdate({ tolerance: Number(e.target.value) })} />
         </label>
-        <p className="muted">Type it, click a bar of the histogram, or use “Use as nominal” on a picture in the list.{detail.wrap ? " 359° and 1° are 2° apart." : ""}</p>
+        <p className="muted">Type it, click a bar of the histogram, drag the band on it (middle = nominal, edges = tolerance), or use “Use as nominal” on a picture in the list.{detail.wrap ? " 359° and 1° are 2° apart." : ""}</p>
       </PanelSection>
       <PanelSection title="Result">
         <p role="status">

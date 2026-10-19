@@ -1,4 +1,4 @@
-"""Measurement flow on the chain: detector boxes -> Calculate -> Tolerance -> a feature's Classify box.
+"""Measurement flow on the chain: detector boxes -> Calculate -> Evaluation -> a feature's Classify box.
 
 This is the human-like analysis of a picture: find named targets (for example the left and right hole of a
 component), compute a number from them (the angle from A to B), and compare it with nominal +- tolerance. The
@@ -7,12 +7,12 @@ labels a picture and is never blended with the classical or ResNet scores.
 
 Storage needs no schema change; everything is per-camera settings:
 
-  * ``flow.graph``         boxes (``det:N``, ``calc:N``, ``tol:N``) with their settings, and the arrows between
-                           the boxes (``ingest -> det``, ``det -> det``, ``det -> calc``, ``calc -> tol``,
-                           ``tol -> classify:<feature>``);
+  * ``flow.graph``         boxes (``det:N``, ``calc:N``, ``eval:N``) with their settings, and the arrows between
+                           the boxes (``ingest -> det``, ``det -> det``, ``det -> calc``, ``calc -> eval``,
+                           ``eval -> classify:<feature>``);
   * ``flow.det.<id>``      the boxes a detector found, by frame hash, with the signature of the settings that made them.
 
-Calculate and Tolerance are pure functions of the stored boxes, so changing an operation, the nominal or the
+Calculate and Evaluation are pure functions of the stored boxes, so changing an operation, the nominal or the
 tolerance never needs a new detection run.
 """
 from __future__ import annotations
@@ -33,8 +33,8 @@ import rotsearch
 GRAPH_KEY = "flow.graph"
 RESULTS_PREFIX = "flow.det."
 INGEST_ID = "ingest"
-KINDS = ("detector", "calc", "tolerance")
-PREFIX = {"detector": "det", "calc": "calc", "tolerance": "tol"}
+KINDS = ("detector", "calc", "evaluation")
+PREFIX = {"detector": "det", "calc": "calc", "evaluation": "eval"}
 KIND_OF = {v: k for k, v in PREFIX.items()}
 ALGORITHM = 1  # bump when detection changes, so stored boxes are recomputed
 OPERATIONS = {
@@ -68,12 +68,36 @@ def is_flow_id(node_id: str) -> bool:
     return kind_of(node_id) in KINDS
 
 
+def _renamed(node_id: str) -> str:
+    return "eval:" + node_id[4:] if node_id.startswith("tol:") else node_id
+
+
+def migrate_tolerance(camera: str, data: dict) -> dict:
+    """The Tolerance box became the Evaluation box (v1.68.0): boxes ``tol:N`` become ``eval:N`` (kind ``evaluation``),
+    in the graph, its arrows and the Chain layout. Done once, the first time an old graph is read."""
+    nodes = {_renamed(i): ({**n, "kind": "evaluation"} if n.get("kind") == "tolerance" else n) for i, n in dict(data.get("nodes") or {}).items()}
+    edges = [{**e, "source": _renamed(e["source"]), "target": _renamed(e["target"])} for e in list(data.get("edges") or [])]
+    graph = {"nodes": nodes, "edges": edges}
+    save_graph(camera, graph)
+    raw = db.get_setting(camera, "chain.canvas")
+    if raw and '"tol:' in raw:
+        try:
+            layout = json.loads(raw)
+            layout["nodes"] = {_renamed(i): v for i, v in dict(layout.get("nodes") or {}).items()}
+            db.set_setting(camera, "chain.canvas", json.dumps(layout, sort_keys=True))
+        except (ValueError, TypeError, AttributeError):
+            pass
+    return graph
+
+
 def load_graph(camera: str) -> dict:
     raw = db.get_setting(camera, GRAPH_KEY)
     if raw:
         try:
             data = json.loads(raw)
             if isinstance(data, dict):
+                if any(i.startswith("tol:") for i in (data.get("nodes") or {})):
+                    return migrate_tolerance(camera, data)
                 return {"nodes": dict(data.get("nodes") or {}), "edges": list(data.get("edges") or [])}
         except (ValueError, TypeError):
             pass
@@ -130,8 +154,8 @@ def edge_allowed(graph: dict, source: str, target: str) -> str | None:
     ks, kt = kind_of(source), kind_of(target)
     if source == target:
         return "A box cannot feed itself."
-    if (ks, kt) not in {("ingest", "detector"), ("detector", "detector"), ("detector", "calc"), ("calc", "tolerance"), ("tolerance", "classify")}:
-        names = {"ingest": "Ingest", "detector": "a detector", "calc": "Calculate", "tolerance": "Tolerance", "classify": "a Classify box"}
+    if (ks, kt) not in {("ingest", "detector"), ("detector", "detector"), ("detector", "calc"), ("calc", "evaluation"), ("evaluation", "classify")}:
+        names = {"ingest": "Ingest", "detector": "a detector", "calc": "Calculate", "evaluation": "Evaluation", "classify": "a Classify box"}
         return f"{names.get(ks, ks)} cannot feed {names.get(kt, kt)}."
     if is_flow_id(source) and source not in graph["nodes"]:
         return f"Unknown box: {source}"
@@ -151,7 +175,7 @@ def connect(camera: str, source: str, target: str) -> None:
     reason = edge_allowed(graph, source, target)
     if reason:
         raise FlowError(reason)
-    if kind_of(target) == "tolerance" or kind_of(target) in ("detector", "calc"):
+    if kind_of(target) == "evaluation" or kind_of(target) in ("detector", "calc"):
         # One input per box: a new arrow replaces the old one.
         graph["edges"] = [e for e in graph["edges"] if e["target"] != target]
     elif kind_of(target) == "classify":
@@ -627,7 +651,7 @@ def calc_values(camera: str, calc_id: str, graph: dict | None = None) -> dict[st
     return values
 
 
-# --- tolerance --------------------------------------------------------------------
+# --- evaluation --------------------------------------------------------------------
 def deviation(value: float, nominal: float, wrap: bool) -> float:
     """Signed distance from nominal; an angle wraps around (359 and 1 degrees are 2 degrees apart)."""
     d = value - nominal
@@ -636,8 +660,8 @@ def deviation(value: float, nominal: float, wrap: bool) -> float:
     return d
 
 
-def tolerance_source(graph: dict, tol_id: str) -> str | None:
-    parent = parent_of_any(graph, tol_id)
+def evaluation_source(graph: dict, eval_id: str) -> str | None:
+    parent = parent_of_any(graph, eval_id)
     return parent if parent and kind_of(parent) == "calc" else None
 
 
@@ -654,11 +678,11 @@ def judge(value: float | None, node: dict, wrap: bool) -> str:
     return "pass" if abs(deviation(value, node["nominal"], wrap)) <= node["tolerance"] + 1e-9 else "fail"
 
 
-def tolerance_state(camera: str, tol_id: str) -> dict:
-    """Per-frame value and verdict of a Tolerance box, with counts and a histogram of the values."""
+def evaluation_state(camera: str, eval_id: str) -> dict:
+    """Per-frame value and verdict of an Evaluation box, with counts and a histogram of the values."""
     graph = load_graph(camera)
-    node = _node(graph, tol_id)
-    calc_id = tolerance_source(graph, tol_id)
+    node = _node(graph, eval_id)
+    calc_id = evaluation_source(graph, eval_id)
     empty = {"values": {}, "verdicts": {}, "counts": {"pass": 0, "fail": 0, "undetermined": 0}, "histogram": None, "wrap": False, "unit": ""}
     if not calc_id:
         return empty
@@ -698,13 +722,13 @@ def tolerance_state(camera: str, tol_id: str) -> dict:
 
 
 def feature_opinions(camera: str, feature: str) -> dict:
-    """What the Tolerance boxes arrowed into this feature's Classify box say, by frame name."""
+    """What the Evaluation boxes arrowed into this feature's Classify box say, by frame name."""
     graph = load_graph(camera)
     target = f"classify:{feature}"
     boxes = []
     for e in graph["edges"]:
-        if e["target"] == target and kind_of(e["source"]) == "tolerance" and e["source"] in graph["nodes"]:
-            state = tolerance_state(camera, e["source"])
+        if e["target"] == target and kind_of(e["source"]) == "evaluation" and e["source"] in graph["nodes"]:
+            state = evaluation_state(camera, e["source"])
             node = graph["nodes"][e["source"]]
             boxes.append({"box": e["source"], "nominal": node["nominal"], "tolerance": node["tolerance"], "unit": state["unit"], "values": state["values"], "verdicts": state["verdicts"], "counts": state["counts"]})
     return {"feature": feature, "boxes": boxes}
@@ -744,8 +768,8 @@ def node_detail(camera: str, node_id: str, graph: dict | None = None) -> dict:
             "measured": len(values),
         })
     else:
-        calc_id = tolerance_source(graph, node_id)
-        state = tolerance_state(camera, node_id)
+        calc_id = evaluation_source(graph, node_id)
+        state = evaluation_state(camera, node_id)
         detail.update({
             "nominal": node["nominal"], "tolerance": node["tolerance"], "calc": calc_id,
             "wrap": state["wrap"], "unit": state["unit"], "counts": state["counts"], "histogram": state["histogram"],

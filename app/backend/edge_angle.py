@@ -296,10 +296,9 @@ def verdict(result: dict, expected: dict | None) -> str | None:
 
 def filtered_crop(camera: str, feature: str, frame_path, flt: dict | None) -> np.ndarray:
     """The frame's ROI crop with the feature's pre-processing filter (never the mask)."""
-    import curation  # noqa: PLC0415
     import engine  # noqa: PLC0415
 
-    crop = engine.resolve_roi(camera, feature).crop(curation.load_image(frame_path))
+    crop = engine.crop_for_frame(camera, feature, frame_path)
     return preprocess.apply(crop, flt["name"], flt["params"]) if flt else crop
 
 

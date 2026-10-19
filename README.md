@@ -237,14 +237,14 @@ Classify → ROI feature → Classify**. It is a map of your ROIs, not a second 
   **← Back to chain**; the same pages from the menu keep their ROI selector.
 - Wheel zooms, drag pans, the corner button fits the whole map. Box positions and names are remembered per camera.
 
-### Measuring on the Chain (detector, Calculate, Tolerance)
+### Measuring on the Chain (detector, Calculate, Evaluation)
 
 For parts that must be checked by geometry, for example two holes whose angle must be within a tolerance:
 
 1. **+ Detector**, then add a target (a name such as "left hole") and **Draw example…** around it on a picture; do the same for the other hole. Tick *The part can be turned* if it can sit at any angle. **Run**.
 2. Optionally **+ Detector** again, draw an arrow from the first detector to it, and draw examples of just the hole: it searches inside the boxes of the first one.
 3. **+ Calculate**, arrow from the detector, choose Angle A to B and the positive direction (counter-clockwise or clockwise; 0° points right).
-4. **+ Tolerance**, arrow from Calculate, type the nominal or click a histogram bar, set the tolerance. Draw an arrow from Tolerance to the **Classify** box of the ROI feature: its cards then show the value and pass / fail, and **Show → Measurement** filters them. You still label the pictures yourself.
+4. **+ Evaluation**, arrow from Calculate, type the nominal or click a histogram bar, set the tolerance. Draw an arrow from Evaluation to the **Classify** box of the ROI feature: its cards then show the value and pass / fail, and **Show → Measurement** filters them. You still label the pictures yourself.
 
 ## Pipeline stages and the step bar
 

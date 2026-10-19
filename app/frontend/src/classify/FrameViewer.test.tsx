@@ -141,3 +141,20 @@ test("the zoom and pan stay when moving to another picture; Reset still fits it"
   await userEvent.click(screen.getByRole("button", { name: "Reset zoom" }));
   expect(screen.getByTestId("zoom-level")).toHaveTextContent(fitted);
 });
+
+test("an anchored ROI is outlined where the detector put it on this picture, and says so when there is none", async () => {
+  const anchored = { ...roiBody("seal"), rois: [{ ...roiBody("seal").rois[0], anchored: true }] };
+  const rects: Record<string, unknown> = {
+    "b.png": { anchored: true, rect: { x: 0.5, y: 0.25, w: 0.2, h: 0.1 } },
+    "c.png": { anchored: true, rect: null },
+  };
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+    const frame = decodeURIComponent(url.split("rect?frame=")[1] ?? "");
+    return new Response(JSON.stringify(url.includes("/rect") ? rects[frame] : anchored));
+  }));
+  setup({ feature: "seal" });
+  expect(await screen.findByTestId("viewer-roi")).toHaveStyle({ left: "50%", top: "25%", width: "20%", height: "10%" });
+  fireEvent.keyDown(window, { key: "ArrowRight" });
+  expect(await screen.findByText(/found no box here/)).toBeInTheDocument();
+  expect(screen.queryByTestId("viewer-roi")).toBeNull();
+});

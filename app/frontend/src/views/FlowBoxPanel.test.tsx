@@ -1,8 +1,8 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import type { FlowNodeDetail, FlowTolerance } from "../api";
-import FlowBoxPanel, { deviation, ToleranceHistogram } from "./FlowBoxPanel";
+import type { FlowNodeDetail, FlowEvaluation } from "../api";
+import FlowBoxPanel, { deviation, dragBand, EvaluationHistogram, rebin } from "./FlowBoxPanel";
 import FlowBoxView, { rectOf, resizeRect } from "./FlowBoxView";
 
 let calls: { url: string; method: string; body?: any }[];
@@ -30,11 +30,11 @@ test("rectOf is the same for any drag direction", () => {
 
 test("histogram: clicking a bar proposes its value as the nominal; bars inside the band are marked", async () => {
   const onPick = vi.fn();
-  const tol: FlowTolerance = {
-    kind: "tolerance", nominal: 5, tolerance: 10, calc: "calc:1", wrap: true, unit: "deg",
+  const tol: FlowEvaluation = {
+    kind: "evaluation", nominal: 5, tolerance: 10, calc: "calc:1", wrap: true, unit: "deg",
     counts: { pass: 1, fail: 0, undetermined: 0 }, histogram: { low: 0, high: 360, bins: [3, 0, 0, 1, ...Array(32).fill(0)] }, features: [],
   };
-  render(<ToleranceHistogram detail={tol} onPick={onPick} />);
+  render(<EvaluationHistogram detail={tol} onPick={onPick} />);
   const bars = screen.getAllByRole("button");
   expect(bars).toHaveLength(36);
   expect(bars[0]).toHaveClass("inside");
@@ -53,12 +53,12 @@ test("Calculate panel offers the operations and the direction toggle, and sends 
   await waitFor(() => expect(calls.some((c) => c.method === "PUT" && c.body?.clockwise === true)).toBe(true));
 });
 
-test("Tolerance panel sends the typed nominal and shows the counts", async () => {
+test("Evaluation panel sends the typed nominal and shows the counts", async () => {
   detail = {
-    kind: "tolerance", nominal: null, tolerance: 3, calc: "calc:1", wrap: true, unit: "deg",
+    kind: "evaluation", nominal: null, tolerance: 3, calc: "calc:1", wrap: true, unit: "deg",
     counts: { pass: 0, fail: 0, undetermined: 4 }, histogram: null, features: ["part"],
   };
-  render(<FlowBoxPanel camera="camA" nodeId="tol:1" detail={detail as FlowNodeDetail} onDetail={() => {}} onChanged={() => {}} />);
+  render(<FlowBoxPanel camera="camA" nodeId="eval:1" detail={detail as FlowNodeDetail} onDetail={() => {}} onChanged={() => {}} />);
   const input = await screen.findByLabelText(/Nominal/);
   fireEvent.change(input, { target: { value: "175" } });
   fireEvent.blur(input);
@@ -85,7 +85,7 @@ const routes = (nodes: Record<string, unknown>, extra: (url: string, method: str
     calls.push({ url, method, body: init?.body ? JSON.parse(init.body as string) : undefined });
     const special = extra(url, method);
     if (special !== undefined) return new Response(JSON.stringify(special));
-    if (url.endsWith("/chain")) return new Response(JSON.stringify({ nodes: [{ id: "det:1", label: "Detector 1" }, { id: "tol:1", label: "Tolerance 1" }] }));
+    if (url.endsWith("/chain")) return new Response(JSON.stringify({ nodes: [{ id: "det:1", label: "Detector 1" }, { id: "eval:1", label: "Evaluation 1" }] }));
     if (url.includes("/frames") && !url.includes("/flow/")) return new Response(JSON.stringify({ frames: ["a.png", "b.png"], showing_all: true, total: 2, reference_frame: null }));
     if (url.includes("/boxes")) return new Response(JSON.stringify({ boxes: {}, review: [] }));
     return new Response(JSON.stringify(nodes));
@@ -117,19 +117,19 @@ test("Detector page without a target still shows the picture and asks to drag a 
   expect(screen.getByRole("button", { name: "+ New target" })).toHaveAttribute("aria-pressed", "true");
 });
 
-test("Tolerance page: lists the pictures by value and takes a picture's value as the nominal", async () => {
+test("Evaluation page: lists the pictures by value and takes a picture's value as the nominal", async () => {
   const tol = {
-    kind: "tolerance", nominal: null, tolerance: 3, calc: "calc:1", wrap: true, unit: "deg",
+    kind: "evaluation", nominal: null, tolerance: 3, calc: "calc:1", wrap: true, unit: "deg",
     counts: { pass: 0, fail: 0, undetermined: 2 }, histogram: null, features: [],
   };
   routes(tol, (url) => (url.includes("/values")
     ? { values: { "a.png": 174.6, "b.png": 10.2 }, verdicts: { "a.png": "undetermined", "b.png": "undetermined" }, unit: "deg" }
     : undefined));
-  render(<FlowBoxView camera="camA" focus={{ nodeId: "tol:1", onBack: () => {} }} />);
+  render(<FlowBoxView camera="camA" focus={{ nodeId: "eval:1", onBack: () => {} }} />);
   const buttons = await screen.findAllByRole("button", { name: "Use as nominal" });
   expect(buttons).toHaveLength(2);
-  const rows = screen.getAllByRole("row");
-  expect(rows[1]).toHaveTextContent("b.png"); // sorted by value, smallest first
+  const cards = screen.getAllByTestId(/^value-card-/);
+  expect(cards[0]).toHaveTextContent("b.png"); // sorted by value, smallest first
   await userEvent.click(buttons[1]);
   await waitFor(() => expect(calls.some((c) => c.method === "PUT" && c.body?.nominal === 174.6)).toBe(true));
 });
@@ -186,4 +186,92 @@ test("Detector page: clicking an example rectangle selects it; dragging it moves
   await waitFor(() => expect(calls.some((c) => c.method === "PUT" && c.url.includes("/examples/left%20hole/0"))).toBe(true));
   expect(calls.find((c) => c.method === "PUT" && c.url.includes("/examples/"))?.body).toEqual({ box: [20, 15, 40, 30] });
   vi.unstubAllGlobals();
+});
+
+test("dragBand: the middle moves the nominal, an edge sets the tolerance from the nominal", () => {
+  expect(dragBand("centre", 100, 50, 3)).toEqual({ nominal: 100, tolerance: 3 });
+  expect(dragBand("high", 58, 50, 3)).toEqual({ nominal: 50, tolerance: 8 });
+  expect(dragBand("low", 40, 50, 3)).toEqual({ nominal: 50, tolerance: 10 });
+});
+
+test("histogram: dragging the band's edge saves the new tolerance on release", () => {
+  const onBand = vi.fn();
+  const tol: FlowEvaluation = {
+    kind: "evaluation", nominal: 180, tolerance: 10, calc: "calc:1", wrap: true, unit: "deg",
+    counts: { pass: 1, fail: 0, undetermined: 0 }, histogram: { low: 0, high: 360, bins: Array(36).fill(1) }, features: [],
+  };
+  render(<EvaluationHistogram detail={tol} onPick={() => {}} onBand={onBand} />);
+  const chart = screen.getByRole("img");
+  chart.getBoundingClientRect = () => ({ left: 0, width: 360, top: 0, right: 360, bottom: 100, height: 100, x: 0, y: 0, toJSON() {} });
+  fireEvent.pointerDown(screen.getByTestId("band-high"), { pointerId: 1 });
+  fireEvent(window, Object.assign(new Event("pointermove"), { clientX: 200 }));
+  fireEvent(window, new Event("pointerup"));
+  expect(onBand).toHaveBeenCalledWith({ nominal: 180, tolerance: 20 });
+});
+
+const wrapped = (over: object = {}): FlowEvaluation => ({
+  kind: "evaluation", nominal: null, tolerance: 3, calc: "calc:1", wrap: true, unit: "deg",
+  counts: { pass: 0, fail: 0, undetermined: 0 }, histogram: { low: 0, high: 360, bins: Array(36).fill(0) }, features: [], ...over,
+} as FlowEvaluation);
+
+test("rebin counts the values of a range in equal bins, top edge included", () => {
+  expect(rebin([170, 171, 175, 180, 99, 181], [170, 180], 5)).toEqual([2, 0, 1, 0, 1]);
+});
+
+test("histogram: dragging across the chart zooms the x axis, a click after a drag does not pick, right-click restores", () => {
+  const onRange = vi.fn();
+  const onPick = vi.fn();
+  const { rerender } = render(<EvaluationHistogram detail={wrapped()} values={[10, 175, 176, 177]} onPick={onPick} onRange={onRange} />);
+  const chart = screen.getByRole("img");
+  chart.getBoundingClientRect = () => ({ left: 0, width: 360, top: 0, right: 360, bottom: 100, height: 100, x: 0, y: 0, toJSON() {} });
+  fireEvent.pointerDown(chart, { button: 0, clientX: 170 });
+  fireEvent(window, Object.assign(new Event("pointermove"), { clientX: 180 }));
+  expect(screen.getByTestId("zoom-selection")).toBeInTheDocument();
+  fireEvent(window, Object.assign(new Event("pointerup"), { clientX: 180 }));
+  expect(onRange).toHaveBeenCalledWith([170, 180]);
+  fireEvent.click(screen.getAllByRole("button")[4]); // the click that ends a drag is not a pick
+  expect(onPick).not.toHaveBeenCalled();
+  // zoomed: the axis shows the range and the bars are the values in it, binned again
+  rerender(<EvaluationHistogram detail={wrapped()} values={[10, 175, 176, 177]} range={[170, 180]} onPick={onPick} onRange={onRange} />);
+  expect(screen.getByText("170")).toBeInTheDocument();
+  expect(screen.getByText("180 deg")).toBeInTheDocument();
+  fireEvent.contextMenu(chart);
+  expect(onRange).toHaveBeenLastCalledWith(null);
+  fireEvent.click(screen.getAllByRole("button")[0]);
+  expect(onPick).toHaveBeenCalledWith(170.14);
+});
+
+test("histogram: a plain click still picks, and a tiny drag is not a zoom", () => {
+  const onRange = vi.fn();
+  const onPick = vi.fn();
+  render(<EvaluationHistogram detail={wrapped()} onPick={onPick} onRange={onRange} />);
+  const chart = screen.getByRole("img");
+  chart.getBoundingClientRect = () => ({ left: 0, width: 360, top: 0, right: 360, bottom: 100, height: 100, x: 0, y: 0, toJSON() {} });
+  fireEvent.pointerDown(chart, { button: 0, clientX: 100 });
+  fireEvent(window, Object.assign(new Event("pointerup"), { clientX: 101 }));
+  fireEvent.click(screen.getAllByRole("button")[3]);
+  expect(onRange).not.toHaveBeenCalled();
+  expect(onPick).toHaveBeenCalledWith(35);
+});
+
+test("Evaluation page: the histogram can be hidden, a zoomed range narrows the grid and the chip clears it", async () => {
+  localStorage.clear();
+  const tol = wrapped({ counts: { pass: 0, fail: 0, undetermined: 3 }, histogram: { low: 0, high: 360, bins: Array(36).fill(1) } });
+  routes(tol as unknown as Record<string, unknown>, (url) => (url.includes("/values")
+    ? { values: { "a.png": 174.6, "b.png": 10.2, "c.png": 176 }, verdicts: { "a.png": "undetermined", "b.png": "undetermined", "c.png": "undetermined" }, unit: "deg" }
+    : undefined));
+  render(<FlowBoxView camera="camA" focus={{ nodeId: "eval:1", onBack: () => {} }} />);
+  await screen.findAllByTestId(/^value-card-/);
+  expect(screen.getByRole("img", { name: "Histogram of the measured values" })).toBeInTheDocument();
+  const chart = screen.getByRole("img", { name: "Histogram of the measured values" });
+  chart.getBoundingClientRect = () => ({ left: 0, width: 360, top: 0, right: 360, bottom: 100, height: 100, x: 0, y: 0, toJSON() {} });
+  fireEvent.pointerDown(chart, { button: 0, clientX: 170 });
+  fireEvent(window, Object.assign(new Event("pointermove"), { clientX: 180 }));
+  fireEvent(window, Object.assign(new Event("pointerup"), { clientX: 180 }));
+  await waitFor(() => expect(screen.getAllByTestId(/^value-card-/)).toHaveLength(2));
+  await userEvent.click(screen.getByRole("button", { name: /range 170–180/ }));
+  await waitFor(() => expect(screen.getAllByTestId(/^value-card-/)).toHaveLength(3));
+  await userEvent.click(screen.getByLabelText("Histogram"));
+  expect(screen.queryByRole("img", { name: "Histogram of the measured values" })).toBeNull();
+  expect(localStorage.getItem("flow.histogram")).toBe("off");
 });

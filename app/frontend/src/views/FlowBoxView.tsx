@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, FlowBox, FlowDetector, FlowNodeDetail, FlowValues, frameImageUrl, frameThumbUrl } from "../api";
 import SidePanel from "../SidePanel";
-import FlowBoxPanel, { ToleranceHistogram } from "./FlowBoxPanel";
+import FlowBoxPanel, { EvaluationHistogram } from "./FlowBoxPanel";
+import ValueGrid from "./ValueGrid";
+
+const CHART_STORE = "flow.histogram";
 
 const COLORS = ["#e8590c", "#1c7ed6", "#2f9e44", "#ae3ec9", "#f08c00", "#0c8599", "#c2255c", "#5c940d"];
 const STRIP_WINDOW = 60;
@@ -33,13 +36,13 @@ const handlePoint = (r: Rect, h: Handle) => ({
   y: h.includes("n") ? r[1] : h.includes("s") ? r[1] + r[3] : r[1] + r[3] / 2,
 });
 
-const TITLES = { detector: "Detector", calc: "Calculate", tolerance: "Tolerance" } as const;
+const TITLES = { detector: "Detector", calc: "Calculate", evaluation: "Evaluation" } as const;
 
 export type FlowFocus = { nodeId: string; onBack: () => void };
 
 /**
  * The page of one measurement box, opened from the Chain like the ROI editor: the options on the right, the work on the
- * pictures in the middle. A detector: draw example crops and review the boxes it found. Calculate and Tolerance: the
+ * pictures in the middle. A detector: draw example crops and review the boxes it found. Calculate and Evaluation: the
  * measured value of every picture (and the nominal and tolerance against the histogram).
  */
 export default function FlowBoxView({ camera, focus }: { camera: string; focus: FlowFocus }) {
@@ -420,24 +423,43 @@ function ValuesWork(p: {
   const { camera, nodeId, detail } = p;
   const [data, setData] = useState<FlowValues | null>(null);
   const [show, setShow] = useState<"all" | "pass" | "fail" | "undetermined">("all");
-  const tolerance = detail.kind === "tolerance" ? detail : null;
+  const tolerance = detail.kind === "evaluation" ? detail : null;
   const stamp = JSON.stringify(detail);
 
   useEffect(() => {
     api.flowValues(camera, nodeId).then(setData).catch((e) => p.onError(msg(e)));
   }, [camera, nodeId, stamp, p.version]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const [range, setRange] = useState<[number, number] | null>(null);
+  const [showChart, setShowChart] = useState(() => {
+    try { return localStorage.getItem(CHART_STORE) !== "off"; } catch { return true; }
+  });
+  useEffect(() => setRange(null), [nodeId]);
+  const chooseChart = (on: boolean) => {
+    setShowChart(on);
+    try { localStorage.setItem(CHART_STORE, on ? "on" : "off"); } catch { /* not remembered */ }
+  };
+  const numbers = useMemo(() => Object.values(data?.values ?? {}).filter((v): v is number => v !== null), [data]);
+
   const rows = useMemo(() => {
     if (!data) return [];
     return Object.entries(data.values)
       .map(([frame, value]) => ({ frame, value, verdict: data.verdicts?.[frame] }))
       .filter((r) => show === "all" || r.verdict === show)
+      .filter((r) => !range || (r.value !== null && r.value >= range[0] && r.value <= range[1]))
       .sort((a, b) => (a.value ?? Infinity) - (b.value ?? Infinity) || a.frame.localeCompare(b.frame));
-  }, [data, show]);
+  }, [data, show, range]);
 
   const useAsNominal = async (value: number) => {
     try {
       p.setDetail(await api.flowUpdate(camera, nodeId, { nominal: Number(value.toFixed(2)) }));
+      p.onError(null);
+    } catch (e) { p.onError(msg(e)); }
+  };
+
+  const setBand = async (b: { nominal: number; tolerance: number }) => {
+    try {
+      p.setDetail(await api.flowUpdate(camera, nodeId, b));
       p.onError(null);
     } catch (e) { p.onError(msg(e)); }
   };
@@ -451,8 +473,22 @@ function ValuesWork(p: {
   const unit = data?.unit ?? "";
   return (
     <div className="flow-work">
-      {tolerance && <ToleranceHistogram detail={tolerance} onPick={(v) => void useAsNominal(v)} />}
+      {tolerance && showChart && (
+        <EvaluationHistogram
+          detail={tolerance}
+          values={numbers}
+          range={range}
+          onRange={setRange}
+          onPick={(v) => void useAsNominal(v)}
+          onBand={(b) => void setBand(b)}
+        />
+      )}
       <div className="flow-nav">
+        {tolerance && (
+          <label>
+            <input type="checkbox" checked={showChart} onChange={(e) => chooseChart(e.target.checked)} /> Histogram
+          </label>
+        )}
         {tolerance && (
           <label>
             Show{" "}
@@ -464,28 +500,14 @@ function ValuesWork(p: {
             </select>
           </label>
         )}
+        {range && (
+          <button type="button" className="flow-range" title="Show all values again (right-click on the chart does the same)" onClick={() => setRange(null)}>
+            range {range[0]}–{range[1]} {unit} ✕
+          </button>
+        )}
         <span className="muted">{rows.length} picture{rows.length === 1 ? "" : "s"}, sorted by value</span>
       </div>
-      <table className="flow-table">
-        <thead>
-          <tr><th>Picture</th><th>Value</th>{tolerance && <th>Result</th>}{tolerance && <th />}</tr>
-        </thead>
-        <tbody>
-          {rows.slice(0, 200).map((r) => (
-            <tr key={r.frame}>
-              <td><img src={frameThumbUrl(camera, r.frame, 48)} alt="" loading="lazy" /> {r.frame}</td>
-              <td>{r.value === null ? "not measured" : `${r.value.toFixed(2)}${unit ? ` ${unit}` : ""}`}</td>
-              {tolerance && <td><span className={`flow-verdict ${r.verdict}`}>{r.verdict}</span></td>}
-              {tolerance && (
-                <td>
-                  <button type="button" disabled={r.value === null} onClick={() => r.value !== null && void useAsNominal(r.value)}>Use as nominal</button>
-                </td>
-              )}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {rows.length > 200 && <p className="muted">Showing the first 200.</p>}
+      <ValueGrid camera={camera} rows={rows} unit={unit} onNominal={tolerance ? (v) => void useAsNominal(v) : undefined} />
     </div>
   );
 }

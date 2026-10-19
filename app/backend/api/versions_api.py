@@ -140,7 +140,7 @@ def freeze(camera: str, body: FreezeRequest) -> dict:
         rules["edge_angle"] = rule  # the rule-based opinion, as configured at freeze time
     measurement = flow.freeze_record(camera, body.feature)
     if measurement:
-        rules["measurement"] = measurement  # Tolerance boxes arrowed into this feature: settings and counts
+        rules["measurement"] = measurement  # Evaluation boxes arrowed into this feature: settings and counts
     if rules:
         stats["rules"] = rules
     augmentation = motion.snapshot(camera, body.feature)

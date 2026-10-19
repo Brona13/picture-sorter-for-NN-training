@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import ChainView from "./ChainView";
+import ChainView, { toFlowEdge } from "./ChainView";
 
 const node = (over: Record<string, unknown>) => ({
   kind: "roi", ref: "x", label: "x", x: 0, y: 0, role: "quality", scope: "camera", product: null, products: [],
@@ -224,4 +224,10 @@ test("a detector box shows its targets and run state, and has a delete that asks
   const dialog = await screen.findByRole("alertdialog");
   expect(dialog).toHaveTextContent("12 pictures with stored boxes");
   expect(calls.some((c) => c.method === "DELETE")).toBe(false);
+});
+
+test("arrows are drawn orthogonally (smoothstep) so stacked boxes do not hide them", () => {
+  const edge = toFlowEdge({ id: "e", source: "a", source_handle: null, target: "b", locked: true });
+  expect(edge.type).toBe("smoothstep");
+  expect(edge.deletable).toBe(false);
 });

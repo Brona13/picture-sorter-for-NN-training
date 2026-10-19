@@ -65,7 +65,7 @@ class FlowTests(ApiTestCase):
         d2 = self.detector({"A": LEFT_HOLE, "B": RIGHT_HOLE}, parent=d1, rotate=False)
         calc = self.node("calc")
         self.post("/edges", {"source": d2, "target": calc})
-        tol = self.node("tolerance")
+        tol = self.node("evaluation")
         self.post("/edges", {"source": calc, "target": tol})
         return d1, d2, calc, tol
 
@@ -76,7 +76,7 @@ class FlowTests(ApiTestCase):
         self.assertIn(("ingest", node), {(e["source"], e["target"]) for e in canvas["edges"]})
 
     def test_typed_arrows_are_checked(self) -> None:
-        d, c, t = self.node("detector"), self.node("calc"), self.node("tolerance")
+        d, c, t = self.node("detector"), self.node("calc"), self.node("evaluation")
         for source, target in ((t, c), (d, t), (c, d), ("ingest", c), (d, d)):
             r = self.client.post(f"{self.base}/edges", json={"source": source, "target": target})
             self.assertEqual(r.status_code, 422, (source, target))
@@ -200,6 +200,132 @@ class FlowTests(ApiTestCase):
         self.assertAlmostEqual(flow.deviation(359.0, 1.0, True), -2.0)
 
     def test_bad_settings_are_refused(self) -> None:
-        tol = self.node("tolerance")
+        tol = self.node("evaluation")
         r = self.client.put(f"{self.base}/nodes/{tol}", json={"tolerance": 0})
         self.assertEqual(r.status_code, 422)
+
+    def test_anchored_roi_follows_the_detected_box_and_keeps_the_static_one_otherwise(self) -> None:
+        import anchor
+        import engine
+        import labels
+
+        d1 = self.detector({"A": LEFT_BOX})
+        self.run_all()
+        height, width = cv2.imread(str(datamodel.unsorted_dir(CAM) / self.names[0])).shape[:2]
+        datamodel.save_rois(CAM, [ROI("part", 0.1, 0.2, 0.2, 0.2), ROI("plain", 0.0, 0.0, 0.5, 0.5)])
+        spec = anchor.set_anchor(CAM, "part", d1, "A", self.names[0], follow_rotation=False, image_size=(width, height))
+        hashes = labels.hash_map(CAM)
+        stored = flow.load_stored(CAM, d1)["frames"]
+        for name in self.names:
+            key = hashes[name]
+            placed = engine.resolve_roi_for_frame(CAM, "part", key, width, height)
+            entry = stored[key]["A"]
+            self.assertAlmostEqual((placed.x + placed.w / 2) * width, entry["x"] + spec["dx"], delta=0.6)
+            self.assertAlmostEqual((placed.y + placed.h / 2) * height, entry["y"] + spec["dy"], delta=0.6)
+        # a picture without a box has no rectangle; a plain ROI is unaffected
+        key = hashes[self.names[1]]
+        flow._store(CAM, d1, flow.load_stored(CAM, d1)["sig"], {k: ({} if k == key else v) for k, v in stored.items()})
+        self.assertIsNone(engine.resolve_roi_for_frame(CAM, "part", key, width, height))
+        self.assertEqual(engine.resolve_roi_for_frame(CAM, "plain", key, width, height).w, 0.5)
+        with self.assertRaises(anchor.AnchorError):
+            anchor.set_anchor(CAM, "part", d1, "A", self.names[1], image_size=(width, height))
+
+    def test_vectors_of_an_anchored_roi_follow_the_box_and_skip_pictures_without_one(self) -> None:
+        import anchor
+        import classify
+        import db
+        import labels
+
+        d1 = self.detector({"A": LEFT_BOX})
+        self.run_all()
+        height, width = cv2.imread(str(datamodel.unsorted_dir(CAM) / self.names[0])).shape[:2]
+        datamodel.save_rois(CAM, [ROI("part", 0.1, 0.2, 0.2, 0.2)])
+        anchor.set_anchor(CAM, "part", d1, "A", self.names[0], image_size=(width, height))
+        hmap = labels.hash_map(CAM)
+        stored = flow.load_stored(CAM, d1)
+        gone = hmap[self.names[1]]
+        flow._store(CAM, d1, stored["sig"], {k: ({} if k == gone else v) for k, v in stored["frames"].items()})
+        roi = datamodel.get_roi(CAM, "part")
+        con = db.connect()
+        try:
+            key = classify._roi_cache_key(roi, CAM, "part", con)
+            self.assertIn("anchor:", key)
+            vectors = classify.fetch_vectors(con, CAM, "part", key, roi, self.names, hmap, [])
+        finally:
+            con.close()
+        self.assertEqual(sorted(vectors), sorted(n for n in self.names if n != self.names[1]))
+        # a re-run that moves the box changes the rule key (the detector signature), so old vectors are not reused
+        self.put(f"/nodes/{d1}", {"pad": 0.5})
+        self.assertNotEqual(key, classify._roi_cache_key(roi, CAM, "part"))
+
+    def test_thumbnail_of_an_anchored_roi_is_cut_where_the_box_is(self) -> None:
+        import anchor
+
+        d1 = self.detector({"A": LEFT_BOX})
+        self.run_all()
+        height, width = cv2.imread(str(datamodel.unsorted_dir(CAM) / self.names[0])).shape[:2]
+        datamodel.save_rois(CAM, [ROI("part", 0.1, 0.2, 0.2, 0.2)])
+        anchor.set_anchor(CAM, "part", d1, "A", self.names[0], image_size=(width, height))
+        url = f"/api/cameras/{CAM}/frames/{self.names[0]}/thumb?feature=part"
+        ok = self.client.get(url)
+        self.assertEqual(ok.status_code, 200)
+        etags = {self.client.get(f"/api/cameras/{CAM}/frames/{n}/thumb?feature=part").headers["etag"] for n in self.names}
+        self.assertGreater(len(etags), 1)  # the cut differs per picture
+        flow._store(CAM, d1, flow.load_stored(CAM, d1)["sig"], {})
+        self.assertEqual(self.client.get(url).status_code, 404)
+
+    def test_anchor_endpoints_chain_arrow_and_cleanup(self) -> None:
+        d1 = self.detector({"A": LEFT_BOX})
+        self.run_all()
+        datamodel.save_rois(CAM, [ROI("part", 0.1, 0.2, 0.2, 0.2)])
+        roi_url = f"/api/cameras/{CAM}/rois/part/anchor"
+        bad = self.client.put(roi_url, json={"detector": d1, "target": "nope", "frame": self.names[0]})
+        self.assertEqual(bad.status_code, 422)
+        ok = self.client.put(roi_url, json={"detector": d1, "target": "A", "frame": self.names[0], "follow_rotation": True})
+        self.assertEqual(ok.status_code, 200, ok.text)
+        canvas = self.client.get(f"/api/cameras/{CAM}/chain").json()
+        pairs = {(e["source"], e["target"]) for e in canvas["edges"]}
+        self.assertIn((d1, "roi:part"), pairs)
+        self.assertNotIn(("ingest", "roi:part"), pairs)
+        node = next(n for n in canvas["nodes"] if n["id"] == "roi:part")
+        self.assertEqual(node["anchor"]["target"], "A")
+        # removing the anchor, and deleting the detector, both make the ROI static again
+        self.assertEqual(self.client.delete(roi_url).status_code, 200)
+        self.assertIsNone(self.client.get(f"/api/cameras/{CAM}/chain").json()["nodes"][1]["anchor"])
+        self.client.put(roi_url, json={"detector": d1, "target": "A", "frame": self.names[0]})
+        self.assertEqual(self.client.delete(f"{self.base}/nodes/{d1}").status_code, 200)
+        import anchor
+
+        self.assertIsNone(anchor.get_anchor(CAM, "part"))
+
+    def test_rect_endpoint_gives_the_static_or_the_anchored_rectangle(self) -> None:
+        d1 = self.detector({"A": LEFT_BOX})
+        self.run_all()
+        datamodel.save_rois(CAM, [ROI("part", 0.1, 0.2, 0.2, 0.2)])
+        url = f"/api/cameras/{CAM}/rois/part/rect?frame={self.names[0]}"
+        plain = self.client.get(url).json()
+        self.assertEqual((plain["anchored"], plain["rect"]["x"]), (False, 0.1))
+        self.client.put(f"/api/cameras/{CAM}/rois/part/anchor", json={"detector": d1, "target": "A", "frame": self.names[0]})
+        self.assertAlmostEqual(self.client.get(url).json()["rect"]["x"], 0.1, places=2)
+        other = self.client.get(f"/api/cameras/{CAM}/rois/part/rect?frame={self.names[2]}").json()
+        self.assertTrue(other["anchored"])
+        self.assertNotAlmostEqual(other["rect"]["x"], 0.1, places=3)
+        self.assertTrue(any(r["anchored"] for r in self.client.get(f"/api/cameras/{CAM}/rois").json()["rois"]))
+
+    def test_old_tolerance_boxes_become_evaluation_boxes_with_arrows_and_layout(self) -> None:
+        import db
+        import json
+
+        graph = {"nodes": {"calc:1": {"kind": "calc", "op": "angle", "a": None, "b": None, "clockwise": False},
+                           "tol:1": {"kind": "tolerance", "nominal": 175.0, "tolerance": 3.0}},
+                 "edges": [{"source": "calc:1", "target": "tol:1"}, {"source": "tol:1", "target": "classify:part"}]}
+        db.set_setting(CAM, "flow.graph", json.dumps(graph))
+        db.set_setting(CAM, "chain.canvas", json.dumps({"nodes": {"tol:1": {"x": 5.0, "y": 6.0, "label": "mine"}}, "viewport": None}))
+        canvas = self.client.get(f"/api/cameras/{CAM}/chain").json()
+        box = next(n for n in canvas["nodes"] if n["id"] == "eval:1")
+        self.assertEqual((box["kind"], box["x"], box["y"], box["label"]), ("evaluation", 5.0, 6.0, "mine"))
+        migrated = flow.load_graph(CAM)
+        self.assertEqual(migrated["nodes"]["eval:1"]["nominal"], 175.0)
+        self.assertEqual(migrated["nodes"]["eval:1"]["tolerance"], 3.0)
+        self.assertIn({"source": "calc:1", "target": "eval:1"}, migrated["edges"])
+        self.assertIn({"source": "eval:1", "target": "classify:part"}, migrated["edges"])

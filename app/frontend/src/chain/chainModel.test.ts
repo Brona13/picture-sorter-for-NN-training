@@ -108,28 +108,36 @@ const flowCanvas: ChainCanvas = {
     node({ id: "det:1", kind: "detector", ref: null, role: null, scope: null, label: "Detector 1" }),
     node({ id: "det:2", kind: "detector", ref: null, role: null, scope: null, label: "Detector 2" }),
     node({ id: "calc:1", kind: "calc", ref: null, role: null, scope: null, label: "Calculate 1" }),
-    node({ id: "tol:1", kind: "tolerance", ref: null, role: null, scope: null, label: "Tolerance 1" }),
+    node({ id: "eval:1", kind: "evaluation", ref: null, role: null, scope: null, label: "Evaluation 1" }),
   ],
 };
 const link = (source: string, target: string) => ({ source, sourceHandle: null, target });
 
-test("flowConnect accepts the typed chain Ingest -> detector -> detector -> Calculate -> Tolerance -> Classify", () => {
-  for (const [s, t] of [["ingest", "det:1"], ["det:1", "det:2"], ["det:2", "calc:1"], ["calc:1", "tol:1"], ["tol:1", "classify:seal"]]) {
+test("flowConnect accepts the typed chain Ingest -> detector -> detector -> Calculate -> Evaluation -> Classify", () => {
+  for (const [s, t] of [["ingest", "det:1"], ["det:1", "det:2"], ["det:2", "calc:1"], ["calc:1", "eval:1"], ["eval:1", "classify:seal"]]) {
     expect(flowConnect(flowCanvas, link(s, t))).toEqual({ source: s, target: t });
   }
 });
 
 test("flowConnect refuses arrows whose types do not fit, and leaves ROI arrows to connectAction", () => {
-  for (const [s, t] of [["tol:1", "calc:1"], ["det:1", "tol:1"], ["calc:1", "det:1"], ["ingest", "calc:1"], ["det:1", "det:1"], ["tol:1", "classify:type"]]) {
+  for (const [s, t] of [["eval:1", "calc:1"], ["det:1", "eval:1"], ["calc:1", "det:1"], ["ingest", "calc:1"], ["det:1", "det:1"], ["eval:1", "classify:type"]]) {
     expect(flowConnect(flowCanvas, link(s, t))).toHaveProperty("error");
   }
   expect(flowConnect(flowCanvas, link("ingest", "roi:seal"))).toBeNull();
 });
 
 test("describeNode says what a flow box does", () => {
-  const f = (over: object) => node({ kind: "tolerance", flow: over as ChainNode["flow"] });
+  const f = (over: object) => node({ kind: "evaluation", flow: over as ChainNode["flow"] });
   expect(describeNode(node({ kind: "detector", flow: { targets: ["A", "B"], status: "fresh", frames: 10, complete: 8 } }))).toBe("2 targets · 8/10 complete");
   expect(describeNode(node({ kind: "calc", flow: { op: "angle", a: "A", b: "B" } }))).toBe("angle A → B");
   expect(describeNode(f({ nominal: 175, tolerance: 3, unit: "deg", counts: { pass: 5, fail: 2, undetermined: 0 } }))).toBe("175 ± 3 deg · 5 pass, 2 fail");
   expect(describeNode(f({ nominal: null, tolerance: 3 }))).toBe("set the nominal");
+});
+
+test("an arrow from a detector to an ROI is refused with a hint to the Anchor section; the anchor arrow is recognised", async () => {
+  const { isAnchorEdge } = await import("./chainModel");
+  const refused = flowConnect(flowCanvas, link("det:1", "roi:seal"));
+  expect(refused).toEqual({ error: expect.stringContaining("Anchor") });
+  expect(isAnchorEdge(flowCanvas, { id: "e", source: "det:1", source_handle: null, target: "roi:seal", locked: false })).toBe(true);
+  expect(isAnchorEdge(flowCanvas, { id: "e", source: "ingest", source_handle: null, target: "roi:seal", locked: false })).toBe(false);
 });

@@ -242,7 +242,7 @@ export default function Card({ camera, feature, classes, methods, card, busy, on
       {measure?.map((m, i) => (
         <div key={i} style={{ margin: "2px 0 4px", fontSize: 10 }} data-testid="measure-badge">
           <span
-            title="Measurement from the chain (detector, Calculate, Tolerance). A rule-based opinion, not blended with the scores."
+            title="Measurement from the chain (detector, Calculate, Evaluation). A rule-based opinion, not blended with the scores."
             style={badge(m.verdict === "pass" ? "#1a7f37" : m.verdict === "fail" ? "#c62828" : "#777")}
           >
             {m.value === null ? "not measured" : `${m.value.toFixed(1)}${m.unit ? ` ${m.unit}` : ""}`} · {m.verdict}

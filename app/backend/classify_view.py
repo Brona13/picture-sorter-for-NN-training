@@ -24,7 +24,7 @@ MEASURE_VIEWS = [f"{MEASURE_VIEW_PREFIX}{v}" for v in EDGE_VERDICTS]
 
 def valid_views(classes: list[str], *, edge_angle: bool = False, measurement: bool = False) -> list[str]:
     """The Show filter choices; the edge-angle ones only exist while a rule with an expected angle has fresh
-    results, the measurement ones while a Tolerance box on the chain is arrowed into this feature."""
+    results, the measurement ones while an Evaluation box on the chain is arrowed into this feature."""
     return [
         *BASE_VIEWS[:2], *[f"Labeled {c}" for c in classes], *BASE_VIEWS[2:-1],
         *(EDGE_VIEWS if edge_angle else []), *(MEASURE_VIEWS if measurement else []), BASE_VIEWS[-1],

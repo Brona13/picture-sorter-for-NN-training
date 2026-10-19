@@ -84,7 +84,7 @@ export function describeNode(n: ChainNode): string {
     return `${targets} target${targets === 1 ? "" : "s"} · ${state}`;
   }
   if (n.kind === "calc") return n.flow?.a && n.flow?.b ? `${n.flow.op ?? "angle"} ${n.flow.a} → ${n.flow.b}` : "connect a detector";
-  if (n.kind === "tolerance") {
+  if (n.kind === "evaluation") {
     const f = n.flow;
     if (f?.nominal == null) return "set the nominal";
     const c = f.counts;
@@ -96,30 +96,37 @@ export function describeNode(n: ChainNode): string {
   return `${where} · ${n.labeled}/${n.frames} labeled`;
 }
 
-export const FLOW_KINDS = ["detector", "calc", "tolerance"] as const;
+export const FLOW_KINDS = ["detector", "calc", "evaluation"] as const;
 export const isFlowKind = (kind: string | undefined): boolean => !!kind && (FLOW_KINDS as readonly string[]).includes(kind);
 
 /**
- * An arrow that involves a detector, Calculate or Tolerance box. `null` when the arrow is not a flow arrow at all
+ * An arrow that involves a detector, Calculate or Evaluation box. `null` when the arrow is not a flow arrow at all
  * (the ROI rules in `connectAction` decide), `{ error }` when it is one that does not fit, else the arrow to store.
  * The types mirror `flow.edge_allowed`: Ingest or a detector feeds a detector, a detector feeds Calculate, Calculate
- * feeds Tolerance, Tolerance feeds a Classify box.
+ * feeds Evaluation, Evaluation feeds a Classify box.
  */
 export function flowConnect(canvas: ChainCanvas, c: Connection): { source: string; target: string } | { error: string } | null {
   const source = featureOf(canvas, c.source);
   const target = featureOf(canvas, c.target);
   if (!source || !target) return { error: "Unknown box." };
+  if (source.kind === "detector" && target.kind === "roi" && target.role !== "classify") {
+    return { error: "Anchor the ROI to a detector box in the ROI's Anchor section on the right: it needs a target and a picture." };
+  }
   if (!isFlowKind(source.kind) && !isFlowKind(target.kind)) return null;
   const ok =
     (source.kind === "ingest" && target.kind === "detector") ||
     (source.kind === "detector" && (target.kind === "detector" || target.kind === "calc")) ||
-    (source.kind === "calc" && target.kind === "tolerance") ||
-    (source.kind === "tolerance" && target.kind === "classify" && target.role !== "classify");
+    (source.kind === "calc" && target.kind === "evaluation") ||
+    (source.kind === "evaluation" && target.kind === "classify" && target.role !== "classify");
   if (!ok) {
     return {
-      error: `${source.label} cannot feed ${target.label}. Ingest or a detector feeds a detector, a detector feeds Calculate, Calculate feeds Tolerance, Tolerance feeds a feature's Classify box.`,
+      error: `${source.label} cannot feed ${target.label}. Ingest or a detector feeds a detector, a detector feeds Calculate, Calculate feeds Evaluation, Evaluation feeds a feature's Classify box.`,
     };
   }
   if (c.source === c.target) return { error: "A box cannot feed itself." };
   return { source: c.source, target: c.target };
 }
+
+/** An arrow from a detector to an ROI box is the ROI's anchor (stored in the anchor, not in the flow graph). */
+export const isAnchorEdge = (canvas: ChainCanvas, edge: ChainEdge): boolean =>
+  canvas.nodes.find((n) => n.id === edge.source)?.kind === "detector" && canvas.nodes.find((n) => n.id === edge.target)?.kind === "roi";

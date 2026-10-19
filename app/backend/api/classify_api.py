@@ -115,7 +115,7 @@ def _edge_state(camera: str, feature: str) -> dict:
 
 
 def _measure_state(camera: str, feature: str) -> dict:
-    """What the Tolerance boxes arrowed into this feature's Classify box say, by frame name: one verdict per
+    """What the Evaluation boxes arrowed into this feature's Classify box say, by frame name: one verdict per
     frame (a fail beats undetermined, which beats pass) and every box's measured value."""
     boxes = flow.feature_opinions(camera, feature)["boxes"]
     verdicts: dict[str, str] = {}
