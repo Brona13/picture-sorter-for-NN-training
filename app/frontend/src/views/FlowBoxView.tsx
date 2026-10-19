@@ -84,6 +84,8 @@ function DetectorWork(p: {
   const [pending, setPending] = useState<{ frame: string; box: [number, number, number, number] } | null>(null);
   const [newName, setNewName] = useState("");
   const [boxes, setBoxes] = useState<Record<string, Record<string, FlowBox>>>({});
+  const [parentBoxes, setParentBoxes] = useState<Record<string, Record<string, FlowBox>>>({});
+  const [parentNames, setParentNames] = useState<string[]>([]);
   const [review, setReview] = useState<string[]>([]);
   const [size, setSize] = useState<{ w: number; h: number } | null>(null);
   const [drag, setDrag] = useState<{ from: { x: number; y: number }; to: { x: number; y: number } } | null>(null);
@@ -98,11 +100,21 @@ function DetectorWork(p: {
   useEffect(() => { api.frames(camera).then((r) => setFrames(r.frames)).catch((e) => p.onError(msg(e))); }, [camera]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { void loadBoxes(); }, [loadBoxes, p.version]);
 
+  // A cascade (its input is another detector) works on the boxes that detector found: one picture per found box.
+  const parentId = detail.input && detail.input !== "ingest" ? detail.input : null;
+  useEffect(() => {
+    if (!parentId) { setParentBoxes({}); setParentNames([]); return; }
+    api.flowBoxes(camera, parentId).then((b) => setParentBoxes(b.boxes)).catch((e) => p.onError(msg(e)));
+    api.flowNode(camera, parentId).then((d) => setParentNames(d.kind === "detector" ? d.targets.filter((t) => t.examples.length > 0).map((t) => t.name) : [])).catch(() => setParentNames([]));
+  }, [camera, parentId, p.version]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const names = detail.targets.map((t) => t.name);
-  const chosen = names.includes(target) ? target : names[0] ?? "";
+  const chipNames = parentId ? parentNames : names;
+  const chosen = chipNames.includes(target) ? target : chipNames[0] ?? "";
   // With no target yet (or "+ New target" picked) a drag starts a new target: the rectangle first, its name next.
-  const naming = mode === "draw" && (names.length === 0 || creating);
-  const shown = useMemo(() => (onlyReview ? frames.filter((f) => review.includes(f)) : frames), [frames, review, onlyReview]);
+  const naming = !parentId && mode === "draw" && (names.length === 0 || creating);
+  const candidates = useMemo(() => (parentId ? frames.filter((f) => parentBoxes[f]?.[chosen]) : frames), [frames, parentId, parentBoxes, chosen]);
+  const shown = useMemo(() => (onlyReview ? candidates.filter((f) => review.includes(f)) : candidates), [candidates, review, onlyReview]);
   const at = Math.min(index, Math.max(0, shown.length - 1));
   const frame = shown[at];
   useEffect(() => setIndex(0), [onlyReview]);
@@ -118,9 +130,25 @@ function DetectorWork(p: {
   const examplesHere = detail.targets.flatMap((t, ti) => t.examples.filter((e) => e.frame === frame).map((e) => ({ name: t.name, ti, box: e.box })));
   const statusOf = (f: string) => (detail.status === "none" ? "" : review.includes(f) ? "review" : f in boxes ? "ok" : "");
 
+  // The part of the picture on show: all of it, or (cascade) the padded box the input detector found for this target.
+  const view = useMemo(() => {
+    if (!size) return null;
+    const b = parentId && frame ? parentBoxes[frame]?.[chosen] : undefined;
+    if (!b) return { x: 0, y: 0, w: size.w, h: size.h, crop: false };
+    const t = (b.angle * Math.PI) / 180;
+    const hw = (Math.abs(b.w * Math.cos(t)) + Math.abs(b.h * Math.sin(t))) / 2;
+    const hh = (Math.abs(b.w * Math.sin(t)) + Math.abs(b.h * Math.cos(t))) / 2;
+    const x0 = Math.max(0, Math.floor(b.x - hw * (1 + 2 * detail.pad)));
+    const y0 = Math.max(0, Math.floor(b.y - hh * (1 + 2 * detail.pad)));
+    const x1 = Math.min(size.w, Math.ceil(b.x + hw * (1 + 2 * detail.pad)));
+    const y1 = Math.min(size.h, Math.ceil(b.y + hh * (1 + 2 * detail.pad)));
+    return { x: x0, y: y0, w: Math.max(1, x1 - x0), h: Math.max(1, y1 - y0), crop: true };
+  }, [size, parentId, frame, parentBoxes, chosen, detail.pad]);
+
   const point = (e: React.PointerEvent) => {
     const r = svg.current!.getBoundingClientRect();
-    return { x: ((e.clientX - r.left) / r.width) * size!.w, y: ((e.clientY - r.top) / r.height) * size!.h };
+    const v = view!;
+    return { x: v.x + ((e.clientX - r.left) / r.width) * v.w, y: v.y + ((e.clientY - r.top) / r.height) * v.h };
   };
 
   const finish = async (to: { x: number; y: number }) => {
@@ -142,6 +170,7 @@ function DetectorWork(p: {
       } else {
         const box = rectOf(from, to);
         if (box[2] < 5 || box[3] < 5) { p.onError("Drag a rectangle around what to find."); return; }
+        if (parentId && !names.includes(chosen)) await api.flowAddTarget(camera, nodeId, chosen);
         p.setDetail(await api.flowAddExample(camera, nodeId, chosen, frame, box));
       }
       p.onError(null);
@@ -172,14 +201,17 @@ function DetectorWork(p: {
           <button type="button" aria-pressed={mode === "place"} onClick={() => setMode("place")}>Place box</button>
         </div>
         <div className="flow-chips" role="group" aria-label="Target">
-          {detail.targets.map((t, i) => (
-            <button key={t.name} type="button" className="flow-chip" aria-pressed={!naming && t.name === chosen} onClick={() => { setTarget(t.name); setCreating(false); setPending(null); }}>
-              <span className="flow-dot" style={{ background: COLORS[i % COLORS.length] }} />
-              {t.name}
-              <small>{t.examples.length} ex.{detail.status === "fresh" ? ` · ${detail.summary.found[t.name] ?? 0} found` : ""}</small>
-            </button>
-          ))}
-          {mode === "draw" && (
+          {chipNames.map((name, i) => {
+            const t = detail.targets.find((x) => x.name === name);
+            return (
+              <button key={name} type="button" className="flow-chip" aria-pressed={!naming && name === chosen} onClick={() => { setTarget(name); setCreating(false); setPending(null); }}>
+                <span className="flow-dot" style={{ background: COLORS[i % COLORS.length] }} />
+                {name}
+                <small>{t?.examples.length ?? 0} ex.{detail.status === "fresh" ? ` · ${detail.summary.found[name] ?? 0} found` : ""}</small>
+              </button>
+            );
+          })}
+          {mode === "draw" && !parentId && (
             <button type="button" className="flow-chip" aria-pressed={naming} onClick={() => { setCreating(true); setPending(null); }}>
               + New target
             </button>
@@ -187,7 +219,13 @@ function DetectorWork(p: {
         </div>
       </div>
       <p className="muted">
-        {naming
+        {parentId && chipNames.length === 0
+          ? "Run the detector before this one first (and give it a target): the pictures here are the boxes it finds."
+          : parentId && candidates.length === 0
+            ? `The detector before this one has no box named “${chosen}” on any picture yet. Run it first.`
+            : parentId && mode === "draw"
+              ? `Each picture is the “${chosen}” box found by ${parentId}, with its surroundings. Drag a rectangle around the hole (or whatever this detector looks for) in it.`
+              : naming
           ? "Drag a rectangle around what to find (one hole, say) and include the geometry that tells it from its twin. You name it next."
           : mode === "draw"
             ? `Drag a rectangle around the “${chosen}”. Include the geometry that tells it from its twin.`
@@ -207,17 +245,25 @@ function DetectorWork(p: {
       )}
 
       {frame ? (
-        <div className="flow-stage">
-          <img src={frameImageUrl(camera, frame)} alt={frame} draggable={false} onLoad={(e) => setSize({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })} />
-          {size && (
+        <div className={`flow-stage${view?.crop ? " crop" : ""}`}>
+          <img
+            src={frameImageUrl(camera, frame)}
+            alt={frame}
+            draggable={false}
+            style={view?.crop ? { display: "none" } : undefined}
+            onLoad={(e) => setSize({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })}
+          />
+          {size && view && (
             <svg
               ref={svg}
-              viewBox={`0 0 ${size.w} ${size.h}`}
+              viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`}
+              style={view.crop ? { aspectRatio: `${view.w} / ${view.h}` } : undefined}
               data-testid="flow-overlay"
               onPointerDown={(e) => { const q = point(e); setDrag({ from: q, to: q }); (e.currentTarget as SVGSVGElement).setPointerCapture?.(e.pointerId); }}
               onPointerMove={(e) => drag && setDrag({ from: drag.from, to: point(e) })}
               onPointerUp={(e) => void finish(point(e))}
             >
+              {view.crop && <image href={frameImageUrl(camera, frame)} x={0} y={0} width={size.w} height={size.h} />}
               {examplesHere.map((e, i) => (
                 <rect key={`ex${i}`} x={e.box[0]} y={e.box[1]} width={e.box[2]} height={e.box[3]} fill="none" stroke={COLORS[e.ti % COLORS.length]} strokeDasharray="4 3" />
               ))}

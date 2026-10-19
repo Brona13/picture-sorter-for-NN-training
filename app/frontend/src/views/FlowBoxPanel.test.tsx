@@ -133,3 +133,25 @@ test("Tolerance page: lists the pictures by value and takes a picture's value as
   await userEvent.click(buttons[1]);
   await waitFor(() => expect(calls.some((c) => c.method === "PUT" && c.body?.nominal === 174.6)).toBe(true));
 });
+
+test("Cascade detector page shows one picture per box of the input detector, zoomed to that box", async () => {
+  const parentDetail = { kind: "detector", input: "ingest", rotate: true, angle_range: null, pad: 0.3, status: "fresh", targets: [{ name: "left hole", examples: [{ frame: "a.png", box: [0, 0, 60, 40], png: "data:image/png;base64,AA" }] }], summary: { frames: 2, found: { "left hole": 1 }, complete: 1, review: 1 } };
+  const own = { ...parentDetail, input: "det:1", targets: [], status: "none" };
+  const box = { x: 100, y: 100, w: 60, h: 40, angle: 0, score: 0.9, source: "auto" };
+  routes(own, (url) => {
+    if (url.includes("/nodes/det%3A1/boxes")) return { boxes: { "a.png": { "left hole": box } }, review: [] };
+    if (url.includes("/nodes/det%3A1")) return parentDetail;
+    return undefined;
+  });
+  render(<FlowBoxView camera="camA" focus={{ nodeId: "det:2", onBack: () => {} }} />);
+  const img = await screen.findByAltText("a.png");
+  Object.defineProperty(img, "naturalWidth", { value: 400 });
+  Object.defineProperty(img, "naturalHeight", { value: 300 });
+  fireEvent.load(img);
+  const overlay = await screen.findByTestId("flow-overlay");
+  // 60 x 40 box at (100,100), padded 0.3 on every side: 1.6 x the box, centred on it.
+  expect(overlay.getAttribute("viewBox")).toBe("52 68 96 64");
+  expect(screen.getByText(/Each picture is the “left hole” box found by det:1/)).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Show b.png" })).not.toBeInTheDocument(); // b.png has no box in the input detector
+  expect(screen.queryByRole("button", { name: "+ New target" })).not.toBeInTheDocument();
+});
