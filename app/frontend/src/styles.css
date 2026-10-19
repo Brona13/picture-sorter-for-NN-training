@@ -308,3 +308,8 @@ button[aria-pressed="true"] { background: var(--info-bg); color: var(--info-fg);
 .flow-band-edge { width: 8px; margin: 0 -5px; cursor: col-resize; pointer-events: auto; touch-action: none; }
 .flow-zoom-sel { position: absolute; top: 0; bottom: 0; background: rgba(60, 120, 220, 0.18); border-left: 1px solid #3c78dc; border-right: 1px solid #3c78dc; pointer-events: none; }
 .flow-histogram { user-select: none; }
+.ingest-add { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; max-width: 900px; }
+.ingest-box { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.ingest-box h4 { margin: 0; }
+.ingest-page h3 { margin: 18px 0 6px; }
+.chain-node-target { color: var(--fg); }

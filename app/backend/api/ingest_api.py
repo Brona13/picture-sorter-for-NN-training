@@ -9,6 +9,7 @@ from pathlib import Path
 
 import config
 import datamodel
+import db
 import ingest
 import tags as camera_tags
 from api import jobs
@@ -59,6 +60,16 @@ def create_camera(body: CameraRequest) -> dict:
     if cleaned:
         camera_tags.set_tags(name, cleaned)
     return {"name": name, "tags": cleaned}
+
+
+@router.get("/cameras/{camera}/ingest/frames")
+def ingested_frames(camera: str) -> dict:
+    """Every picture of the camera (deleted ones left out) with the file name it came in under and when it was
+    ingested (epoch seconds), newest first."""
+    require_camera(camera)
+    ingest.ensure_index(camera)
+    deleted = db.deleted_frames_of(camera)
+    return {"frames": [r for r in db.frame_rows(camera) if r["frame"] not in deleted]}
 
 
 @router.post("/cameras/{camera}/ingest/upload", status_code=202)

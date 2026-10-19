@@ -51,12 +51,14 @@ def content_hash_file(path: str | Path) -> str:
 def rebuild_index(camera: str) -> dict[str, str]:
     """Scan the immutable inbox and replace its SQLite frame catalog."""
     by_hash: dict[str, tuple[str, str, float]] = {}
+    known = {r["frame"]: (r["name"], r["created"]) for r in db.frame_rows(camera)}  # keep when each was ingested
     for p in datamodel.list_unsorted(camera):
         try:
             h = content_hash_file(p)
         except OSError:
             continue
-        by_hash.setdefault(h, (p.name, p.name, p.stat().st_mtime))
+        original, created = known.get(p.name, (p.name, p.stat().st_mtime))
+        by_hash.setdefault(h, (p.name, original, created))
     db.replace_frame_index(
         camera,
         [(h, filename, original, created) for h, (filename, original, created) in by_hash.items()],

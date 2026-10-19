@@ -33,9 +33,10 @@ import rotsearch
 GRAPH_KEY = "flow.graph"
 RESULTS_PREFIX = "flow.det."
 INGEST_ID = "ingest"
-KINDS = ("detector", "calc", "evaluation")
-PREFIX = {"detector": "det", "calc": "calc", "evaluation": "eval"}
+KINDS = ("crop", "detector", "calc", "evaluation")
+PREFIX = {"crop": "crop", "detector": "det", "calc": "calc", "evaluation": "eval"}
 KIND_OF = {v: k for k, v in PREFIX.items()}
+PICTURE_KINDS = ("crop", "detector")  # boxes that read a picture: always connected to something
 ALGORITHM = 1  # bump when detection changes, so stored boxes are recomputed
 OPERATIONS = {
     "angle": "Angle A to B",
@@ -53,6 +54,71 @@ DEFAULT_PAD = 0.3
 
 class FlowError(ValueError):
     """The request does not fit the flow."""
+
+
+# --- the picture a box works on -----------------------------------------------------
+def clean_rect(raw: object) -> list[float] | None:
+    """A crop rectangle ``[x, y, w, h]`` as fractions of the input picture, or ``None`` (no crop)."""
+    if raw is None:
+        return None
+    if not isinstance(raw, (list, tuple)) or len(raw) != 4:
+        raise FlowError("The crop is x, y, width, height as fractions of the picture.")
+    x, y, w, h = (round(_finite(v, "The crop"), 5) for v in raw)
+    if x < 0 or y < 0 or w <= 0 or h <= 0 or x + w > 1 + 1e-6 or y + h > 1 + 1e-6:
+        raise FlowError("The crop must lie inside the picture.")
+    return [x, y, min(w, 1 - x), min(h, 1 - y)]
+
+
+def _pixel_box(rect: list[float], width: int, height: int) -> tuple[int, int, int, int]:
+    from roi import ROI  # noqa: PLC0415
+
+    return ROI("crop", *rect).to_pixels(width, height)
+
+
+def input_rects(graph: dict, node_id: str) -> list[list[float]]:
+    """The crops, outermost first, that cut a frame into the picture ``node_id`` works on (its input)."""
+    parent = parent_of(graph, node_id)
+    if parent is None or parent == INGEST_ID:
+        return []
+    if kind_of(parent) == "crop":
+        rect = graph["nodes"][parent].get("rect") if parent in graph["nodes"] else None
+        return input_rects(graph, parent) + ([rect] if rect else [])
+    if kind_of(parent) == "detector":
+        return input_rects(graph, parent)  # a cascade works in its input detector's picture
+    return []
+
+
+def output_rects(graph: dict, node_id: str) -> list[list[float]]:
+    """``input_rects`` plus the box's own crop (a Crop box's output picture)."""
+    rect = graph["nodes"][node_id].get("rect") if graph["nodes"][node_id]["kind"] == "crop" else None
+    return input_rects(graph, node_id) + ([rect] if rect else [])
+
+
+def apply_rects(image: np.ndarray, rects: list[list[float]]) -> tuple[np.ndarray, int, int]:
+    """Cut ``image`` by each rectangle in turn; also the pixel offset of the result inside the original picture."""
+    ox = oy = 0
+    for rect in rects:
+        x0, y0, x1, y1 = _pixel_box(rect, image.shape[1], image.shape[0])
+        image = image[y0:y1, x0:x1]
+        ox, oy = ox + x0, oy + y0
+    return image, ox, oy
+
+
+def rect_offset(rects: list[list[float]], width: int, height: int) -> tuple[int, int]:
+    """Where the cropped picture starts inside a ``width`` x ``height`` frame (no pixels needed)."""
+    ox = oy = 0
+    for rect in rects:
+        x0, y0, x1, y1 = _pixel_box(rect, width, height)
+        ox, oy, width, height = ox + x0, oy + y0, x1 - x0, y1 - y0
+    return ox, oy
+
+
+def picture(camera: str, node_id: str, frame: str, stage: str = "input") -> np.ndarray:
+    """The picture a box works on (``stage="input"``), or - for a Crop - the one it passes on (``"output"``)."""
+    graph = load_graph(camera)
+    _node(graph, node_id)
+    rects = output_rects(graph, node_id) if stage == "output" else input_rects(graph, node_id)
+    return apply_rects(_read(camera, frame), rects)[0]
 
 
 # --- ids and graph ------------------------------------------------------------
@@ -109,6 +175,8 @@ def save_graph(camera: str, graph: dict) -> None:
 
 
 def _default_config(kind: str) -> dict:
+    if kind == "crop":
+        return {"rect": None}
     if kind == "detector":
         return {"targets": [], "angle_range": None, "rotate": True, "pad": DEFAULT_PAD}
     if kind == "calc":
@@ -125,7 +193,7 @@ def create_node(camera: str, kind: str) -> str:
         n += 1
     node_id = f"{PREFIX[kind]}:{n}"
     graph["nodes"][node_id] = {"kind": kind, **_default_config(kind)}
-    if kind == "detector":
+    if kind in PICTURE_KINDS:
         graph["edges"].append({"source": INGEST_ID, "target": node_id})
     save_graph(camera, graph)
     return node_id
@@ -140,7 +208,7 @@ def _node(graph: dict, node_id: str) -> dict:
 
 def parent_of(graph: dict, node_id: str) -> str | None:
     for e in graph["edges"]:
-        if e["target"] == node_id and kind_of(e["source"]) in ("ingest", "detector", "calc"):
+        if e["target"] == node_id and kind_of(e["source"]) in ("ingest", "crop", "detector", "calc"):
             return e["source"]
     return None
 
@@ -154,14 +222,14 @@ def edge_allowed(graph: dict, source: str, target: str) -> str | None:
     ks, kt = kind_of(source), kind_of(target)
     if source == target:
         return "A box cannot feed itself."
-    if (ks, kt) not in {("ingest", "detector"), ("detector", "detector"), ("detector", "calc"), ("calc", "evaluation"), ("evaluation", "classify")}:
-        names = {"ingest": "Ingest", "detector": "a detector", "calc": "Calculate", "evaluation": "Evaluation", "classify": "a Classify box"}
+    if (ks, kt) not in {("ingest", "crop"), ("crop", "crop"), ("crop", "detector"), ("ingest", "detector"), ("detector", "detector"), ("detector", "calc"), ("calc", "evaluation"), ("evaluation", "classify")}:
+        names = {"ingest": "Ingest", "crop": "Crop", "detector": "a detector", "calc": "Calculate", "evaluation": "Evaluation", "classify": "a Classify box"}
         return f"{names.get(ks, ks)} cannot feed {names.get(kt, kt)}."
     if is_flow_id(source) and source not in graph["nodes"]:
         return f"Unknown box: {source}"
     if is_flow_id(target) and target not in graph["nodes"]:
         return f"Unknown box: {target}"
-    if ks == "detector" and kt == "detector":
+    if kt in ("crop", "detector") and ks in ("crop", "detector"):
         ancestor = source
         while ancestor and ancestor != INGEST_ID:
             if ancestor == target:
@@ -175,7 +243,7 @@ def connect(camera: str, source: str, target: str) -> None:
     reason = edge_allowed(graph, source, target)
     if reason:
         raise FlowError(reason)
-    if kind_of(target) == "evaluation" or kind_of(target) in ("detector", "calc"):
+    if kind_of(target) == "evaluation" or kind_of(target) in ("crop", "detector", "calc"):
         # One input per box: a new arrow replaces the old one.
         graph["edges"] = [e for e in graph["edges"] if e["target"] != target]
     elif kind_of(target) == "classify":
@@ -190,8 +258,8 @@ def disconnect(camera: str, source: str, target: str) -> None:
     if len(kept) == len(graph["edges"]):
         raise FlowError("There is no such arrow.")
     graph["edges"] = kept
-    if kind_of(target) == "detector" and parent_of(graph, target) is None:
-        graph["edges"].append({"source": INGEST_ID, "target": target})  # a detector always reads something
+    if kind_of(target) in PICTURE_KINDS and parent_of(graph, target) is None:
+        graph["edges"].append({"source": INGEST_ID, "target": target})  # a picture box always reads something
     save_graph(camera, graph)
 
 
@@ -211,7 +279,7 @@ def delete_node(camera: str, node_id: str) -> None:
     graph = load_graph(camera)
     _node(graph, node_id)
     del graph["nodes"][node_id]
-    orphans = [e["target"] for e in graph["edges"] if e["source"] == node_id and kind_of(e["target"]) == "detector"]
+    orphans = [e["target"] for e in graph["edges"] if e["source"] == node_id and kind_of(e["target"]) in PICTURE_KINDS]
     graph["edges"] = [e for e in graph["edges"] if node_id not in (e["source"], e["target"])]
     for orphan in orphans:
         if orphan in graph["nodes"] and parent_of(graph, orphan) is None:
@@ -251,7 +319,10 @@ def update_node(camera: str, node_id: str, raw: dict) -> dict:
     graph = load_graph(camera)
     node = _node(graph, node_id)
     kind = node["kind"]
-    if kind == "detector":
+    if kind == "crop":
+        if "rect" in raw:
+            node["rect"] = clean_rect(raw["rect"])
+    elif kind == "detector":
         if "rotate" in raw:
             node["rotate"] = bool(raw["rotate"])
         if "pad" in raw:
@@ -321,11 +392,12 @@ def _read(camera: str, frame: str) -> np.ndarray:
     return curation.load_image(datamodel.unsorted_dir(camera) / frame)
 
 
-def _cut(camera: str, frame: str, box: list[float]) -> tuple[list[int], str]:
-    """The example crop of ``box`` (pixels ``[x, y, w, h]``) on ``frame``: the clipped box and the crop as base64 PNG."""
+def _cut(camera: str, frame: str, box: list[float], rects: list[list[float]] | None = None) -> tuple[list[int], str]:
+    """The example crop of ``box`` (pixels ``[x, y, w, h]`` of the picture the detector works on, after any Crop boxes
+    above it) on ``frame``: the clipped box and the crop as base64 PNG."""
     if not isinstance(box, (list, tuple)) or len(box) != 4:
         raise FlowError("The example box is x, y, width, height.")
-    image = _read(camera, frame)
+    image = apply_rects(_read(camera, frame), rects or [])[0]
     x, y, w, h = (int(round(_finite(v, "Box"))) for v in box)
     x0, y0 = max(0, x), max(0, y)
     x1, y1 = min(image.shape[1], x + w), min(image.shape[0], y + h)
@@ -353,7 +425,7 @@ def add_example(camera: str, node_id: str, target: str, frame: str, box: list[fl
         raise FlowError(f"Unknown target: {target}")
     if len(entry["examples"]) >= MAX_EXAMPLES:
         raise FlowError(f"A target can have at most {MAX_EXAMPLES} examples.")
-    clipped, png = _cut(camera, frame, box)
+    clipped, png = _cut(camera, frame, box, input_rects(graph, node_id))
     entry["examples"].append({"frame": frame, "box": clipped, "png": png})
     save_graph(camera, graph)
     return entry["examples"][-1]
@@ -367,7 +439,7 @@ def update_example(camera: str, node_id: str, target: str, index: int, box: list
     if entry is None or not 0 <= index < len(entry["examples"]):
         raise FlowError("There is no such example.")
     example = entry["examples"][index]
-    example["box"], example["png"] = _cut(camera, example["frame"], box)
+    example["box"], example["png"] = _cut(camera, example["frame"], box, input_rects(graph, node_id))
     save_graph(camera, graph)
     return example
 
@@ -397,7 +469,8 @@ def signature(graph: dict, node_id: str) -> str:
         "rotate": node["rotate"],
         "range": node["angle_range"],
         "pad": node["pad"],
-        "parent": signature(graph, parent) if parent and parent != INGEST_ID else None,
+        "crops": input_rects(graph, node_id),
+        "parent": signature(graph, parent) if parent and kind_of(parent) == "detector" else None,
     }
     return hashlib.sha1(json.dumps(material, sort_keys=True).encode()).hexdigest()[:16]
 
@@ -470,7 +543,8 @@ def detector_order(graph: dict) -> list[str]:
         parent = parent_of(graph, node_id)
         if parent and parent in graph["nodes"]:
             visit(parent)
-        order.append(node_id)
+        if kind_of(node_id) == "detector":
+            order.append(node_id)
 
     for node_id, node in sorted(graph["nodes"].items()):
         if node["kind"] == "detector":
@@ -489,8 +563,11 @@ def run_detector(camera: str, node_id: str, report=None, frames: list[str] | Non
     if not usable:
         raise FlowError("Draw an example for at least one target first.")
     parent = parent_of(graph, node_id)
+    if parent and kind_of(parent) != "detector":
+        parent = None  # Ingest or a Crop: the whole (cropped) picture is searched
     parent_frames: dict = {}
-    if parent and parent != INGEST_ID:
+    rects = input_rects(graph, node_id)
+    if parent:
         if status(camera, parent, graph) != "fresh":
             raise FlowError("Run the detector before this one first; its boxes are the search areas here.")
         parent_frames = load_stored(camera, parent)["frames"]
@@ -510,7 +587,7 @@ def run_detector(camera: str, node_id: str, report=None, frames: list[str] | Non
             old = previous.get(key, {})
             found: dict[str, dict] = {n: e for n, e in old.items() if e.get("source") == "human"}
             try:
-                picture = curation.load_image(datamodel.unsorted_dir(camera) / frame)
+                picture = apply_rects(curation.load_image(datamodel.unsorted_dir(camera) / frame), rects)[0]
             except Exception:  # noqa: BLE001 - an unreadable frame has no boxes
                 picture = None
             if picture is not None:
@@ -518,7 +595,7 @@ def run_detector(camera: str, node_id: str, report=None, frames: list[str] | Non
                     if name in found:
                         continue
                     region = None
-                    if parent and parent != INGEST_ID:
+                    if parent:
                         inside = parent_frames.get(key, {}).get(name)
                         if inside is None:
                             continue
@@ -745,10 +822,15 @@ def node_detail(camera: str, node_id: str, graph: dict | None = None) -> dict:
     node = _node(graph, node_id)
     kind = node["kind"]
     detail: dict = {"kind": kind}
-    if kind == "detector":
+    if kind == "crop":
+        parent = parent_of(graph, node_id)
+        detail.update({"rect": node["rect"], "input_box": parent, "crops": input_rects(graph, node_id)})
+    elif kind == "detector":
         parent = parent_of(graph, node_id)
         detail.update({
-            "input": parent,
+            "input": parent if parent and kind_of(parent) == "detector" else INGEST_ID,
+            "input_box": parent,
+            "crops": input_rects(graph, node_id),
             "targets": [
                 {"name": t["name"], "examples": [{"frame": e["frame"], "box": e["box"], "png": "data:image/png;base64," + e["png"]} for e in t["examples"]]}
                 for t in node["targets"]
@@ -767,7 +849,7 @@ def node_detail(camera: str, node_id: str, graph: dict | None = None) -> dict:
             "op": node["op"], "operations": OPERATIONS, "points": names, "a": a, "b": b, "clockwise": node["clockwise"],
             "measured": len(values),
         })
-    else:
+    elif kind == "evaluation":
         calc_id = evaluation_source(graph, node_id)
         state = evaluation_state(camera, node_id)
         detail.update({

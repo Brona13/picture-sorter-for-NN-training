@@ -761,6 +761,18 @@ def frame_hash_map(camera: str) -> dict[str, str]:
         con.close()
 
 
+def frame_rows(camera: str) -> list[dict]:
+    """Every catalogued frame with its original name and the time it was ingested (epoch seconds), newest first."""
+    con = connect()
+    try:
+        rows = con.execute(
+            "SELECT filename,orig_name,created FROM frames WHERE camera=? ORDER BY created DESC, filename", (camera,)
+        ).fetchall()
+        return [{"frame": r["filename"], "name": r["orig_name"], "created": r["created"]} for r in rows]
+    finally:
+        con.close()
+
+
 def frame_hash_for(camera: str, filename: str) -> str | None:
     con = connect()
     try:

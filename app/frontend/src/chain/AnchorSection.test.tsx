@@ -24,6 +24,7 @@ afterEach(() => vi.unstubAllGlobals());
 test("sets the anchor from the first picture where the target was found, with the chosen options", async () => {
   const onChanged = vi.fn();
   render(<AnchorSection camera="camA" roi={roi} detectors={[detector]} onChanged={onChanged} onError={() => {}} />);
+  await userEvent.click(screen.getByLabelText(/my own rectangle/));
   await waitFor(() => expect(screen.getByRole("option", { name: "a.png" })).toBeInTheDocument());
   expect(screen.queryByRole("option", { name: "c.png" })).toBeNull(); // the notch was found there, not the hole
   await userEvent.click(screen.getByLabelText(/Follow rotation/));
@@ -31,12 +32,25 @@ test("sets the anchor from the first picture where the target was found, with th
   await waitFor(() => expect(onChanged).toHaveBeenCalled());
   const put = calls.find((c) => c.method === "PUT")!;
   expect(put.url).toContain("/rois/part/anchor");
-  expect(put.body).toEqual({ detector: "det:1", target: "hole", frame: "a.png", follow_rotation: true });
+  expect(put.body).toEqual({ detector: "det:1", target: "hole", mode: "rect", frame: "a.png", follow_rotation: true });
 });
 
 test("an anchored ROI can be released", async () => {
-  const anchored = { ...roi, anchor: { detector: "det:1", target: "hole", follow_rotation: false, angle0: 0, dx: 1, dy: 1, w: 5, h: 5 } } as ChainNode;
+  const anchored = { ...roi, anchor: { detector: "det:1", target: "hole", mode: "rect", margin: 0.1, follow_rotation: false, angle0: 0, dx: 1, dy: 1, w: 5, h: 5 } } as ChainNode;
   render(<AnchorSection camera="camA" roi={anchored} detectors={[detector]} onChanged={() => {}} onError={() => {}} />);
   await userEvent.click(await screen.findByRole("button", { name: "Remove anchor" }));
   await waitFor(() => expect(calls.some((c) => c.method === "DELETE" && c.url.endsWith("/rois/part/anchor"))).toBe(true));
+});
+
+test("by default the ROI is the found box with a margin; no example picture is needed", async () => {
+  const onChanged = vi.fn();
+  render(<AnchorSection camera="camA" roi={roi} detectors={[detector]} onChanged={onChanged} onError={() => {}} />);
+  expect(screen.getByLabelText(/the found box/)).toBeChecked();
+  expect(screen.queryByLabelText(/Rectangle drawn on/)).toBeNull();
+  const margin = screen.getByLabelText(/Margin on each side/);
+  await userEvent.clear(margin);
+  await userEvent.type(margin, "25");
+  await userEvent.click(screen.getByRole("button", { name: "Set anchor" }));
+  await waitFor(() => expect(onChanged).toHaveBeenCalled());
+  expect(calls.find((c) => c.method === "PUT")!.body).toEqual({ detector: "det:1", target: "hole", mode: "box", margin: 0.25 });
 });

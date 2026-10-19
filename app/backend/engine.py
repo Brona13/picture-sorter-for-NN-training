@@ -25,6 +25,7 @@ def resolve_roi_for_frame(camera: str, feature: str, frame_hash: str, img_w: int
     spec = anchor.get_anchor(camera, feature)
     if spec is None:
         return roi
+    spec = anchor.effective(camera, feature, spec)
     entry = anchor._entry(camera, spec["detector"], spec["target"], frame_hash)
     placed = anchor.rect_for(spec, entry, roi.name, img_w, img_h)
     if placed is None:

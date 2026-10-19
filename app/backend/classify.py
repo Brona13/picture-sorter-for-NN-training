@@ -181,12 +181,15 @@ def _prepare_vector_cache(
     frame_hashes: dict[str, str] = {}
     frame_offsets: dict[str, tuple[float, float]] = {}
     spec = anchor.get_anchor(camera, feature, con)  # a detector-anchored ROI: its rectangle differs per picture
+    source = anchor.Source(camera, spec) if spec else None
+    if spec:
+        spec = anchor.effective(camera, feature, spec, source)
     frame_entries: dict[str, dict] = {}
     unavailable: set[str] = set()
     for f in frames:
         h = labels.frame_hash(camera, f, hmap)
         if spec:
-            entry = anchor.entry_for(camera, spec, h)
+            entry = source.entry(h)
             if entry is None:  # the detector found nothing here: no rectangle, no vectors
                 unavailable.add(f)
             else:

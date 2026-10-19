@@ -231,3 +231,18 @@ test("arrows are drawn orthogonally (smoothstep) so stacked boxes do not hide th
   expect(edge.type).toBe("smoothstep");
   expect(edge.deletable).toBe(false);
 });
+
+test("a detector box shows a dot per target; dots are the ones to drag onto an ROI", async () => {
+  current = canvas({
+    nodes: [
+      ...canvas().nodes,
+      node({ id: "det:1", kind: "detector", ref: null, label: "Detector 1", role: null, scope: null, flow: { targets: ["left hole", "right hole"], status: "fresh", frames: 4, complete: 4 } }),
+    ],
+  });
+  renderView();
+  const box = await screen.findByTestId("chain-node-det:1");
+  expect(box).toHaveTextContent("left hole");
+  expect(box).toHaveTextContent("right hole");
+  expect(box.querySelectorAll('[data-handleid^="t:"]')).toHaveLength(2);
+  expect(box.querySelector('[data-handleid="t:left hole"]')).not.toBeNull();
+});

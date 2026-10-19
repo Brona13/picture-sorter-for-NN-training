@@ -61,6 +61,17 @@ export default function RoiEditorView({ camera, product, focus }: { camera: stri
     reload();
   }, [reload]);
 
+  // A ROI anchored to a detector box: in mode "rect" the rectangle is drawn on the example picture, next to the found box.
+  const [anchorInfo, setAnchorInfo] = useState<Awaited<ReturnType<typeof api.roiAnchor>> | null>(null);
+  useEffect(() => {
+    setAnchorInfo(null);
+    if (focus?.feature) api.roiAnchor(camera, focus.feature).then(setAnchorInfo).catch(() => setAnchorInfo(null)); // cosmetic
+  }, [camera, focus?.feature]);
+  const anchorFrame = anchorInfo?.context?.frame ?? null;
+  useEffect(() => {
+    if (anchorFrame && frames?.frames.includes(anchorFrame)) setFrame(anchorFrame);
+  }, [anchorFrame, frames]);
+
   const focused = focus?.feature ?? "";
   const rois = (data?.rois ?? []).filter((r) => !focused || r.feature === focused);
   const target: RoiInfo | undefined = focused
@@ -74,12 +85,15 @@ export default function RoiEditorView({ camera, product, focus }: { camera: stri
     if (!editing) setBox(null);
   }, [editing, target?.feature, target?.x, target?.y, target?.w, target?.h]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const found = anchorInfo?.context?.box && frame === anchorFrame ? anchorInfo.context : null;
   const others = useMemo(
-    () =>
-      rois
+    () => [
+      ...rois
         .filter((r) => !(editing && r.feature === target?.feature))
         .map((r) => ({ name: r.short_name, box: { x: r.x, y: r.y, w: r.w, h: r.h } })),
-    [rois, editing, target?.feature],
+      ...(found?.box ? [{ name: `${found.target} (found by the detector)`, box: found.box }] : []),
+    ],
+    [rois, editing, target?.feature, found],
   );
 
   async function run(action: () => Promise<string | void>) {
@@ -172,7 +186,7 @@ export default function RoiEditorView({ camera, product, focus }: { camera: stri
       <div>
         <label>
           Frame to draw on{" "}
-          <select value={frame} onChange={(e) => setFrame(e.target.value)}>
+          <select value={frame} disabled={!!anchorFrame} title={anchorFrame ? "The rectangle is drawn relative to the detector's box on this picture" : undefined} onChange={(e) => setFrame(e.target.value)}>
             {(frames?.frames ?? []).map((f) => (
               <option key={f}>{f}</option>
             ))}
@@ -195,6 +209,19 @@ export default function RoiEditorView({ camera, product, focus }: { camera: stri
           </p>
         )}
       </div>
+
+      {anchorInfo?.anchor?.mode === "box" && (
+        <p role="note">
+          This ROI is the box the detector finds for <strong>{anchorInfo.anchor.target}</strong>, plus a margin of {Math.round(anchorInfo.anchor.margin * 100)} %:
+          there is nothing to draw here. To draw your own rectangle related to that box, switch the anchor to <em>My own rectangle</em> in the Anchor section on the Chain.
+        </p>
+      )}
+      {anchorFrame && (
+        <p role="note">
+          This ROI follows the <strong>{anchorInfo?.anchor?.target}</strong> box of the detector. Draw the rectangle on <code>{anchorFrame}</code> relative to the green outline (the box the detector found there);
+          on every other picture it keeps that place relative to the box.
+        </p>
+      )}
 
       {!focus && rois.length > 0 && (
         <fieldset>

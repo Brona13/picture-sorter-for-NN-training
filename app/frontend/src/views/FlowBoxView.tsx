@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, FlowBox, FlowDetector, FlowNodeDetail, FlowValues, frameImageUrl, frameThumbUrl } from "../api";
+import { api, FlowBox, FlowCrop, FlowDetector, FlowNodeDetail, FlowValues, flowPictureUrl, frameImageUrl, frameThumbUrl } from "../api";
+import CropWork from "./CropWork";
 import SidePanel from "../SidePanel";
 import FlowBoxPanel, { EvaluationHistogram } from "./FlowBoxPanel";
 import ValueGrid from "./ValueGrid";
@@ -36,7 +37,7 @@ const handlePoint = (r: Rect, h: Handle) => ({
   y: h.includes("n") ? r[1] : h.includes("s") ? r[1] + r[3] : r[1] + r[3] / 2,
 });
 
-const TITLES = { detector: "Detector", calc: "Calculate", evaluation: "Evaluation" } as const;
+const TITLES = { crop: "Crop", detector: "Detector", calc: "Calculate", evaluation: "Evaluation" } as const;
 
 export type FlowFocus = { nodeId: string; onBack: () => void };
 
@@ -78,8 +79,9 @@ export default function FlowBoxView({ camera, focus }: { camera: string; focus: 
           <button type="button" onClick={focus.onBack}>← Back to chain</button>
         </p>
         {error && <p role="alert">{error}</p>}
+        {detail?.kind === "crop" && <CropWork camera={camera} nodeId={nodeId} detail={detail} setDetail={setDetail} onChanged={changed} onError={setError} />}
         {detail?.kind === "detector" && <DetectorWork camera={camera} nodeId={nodeId} detail={detail} setDetail={setDetail} version={version} onChanged={changed} onError={setError} />}
-        {detail && detail.kind !== "detector" && (
+        {detail && detail.kind !== "detector" && detail.kind !== "crop" && (
           <ValuesWork camera={camera} nodeId={nodeId} detail={detail} setDetail={setDetail} version={version} onError={setError} />
         )}
       </section>
@@ -132,6 +134,10 @@ function DetectorWork(p: {
     api.flowNode(camera, parentId).then((d) => setParentNames(d.kind === "detector" ? d.targets.filter((t) => t.examples.length > 0).map((t) => t.name) : [])).catch(() => setParentNames([]));
   }, [camera, parentId, p.version]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // With a Crop box above, the detector works on the cut-out: pictures, thumbnails and coordinates are those of the cut-out.
+  const cropped = detail.crops.length > 0;
+  const pictureUrl = (f: string) => (cropped ? flowPictureUrl(camera, nodeId, f, { key: detail.crops }) : frameImageUrl(camera, f));
+  const thumbUrl = (f: string) => (cropped ? flowPictureUrl(camera, nodeId, f, { size: 96, key: detail.crops }) : frameThumbUrl(camera, f));
   const names = detail.targets.map((t) => t.name);
   const chipNames = parentId ? parentNames : names;
   const chosen = chipNames.includes(target) ? target : chipNames[0] ?? "";
@@ -338,7 +344,7 @@ function DetectorWork(p: {
       {frame ? (
         <div className={`flow-stage${view?.crop ? " crop" : ""}`}>
           <img
-            src={frameImageUrl(camera, frame)}
+            src={pictureUrl(frame)}
             alt={frame}
             draggable={false}
             style={view?.crop ? { display: "none" } : undefined}
@@ -354,7 +360,7 @@ function DetectorWork(p: {
               onPointerMove={onMove}
               onPointerUp={onUp}
             >
-              {view.crop && <image href={frameImageUrl(camera, frame)} x={0} y={0} width={size.w} height={size.h} />}
+              {view.crop && <image href={pictureUrl(frame)} x={0} y={0} width={size.w} height={size.h} />}
               {examplesHere.map((e) => {
                 const b = boxOf(e);
                 const active = sel?.name === e.name && sel.index === e.index;
@@ -404,7 +410,7 @@ function DetectorWork(p: {
       <div className="flow-strip" ref={strip} aria-label="Pictures">
         {strip60.map((f) => (
           <button key={f} type="button" aria-label={`Show ${f}`} aria-current={f === frame} title={f} className={`flow-thumb ${statusOf(f)}`} onClick={() => setIndex(shown.indexOf(f))}>
-            <img src={frameThumbUrl(camera, f)} alt="" loading="lazy" />
+            <img src={thumbUrl(f)} alt="" loading="lazy" />
           </button>
         ))}
       </div>
@@ -415,7 +421,7 @@ function DetectorWork(p: {
 function ValuesWork(p: {
   camera: string;
   nodeId: string;
-  detail: Exclude<FlowNodeDetail, FlowDetector>;
+  detail: Exclude<FlowNodeDetail, FlowDetector | FlowCrop>;
   setDetail: (d: FlowNodeDetail) => void;
   version: number;
   onError: (e: string | null) => void;

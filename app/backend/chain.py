@@ -205,7 +205,9 @@ def _flow_nodes(camera: str, graph: dict, stored: dict) -> list[dict]:
     for node_id, node in sorted(graph["nodes"].items()):
         kind = node["kind"]
         summary: dict = {}
-        if kind == "detector":
+        if kind == "crop":
+            summary = {"rect": node["rect"]}
+        elif kind == "detector":
             summary = {"targets": [t["name"] for t in node["targets"]], "status": flow.status(camera, node_id, graph), **flow.summarize_detector(camera, node_id)}
         elif kind == "calc":
             a, b = flow.effective_points(graph, node_id)
@@ -213,7 +215,7 @@ def _flow_nodes(camera: str, graph: dict, stored: dict) -> list[dict]:
         else:
             state = flow.evaluation_state(camera, node_id)
             summary = {"nominal": node["nominal"], "tolerance": node["tolerance"], "unit": state["unit"], "counts": state["counts"]}
-        default = {"detector": "Detector", "calc": "Calculate", "evaluation": "Evaluation"}[kind]
+        default = {"crop": "Crop", "detector": "Detector", "calc": "Calculate", "evaluation": "Evaluation"}[kind]
         entry = stored.get(node_id, {})
         nodes.append({
             "id": node_id, "kind": kind, "ref": None, "label": entry.get("label") or f"{default} {node_id.split(':')[1]}",
@@ -227,7 +229,7 @@ def _column(node: dict) -> int:
     """The chain level of a box: 0 Ingest, 1 product ROI, 2 its Classify box, 3 feature ROIs, 4 their Classify boxes."""
     if node["kind"] == "ingest":
         return 0
-    if node["kind"] == "detector":
+    if node["kind"] in ("crop", "detector"):
         return 1
     if node["kind"] == "calc":
         return 2
@@ -292,7 +294,7 @@ def get_canvas(camera: str) -> dict:
     for roi in rois:  # a detector-anchored ROI hangs from the detector too (the arrow is stored in the anchor)
         spec = anchor.get_anchor(camera, roi.name)
         if spec and spec["detector"] in known:
-            edges.append({"id": f"{spec['detector']}->{roi_node_id(roi.name)}", "source": spec["detector"], "source_handle": None, "target": roi_node_id(roi.name), "locked": False})
+            edges.append({"id": f"{spec['detector']}->{roi_node_id(roi.name)}", "source": spec["detector"], "source_handle": f"t:{spec['target']}", "target": roi_node_id(roi.name), "locked": False})
     return {
         "camera": camera,
         "nodes": nodes,

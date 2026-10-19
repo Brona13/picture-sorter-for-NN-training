@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { api, FlowCalc, FlowDetector, FlowNodeDetail, FlowEvaluation } from "../api";
+import { api, FlowCalc, FlowCrop, FlowDetector, FlowNodeDetail, FlowEvaluation } from "../api";
 import { PanelSection } from "../SidePanel";
 import { useJob } from "../useJob";
 
@@ -208,6 +208,7 @@ export default function FlowBoxPanel({ camera, nodeId, detail, onDetail, onChang
   return (
     <>
       {error && <p role="alert">{error}</p>}
+      {detail.kind === "crop" && <CropOptions detail={detail} onUpdate={update} />}
       {detail.kind === "detector" && (
         <DetectorOptions
           detail={detail}
@@ -225,6 +226,25 @@ export default function FlowBoxPanel({ camera, nodeId, detail, onDetail, onChang
       {detail.kind === "calc" && <CalcOptions detail={detail} onUpdate={update} />}
       {detail.kind === "evaluation" && <EvaluationOptions detail={detail} onUpdate={update} />}
     </>
+  );
+}
+
+function CropOptions({ detail, onUpdate }: { detail: FlowCrop; onUpdate: (body: Record<string, unknown>) => void }) {
+  const r = detail.rect;
+  return (
+    <PanelSection title="Crop">
+      <p className="muted">
+        One rectangle cuts every picture before it goes on to the next box. It is stored as fractions of the picture, so
+        pictures of another size are cut in the same relative place. Nothing is written to disk.
+      </p>
+      <p>
+        {r
+          ? `From ${(r[0] * 100).toFixed(1)} %, ${(r[1] * 100).toFixed(1)} % · ${(r[2] * 100).toFixed(1)} % wide, ${(r[3] * 100).toFixed(1)} % tall`
+          : "No crop drawn yet: the picture passes on unchanged."}
+      </p>
+      {detail.crops.length > 0 && <p className="muted">This box reads a picture already cut by {detail.crops.length} Crop box{detail.crops.length === 1 ? "" : "es"} above it.</p>}
+      <button type="button" disabled={!r} onClick={() => onUpdate({ rect: null })}>Clear crop</button>
+    </PanelSection>
   );
 }
 

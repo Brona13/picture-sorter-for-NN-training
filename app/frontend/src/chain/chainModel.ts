@@ -77,6 +77,10 @@ export function layoutOf(
 export function describeNode(n: ChainNode): string {
   if (n.kind === "ingest") return `${n.frames} picture${n.frames === 1 ? "" : "s"}`;
   if (n.kind === "classify") return `${n.labeled}/${n.frames} labeled`;
+  if (n.kind === "crop") {
+    const r = n.flow?.rect;
+    return r ? `${Math.round(r[2] * 100)} × ${Math.round(r[3] * 100)} % of the picture` : "no crop drawn yet";
+  }
   if (n.kind === "detector") {
     const f = n.flow;
     const targets = f?.targets?.length ?? 0;
@@ -96,31 +100,39 @@ export function describeNode(n: ChainNode): string {
   return `${where} · ${n.labeled}/${n.frames} labeled`;
 }
 
-export const FLOW_KINDS = ["detector", "calc", "evaluation"] as const;
+export const FLOW_KINDS = ["crop", "detector", "calc", "evaluation"] as const;
 export const isFlowKind = (kind: string | undefined): boolean => !!kind && (FLOW_KINDS as readonly string[]).includes(kind);
 
 /**
- * An arrow that involves a detector, Calculate or Evaluation box. `null` when the arrow is not a flow arrow at all
+ * An arrow that involves a Crop, detector, Calculate or Evaluation box. `null` when the arrow is not a flow arrow at all
  * (the ROI rules in `connectAction` decide), `{ error }` when it is one that does not fit, else the arrow to store.
- * The types mirror `flow.edge_allowed`: Ingest or a detector feeds a detector, a detector feeds Calculate, Calculate
+ * The types mirror `flow.edge_allowed`: Ingest or a Crop feeds a Crop or a detector, a detector feeds a detector or Calculate, Calculate
  * feeds Evaluation, Evaluation feeds a Classify box.
  */
-export function flowConnect(canvas: ChainCanvas, c: Connection): { source: string; target: string } | { error: string } | null {
+export const targetHandle = (target: string) => `t:${target}`;
+export const targetOfHandle = (handle: string | null | undefined): string | null => (handle && handle.startsWith("t:") ? handle.slice(2) : null);
+
+export type FlowLink = { source: string; target: string } | { anchor: { feature: string; detector: string; target: string } } | { error: string } | null;
+
+export function flowConnect(canvas: ChainCanvas, c: Connection): FlowLink {
   const source = featureOf(canvas, c.source);
   const target = featureOf(canvas, c.target);
   if (!source || !target) return { error: "Unknown box." };
-  if (source.kind === "detector" && target.kind === "roi" && target.role !== "classify") {
-    return { error: "Anchor the ROI to a detector box in the ROI's Anchor section on the right: it needs a target and a picture." };
+  if (source.kind === "detector" && target.kind === "roi" && target.role !== "classify" && target.ref) {
+    // A detector target's dot dropped on an ROI feature anchors the ROI to that target's box.
+    const name = targetOfHandle(c.sourceHandle);
+    if (!name) return { error: "Drag from one of the detector's target dots (on its right edge) to the ROI." };
+    return { anchor: { feature: target.ref, detector: source.id, target: name } };
   }
   if (!isFlowKind(source.kind) && !isFlowKind(target.kind)) return null;
   const ok =
-    (source.kind === "ingest" && target.kind === "detector") ||
+    ((source.kind === "ingest" || source.kind === "crop") && (target.kind === "crop" || target.kind === "detector")) ||
     (source.kind === "detector" && (target.kind === "detector" || target.kind === "calc")) ||
     (source.kind === "calc" && target.kind === "evaluation") ||
     (source.kind === "evaluation" && target.kind === "classify" && target.role !== "classify");
   if (!ok) {
     return {
-      error: `${source.label} cannot feed ${target.label}. Ingest or a detector feeds a detector, a detector feeds Calculate, Calculate feeds Evaluation, Evaluation feeds a feature's Classify box.`,
+      error: `${source.label} cannot feed ${target.label}. Ingest or a Crop feeds a Crop or a detector, a detector feeds a detector or Calculate, Calculate feeds Evaluation, Evaluation feeds a feature's Classify box.`,
     };
   }
   if (c.source === c.target) return { error: "A box cannot feed itself." };

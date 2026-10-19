@@ -39,3 +39,5 @@ Vitest: Chain edges are smoothstep; `dragBand` maths and a drag of the band's ed
 ## Anchored ROI: what was built (v1.67.0, plan `~/.claude/plans/wiggly-foraging-koala.md`)
 
 Steps 1-4 and 6 (overlay) as planned, with the recommended defaults: one anchor per ROI, translate-only unless *Follow rotation*, no fallback for pictures without a box. The anchor is set in the ROI box's panel (the arrow is derived and deletable), not drawn by hand. Left: the ROI editor itself does not yet show the anchor's box; "no anchor" badge and filter on Classify cards; real-frame check.
+
+Update 2026-10-19: the anchor was reworked in v1.71.0 (a dot per detector target dragged onto an ROI; modes *box* and *rect*): `plans/detector-to-roi.md`.

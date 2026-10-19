@@ -280,3 +280,30 @@ test("adding a product sends no renames and does not tell the app about any", as
     window.removeEventListener("picturesorter:products-renamed", renamed);
   }
 });
+
+function withAnchor(body: unknown) {
+  const inner = globalThis.fetch;
+  vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) =>
+    url.includes("/rois/seal/anchor") && (init?.method ?? "GET") === "GET" ? new Response(JSON.stringify(body)) : inner(url, init)));
+}
+
+test("a ROI anchored with its own rectangle opens on the example picture, locked, with the detector's found box outlined", async () => {
+  install(focusData());
+  withAnchor({
+    anchor: { detector: "det:1", target: "hole", mode: "rect", margin: 0.1, frame: "f2.png", follow_rotation: false },
+    context: { frame: "f2.png", target: "hole", box: { x: 0.5, y: 0.5, w: 0.1, h: 0.1 } },
+  });
+  render(<RoiEditorView camera="camA" focus={{ feature: "seal", onBack: () => {} }} />);
+  await waitFor(() => expect(screen.getByLabelText(/Frame to draw on/)).toHaveValue("f2.png"));
+  expect(screen.getByLabelText(/Frame to draw on/)).toBeDisabled();
+  expect(document.querySelector('[title="hole (found by the detector)"]')).not.toBeNull();
+  expect(screen.getByText(/relative to the green outline/)).toBeInTheDocument();
+});
+
+test("a ROI that is the found box has nothing to draw: the page says so", async () => {
+  install(focusData());
+  withAnchor({ anchor: { detector: "det:1", target: "hole", mode: "box", margin: 0.1, follow_rotation: false }, context: null });
+  render(<RoiEditorView camera="camA" focus={{ feature: "seal", onBack: () => {} }} />);
+  expect(await screen.findByText(/there is nothing to draw here/)).toBeInTheDocument();
+  expect(screen.getByLabelText(/Frame to draw on/)).not.toBeDisabled();
+});

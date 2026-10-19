@@ -89,3 +89,27 @@ class IngestApiTests(ApiTestCase):
         self.assertEqual(r.status_code, 202)
         job = wait_for_job(self.client, r.json()["id"])
         self.assertEqual(job["result"], {"tracked": 1})
+
+    def test_ingested_frames_list_has_original_name_and_time_newest_first_and_survives_a_rebuild(self) -> None:
+        import time
+
+        before = time.time()
+        self.upload([("first.png", png_bytes(1))])
+        time.sleep(0.02)
+        self.upload([("second.png", png_bytes(2))])
+        rows = self.client.get("/api/cameras/camA/ingest/frames").json()["frames"]
+        self.assertEqual([r["name"] for r in rows], ["second.png", "first.png"])
+        self.assertTrue(all(before <= r["created"] <= time.time() for r in rows))
+        # rebuilding the catalog keeps the ingest times (it must not replace them with file times)
+        self.assertEqual(wait_for_job(self.client, self.client.post("/api/cameras/camA/ingest/rebuild").json()["id"])["status"], "done")
+        again = self.client.get("/api/cameras/camA/ingest/frames").json()["frames"]
+        self.assertEqual({r["frame"]: r["created"] for r in again}, {r["frame"]: r["created"] for r in rows})
+
+    def test_a_deleted_picture_is_not_listed(self) -> None:
+        import db
+
+        self.upload([("a.png", png_bytes(1)), ("b.png", png_bytes(2))])
+        rows = self.client.get("/api/cameras/camA/ingest/frames").json()["frames"]
+        db.mark_frames_deleted("camA", [(rows[0]["frame"], "h")])
+        left = self.client.get("/api/cameras/camA/ingest/frames").json()["frames"]
+        self.assertEqual([r["frame"] for r in left], [rows[1]["frame"]])

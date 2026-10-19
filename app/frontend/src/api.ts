@@ -141,6 +141,13 @@ export interface IngestResult {
   errors: string[];
 }
 
+/** A picture of the camera as Ingest lists it: the file name it came in under and when it was ingested (epoch seconds). */
+export interface IngestedFrame {
+  frame: string;
+  name: string;
+  created: number;
+}
+
 export interface FramesResponse {
   frames: string[];
   showing_all: boolean;
@@ -279,7 +286,7 @@ export interface CameraDeletePreview {
 /** One box of the chain canvas: Ingest, one ROI, or the Classify box of the product-sorting ROI (see `chain.py`). */
 export interface ChainNode {
   id: string;
-  kind: "ingest" | "roi" | "classify" | "detector" | "calc" | "evaluation";
+  kind: "ingest" | "roi" | "classify" | "crop" | "detector" | "calc" | "evaluation";
   /** The ROI's feature name (null for Ingest); for the Classify box, the product-sorting ROI it labels. */
   ref: string | null;
   label: string;
@@ -305,15 +312,20 @@ export interface ChainNode {
 export interface RoiAnchor {
   detector: string;
   target: string;
+  /** box: the ROI is the found box plus `margin`; rect: it follows the rectangle drawn on `frame`. */
+  mode: "box" | "rect";
+  margin: number;
+  frame?: string;
   follow_rotation: boolean;
-  angle0: number;
-  dx: number;
-  dy: number;
-  w: number;
-  h: number;
+  angle0?: number;
+  dx?: number;
+  dy?: number;
+  w?: number;
+  h?: number;
 }
 
 export interface FlowSummary {
+  rect?: [number, number, number, number] | null;
   targets?: string[];
   status?: "none" | "fresh" | "stale";
   frames?: number;
@@ -333,9 +345,19 @@ export interface FlowExample {
   box: [number, number, number, number];
   png: string;
 }
+export interface FlowCrop {
+  kind: "crop";
+  /** x, y, width, height as fractions of the input picture, or null (the picture passes on unchanged). */
+  rect: [number, number, number, number] | null;
+  input_box: string | null;
+  /** The crops above this box (outermost first): the input picture is the frame cut by each in turn. */
+  crops: number[][];
+}
 export interface FlowDetector {
   kind: "detector";
   input: string | null;
+  /** The crops above this detector: it works on the frame cut by each in turn. */
+  crops: number[][];
   targets: { name: string; examples: FlowExample[] }[];
   rotate: boolean;
   angle_range: [number, number] | null;
@@ -364,7 +386,7 @@ export interface FlowEvaluation {
   histogram: { low: number; high: number; bins: number[] } | null;
   features: string[];
 }
-export type FlowNodeDetail = FlowDetector | FlowCalc | FlowEvaluation;
+export type FlowNodeDetail = FlowCrop | FlowDetector | FlowCalc | FlowEvaluation;
 export interface FlowBox {
   x: number;
   y: number;
@@ -523,6 +545,13 @@ export interface DeviceInfo {
 
 export const frameImageUrl = (camera: string, frame: string) =>
   `/api/cameras/${encodeURIComponent(camera)}/frames/${encodeURIComponent(frame)}/image`;
+
+/** The picture a Chain box works on (frame cut by the crops above it), or - `stage: "output"` on a Crop - the one it passes on. `key` (the crops) makes a changed crop load afresh. */
+export const flowPictureUrl = (camera: string, nodeId: string, frame: string, opts: { stage?: "input" | "output"; size?: number; key?: unknown } = {}) =>
+  `/api/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(nodeId)}/picture?frame=${encodeURIComponent(frame)}` +
+  (opts.stage ? `&stage=${opts.stage}` : "") +
+  (opts.size ? `&size=${opts.size}` : "") +
+  (opts.key !== undefined ? `&v=${encodeURIComponent(JSON.stringify(opts.key))}` : "");
 
 export const frameThumbUrl = (camera: string, frame: string, size = 96) =>
   `/api/cameras/${encodeURIComponent(camera)}/frames/${encodeURIComponent(frame)}/thumb?variant=square&size=${size}`;
@@ -1031,6 +1060,8 @@ export const api = {
       { method: "POST", body: form },
     );
   },
+  ingestedFrames: (camera: string) =>
+    request<{ frames: IngestedFrame[] }>(`/cameras/${encodeURIComponent(camera)}/ingest/frames`),
   importFolder: (camera: string, path: string) =>
     request<Job<IngestResult>>(
       `/cameras/${encodeURIComponent(camera)}/ingest/folder`,
@@ -1076,7 +1107,7 @@ export const api = {
   chain: (camera: string) => request<ChainCanvas>(`/cameras/${encodeURIComponent(camera)}/chain`),
   saveChainLayout: (camera: string, layout: ChainLayout) =>
     request<ChainCanvas>(`/cameras/${encodeURIComponent(camera)}/chain/layout`, send("PUT", layout)),
-  flowCreate: (camera: string, kind: "detector" | "calc" | "evaluation") =>
+  flowCreate: (camera: string, kind: "crop" | "detector" | "calc" | "evaluation") =>
     request<{ id: string }>(`/cameras/${encodeURIComponent(camera)}/flow/nodes`, send("POST", { kind })),
   flowNode: (camera: string, id: string) =>
     request<FlowNodeDetail>(`/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}`),
@@ -1088,8 +1119,12 @@ export const api = {
     request<{ removed: string }>(`/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}`, send("DELETE")),
   flowConnect: (camera: string, source: string, target: string) =>
     request<{ source: string; target: string }>(`/cameras/${encodeURIComponent(camera)}/flow/edges`, send("POST", { source, target })),
-  setRoiAnchor: (camera: string, feature: string, body: { detector: string; target: string; frame: string; follow_rotation: boolean }) =>
+  setRoiAnchor: (camera: string, feature: string, body: { detector: string; target: string; mode?: "box" | "rect"; margin?: number; frame?: string; follow_rotation?: boolean }) =>
     request<RoiAnchor>(`/cameras/${encodeURIComponent(camera)}/rois/${encodeURIComponent(feature)}/anchor`, send("PUT", body)),
+  roiAnchor: (camera: string, feature: string) =>
+    request<{ anchor: RoiAnchor | null; context: { frame: string; target: string; box: { x: number; y: number; w: number; h: number } | null } | null }>(
+      `/cameras/${encodeURIComponent(camera)}/rois/${encodeURIComponent(feature)}/anchor`,
+    ),
   roiRect: (camera: string, feature: string, frame: string) =>
     request<{ anchored: boolean; rect: { x: number; y: number; w: number; h: number } | null }>(
       `/cameras/${encodeURIComponent(camera)}/rois/${encodeURIComponent(feature)}/rect?frame=${encodeURIComponent(frame)}`,

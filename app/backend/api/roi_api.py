@@ -201,7 +201,9 @@ def set_applies_to(camera: str, feature: str, body: ProductsUpdate) -> dict:
 class AnchorBody(BaseModel):
     detector: str
     target: str
-    frame: str  # the picture the rectangle was drawn on (the detector must have found the target there)
+    mode: str = "box"  # box: the ROI is the found box plus a margin; rect: follows the rectangle drawn on `frame`
+    margin: float = 0.1
+    frame: str | None = None  # mode rect: the picture the rectangle is drawn on (the detector must have found the target there)
     follow_rotation: bool = False
 
 
@@ -210,9 +212,26 @@ def put_anchor(camera: str, feature: str, body: AnchorBody) -> dict:
     """Anchor the ROI to a detector's box: its rectangle then follows that box on every picture (see ``anchor.py``)."""
     _require_roi(camera, feature)
     try:
-        return anchor.set_anchor(camera, feature, body.detector, body.target, body.frame, follow_rotation=body.follow_rotation)
+        return anchor.set_anchor(camera, feature, body.detector, body.target, body.frame, mode=body.mode,
+                                 margin=body.margin, follow_rotation=body.follow_rotation)
     except (anchor.AnchorError, FileNotFoundError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/cameras/{camera}/rois/{feature}/anchor")
+def get_anchor(camera: str, feature: str) -> dict:
+    """The anchor of the ROI (or ``None``) and, in mode ``rect``, the example picture with the detector's found box in
+    fractions of it: the ROI editor opens on that picture and draws the box as a reference."""
+    _require_roi(camera, feature)
+    spec = anchor.get_anchor(camera, feature)
+    context = None
+    if spec and spec["mode"] == "rect" and spec.get("frame"):
+        try:
+            box = anchor.found_box(camera, spec, spec["frame"])
+        except OSError:
+            box = None
+        context = {"frame": spec["frame"], "box": box, "target": spec["target"]}
+    return {"anchor": spec, "context": context}
 
 
 @router.get("/cameras/{camera}/rois/{feature}/rect")

@@ -134,10 +134,25 @@ test("describeNode says what a flow box does", () => {
   expect(describeNode(f({ nominal: null, tolerance: 3 }))).toBe("set the nominal");
 });
 
-test("an arrow from a detector to an ROI is refused with a hint to the Anchor section; the anchor arrow is recognised", async () => {
-  const { isAnchorEdge } = await import("./chainModel");
-  const refused = flowConnect(flowCanvas, link("det:1", "roi:seal"));
-  expect(refused).toEqual({ error: expect.stringContaining("Anchor") });
-  expect(isAnchorEdge(flowCanvas, { id: "e", source: "det:1", source_handle: null, target: "roi:seal", locked: false })).toBe(true);
+test("a detector target's dot dropped on an ROI feature anchors it; the main handle and Classify boxes are refused; the anchor arrow is recognised", async () => {
+  const { isAnchorEdge, targetHandle } = await import("./chainModel");
+  expect(flowConnect(flowCanvas, { source: "det:1", sourceHandle: targetHandle("left hole"), target: "roi:seal" })).toEqual({
+    anchor: { feature: "seal", detector: "det:1", target: "left hole" },
+  });
+  expect(flowConnect(flowCanvas, link("det:1", "roi:seal"))).toEqual({ error: expect.stringContaining("target dots") });
+  expect(flowConnect(flowCanvas, { source: "det:1", sourceHandle: targetHandle("x"), target: "roi:type" })).toHaveProperty("error"); // the product-sorting ROI
+  expect(isAnchorEdge(flowCanvas, { id: "e", source: "det:1", source_handle: "t:left hole", target: "roi:seal", locked: false })).toBe(true);
   expect(isAnchorEdge(flowCanvas, { id: "e", source: "ingest", source_handle: null, target: "roi:seal", locked: false })).toBe(false);
+});
+
+test("flowConnect: Ingest or a Crop feeds a Crop or a detector; nothing feeds Ingest, a Crop is not fed by a detector", () => {
+  const withCrop: ChainCanvas = { ...flowCanvas, nodes: [...flowCanvas.nodes, node({ id: "crop:1", kind: "crop", ref: null, role: null, scope: null, label: "Crop 1" }), node({ id: "crop:2", kind: "crop", ref: null, role: null, scope: null, label: "Crop 2" })] };
+  for (const [s, t] of [["ingest", "crop:1"], ["crop:1", "crop:2"], ["crop:2", "det:1"], ["crop:1", "det:2"]]) {
+    expect(flowConnect(withCrop, link(s, t))).toEqual({ source: s, target: t });
+  }
+  for (const [s, t] of [["det:1", "crop:1"], ["crop:1", "calc:1"], ["crop:1", "eval:1"], ["crop:1", "roi:seal"]]) {
+    expect(flowConnect(withCrop, link(s, t))).toHaveProperty("error");
+  }
+  expect(describeNode(node({ kind: "crop", flow: { rect: [0, 0, 0.5, 0.25] } }))).toBe("50 × 25 % of the picture");
+  expect(describeNode(node({ kind: "crop", flow: { rect: null } }))).toBe("no crop drawn yet");
 });

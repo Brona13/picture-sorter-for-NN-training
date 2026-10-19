@@ -68,7 +68,7 @@ test("Evaluation panel sends the typed nominal and shows the counts", async () =
 
 test("Detector panel: adds a target, lists its examples and keeps Run off until there is one", async () => {
   detail = {
-    kind: "detector", input: "ingest", rotate: true, angle_range: null, pad: 0.3, status: "none",
+    kind: "detector", input: "ingest", crops: [], rotate: true, angle_range: null, pad: 0.3, status: "none",
     targets: [{ name: "left hole", examples: [] }], summary: { frames: 0, found: {}, complete: 0, review: 0 },
   };
   render(<FlowBoxPanel camera="camA" nodeId="det:1" detail={detail as FlowNodeDetail} onDetail={() => {}} onChanged={() => {}} />);
@@ -95,7 +95,7 @@ const routes = (nodes: Record<string, unknown>, extra: (url: string, method: str
 test("Detector page: opens on the box, shows targets as chips, has the back button and a thumbnail strip", async () => {
   const onBack = vi.fn();
   routes({
-    kind: "detector", input: "ingest", rotate: true, angle_range: null, pad: 0.3, status: "none",
+    kind: "detector", input: "ingest", crops: [], rotate: true, angle_range: null, pad: 0.3, status: "none",
     targets: [{ name: "left hole", examples: [] }, { name: "right hole", examples: [] }], summary: { frames: 0, found: {}, complete: 0, review: 0 },
   });
   render(<FlowBoxView camera="camA" focus={{ nodeId: "det:1", onBack }} />);
@@ -110,7 +110,7 @@ test("Detector page: opens on the box, shows targets as chips, has the back butt
 });
 
 test("Detector page without a target still shows the picture and asks to drag a rectangle, then name it", async () => {
-  routes({ kind: "detector", input: "ingest", rotate: true, angle_range: null, pad: 0.3, status: "none", targets: [], summary: { frames: 0, found: {}, complete: 0, review: 0 } });
+  routes({ kind: "detector", input: "ingest", crops: [], rotate: true, angle_range: null, pad: 0.3, status: "none", targets: [], summary: { frames: 0, found: {}, complete: 0, review: 0 } });
   render(<FlowBoxView camera="camA" focus={{ nodeId: "det:1", onBack: () => {} }} />);
   expect(await screen.findByRole("img", { name: "a.png" }, { timeout: 4000 })).toBeInTheDocument();
   expect(screen.getAllByText(/Drag a rectangle around what to find/).length).toBeGreaterThan(0);
@@ -135,7 +135,7 @@ test("Evaluation page: lists the pictures by value and takes a picture's value a
 });
 
 test("Cascade detector page shows one picture per box of the input detector, zoomed to that box", async () => {
-  const parentDetail = { kind: "detector", input: "ingest", rotate: true, angle_range: null, pad: 0.3, status: "fresh", targets: [{ name: "left hole", examples: [{ frame: "a.png", box: [0, 0, 60, 40], png: "data:image/png;base64,AA" }] }], summary: { frames: 2, found: { "left hole": 1 }, complete: 1, review: 1 } };
+  const parentDetail = { kind: "detector", input: "ingest", crops: [], rotate: true, angle_range: null, pad: 0.3, status: "fresh", targets: [{ name: "left hole", examples: [{ frame: "a.png", box: [0, 0, 60, 40], png: "data:image/png;base64,AA" }] }], summary: { frames: 2, found: { "left hole": 1 }, complete: 1, review: 1 } };
   const own = { ...parentDetail, input: "det:1", targets: [], status: "none" };
   const box = { x: 100, y: 100, w: 60, h: 40, angle: 0, score: 0.9, source: "auto" };
   routes(own, (url) => {
@@ -166,7 +166,7 @@ test("resizeRect moves the dragged edges only and keeps a minimum size", () => {
 test("Detector page: clicking an example rectangle selects it; dragging it moves it and saves the new box", async () => {
   vi.stubGlobal("PointerEvent", MouseEvent);
   const detector = {
-    kind: "detector", input: "ingest", rotate: true, angle_range: null, pad: 0.3, status: "fresh",
+    kind: "detector", input: "ingest", crops: [], rotate: true, angle_range: null, pad: 0.3, status: "fresh",
     targets: [{ name: "left hole", examples: [{ frame: "a.png", box: [10, 10, 40, 30], png: "data:image/png;base64,AA" }] }],
     summary: { frames: 2, found: { "left hole": 0 }, complete: 0, review: 0 },
   };

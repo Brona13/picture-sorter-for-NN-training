@@ -15,7 +15,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, ChainCanvas, ChainDeletePreview, ChainNode, ChainViewport, FlowDeletePreview } from "../api";
-import { INGEST_ID, connectAction, describeNode, disconnectAction, flowConnect, freshName, isAnchorEdge, isFlowKind, layoutOf, productHandle } from "../chain/chainModel";
+import { INGEST_ID, targetHandle, connectAction, describeNode, disconnectAction, flowConnect, freshName, isAnchorEdge, isFlowKind, layoutOf, productHandle } from "../chain/chainModel";
 import AnchorSection from "../chain/AnchorSection";
 import { useSharedFeature } from "../SharedFeature";
 import SidePanel from "../SidePanel";
@@ -26,7 +26,7 @@ type BoxData = {
 };
 type BoxNode = Node<BoxData, "box">;
 
-const HUE = { ingest: 160, roi: 30, classify: 145, detector: 265, calc: 200, evaluation: 340 } as const;
+const HUE = { ingest: 160, roi: 30, classify: 145, crop: 100, detector: 265, calc: 200, evaluation: 340 } as const;
 const hueOf = (n: ChainNode) => HUE[n.kind];
 
 /** A box of the chain: a rounded two-tone rectangle with an inline-renamable title. */
@@ -76,13 +76,20 @@ function Box({ data, selected }: NodeProps<BoxNode>) {
           </div>
         ))}
       {isClassify && node.unlabeled > 0 && <div className="chain-node-sub">{node.unlabeled} not labeled yet</div>}
-      {!isClassify && <Handle type="source" position={Position.Right} />}
+      {node.kind === "detector" &&
+        (node.flow?.targets ?? []).map((target) => (
+          <div className="chain-node-product chain-node-target" key={target} title={`Drag this dot onto an ROI feature: the ROI becomes the box found for ${target}`}>
+            {target}
+            <Handle type="source" position={Position.Right} id={targetHandle(target)} />
+          </div>
+        ))}
+      {!isClassify && <Handle type="source" position={Position.Right} style={node.kind === "detector" ? { top: 16 } : undefined} />}
     </div>
   );
 }
 
 const nodeTypes = { box: Box };
-const FLOW_PAGE = { detector: "Detector", calc: "Calculate", evaluation: "Evaluation" } as const;
+const FLOW_PAGE = { crop: "Crop", detector: "Detector", calc: "Calculate", evaluation: "Evaluation" } as const;
 
 function toFlowNode(n: ChainNode, onRename: BoxData["onRename"], selected: boolean): BoxNode {
   return { id: n.id, type: "box", position: { x: n.x, y: n.y }, data: { node: n, onRename }, selected, deletable: n.kind === "roi" || isFlowKind(n.kind) };
@@ -195,7 +202,10 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
     const flowArrow = flowConnect(canvas, link);
     if (flowArrow === null) void apply(connectAction(canvas, link));
     else if ("error" in flowArrow) setError(flowArrow.error);
-    else void applyFlow(() => api.flowConnect(camera, flowArrow.source, flowArrow.target));
+    else if ("anchor" in flowArrow) {
+      const a = flowArrow.anchor; // the dot of a detector target dropped on an ROI: the ROI becomes that box
+      void applyFlow(() => api.setRoiAnchor(camera, a.feature, { detector: a.detector, target: a.target, mode: "box" }));
+    } else void applyFlow(() => api.flowConnect(camera, flowArrow.source, flowArrow.target));
   };
 
   const isValidConnection = (c: Connection | Edge) => {
@@ -238,7 +248,7 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
     await applyFlow(() => api.flowDelete(camera, id));
   };
 
-  const addFlowBox = async (kind: "detector" | "calc" | "evaluation") => {
+  const addFlowBox = async (kind: "crop" | "detector" | "calc" | "evaluation") => {
     await applyFlow(async () => {
       const made = await api.flowCreate(camera, kind);
       setSelectedId(made.id);
@@ -272,7 +282,7 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
   // Opens the page for a box: Ingest, or the ROI editor / Classify on the box's ROI.
   const openPage = (n: ChainNode, view: "roi" | "classify") => {
     if (n.kind === "ingest" || !n.ref) {
-      navigate("/ingest");
+      navigate("/ingest?focus=chain"); // opened from the Chain: the page offers the way back
       return;
     }
     if (onOpenRoi) {
@@ -292,6 +302,9 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
         </button>
         <button type="button" disabled={!canvas} onClick={() => void addFeature()}>
           + ROI feature
+        </button>
+        <button type="button" disabled={!canvas} onClick={() => void addFlowBox("crop")}>
+          + Crop
         </button>
         <button type="button" disabled={!canvas} onClick={() => void addFlowBox("detector")}>
           + Detector

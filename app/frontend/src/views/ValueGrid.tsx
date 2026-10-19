@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import { frameThumbUrl } from "../api";
 import CardGrid from "../classify/CardGrid";
 import FramePane from "../classify/FramePane";
@@ -10,10 +10,13 @@ export interface ValueRow {
   frame: string;
   value: number | null;
   verdict?: "pass" | "fail" | "undetermined";
+  /** Pages whose pictures carry more than a value (Ingest: the name it came in under and when) put it here for `info`. */
+  name?: string;
+  created?: number;
 }
 
 const OPTIONS = { per_page_options: [12, 24, 48, 96], cols_options: [3, 4, 5, 6, 8] };
-const STORE = "flow.grid";
+const STORE = "flow.grid"; // the size of this grid is remembered for every page that uses it
 
 function stored(): { per_page: number; cols: number } {
   try {
@@ -25,7 +28,10 @@ function stored(): { per_page: number; cols: number } {
 
 const show = (r: ValueRow, unit: string) => (r.value === null ? "not measured" : `${r.value.toFixed(2)}${unit ? ` ${unit}` : ""}`);
 
-function Card({ camera, row, unit, onOpen, onNominal }: { camera: string; row: ValueRow; unit: string; onOpen: () => void; onNominal?: () => void }) {
+/** What a card (and the viewer) says under the file name instead of the value: a page whose pictures have no value (Ingest) gives its own line. */
+type Info = (row: ValueRow) => ReactNode;
+
+function Card({ camera, row, unit, onOpen, onNominal, info }: { camera: string; row: ValueRow; unit: string; onOpen: () => void; onNominal?: () => void; info?: Info }) {
   return (
     <article data-testid={`value-card-${row.frame}`} style={{ border: "1px solid var(--border)", borderRadius: "var(--radius)", background: "var(--panel)", padding: 8, minWidth: 0, boxSizing: "border-box" }}>
       <button
@@ -39,7 +45,7 @@ function Card({ camera, row, unit, onOpen, onNominal }: { camera: string; row: V
       </button>
       <div style={{ fontSize: 12, margin: "4px 0", wordBreak: "break-all" }}>{row.frame}</div>
       <div style={{ margin: "2px 0", fontSize: 13 }}>
-        <strong>{show(row, unit)}</strong> {row.verdict && <span className={`flow-verdict ${row.verdict}`}>{row.verdict}</span>}
+        {info ? info(row) : <><strong>{show(row, unit)}</strong> {row.verdict && <span className={`flow-verdict ${row.verdict}`}>{row.verdict}</span>}</>}
       </div>
       {onNominal && (
         <button type="button" disabled={row.value === null} title="Take this picture's value as the nominal" onClick={onNominal}>
@@ -50,7 +56,7 @@ function Card({ camera, row, unit, onOpen, onNominal }: { camera: string; row: V
   );
 }
 
-function Viewer({ camera, rows, start, unit, onClose, onNominal }: { camera: string; rows: ValueRow[]; start: string; unit: string; onClose: () => void; onNominal?: (value: number) => void }) {
+function Viewer({ camera, rows, start, unit, onClose, onNominal, info }: { camera: string; rows: ValueRow[]; start: string; unit: string; onClose: () => void; onNominal?: (value: number) => void; info?: Info }) {
   const frames = rows.map((r) => r.frame);
   const { frame, index, go } = useBrowse(frames, start, onClose);
   const row = rows.find((r) => r.frame === frame);
@@ -67,7 +73,7 @@ function Viewer({ camera, rows, start, unit, onClose, onNominal }: { camera: str
       hint="Wheel zooms · drag pans · ← → browse · Esc closes"
       toolbar={
         <span data-testid="viewer-value" style={{ fontSize: 13 }}>
-          <strong>{show(row, unit)}</strong> {row.verdict && <span className={`flow-verdict ${row.verdict}`}>{row.verdict}</span>}{" "}
+          {info ? info(row) : <><strong>{show(row, unit)}</strong> {row.verdict && <span className={`flow-verdict ${row.verdict}`}>{row.verdict}</span>}</>}{" "}
           {onNominal && row.value !== null && <button type="button" onClick={() => onNominal(row.value!)}>Use as nominal</button>}
         </span>
       }
@@ -80,9 +86,10 @@ function Viewer({ camera, rows, start, unit, onClose, onNominal }: { camera: str
 /**
  * The pictures of a Calculate or Evaluation box as the usual card grid (pager, columns, search by file name, the shared
  * picture viewer behind a click), each card with its measured value and, for an Evaluation, the verdict and
- * "Use as nominal". Nothing is labeled here: the page judges a measurement.
+ * "Use as nominal". Nothing is labeled here: the page judges a measurement. Ingest uses the same grid with its own line
+ * under each picture (`info`).
  */
-export default function ValueGrid({ camera, rows, unit, onNominal }: { camera: string; rows: ValueRow[]; unit: string; onNominal?: (value: number) => void }) {
+export default function ValueGrid({ camera, rows, unit = "", onNominal, info }: { camera: string; rows: ValueRow[]; unit?: string; onNominal?: (value: number) => void; info?: Info }) {
   const [grid, setGrid] = useState(stored);
   const [page, setPage] = useState(1);
   const [viewing, setViewing] = useState<string | null>(null);
@@ -107,10 +114,10 @@ export default function ValueGrid({ camera, rows, unit, onNominal }: { camera: s
         container="div"
         onGridChange={() => setViewing(null)}
         renderCard={(r) => (
-          <Card camera={camera} row={r} unit={unit} onOpen={() => setViewing(r.frame)} onNominal={onNominal && r.value !== null ? () => onNominal(r.value!) : undefined} />
+          <Card camera={camera} row={r} unit={unit} info={info} onOpen={() => setViewing(r.frame)} onNominal={onNominal && r.value !== null ? () => onNominal(r.value!) : undefined} />
         )}
       />
-      {viewing && <Viewer camera={camera} rows={rows} start={viewing} unit={unit} onClose={() => setViewing(null)} onNominal={onNominal} />}
+      {viewing && <Viewer camera={camera} rows={rows} start={viewing} unit={unit} info={info} onClose={() => setViewing(null)} onNominal={onNominal} />}
     </>
   );
 }

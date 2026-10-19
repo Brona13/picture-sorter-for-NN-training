@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import anchor
+import cv2
 import flow
 from api import jobs
 from api.cameras import require_camera, require_feature
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel
 
 router = APIRouter()
@@ -162,6 +163,28 @@ def run_all(camera: str) -> dict:
         return flow.run_all(camera, report)
 
     return jobs.registry.submit("flow_detect", camera, work).to_dict()
+
+
+@router.get("/cameras/{camera}/flow/nodes/{node_id}/picture")
+def get_picture(camera: str, node_id: str, frame: str, stage: str = "input", size: int | None = None) -> Response:
+    """The picture a box works on (``stage=input``), or - for a Crop - the picture it passes on (``output``). ``size``
+    gives a JPEG thumbnail whose longer side is that many pixels; without it a PNG at full size."""
+    _known(camera, node_id)
+    if stage not in ("input", "output"):
+        raise HTTPException(status_code=422, detail="stage must be input or output")
+    image = _guard(flow.picture, camera, node_id, frame, stage)
+    if size:
+        scale = min(1.0, max(16, min(size, 1024)) / max(image.shape[:2]))
+        if scale < 1.0:
+            image = cv2.resize(image, (max(1, round(image.shape[1] * scale)), max(1, round(image.shape[0] * scale))), interpolation=cv2.INTER_AREA)
+        ok, buf = cv2.imencode(".jpg", image, [cv2.IMWRITE_JPEG_QUALITY, 80])
+        media = "image/jpeg"
+    else:
+        ok, buf = cv2.imencode(".png", image)
+        media = "image/png"
+    if not ok:
+        raise HTTPException(status_code=415, detail="Cannot encode the picture.")
+    return Response(content=buf.tobytes(), media_type=media, headers={"Cache-Control": "no-cache"})
 
 
 @router.get("/cameras/{camera}/flow/nodes/{node_id}/boxes")
