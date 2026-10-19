@@ -180,3 +180,11 @@ test("renaming a box saves the layout, not the ROI", async () => {
   expect(save.body.nodes["roi:seal"].label).toBe("My seal");
   expect(calls.some((c) => c.url.includes("/rois"))).toBe(false);
 });
+
+test("a feature ROI box has an output handle, so its fixed arrow to its Classify box can be drawn", async () => {
+  renderView(vi.fn());
+  const feature = await screen.findByTestId("chain-node-roi:seal");
+  expect(feature.querySelectorAll(".source")).toHaveLength(1);
+  const classifyBox = screen.getByTestId("chain-node-classify:seal");
+  expect(classifyBox.querySelectorAll(".source")).toHaveLength(0);
+});

@@ -75,7 +75,7 @@ function Box({ data, selected }: NodeProps<BoxNode>) {
           </div>
         ))}
       {isClassify && node.unlabeled > 0 && <div className="chain-node-sub">{node.unlabeled} not labeled yet</div>}
-      {(node.kind === "ingest" || node.role === "classify") && !isClassify && <Handle type="source" position={Position.Right} />}
+      {!isClassify && <Handle type="source" position={Position.Right} />}
     </div>
   );
 }
