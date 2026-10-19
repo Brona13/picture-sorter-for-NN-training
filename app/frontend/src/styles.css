@@ -297,3 +297,5 @@ button[aria-pressed="true"] { background: var(--info-bg); color: var(--info-fg);
 .flow-verdict.pass { background: color-mix(in srgb, #2e9e5b 40%, var(--panel)); }
 .flow-verdict.fail { background: color-mix(in srgb, #c62828 40%, var(--panel)); }
 .flow-verdict.undetermined { background: var(--hover); }
+.flow-name { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; padding: 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel); max-width: 560px; }
+.flow-name label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; flex: 1; }

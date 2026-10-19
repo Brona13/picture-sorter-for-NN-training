@@ -80,6 +80,9 @@ function DetectorWork(p: {
   const [target, setTarget] = useState("");
   const [mode, setMode] = useState<"draw" | "place">("draw");
   const [onlyReview, setOnlyReview] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [pending, setPending] = useState<{ frame: string; box: [number, number, number, number] } | null>(null);
+  const [newName, setNewName] = useState("");
   const [boxes, setBoxes] = useState<Record<string, Record<string, FlowBox>>>({});
   const [review, setReview] = useState<string[]>([]);
   const [size, setSize] = useState<{ w: number; h: number } | null>(null);
@@ -97,6 +100,8 @@ function DetectorWork(p: {
 
   const names = detail.targets.map((t) => t.name);
   const chosen = names.includes(target) ? target : names[0] ?? "";
+  // With no target yet (or "+ New target" picked) a drag starts a new target: the rectangle first, its name next.
+  const naming = mode === "draw" && (names.length === 0 || creating);
   const shown = useMemo(() => (onlyReview ? frames.filter((f) => review.includes(f)) : frames), [frames, review, onlyReview]);
   const at = Math.min(index, Math.max(0, shown.length - 1));
   const frame = shown[at];
@@ -119,9 +124,17 @@ function DetectorWork(p: {
   };
 
   const finish = async (to: { x: number; y: number }) => {
-    if (!drag || !frame || !chosen) return;
+    if (!drag || !frame) return;
     const from = drag.from;
     setDrag(null);
+    if (naming) {
+      const box = rectOf(from, to);
+      if (box[2] < 5 || box[3] < 5) { p.onError("Drag a rectangle around what to find."); return; }
+      p.onError(null);
+      setPending({ frame, box });
+      return;
+    }
+    if (!chosen) return;
     try {
       if (mode === "place") {
         await api.flowSetBox(camera, nodeId, frame, chosen, Math.round(to.x * 10) / 10, Math.round(to.y * 10) / 10);
@@ -136,9 +149,21 @@ function DetectorWork(p: {
     } catch (e) { p.onError(msg(e)); }
   };
 
-  if (names.length === 0) {
-    return <p className="flow-empty">Add the first target in the panel on the right (for example “left hole”), then draw an example of it on a picture.</p>;
-  }
+  const saveNew = async () => {
+    const name = newName.trim();
+    if (!pending || !name) return;
+    try {
+      if (!names.includes(name)) await api.flowAddTarget(camera, nodeId, name);
+      p.setDetail(await api.flowAddExample(camera, nodeId, name, pending.frame, pending.box));
+      setTarget(name);
+      setCreating(false);
+      setPending(null);
+      setNewName("");
+      p.onError(null);
+      p.onChanged();
+    } catch (e) { p.onError(msg(e)); }
+  };
+
   return (
     <div className="flow-work">
       <div className="flow-toolbar">
@@ -148,19 +173,38 @@ function DetectorWork(p: {
         </div>
         <div className="flow-chips" role="group" aria-label="Target">
           {detail.targets.map((t, i) => (
-            <button key={t.name} type="button" className="flow-chip" aria-pressed={t.name === chosen} onClick={() => setTarget(t.name)}>
+            <button key={t.name} type="button" className="flow-chip" aria-pressed={!naming && t.name === chosen} onClick={() => { setTarget(t.name); setCreating(false); setPending(null); }}>
               <span className="flow-dot" style={{ background: COLORS[i % COLORS.length] }} />
               {t.name}
               <small>{t.examples.length} ex.{detail.status === "fresh" ? ` · ${detail.summary.found[t.name] ?? 0} found` : ""}</small>
             </button>
           ))}
+          {mode === "draw" && (
+            <button type="button" className="flow-chip" aria-pressed={naming} onClick={() => { setCreating(true); setPending(null); }}>
+              + New target
+            </button>
+          )}
         </div>
       </div>
       <p className="muted">
-        {mode === "draw"
-          ? `Drag a rectangle around the “${chosen}”. Include the geometry that tells it from its twin.`
-          : `Click where the centre of “${chosen}” is. Your box stays when the detector runs again.`}
+        {naming
+          ? "Drag a rectangle around what to find (one hole, say) and include the geometry that tells it from its twin. You name it next."
+          : mode === "draw"
+            ? `Drag a rectangle around the “${chosen}”. Include the geometry that tells it from its twin.`
+            : chosen
+              ? `Click where the centre of “${chosen}” is. Your box stays when the detector runs again.`
+              : "Draw an example of a target first."}
       </p>
+      {pending && naming && (
+        <form className="flow-name" onSubmit={(e) => { e.preventDefault(); void saveNew(); }}>
+          <label>
+            What is this? (the name of the target)
+            <input autoFocus value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="left hole" />
+          </label>
+          <button type="submit" disabled={!newName.trim()}>Save target</button>
+          <button type="button" onClick={() => setPending(null)}>Cancel</button>
+        </form>
+      )}
 
       {frame ? (
         <div className="flow-stage">
@@ -189,6 +233,9 @@ function DetectorWork(p: {
                   </g>
                 );
               })}
+              {pending && pending.frame === frame && (
+                <rect x={pending.box[0]} y={pending.box[1]} width={pending.box[2]} height={pending.box[3]} fill="none" stroke="#fff" strokeWidth={2} strokeDasharray="5 3" />
+              )}
               {drag && mode === "draw" && (() => { const r = rectOf(drag.from, drag.to); return <rect x={r[0]} y={r[1]} width={r[2]} height={r[3]} fill="rgba(255,255,255,.15)" stroke="#fff" />; })()}
             </svg>
           )}

@@ -109,10 +109,12 @@ test("Detector page: opens on the box, shows targets as chips, has the back butt
   expect(onBack).toHaveBeenCalled();
 });
 
-test("Detector page without a target asks for the first one", async () => {
+test("Detector page without a target still shows the picture and asks to drag a rectangle, then name it", async () => {
   routes({ kind: "detector", input: "ingest", rotate: true, angle_range: null, pad: 0.3, status: "none", targets: [], summary: { frames: 0, found: {}, complete: 0, review: 0 } });
   render(<FlowBoxView camera="camA" focus={{ nodeId: "det:1", onBack: () => {} }} />);
-  expect(await screen.findByText(/Add the first target in the panel on the right/)).toBeInTheDocument();
+  expect(await screen.findByRole("img", { name: "a.png" }, { timeout: 4000 })).toBeInTheDocument();
+  expect(screen.getAllByText(/Drag a rectangle around what to find/).length).toBeGreaterThan(0);
+  expect(screen.getByRole("button", { name: "+ New target" })).toHaveAttribute("aria-pressed", "true");
 });
 
 test("Tolerance page: lists the pictures by value and takes a picture's value as the nominal", async () => {

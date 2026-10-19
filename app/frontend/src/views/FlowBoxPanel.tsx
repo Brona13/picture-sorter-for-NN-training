@@ -133,7 +133,7 @@ function DetectorOptions(p: {
         <p className="muted">
           {cascade
             ? `Searches inside the boxes of ${d.input}: target “A” here looks inside the box named “A” there.`
-            : "Name what to find and draw an example of it on a picture. The name is the identity of the target."}
+            : "Drag a rectangle around what to find on the picture, then name it. The name is the identity of the target."}
         </p>
         {d.targets.map((t) => (
           <div key={t.name} className="flow-target">
