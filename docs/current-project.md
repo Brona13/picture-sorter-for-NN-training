@@ -3,7 +3,7 @@ name: current-project
 description: Authoritative snapshot of the current purpose, architecture, capabilities, limitations, and open work
 status: current
 document_type: project-status
-last_updated: 2026-10-18
+last_updated: 2026-10-19
 ---
 
 # Current project
@@ -449,6 +449,8 @@ The project folder is portable, but `.venv/` is machine-specific and must be rec
 ## Open work
 
 Listed in recommended priority order:
+
+00. **Chain measurement work, open items (2026-10-19; session note `memory/2026-10-19-chain-crop-ingest-detector-session.md`):** check the two-hole chain (detector, cascaded detector, Calculate, Evaluation) on the real pictures (angle precision, 175 +- 3 deg); a **reference point per detector target** (the found position is the centre of the drawn example box, so "hole plus geometry" is off the hole); a **"no anchor" badge and filter** on the Classify cards for pictures without a detector box; **tags on pictures** and the Ingest date filter (design open); a **warning for mixed picture resolutions** in one camera; straightening a turned part; dots onto Calculate or a Crop; a Crop fed by an ROI or detector; a detector behind an ROI / Classify with an OK / NG class filter (kept open on purpose). Two flaky tests fail under load but pass alone (`ClassifyView.test.tsx` deleted card, `test_clean_schema.py` parallel first connects).
 
 0a. **Easy access to hidden and deleted pictures** (noted 2026-10-18): the Classify numbers now leave out deleted and muted pictures so the user works only with valid ones, but the user must keep full control of the dataset. Add one obvious place (a view on the Overview or Status page, or a small section per camera) that lists the deleted pictures (with note, time, Restore) and the muted ones per ROI (with Unmute), and shows their counts. Today deleted ones are in Classify's *Show: Deleted*, muted ones behind its *Show muted* checkbox, and either can be found by the file-name search.
 
