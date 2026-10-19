@@ -227,9 +227,9 @@ def _column(node: dict) -> int:
     if node["kind"] == "detector":
         return 1
     if node["kind"] == "calc":
-        return 3
+        return 2
     if node["kind"] == "tolerance":
-        return 4
+        return 3
     if node["kind"] == "classify":
         return 2 if node["role"] == "classify" else 4
     return 1 if node["role"] == "classify" else 3

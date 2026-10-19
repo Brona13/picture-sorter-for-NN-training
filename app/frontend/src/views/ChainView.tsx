@@ -16,8 +16,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, ChainCanvas, ChainDeletePreview, ChainNode, ChainViewport, FlowDeletePreview } from "../api";
 import { INGEST_ID, connectAction, describeNode, disconnectAction, flowConnect, freshName, isFlowKind, layoutOf, productHandle } from "../chain/chainModel";
-import FlowBoxPanel from "./FlowBoxPanel";
-import FlowDetectorPage from "./FlowDetectorPage";
 import { useSharedFeature } from "../SharedFeature";
 import SidePanel from "../SidePanel";
 
@@ -83,6 +81,7 @@ function Box({ data, selected }: NodeProps<BoxNode>) {
 }
 
 const nodeTypes = { box: Box };
+const FLOW_PAGE = { detector: "Detector", calc: "Calculate", tolerance: "Tolerance" } as const;
 
 function toFlowNode(n: ChainNode, onRename: BoxData["onRename"], selected: boolean): BoxNode {
   return { id: n.id, type: "box", position: { x: n.x, y: n.y }, data: { node: n, onRename }, selected, deletable: n.kind === "roi" || isFlowKind(n.kind) };
@@ -101,7 +100,7 @@ function toFlowEdge(e: ChainCanvas["edges"][number]): Edge {
 
 type OpenRoi = (feature: string, view: "roi" | "classify") => void;
 
-function Canvas({ camera, onOpenRoi }: { camera: string; onOpenRoi?: OpenRoi }) {
+function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?: OpenRoi; onOpenFlow?: (id: string) => void }) {
   const navigate = useNavigate();
   const shared = useSharedFeature();
   const [canvas, setCanvas] = useState<ChainCanvas | null>(null);
@@ -112,7 +111,6 @@ function Canvas({ camera, onOpenRoi }: { camera: string; onOpenRoi?: OpenRoi }) 
   const [productNames, setProductNames] = useState("");
   const [preview, setPreview] = useState<ChainDeletePreview | null>(null);
   const [flowPreview, setFlowPreview] = useState<FlowDeletePreview | null>(null);
-  const [page, setPage] = useState<{ nodeId: string; target?: string } | null>(null);
   const viewport = useRef<ChainViewport | null>(null);
   const nodesRef = useRef<BoxNode[]>([]);
   nodesRef.current = nodes;
@@ -155,7 +153,6 @@ function Canvas({ camera, onOpenRoi }: { camera: string; onOpenRoi?: OpenRoi }) 
     setSelectedId(null);
     setPreview(null);
     setFlowPreview(null);
-    setPage(null);
     setError(null);
     api.chain(camera).then(show).catch(fail);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -335,13 +332,9 @@ function Canvas({ camera, onOpenRoi }: { camera: string; onOpenRoi?: OpenRoi }) 
           {selectedLive.ref && <p className="muted">ROI: {selectedLive.ref}</p>}
           {isFlowKind(selectedLive.kind) && (
             <>
-              <FlowBoxPanel
-                key={selectedLive.id}
-                camera={camera}
-                node={selectedLive}
-                onChanged={() => void reload()}
-                onOpenPage={(nodeId, target) => setPage({ nodeId, target })}
-              />
+              <button type="button" onClick={() => (onOpenFlow ? onOpenFlow(selectedLive.id) : navigate(`/flow?focus=${encodeURIComponent(selectedLive.id)}`))}>
+                {FLOW_PAGE[selectedLive.kind as keyof typeof FLOW_PAGE]}
+              </button>
               <button type="button" className="danger" onClick={() => requestDelete(selectedLive.id)}>
                 Delete…
               </button>
@@ -400,18 +393,6 @@ function Canvas({ camera, onOpenRoi }: { camera: string; onOpenRoi?: OpenRoi }) 
     </div>
   );
 
-  if (page) {
-    return (
-      <FlowDetectorPage
-        camera={camera}
-        nodeId={page.nodeId}
-        target={page.target}
-        onClose={() => { setPage(null); void reload(); }}
-        onChanged={() => void reload()}
-      />
-    );
-  }
-
   return (
     <SidePanel panel={panel}>
       {error && <p role="alert">{error}</p>}
@@ -462,11 +443,11 @@ function Canvas({ camera, onOpenRoi }: { camera: string; onOpenRoi?: OpenRoi }) 
 }
 
 /** The chain canvas: a per-camera map of the processing chain, drawn from the ROI definitions. */
-export default function ChainView({ camera, onOpenRoi }: { camera: string; onOpenRoi?: OpenRoi }) {
+export default function ChainView({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?: OpenRoi; onOpenFlow?: (id: string) => void }) {
   return (
     <ReactFlowProvider>
       <h2>Chain</h2>
-      {camera ? <Canvas camera={camera} onOpenRoi={onOpenRoi} /> : <p className="muted">Pick a camera first.</p>}
+      {camera ? <Canvas camera={camera} onOpenRoi={onOpenRoi} onOpenFlow={onOpenFlow} /> : <p className="muted">Pick a camera first.</p>}
     </ReactFlowProvider>
   );
 }

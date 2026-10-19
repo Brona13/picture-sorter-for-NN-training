@@ -47,5 +47,5 @@ export const CONFIG_VIEW = { path: "config", label: "Configuration", icon: "âš™ï
 
 /** The section a route such as "/classify" belongs to, if any. */
 export function sectionOf(pathname: string) {
-  return SECTIONS.find((s) => s.pages.some((p) => `/${p.path}` === pathname || (pathname === "/dedup" && p.path.startsWith("dedup/"))));
+  return SECTIONS.find((s) => (pathname === "/flow" && s.id === "overview") || s.pages.some((p) => `/${p.path}` === pathname || (pathname === "/dedup" && p.path.startsWith("dedup/"))));
 }

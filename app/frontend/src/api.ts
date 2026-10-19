@@ -363,6 +363,14 @@ export interface FlowBoxes {
   boxes: Record<string, Record<string, FlowBox>>;
   review: string[];
 }
+export interface FlowValues {
+  values: Record<string, number | null>;
+  verdicts?: Record<string, "pass" | "fail" | "undetermined">;
+  counts?: { pass: number; fail: number; undetermined: number };
+  histogram?: { low: number; high: number; bins: number[] } | null;
+  wrap?: boolean;
+  unit?: string;
+}
 export interface FlowDeletePreview {
   node: string;
   kind: string;
@@ -500,6 +508,9 @@ export interface DeviceInfo {
 
 export const frameImageUrl = (camera: string, frame: string) =>
   `/api/cameras/${encodeURIComponent(camera)}/frames/${encodeURIComponent(frame)}/image`;
+
+export const frameThumbUrl = (camera: string, frame: string, size = 96) =>
+  `/api/cameras/${encodeURIComponent(camera)}/frames/${encodeURIComponent(frame)}/thumb?variant=square&size=${size}`;
 
 export const roiThumbUrl = (camera: string, frame: string, feature: string, size = 56) =>
   `/api/cameras/${encodeURIComponent(camera)}/frames/${encodeURIComponent(frame)}/thumb` +
@@ -1088,6 +1099,8 @@ export const api = {
     request<FlowBoxes>(
       `/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/boxes${onlyReview ? "?only_review=true" : ""}`,
     ),
+  flowValues: (camera: string, id: string) =>
+    request<FlowValues>(`/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/values`),
   flowSetBox: (camera: string, id: string, frame: string, target: string, x: number, y: number) =>
     request<FlowBox>(
       `/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/box`,

@@ -12,6 +12,7 @@ import ToolIcon from "./ToolIcon";
 import StepBar from "./StepBar";
 import { CONFIG_VIEW, SECTIONS, VIEWS, sectionOf } from "./views";
 import ChainView from "./views/ChainView";
+import FlowBoxView from "./views/FlowBoxView";
 import ClassifyView from "./views/ClassifyView";
 import ConfigurationView from "./views/ConfigurationView";
 import DetectorView from "./views/DetectorView";
@@ -327,6 +328,16 @@ export default function App() {
             }
           />
           <Route path="/chain" element={<ChainView camera={camera} onOpenRoi={openRoi} />} />
+          <Route
+            path="/flow"
+            element={
+              focusFeature ? (
+                <FlowBoxView camera={camera} focus={{ nodeId: focusFeature, onBack: () => navigate("/chain") }} />
+              ) : (
+                <p className="muted">Open a detector, Calculate or Tolerance box from the Chain.</p>
+              )
+            }
+          />
           <Route path="/status" element={<StatusView camera={camera} />} />
           <Route
             path="/versions"
