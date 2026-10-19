@@ -363,7 +363,31 @@ def update_node(camera: str, node_id: str, raw: dict) -> dict:
     return node
 
 
-def add_target(camera: str, node_id: str, name: str) -> None:
+def parent_target_names(graph: dict, node_id: str) -> list[str]:
+    """The targets (with examples) of the detector this one reads: the boxes a cascaded target can search inside."""
+    parent = parent_of(graph, node_id)
+    if not parent or kind_of(parent) != "detector" or parent not in graph["nodes"]:
+        return []
+    return [t["name"] for t in graph["nodes"][parent]["targets"] if t["examples"]]
+
+
+def _clean_inside(graph: dict, node_id: str, inside: object) -> str | None:
+    """``inside`` is the input detector's target a cascaded target searches in; None outside a cascade or for "same name"."""
+    if inside in (None, ""):
+        return None
+    names = parent_target_names(graph, node_id)
+    if inside not in names:
+        raise FlowError("A target can only search inside a target of the detector before this one." if not names
+                        else f"The detector before this one has no target named {inside}.")
+    return str(inside)
+
+
+def inside_of(target: dict) -> str:
+    """The input detector's target whose box this target searches in (before v1.73.0 always the same name)."""
+    return target.get("inside") or target["name"]
+
+
+def add_target(camera: str, node_id: str, name: str, inside: str | None = None) -> None:
     graph = load_graph(camera)
     node = _node(graph, node_id)
     if node["kind"] != "detector":
@@ -373,7 +397,18 @@ def add_target(camera: str, node_id: str, name: str) -> None:
         raise FlowError(f"There is already a target named {name}.")
     if len(node["targets"]) >= MAX_TARGETS:
         raise FlowError(f"A detector can have at most {MAX_TARGETS} targets.")
-    node["targets"].append({"name": name, "examples": []})
+    node["targets"].append({"name": name, "examples": [], "inside": _clean_inside(graph, node_id, inside)})
+    save_graph(camera, graph)
+
+
+def set_target_inside(camera: str, node_id: str, name: str, inside: str | None) -> None:
+    """Change which target of the input detector this target searches inside (the detector then needs a new run)."""
+    graph = load_graph(camera)
+    node = _node(graph, node_id)
+    entry = next((t for t in node.get("targets", []) if t["name"] == name), None)
+    if entry is None:
+        raise FlowError(f"Unknown target: {name}")
+    entry["inside"] = _clean_inside(graph, node_id, inside)
     save_graph(camera, graph)
 
 
@@ -465,7 +500,7 @@ def signature(graph: dict, node_id: str) -> str:
     parent = parent_of(graph, node_id)
     material = {
         "algo": ALGORITHM,
-        "targets": [(t["name"], [e["png"] for e in t["examples"]]) for t in node["targets"]],
+        "targets": [(t["name"], [e["png"] for e in t["examples"]]) + ((t["inside"],) if t.get("inside") else ()) for t in node["targets"]],
         "rotate": node["rotate"],
         "range": node["angle_range"],
         "pad": node["pad"],
@@ -572,6 +607,7 @@ def run_detector(camera: str, node_id: str, report=None, frames: list[str] | Non
             raise FlowError("Run the detector before this one first; its boxes are the search areas here.")
         parent_frames = load_stored(camera, parent)["frames"]
     examples = {t["name"]: [_example_image(e) for e in t["examples"]] for t in usable}
+    inside_names = {t["name"]: inside_of(t) for t in usable}  # the input detector's target each one searches in
     angle_range = tuple(node["angle_range"]) if node["angle_range"] else None
     if not node["rotate"]:
         angle_range = (0.0, 0.0)
@@ -596,7 +632,7 @@ def run_detector(camera: str, node_id: str, report=None, frames: list[str] | Non
                         continue
                     region = None
                     if parent:
-                        inside = parent_frames.get(key, {}).get(name)
+                        inside = parent_frames.get(key, {}).get(inside_names[name])
                         if inside is None:
                             continue
                         region = _as_match(inside).region(picture.shape, node["pad"])
@@ -830,9 +866,10 @@ def node_detail(camera: str, node_id: str, graph: dict | None = None) -> dict:
         detail.update({
             "input": parent if parent and kind_of(parent) == "detector" else INGEST_ID,
             "input_box": parent,
+            "parent_targets": parent_target_names(graph, node_id),
             "crops": input_rects(graph, node_id),
             "targets": [
-                {"name": t["name"], "examples": [{"frame": e["frame"], "box": e["box"], "png": "data:image/png;base64," + e["png"]} for e in t["examples"]]}
+                {"name": t["name"], "inside": t.get("inside"), "examples": [{"frame": e["frame"], "box": e["box"], "png": "data:image/png;base64," + e["png"]} for e in t["examples"]]}
                 for t in node["targets"]
             ],
             "rotate": node["rotate"],
@@ -845,9 +882,12 @@ def node_detail(camera: str, node_id: str, graph: dict | None = None) -> dict:
         names = point_names(graph, node_id)
         a, b = effective_points(graph, node_id)
         values = [v for v in calc_values(camera, node_id, graph).values() if v is not None]
+        parent = parent_of(graph, node_id)
         detail.update({
             "op": node["op"], "operations": OPERATIONS, "points": names, "a": a, "b": b, "clockwise": node["clockwise"],
             "measured": len(values),
+            "input": parent,  # the detector whose boxes the points come from, and the crops above it (its picture)
+            "crops": input_rects(graph, parent) if parent else [],
         })
     elif kind == "evaluation":
         calc_id = evaluation_source(graph, node_id)

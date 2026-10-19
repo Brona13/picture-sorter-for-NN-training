@@ -92,10 +92,14 @@ def _entry(camera: str, detector: str, target: str, frame_hash: str) -> dict | N
     return {**entry, "rects": flow.input_rects(graph, detector) if detector in graph["nodes"] else []}
 
 
+PIXEL_CENTRE = 0.5  # a detector reports the index of the centre pixel; a pixel i covers [i, i + 1] when rectangles are cut
+
+
 def _on_frame(entry: dict, img_w: int, img_h: int) -> dict:
-    """The box in the coordinates of the whole picture: a detector behind a Crop box finds it in the cropped picture."""
+    """The box in the coordinates of the whole picture (a detector behind a Crop box finds it in the cropped picture),
+    as a position in pixel-edge coordinates (the half pixel from pixel indices to pixel edges is added)."""
     ox, oy = flow.rect_offset(entry.get("rects") or [], img_w, img_h)
-    return {**entry, "x": float(entry["x"]) + ox, "y": float(entry["y"]) + oy}
+    return {**entry, "x": float(entry["x"]) + ox + PIXEL_CENTRE, "y": float(entry["y"]) + oy + PIXEL_CENTRE}
 
 
 class Source:

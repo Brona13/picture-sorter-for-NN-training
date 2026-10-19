@@ -216,8 +216,9 @@ export default function FlowBoxPanel({ camera, nodeId, detail, onDetail, onChang
           setNewTarget={setNewTarget}
           running={running}
           progress={job?.progress as { done?: number; total?: number } | undefined}
-          onAdd={() => { const name = newTarget.trim(); if (name) { setNewTarget(""); void act(() => api.flowAddTarget(camera, nodeId, name)); } }}
+          onAdd={() => { const name = newTarget.trim(); if (name) { setNewTarget(""); void act(() => api.flowAddTarget(camera, nodeId, name, detail.parent_targets?.[0])); } }}
           onRemoveTarget={(name) => void act(() => api.flowRemoveTarget(camera, nodeId, name))}
+          onSetInside={(name, inside) => void act(() => api.flowSetTargetInside(camera, nodeId, name, inside))}
           onRemoveExample={(name, i) => void act(() => api.flowRemoveExample(camera, nodeId, name, i))}
           onUpdate={update}
           onRun={() => void run()}
@@ -256,6 +257,7 @@ function DetectorOptions(p: {
   progress?: { done?: number; total?: number };
   onAdd: () => void;
   onRemoveTarget: (name: string) => void;
+  onSetInside: (name: string, inside: string) => void;
   onRemoveExample: (name: string, index: number) => void;
   onUpdate: (body: Record<string, unknown>) => void;
   onRun: () => void;
@@ -268,7 +270,7 @@ function DetectorOptions(p: {
       <PanelSection title="Targets">
         <p className="muted">
           {cascade
-            ? `Searches inside the boxes of ${d.input}: target “A” here looks inside the box named “A” there.`
+            ? `Each target here searches inside the box of one target of ${d.input} (chosen below), widened by the search area.`
             : "Drag a rectangle around what to find on the picture, then name it. The name is the identity of the target."}
         </p>
         {d.targets.map((t) => (
@@ -277,6 +279,19 @@ function DetectorOptions(p: {
               <strong>{t.name}</strong>
               <button type="button" className="danger" onClick={() => p.onRemoveTarget(t.name)} aria-label={`Remove target ${t.name}`}>Remove</button>
             </div>
+            {cascade && (
+              <label className="flow-inside">
+                Searches inside
+                <select
+                  aria-label={`Searches inside, target ${t.name}`}
+                  value={t.inside ?? t.name}
+                  onChange={(e) => p.onSetInside(t.name, e.target.value)}
+                >
+                  {!(d.parent_targets ?? []).includes(t.inside ?? t.name) && <option value={t.inside ?? t.name}>{t.inside ?? t.name} (not a target there)</option>}
+                  {(d.parent_targets ?? []).map((n) => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </label>
+            )}
             <div className="flow-examples">
               {t.examples.length === 0 && <span className="muted">No example yet</span>}
               {t.examples.map((e, i) => (

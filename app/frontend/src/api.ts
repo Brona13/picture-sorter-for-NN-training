@@ -358,7 +358,10 @@ export interface FlowDetector {
   input: string | null;
   /** The crops above this detector: it works on the frame cut by each in turn. */
   crops: number[][];
-  targets: { name: string; examples: FlowExample[] }[];
+  /** `inside`: in a cascade, the input detector's target whose box this target searches in (none = the same name). */
+  targets: { name: string; inside?: string | null; examples: FlowExample[] }[];
+  /** A cascade: the input detector's targets (with examples) a target here can search inside. */
+  parent_targets?: string[];
   rotate: boolean;
   angle_range: [number, number] | null;
   pad: number;
@@ -374,6 +377,9 @@ export interface FlowCalc {
   b: string | null;
   clockwise: boolean;
   measured: number;
+  /** The detector the two points come from, and the crops above it (the picture its boxes are in). */
+  input?: string | null;
+  crops?: number[][];
 }
 export interface FlowEvaluation {
   kind: "evaluation";
@@ -1133,8 +1139,13 @@ export const api = {
     request<{ feature: string; anchor: null }>(`/cameras/${encodeURIComponent(camera)}/rois/${encodeURIComponent(feature)}/anchor`, { method: "DELETE" }),
   flowDisconnect: (camera: string, source: string, target: string) =>
     request<{ source: string; target: string }>(`/cameras/${encodeURIComponent(camera)}/flow/edges/remove`, send("POST", { source, target })),
-  flowAddTarget: (camera: string, id: string, name: string) =>
-    request<FlowNodeDetail>(`/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/targets`, send("POST", { name })),
+  flowAddTarget: (camera: string, id: string, name: string, inside?: string) =>
+    request<FlowNodeDetail>(`/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/targets`, send("POST", inside ? { name, inside } : { name })),
+  flowSetTargetInside: (camera: string, id: string, name: string, inside: string | null) =>
+    request<FlowNodeDetail>(
+      `/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/targets/${encodeURIComponent(name)}`,
+      send("PUT", { inside }),
+    ),
   flowRemoveTarget: (camera: string, id: string, name: string) =>
     request<FlowNodeDetail>(
       `/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/targets/${encodeURIComponent(name)}`,

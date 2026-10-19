@@ -30,6 +30,11 @@ class EdgeBody(BaseModel):
 
 class TargetBody(BaseModel):
     name: str
+    inside: str | None = None  # a cascaded detector: the input detector's target whose box this one searches in
+
+
+class TargetInsideBody(BaseModel):
+    inside: str | None = None
 
 
 class ExampleBody(BaseModel):
@@ -103,7 +108,15 @@ def remove_edge(camera: str, body: EdgeBody) -> dict:
 @router.post("/cameras/{camera}/flow/nodes/{node_id}/targets", status_code=201)
 def add_target(camera: str, node_id: str, body: TargetBody) -> dict:
     _known(camera, node_id)
-    _guard(flow.add_target, camera, node_id, body.name)
+    _guard(flow.add_target, camera, node_id, body.name, body.inside)
+    return flow.node_detail(camera, node_id)
+
+
+@router.put("/cameras/{camera}/flow/nodes/{node_id}/targets/{name}")
+def set_target(camera: str, node_id: str, name: str, body: TargetInsideBody) -> dict:
+    """Change which target of the input detector this target searches inside."""
+    _known(camera, node_id)
+    _guard(flow.set_target_inside, camera, node_id, name, body.inside)
     return flow.node_detail(camera, node_id)
 
 

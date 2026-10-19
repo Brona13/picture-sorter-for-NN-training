@@ -56,7 +56,15 @@ function Card({ camera, row, unit, onOpen, onNominal, info }: { camera: string; 
   );
 }
 
-function Viewer({ camera, rows, start, unit, onClose, onNominal, info }: { camera: string; rows: ValueRow[]; start: string; unit: string; onClose: () => void; onNominal?: (value: number) => void; info?: Info }) {
+/** What a page can add to the viewer: the picture it works on instead of the frame, and drawing over it. */
+export interface ViewerExtras {
+  imageUrl?: (frame: string) => string;
+  overlay?: (row: ValueRow, size: { w: number; h: number }) => ReactNode;
+  /** A line in the viewer's toolbar (what the overlay shows, or why it shows nothing). */
+  note?: (row: ValueRow) => ReactNode;
+}
+
+function Viewer({ camera, rows, start, unit, onClose, onNominal, info, extras }: { camera: string; rows: ValueRow[]; start: string; unit: string; onClose: () => void; onNominal?: (value: number) => void; info?: Info; extras?: ViewerExtras }) {
   const frames = rows.map((r) => r.frame);
   const { frame, index, go } = useBrowse(frames, start, onClose);
   const row = rows.find((r) => r.frame === frame);
@@ -75,10 +83,11 @@ function Viewer({ camera, rows, start, unit, onClose, onNominal, info }: { camer
         <span data-testid="viewer-value" style={{ fontSize: 13 }}>
           {info ? info(row) : <><strong>{show(row, unit)}</strong> {row.verdict && <span className={`flow-verdict ${row.verdict}`}>{row.verdict}</span>}</>}{" "}
           {onNominal && row.value !== null && <button type="button" onClick={() => onNominal(row.value!)}>Use as nominal</button>}
+          {extras?.note && <span className="muted"> · {extras.note(row)}</span>}
         </span>
       }
     >
-      {(width) => <FramePane camera={camera} frame={frame} width={width} />}
+      {(width) => <FramePane camera={camera} frame={frame} width={width} imageUrl={extras?.imageUrl?.(frame)} overlay={extras?.overlay ? (size) => extras.overlay!(row, size) : undefined} />}
     </PictureViewer>
   );
 }
@@ -89,7 +98,7 @@ function Viewer({ camera, rows, start, unit, onClose, onNominal, info }: { camer
  * "Use as nominal". Nothing is labeled here: the page judges a measurement. Ingest uses the same grid with its own line
  * under each picture (`info`).
  */
-export default function ValueGrid({ camera, rows, unit = "", onNominal, info }: { camera: string; rows: ValueRow[]; unit?: string; onNominal?: (value: number) => void; info?: Info }) {
+export default function ValueGrid({ camera, rows, unit = "", onNominal, info, viewer }: { camera: string; rows: ValueRow[]; unit?: string; onNominal?: (value: number) => void; info?: Info; viewer?: ViewerExtras }) {
   const [grid, setGrid] = useState(stored);
   const [page, setPage] = useState(1);
   const [viewing, setViewing] = useState<string | null>(null);
@@ -117,7 +126,7 @@ export default function ValueGrid({ camera, rows, unit = "", onNominal, info }: 
           <Card camera={camera} row={r} unit={unit} info={info} onOpen={() => setViewing(r.frame)} onNominal={onNominal && r.value !== null ? () => onNominal(r.value!) : undefined} />
         )}
       />
-      {viewing && <Viewer camera={camera} rows={rows} start={viewing} unit={unit} info={info} onClose={() => setViewing(null)} onNominal={onNominal} />}
+      {viewing && <Viewer camera={camera} rows={rows} start={viewing} unit={unit} info={info} extras={viewer} onClose={() => setViewing(null)} onNominal={onNominal} />}
     </>
   );
 }

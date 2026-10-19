@@ -409,6 +409,71 @@ class FlowTests(ApiTestCase):
         self.assertAlmostEqual(placed.x * width, LEFT_BOX[0], delta=1.5)
         self.assertAlmostEqual(placed.y * height, LEFT_BOX[1], delta=1.5)
 
+    def test_cascaded_targets_have_their_own_names_and_search_inside_the_chosen_parent_target(self) -> None:
+        import labels
+
+        d1 = self.detector({"left": LEFT_BOX, "right": RIGHT_BOX})
+        d2 = self.node("detector")
+        self.post("/edges", {"source": d1, "target": d2})
+        for name, inside, hole in (("left detail", "left", LEFT_HOLE), ("right detail", "right", RIGHT_HOLE)):
+            self.post(f"/nodes/{d2}/targets", {"name": name, "inside": inside})
+            self.post(f"/nodes/{d2}/examples", {"target": name, "frame": self.names[0], "box": hole})
+        self.put(f"/nodes/{d2}", {"rotate": False})
+        detail = self.node_detail(d2)
+        self.assertEqual([(t["name"], t["inside"]) for t in detail["targets"]], [("left detail", "left"), ("right detail", "right")])
+        self.assertEqual(detail["parent_targets"], ["left", "right"])
+        self.run_all()
+        key = labels.hash_map(CAM)[self.names[0]]
+        first = flow.load_stored(CAM, d1)["frames"][key]
+        found = flow.load_stored(CAM, d2)["frames"][key]
+        self.assertEqual(sorted(found), ["left detail", "right detail"])
+        # each hole is found inside the box of its own parent target
+        self.assertAlmostEqual(found["left detail"]["x"], LEFT_HOLE[0] + LEFT_HOLE[2] / 2, delta=1.5)
+        self.assertAlmostEqual(found["right detail"]["x"], RIGHT_HOLE[0] + RIGHT_HOLE[2] / 2, delta=1.5)
+        self.assertLess(abs(found["left detail"]["x"] - first["left"]["x"]), LEFT_BOX[2])
+        # a Calculate box after it offers the child's own names
+        calc = self.node("calc")
+        self.post("/edges", {"source": d2, "target": calc})
+        self.assertEqual(self.node_detail(calc)["points"], ["left detail", "right detail"])
+
+    def test_cascaded_target_link_is_validated_changeable_and_part_of_the_signature(self) -> None:
+        d1 = self.detector({"left": LEFT_BOX, "right": RIGHT_BOX})
+        d2 = self.node("detector")
+        self.post("/edges", {"source": d1, "target": d2})
+        bad = self.client.post(f"{self.base}/nodes/{d2}/targets", json={"name": "x", "inside": "nope"})
+        self.assertEqual(bad.status_code, 422)
+        self.post(f"/nodes/{d2}/targets", {"name": "hole", "inside": "left"})
+        self.post(f"/nodes/{d2}/examples", {"target": "hole", "frame": self.names[0], "box": LEFT_HOLE})
+        before = flow.signature(flow.load_graph(CAM), d2)
+        moved = self.client.put(f"{self.base}/nodes/{d2}/targets/hole", json={"inside": "right"})
+        self.assertEqual(moved.status_code, 200, moved.text)
+        self.assertEqual(moved.json()["targets"][0]["inside"], "right")
+        self.assertNotEqual(before, flow.signature(flow.load_graph(CAM), d2))
+        self.assertEqual(self.client.put(f"{self.base}/nodes/{d2}/targets/hole", json={"inside": "zzz"}).status_code, 422)
+        self.assertEqual(self.client.put(f"{self.base}/nodes/{d2}/targets/none", json={"inside": "left"}).status_code, 422)
+        # no link: the old rule (same name) still holds, and a first-level detector cannot have a link
+        self.post(f"/nodes/{d2}/targets", {"name": "left"})
+        self.assertIsNone(self.node_detail(d2)["targets"][1]["inside"])
+        solo = self.node("detector")
+        self.assertEqual(self.client.post(f"{self.base}/nodes/{solo}/targets", json={"name": "a", "inside": "left"}).status_code, 422)
+
+    def test_a_picture_without_the_parent_box_is_skipped_for_the_cascaded_target(self) -> None:
+        import labels
+
+        d1 = self.detector({"left": LEFT_BOX})
+        d2 = self.node("detector")
+        self.post("/edges", {"source": d1, "target": d2})
+        self.post(f"/nodes/{d2}/targets", {"name": "hole", "inside": "left"})
+        self.post(f"/nodes/{d2}/examples", {"target": "hole", "frame": self.names[0], "box": LEFT_HOLE})
+        self.put(f"/nodes/{d2}", {"rotate": False})
+        self.run_all()
+        gone = labels.hash_map(CAM)[self.names[1]]
+        stored = flow.load_stored(CAM, d1)
+        flow._store(CAM, d1, stored["sig"], {k: ({} if k == gone else v) for k, v in stored["frames"].items()})
+        flow.run_detector(CAM, d2)
+        self.assertNotIn("hole", flow.load_stored(CAM, d2)["frames"][gone])
+        self.assertIn(self.names[1], flow.review_frames(CAM, d2))
+
 
 def width_of(case: "FlowTests") -> int:
     return cv2.imread(str(datamodel.unsorted_dir(CAM) / case.names[0])).shape[1]
@@ -441,6 +506,7 @@ def height_of(case: "FlowTests") -> int:
 
             x0, y0, x1, y1 = rotsearch.Match(entry["x"], entry["y"], entry["angle"], 1.0, entry["w"], entry["h"]).bbox()
             gx, gy = (x1 - x0) * 0.1, (y1 - y0) * 0.1
+            x0, x1, y0, y1 = x0 + 0.5, x1 + 0.5, y0 + 0.5, y1 + 0.5  # pixel index -> pixel edge coordinates
             self.assertAlmostEqual(placed.x * width, max(0.0, x0 - gx), delta=0.01)
             self.assertAlmostEqual((placed.x + placed.w) * width, min(float(width), x1 + gx), delta=0.01)
             self.assertAlmostEqual(placed.y * height, max(0.0, y0 - gy), delta=0.01)
@@ -494,3 +560,13 @@ def height_of(case: "FlowTests") -> int:
         entry = flow.load_stored(CAM, d1)["frames"][key]["A"]
         placed = engine.resolve_roi_for_frame(CAM, "part", key, width, height)
         self.assertAlmostEqual((placed.x + placed.w / 2) * width, entry["x"] + 10.0, delta=0.6)
+
+    def test_calculate_detail_names_its_detector_and_the_crops_above_it(self) -> None:
+        crop, width, height = self._crop([20, 30, 200, 150])
+        det = self.node("detector")
+        self.post("/edges", {"source": crop, "target": det})
+        calc = self.node("calc")
+        self.post("/edges", {"source": det, "target": calc})
+        detail = self.node_detail(calc)
+        self.assertEqual(detail["input"], det)
+        self.assertEqual(len(detail["crops"]), 1)

@@ -274,8 +274,8 @@ button[aria-pressed="true"] { background: var(--info-bg); color: var(--info-fg);
 .flow-chip[aria-pressed="true"] { background: var(--hover); box-shadow: 0 0 0 2px color-mix(in srgb, var(--fg) 45%, transparent); }
 .flow-chip small { color: var(--muted); }
 .flow-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
-.flow-stage { position: relative; align-self: flex-start; max-width: 100%; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: #000; line-height: 0; }
-.flow-stage img { display: block; width: min(100%, 760px); height: auto; user-select: none; }
+.flow-stage { position: relative; align-self: flex-start; width: min(100%, 760px); max-width: 100%; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: #000; line-height: 0; }
+.flow-stage img { display: block; width: 100%; height: auto; user-select: none; }
 .flow-stage svg { position: absolute; inset: 0; width: 100%; height: 100%; cursor: crosshair; touch-action: none; }
 .flow-nav { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .flow-nav-right { margin-left: auto; display: inline-flex; flex-direction: row; align-items: center; gap: 6px; font-size: 12px; }

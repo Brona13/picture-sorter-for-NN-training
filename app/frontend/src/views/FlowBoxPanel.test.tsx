@@ -136,7 +136,7 @@ test("Evaluation page: lists the pictures by value and takes a picture's value a
 
 test("Cascade detector page shows one picture per box of the input detector, zoomed to that box", async () => {
   const parentDetail = { kind: "detector", input: "ingest", crops: [], rotate: true, angle_range: null, pad: 0.3, status: "fresh", targets: [{ name: "left hole", examples: [{ frame: "a.png", box: [0, 0, 60, 40], png: "data:image/png;base64,AA" }] }], summary: { frames: 2, found: { "left hole": 1 }, complete: 1, review: 1 } };
-  const own = { ...parentDetail, input: "det:1", targets: [], status: "none" };
+  const own = { ...parentDetail, input: "det:1", parent_targets: ["left hole"], targets: [], status: "none" };
   const box = { x: 100, y: 100, w: 60, h: 40, angle: 0, score: 0.9, source: "auto" };
   routes(own, (url) => {
     if (url.includes("/nodes/det%3A1/boxes")) return { boxes: { "a.png": { "left hole": box } }, review: [] };
@@ -153,7 +153,8 @@ test("Cascade detector page shows one picture per box of the input detector, zoo
   expect(overlay.getAttribute("viewBox")).toBe("52 68 96 64");
   expect(screen.getByText(/Each picture is the “left hole” box found by det:1/)).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Show b.png" })).not.toBeInTheDocument(); // b.png has no box in the input detector
-  expect(screen.queryByRole("button", { name: "+ New target" })).not.toBeInTheDocument();
+  expect(screen.getByRole("group", { name: "Search inside" })).toHaveTextContent("left hole");
+  expect(screen.getByRole("button", { name: "+ New target" })).toBeInTheDocument(); // a cascaded detector names its own targets
 });
 
 test("resizeRect moves the dragged edges only and keeps a minimum size", () => {
@@ -274,4 +275,75 @@ test("Evaluation page: the histogram can be hidden, a zoomed range narrows the g
   await userEvent.click(screen.getByLabelText("Histogram"));
   expect(screen.queryByRole("img", { name: "Histogram of the measured values" })).toBeNull();
   expect(localStorage.getItem("flow.histogram")).toBe("off");
+});
+
+test("Calculate page: the viewer draws the geometry behind the number (both boxes, the line, the arc and the value)", async () => {
+  const box = (x: number, y: number) => ({ x, y, w: 40, h: 40, angle: 0, score: 0.9, source: "auto" });
+  const calcDetail = { kind: "calc", op: "angle", operations: { angle: "Angle A to B" }, points: ["left", "right"], a: "left", b: "right", clockwise: false, measured: 2, input: "det:1", crops: [] };
+  routes(calcDetail, (url) => {
+    if (url.includes("/nodes/calc%3A1/values")) return { values: { "a.png": 45, "b.png": 10 }, unit: "deg" };
+    if (url.includes("/nodes/det%3A1/boxes")) return { boxes: { "a.png": { left: box(100, 200), right: box(200, 100) }, "b.png": { left: box(100, 200) } }, review: [] };
+    if (url.includes("/nodes/calc%3A1")) return calcDetail;
+    return undefined;
+  });
+  render(<FlowBoxView camera="camA" focus={{ nodeId: "calc:1", onBack: () => {} }} />);
+  await userEvent.click(await screen.findByRole("button", { name: "Open a.png" }));
+  const svg = await screen.findByTestId("calc-geometry");
+  expect(svg).toHaveTextContent("45 °");
+  expect(svg).toHaveTextContent("left");
+  expect(svg).toHaveTextContent("right");
+  expect(svg.querySelectorAll("path").length).toBeGreaterThan(0); // the arc
+  expect(screen.getByTestId("viewer-value")).toHaveTextContent("Angle A to B: left → right");
+  // a picture where a point is missing draws what it has and says what is missing
+  fireEvent.keyDown(window, { key: "ArrowLeft" }); // sorted by value: b.png (10) comes before a.png (45)
+  expect(await screen.findByText(/not found here: right/)).toBeInTheDocument();
+  expect(screen.getByTestId("calc-geometry").querySelectorAll("path")).toHaveLength(0);
+});
+
+test("Cascade detector page: a drawn rectangle becomes a new target with its own name, searching inside the chosen parent target", async () => {
+  vi.stubGlobal("PointerEvent", MouseEvent);
+  const parentDetail = { kind: "detector", input: "ingest", crops: [], rotate: true, angle_range: null, pad: 0.3, status: "fresh", targets: [{ name: "hole left", examples: [{ frame: "a.png", box: [0, 0, 60, 40], png: "data:image/png;base64,AA" }] }, { name: "hole right", examples: [{ frame: "a.png", box: [0, 0, 60, 40], png: "data:image/png;base64,AA" }] }], summary: { frames: 2, found: {}, complete: 0, review: 0 } };
+  const own = { ...parentDetail, input: "det:1", parent_targets: ["hole left", "hole right"], targets: [], status: "none" };
+  const box = { x: 100, y: 100, w: 60, h: 40, angle: 0, score: 0.9, source: "auto" };
+  routes(own, (url, method) => {
+    if (url.includes("/nodes/det%3A1/boxes")) return { boxes: { "a.png": { "hole left": box, "hole right": { ...box, x: 300 } } }, review: [] };
+    if (url.includes("/nodes/det%3A1")) return parentDetail;
+    if (method === "POST" && url.endsWith("/targets")) return { ...own, targets: [{ name: "hole right detail", inside: "hole right", examples: [] }] };
+    if (method === "POST" && url.endsWith("/examples")) return own;
+    return undefined;
+  });
+  render(<FlowBoxView camera="camA" focus={{ nodeId: "det:2", onBack: () => {} }} />);
+  const img = await screen.findByAltText("a.png", {}, { timeout: 4000 });
+  Object.defineProperty(img, "naturalWidth", { value: 400 });
+  Object.defineProperty(img, "naturalHeight", { value: 300 });
+  fireEvent.load(img);
+  // choose the right hole's box, then draw: the new target is named next (suggested from the parent target)
+  await userEvent.click(screen.getByRole("button", { name: "hole right" }));
+  const overlay = await screen.findByTestId("flow-overlay", {}, { timeout: 4000 });
+  overlay.getBoundingClientRect = () => ({ left: 0, top: 0, width: 100, height: 100, right: 100, bottom: 100, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
+  fireEvent.pointerDown(overlay, { clientX: 20, clientY: 20 });
+  fireEvent.pointerMove(overlay, { clientX: 60, clientY: 60 });
+  fireEvent.pointerUp(overlay, { clientX: 60, clientY: 60 });
+  const name = await screen.findByLabelText(/What is this/);
+  expect(name).toHaveValue("hole right detail");
+  await userEvent.click(screen.getByRole("button", { name: "Save target" }));
+  await waitFor(() => expect(calls.some((c) => c.method === "POST" && c.url.endsWith("/targets"))).toBe(true));
+  expect(calls.find((c) => c.method === "POST" && c.url.endsWith("/targets"))!.body).toEqual({ name: "hole right detail", inside: "hole right" });
+  await waitFor(() => expect(calls.some((c) => c.method === "POST" && c.url.endsWith("/examples"))).toBe(true));
+  expect(calls.find((c) => c.method === "POST" && c.url.endsWith("/examples"))!.body.target).toBe("hole right detail");
+  vi.unstubAllGlobals();
+});
+
+test("Detector panel in a cascade: each target says which parent target it searches inside, and the choice can be changed", async () => {
+  const detail = {
+    kind: "detector", input: "det:1", crops: [], parent_targets: ["hole left", "hole right"], rotate: true, angle_range: null, pad: 0.3, status: "none",
+    targets: [{ name: "hole left detail", inside: "hole left", examples: [] }], summary: { frames: 0, found: {}, complete: 0, review: 0 },
+  };
+  routes(detail, (url, method) => (method === "PUT" && url.includes("/targets/") ? { ...detail, targets: [{ ...detail.targets[0], inside: "hole right" }] } : undefined));
+  render(<FlowBoxPanel camera="camA" nodeId="det:2" detail={detail as unknown as FlowNodeDetail} onDetail={() => {}} onChanged={() => {}} />);
+  const select = screen.getByLabelText("Searches inside, target hole left detail");
+  expect(select).toHaveValue("hole left");
+  await userEvent.selectOptions(select, "hole right");
+  await waitFor(() => expect(calls.some((c) => c.method === "PUT" && c.url.includes("/targets/hole%20left%20detail"))).toBe(true));
+  expect(calls.find((c) => c.method === "PUT")!.body).toEqual({ inside: "hole right" });
 });
