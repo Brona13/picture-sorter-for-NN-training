@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { FlowNodeDetail, FlowEvaluation } from "../api";
 import FlowBoxPanel, { deviation, dragBand, EvaluationHistogram, rebin } from "./FlowBoxPanel";
-import FlowBoxView, { rectOf, resizeRect } from "./FlowBoxView";
+import FlowBoxView, { grabCursor, Handle, rectOf, resizeRect } from "./FlowBoxView";
 
 let calls: { url: string; method: string; body?: any }[];
 let detail: any;
@@ -186,6 +186,85 @@ test("Detector page: clicking an example rectangle selects it; dragging it moves
   fireEvent.pointerUp(overlay, { clientX: 30, clientY: 25 });
   await waitFor(() => expect(calls.some((c) => c.method === "PUT" && c.url.includes("/examples/left%20hole/0"))).toBe(true));
   expect(calls.find((c) => c.method === "PUT" && c.url.includes("/examples/"))?.body).toEqual({ box: [20, 15, 40, 30] });
+  vi.unstubAllGlobals();
+});
+
+test("resizeRect stops at the picture: never past the top or left, and past the bottom or right when its size is given", () => {
+  expect(resizeRect([10, 10, 40, 30], "nw", -100, -100)).toEqual([0, 0, 50, 40]);
+  expect(resizeRect([10, 10, 40, 30], "se", 500, 500)).toEqual([10, 10, 540, 530]); // no size given: as before
+  expect(resizeRect([10, 10, 40, 30], "se", 500, 500, 5, { w: 100, h: 80 })).toEqual([10, 10, 90, 70]);
+  expect(resizeRect([10, 10, 40, 30], "e", 500, 0, 5, { w: 100, h: 80 })).toEqual([10, 10, 90, 30]);
+});
+
+test("grabCursor: resize arrows per handle, move inside a box (the ROI editor's cursors)", () => {
+  expect(grabCursor("move")).toBe("move");
+  expect(["nw", "se"].map((h) => grabCursor(h as Handle))).toEqual(["nwse-resize", "nwse-resize"]);
+  expect(["ne", "sw"].map((h) => grabCursor(h as Handle))).toEqual(["nesw-resize", "nesw-resize"]);
+  expect(["n", "s"].map((h) => grabCursor(h as Handle))).toEqual(["ns-resize", "ns-resize"]);
+  expect(["e", "w"].map((h) => grabCursor(h as Handle))).toEqual(["ew-resize", "ew-resize"]);
+});
+
+async function openDetectorOn100px() {
+  vi.stubGlobal("PointerEvent", MouseEvent);
+  const detector = {
+    kind: "detector", input: "ingest", crops: [], rotate: true, angle_range: null, pad: 0.3, status: "fresh",
+    targets: [{ name: "left hole", examples: [{ frame: "a.png", box: [10, 10, 40, 30], png: "data:image/png;base64,AA" }] }],
+    summary: { frames: 2, found: { "left hole": 0 }, complete: 0, review: 0 },
+  };
+  routes(detector, (url, method) => (method === "PUT" && url.includes("/examples/") ? { ...detector, status: "stale" } : undefined));
+  render(<FlowBoxView camera="camA" focus={{ nodeId: "det:1", onBack: () => {} }} />);
+  const img = await screen.findByAltText("a.png", {}, { timeout: 4000 });
+  Object.defineProperty(img, "naturalWidth", { value: 100 });
+  Object.defineProperty(img, "naturalHeight", { value: 100 });
+  fireEvent.load(img);
+  const overlay = await screen.findByTestId("flow-overlay", {}, { timeout: 4000 });
+  overlay.getBoundingClientRect = () => ({ left: 0, top: 0, width: 100, height: 100, right: 100, bottom: 100, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
+  return overlay;
+}
+
+test("Detector page: the cursor tells what a press would do - move over an example, resize arrows on a handle, crosshair elsewhere", async () => {
+  const overlay = await openDetectorOn100px();
+  const canvas = screen.getByTestId("flow-canvas");
+  const at = (x: number, y: number) => { fireEvent.pointerMove(overlay, { clientX: x, clientY: y }); return canvas.style.cursor; };
+  expect(at(80, 80)).toBe("crosshair"); // empty picture: a drag draws
+  expect(at(30, 25)).toBe("move"); // inside an example, not yet selected
+  expect(at(50, 40)).toBe("move");
+  fireEvent.pointerDown(overlay, { clientX: 30, clientY: 25 }); // select it
+  fireEvent.pointerUp(overlay, { clientX: 30, clientY: 25 });
+  expect(await screen.findByTestId("handle-se")).toBeInTheDocument();
+  expect(at(50, 40)).toBe("nwse-resize"); // se
+  expect(at(10, 10)).toBe("nwse-resize"); // nw
+  expect(at(50, 10)).toBe("nesw-resize"); // ne
+  expect(at(10, 40)).toBe("nesw-resize"); // sw
+  expect(at(30, 10)).toBe("ns-resize"); // n
+  expect(at(50, 25)).toBe("ew-resize"); // e
+  expect(at(30, 25)).toBe("move");
+  expect(at(80, 80)).toBe("crosshair");
+  vi.unstubAllGlobals();
+});
+
+test("Detector page: while a handle is dragged the cursor keeps its arrows, and the box stops at the picture edge", async () => {
+  const overlay = await openDetectorOn100px();
+  const canvas = screen.getByTestId("flow-canvas");
+  fireEvent.pointerDown(overlay, { clientX: 30, clientY: 25 });
+  fireEvent.pointerUp(overlay, { clientX: 30, clientY: 25 });
+  await screen.findByTestId("handle-se");
+  fireEvent.pointerDown(overlay, { clientX: 50, clientY: 40 }); // the se handle
+  fireEvent.pointerMove(overlay, { clientX: 400, clientY: 400 }); // far outside the picture
+  expect(canvas.style.cursor).toBe("nwse-resize");
+  fireEvent.pointerUp(overlay, { clientX: 400, clientY: 400 });
+  await waitFor(() => expect(calls.some((c) => c.method === "PUT" && c.url.includes("/examples/left%20hole/0"))).toBe(true));
+  expect(calls.find((c) => c.method === "PUT" && c.url.includes("/examples/"))?.body).toEqual({ box: [10, 10, 90, 90] });
+  vi.unstubAllGlobals();
+});
+
+test("Detector page: a new rectangle dragged past the picture edge ends at the edge", async () => {
+  const overlay = await openDetectorOn100px();
+  fireEvent.pointerDown(overlay, { clientX: 60, clientY: 60 });
+  fireEvent.pointerMove(overlay, { clientX: 300, clientY: 250 });
+  fireEvent.pointerUp(overlay, { clientX: 300, clientY: 250 });
+  await waitFor(() => expect(calls.some((c) => c.method === "POST" && c.url.endsWith("/examples"))).toBe(true));
+  expect(calls.find((c) => c.method === "POST" && c.url.endsWith("/examples"))?.body.box).toEqual([60, 60, 40, 40]);
   vi.unstubAllGlobals();
 });
 

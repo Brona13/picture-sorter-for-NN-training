@@ -4,6 +4,7 @@ import CropWork from "./CropWork";
 import PictureSizeSlider, { usePictureSize } from "../PictureSize";
 import SidePanel from "../SidePanel";
 import { drawn, stored } from "../pixelCentre";
+import { HANDLE_CURSOR } from "../roiGeometry";
 import ZoomPane from "../ZoomPane";
 import { FIT_VIEW, fitSize, View } from "../zoomGeometry";
 import FlowBoxPanel, { EvaluationHistogram } from "./FlowBoxPanel";
@@ -15,6 +16,7 @@ const CHART_STORE = "flow.histogram";
 /** The look of a rectangle being drawn or edited, the same as in the ROI editor. */
 const ROI_RED = "#ff3030";
 const ROI_FILL = "rgba(255,165,0,0.2)";
+const ROI_HOVER = "rgba(255,165,0,0.1)"; // the example under the pointer, before it is selected
 const COLORS = ["#e8590c", "#1c7ed6", "#2f9e44", "#ae3ec9", "#f08c00", "#0c8599", "#c2255c", "#5c940d"];
 const STRIP_WINDOW = 60;
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -30,15 +32,23 @@ export type Rect = [number, number, number, number];
 export type Handle = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
 const HANDLES: Handle[] = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
 
-/** The rectangle after dragging one of its handles by (dx, dy) picture pixels; it never gets smaller than `min`. */
-export function resizeRect(r: Rect, handle: Handle, dx: number, dy: number, min = 5): Rect {
+/**
+ * The rectangle after dragging one of its handles by (dx, dy) picture pixels; it never gets smaller than `min`, never
+ * crosses the top or left edge of the picture and, given its size in `bounds`, never the bottom or right one (like the
+ * ROI editor, whose handles stop at the frame).
+ */
+export function resizeRect(r: Rect, handle: Handle, dx: number, dy: number, min = 5, bounds?: { w: number; h: number }): Rect {
   let [x0, y0, x1, y1] = [r[0], r[1], r[0] + r[2], r[1] + r[3]];
-  if (handle.includes("w")) x0 = Math.min(x0 + dx, x1 - min);
-  if (handle.includes("e")) x1 = Math.max(x1 + dx, x0 + min);
-  if (handle.includes("n")) y0 = Math.min(y0 + dy, y1 - min);
-  if (handle.includes("s")) y1 = Math.max(y1 + dy, y0 + min);
+  const [maxX, maxY] = [bounds?.w ?? Infinity, bounds?.h ?? Infinity];
+  if (handle.includes("w")) x0 = Math.max(0, Math.min(x0 + dx, x1 - min));
+  if (handle.includes("e")) x1 = Math.min(maxX, Math.max(x1 + dx, x0 + min));
+  if (handle.includes("n")) y0 = Math.max(0, Math.min(y0 + dy, y1 - min));
+  if (handle.includes("s")) y1 = Math.min(maxY, Math.max(y1 + dy, y0 + min));
   return [x0, y0, x1 - x0, y1 - y0];
 }
+
+/** The mouse cursor for grabbing a rectangle: its handle's resize arrows, or "move" inside it. */
+export const grabCursor = (kind: "move" | Handle): string => (kind === "move" ? "move" : HANDLE_CURSOR[kind]);
 
 const handlePoint = (r: Rect, h: Handle) => ({
   x: h.includes("w") ? r[0] : h.includes("e") ? r[0] + r[2] : r[0] + r[2] / 2,
@@ -194,7 +204,8 @@ function DetectorWork(p: {
   const point = (e: React.PointerEvent) => {
     const r = svg.current!.getBoundingClientRect();
     const v = view!;
-    return { x: v.x + ((e.clientX - r.left) / r.width) * v.w, y: v.y + ((e.clientY - r.top) / r.height) * v.h };
+    const inside = (a: number, lo: number, len: number) => Math.min(lo + len, Math.max(lo, a)); // never off the picture on show
+    return { x: inside(v.x + ((e.clientX - r.left) / r.width) * v.w, v.x, v.w), y: inside(v.y + ((e.clientY - r.top) / r.height) * v.h, v.y, v.h) };
   };
 
   useEffect(() => { setSel(null); setEdit(null); }, [frame, mode]);
@@ -220,6 +231,10 @@ function DetectorWork(p: {
     }
     return null;
   };
+
+  // The cursor says what a press would do, as in the ROI editor: resize arrows on a handle, move over a box, crosshair to draw.
+  const under = mode === "draw" && !edit && !drag && hover ? hitExample(hover) : null;
+  const cursor = edit ? grabCursor(edit.kind) : under ? grabCursor(under.kind) : "crosshair";
 
   const commitEdit = async () => {
     if (!edit || !sel) return;
@@ -256,7 +271,7 @@ function DetectorWork(p: {
       const [ox, oy, ow, oh] = edit.orig;
       const cur: Rect = edit.kind === "move"
         ? [Math.min(Math.max(0, ox + dx), (size?.w ?? Infinity) - ow), Math.min(Math.max(0, oy + dy), (size?.h ?? Infinity) - oh), ow, oh]
-        : resizeRect(edit.orig, edit.kind, dx, dy);
+        : resizeRect(edit.orig, edit.kind, dx, dy, 5, size ?? undefined);
       setEdit({ ...edit, cur });
     } else if (drag) {
       setDrag({ from: drag.from, to: point(e) });
@@ -400,7 +415,7 @@ function DetectorWork(p: {
             onViewChange={setZoom}
             contentRef={contentRef}
             contentTestId="flow-canvas"
-            contentCursor="crosshair"
+            contentCursor={cursor}
             info={[
               hover ? `pixel ${Math.floor(hover.x)}, ${Math.floor(hover.y)}` : null,
               drag && mode === "draw" ? `rectangle ${rectOf(drag.from, drag.to)[2]} × ${rectOf(drag.from, drag.to)[3]} px` : null,
@@ -432,7 +447,7 @@ function DetectorWork(p: {
                     <g key={`ex${e.name}${e.index}`}>
                       {/* a dark line under the coloured one keeps it visible on a white part of the picture */}
                       <rect x={b[0]} y={b[1]} width={b[2]} height={b[3]} fill="none" stroke="rgba(0,0,0,.75)" strokeWidth={4} vectorEffect="non-scaling-stroke" pointerEvents="none" />
-                      <rect x={b[0]} y={b[1]} width={b[2]} height={b[3]} fill={active ? ROI_FILL : "none"} stroke={active ? ROI_RED : COLORS[e.ti % COLORS.length]} strokeWidth={2} strokeDasharray={active ? undefined : "6 3"} vectorEffect="non-scaling-stroke" data-testid="example-rect" />
+                      <rect x={b[0]} y={b[1]} width={b[2]} height={b[3]} fill={active ? ROI_FILL : under?.e.name === e.name && under.e.index === e.index ? ROI_HOVER : "none"} stroke={active ? ROI_RED : COLORS[e.ti % COLORS.length]} strokeWidth={2} strokeDasharray={active ? undefined : "6 3"} vectorEffect="non-scaling-stroke" data-testid="example-rect" />
                       {active && HANDLES.map((h) => {
                         const c = handlePoint(b, h);
                         return <rect key={h} data-testid={`handle-${h}`} x={c.x - handleSize / 2} y={c.y - handleSize / 2} width={handleSize} height={handleSize} fill={ROI_RED} stroke="#fff" strokeWidth={1} vectorEffect="non-scaling-stroke" />;

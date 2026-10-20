@@ -4,6 +4,7 @@ import {
   boxFromDrag,
   boxStyle,
   Handle,
+  HANDLE_CURSOR,
   moveBox,
   Point,
   pointerToNorm,
@@ -22,16 +23,6 @@ const HANDLE_POS: Record<Handle, [string, string]> = {
   s: ["50%", "100%"],
   sw: ["0%", "100%"],
   w: ["0%", "50%"],
-};
-const CURSOR: Record<Handle, string> = {
-  nw: "nwse-resize",
-  se: "nwse-resize",
-  ne: "nesw-resize",
-  sw: "nesw-resize",
-  n: "ns-resize",
-  s: "ns-resize",
-  e: "ew-resize",
-  w: "ew-resize",
 };
 
 type Drag =
@@ -165,7 +156,7 @@ export default function RoiCanvas({ imageUrl, mode, box, onChange, others = [], 
                   marginTop: -6,
                   background: "#ff3030",
                   border: "1px solid #fff",
-                  cursor: CURSOR[h],
+                  cursor: HANDLE_CURSOR[h],
                 }}
               />
             ))}

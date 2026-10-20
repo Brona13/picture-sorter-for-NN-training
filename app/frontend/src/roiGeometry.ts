@@ -10,6 +10,18 @@ export type Handle = "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw";
 
 export const MIN_SIZE = 0.005;
 
+/** The mouse cursor over each resize handle (the ROI editor and the detector page share it). */
+export const HANDLE_CURSOR: Record<Handle, string> = {
+  nw: "nwse-resize",
+  se: "nwse-resize",
+  ne: "nesw-resize",
+  sw: "nesw-resize",
+  n: "ns-resize",
+  s: "ns-resize",
+  e: "ew-resize",
+  w: "ew-resize",
+};
+
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
 /** Pointer position -> normalised point inside a rendered image rectangle. */
