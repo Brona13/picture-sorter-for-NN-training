@@ -149,7 +149,8 @@ function FollowCrop(p: Props & { follow: FlowFollow }) {
   const latest = useRef<Box | null>(null);
   const dirty = useRef(false);
   const missing = useMemo(() => new Set(follow.missing), [follow.missing]);
-  const url = frame ? flowPictureUrl(camera, nodeId, frame, { key: detail.crops }) : "";
+  const straight = follow.mode === "straighten"; // the picture is shown turned back by the found angle: the rectangle is drawn on the upright part
+  const url = frame ? flowPictureUrl(camera, nodeId, frame, { key: [detail.crops, follow.mode], straighten: straight }) : "";
   const pixels = usePictureSize2(url);
   const target = frame ? found[frame]?.[follow.target] : undefined;
 
@@ -220,6 +221,7 @@ function FollowCrop(p: Props & { follow: FlowFollow }) {
           : drawn
             ? "The green outline is the target the detector found. Drag the rectangle to move it, or a corner or edge to resize it; every picture is cut at the same place next to its target. Saved when you let go."
             : "The green outline is the target the detector found. Drag on the picture to draw the rectangle once; it then follows the target on every picture."}
+          {straight && " The picture is shown turned back by the found angle, as the cut will be."}
       </p>
       {frame ? (
         <div onPointerUpCapture={release} onPointerCancelCapture={release} style={target ? undefined : { opacity: 0.55, pointerEvents: "none" }}>

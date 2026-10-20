@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { api, FlowCalc, FlowCrop, FlowDetector, FlowNodeDetail, FlowEvaluation } from "../api";
+import { api, FLOW_OUTPUTS, FlowCalc, FlowCrop, FlowDetector, FlowNodeDetail, FlowEvaluation, FlowOutput } from "../api";
 import { PanelSection } from "../SidePanel";
 import { useJob } from "../useJob";
 
@@ -256,6 +256,7 @@ export default function FlowBoxPanel({ camera, nodeId, detail, onDetail, onChang
           onAdd={() => { const name = newTarget.trim(); if (name) { setNewTarget(""); void act(() => api.flowAddTarget(camera, nodeId, name, detail.parent_targets?.[0])); } }}
           onRemoveTarget={(name) => void act(() => api.flowRemoveTarget(camera, nodeId, name))}
           onSetInside={(name, inside) => void act(() => api.flowSetTargetInside(camera, nodeId, name, inside))}
+          onSetOutputs={(name, outputs) => void act(() => api.flowSetTargetOutputs(camera, nodeId, name, outputs))}
           onRemoveExample={(name, i) => void act(() => api.flowRemoveExample(camera, nodeId, name, i))}
           onUpdate={update}
           onRun={() => void run()}
@@ -275,7 +276,26 @@ function CropOptions({ detail, onUpdate }: { detail: FlowCrop; onUpdate: (body: 
       <PanelSection title="Crop follows a target">
         <p className="muted">
           This Crop is fed by target <strong>{f.target}</strong> of {f.detector}. Its rectangle has one size and keeps the same place
-          next to the found target on every picture. Draw it once on a picture where the target was found. The picture is not turned.
+          next to the found target on every picture. Draw it once on a picture where the target was found.
+        </p>
+        <p className="muted">
+          {f.detector} offers from {f.target}: {FLOW_OUTPUTS.filter((o) => f.offered.includes(o.id)).map((o) => o.label.toLowerCase()).join(", ") || "nothing"}.
+        </p>
+        <label>
+          Use of the target
+          <select value={f.mode} onChange={(e) => onUpdate({ follow_mode: e.target.value })}>
+            {f.modes.map((m) => (
+              <option key={m.id} value={m.id} disabled={!m.enabled} title={m.enabled ? undefined : `Tick ${m.needs.join(", ")} on ${f.detector} for ${f.target}`}>
+                {m.label}{m.enabled ? "" : ` (tick ${m.needs.join(", ")} on the detector)`}
+              </option>
+            ))}
+          </select>
+        </label>
+        <p className="muted">
+          {f.mode === "straighten"
+            ? "The picture is turned back by the found angle around the target before the cut, so the part is always upright in the same place (corners that fall outside the picture are grey)."
+            : "The picture is not turned: the rectangle only moves with the position."}
+          {" "}Changing this clears the rectangle; draw it again.
         </p>
         <p>{f.size ? `${f.size[0]} × ${f.size[1]} px · offset ${f.offset?.[0]}, ${f.offset?.[1]} px from the target` : "No rectangle drawn yet: the picture passes on unchanged."}</p>
         <p className={f.missing.length ? "flow-missing" : "muted"} role="status">
@@ -303,6 +323,34 @@ function CropOptions({ detail, onUpdate }: { detail: FlowCrop; onUpdate: (body: 
   );
 }
 
+/** Per target: which outputs it offers the boxes its line feeds (the lines themselves stay one per target). */
+function OutputsSection({ detail, onSetOutputs }: { detail: FlowDetector; onSetOutputs: (name: string, outputs: FlowOutput[]) => void }) {
+  const [picked, setPicked] = useState("");
+  const target = detail.targets.find((t) => t.name === picked) ?? detail.targets[0];
+  if (!target) return null;
+  return (
+    <PanelSection title="Outputs">
+      <p className="muted">What this target offers to the box its line feeds. The box then chooses how to use it.</p>
+      <label>
+        Target
+        <select value={target.name} onChange={(e) => setPicked(e.target.value)}>
+          {detail.targets.map((t) => <option key={t.name} value={t.name}>{t.name}</option>)}
+        </select>
+      </label>
+      {FLOW_OUTPUTS.map((o) => (
+        <label key={o.id} className="flow-check">
+          <input
+            type="checkbox"
+            checked={target.outputs.includes(o.id)}
+            onChange={(e) => onSetOutputs(target.name, e.target.checked ? [...target.outputs, o.id] : target.outputs.filter((x) => x !== o.id))}
+          />{" "}
+          {o.label}
+        </label>
+      ))}
+    </PanelSection>
+  );
+}
+
 function DetectorOptions(p: {
   detail: FlowDetector;
   newTarget: string;
@@ -312,6 +360,7 @@ function DetectorOptions(p: {
   onAdd: () => void;
   onRemoveTarget: (name: string) => void;
   onSetInside: (name: string, inside: string) => void;
+  onSetOutputs: (name: string, outputs: FlowOutput[]) => void;
   onRemoveExample: (name: string, index: number) => void;
   onUpdate: (body: Record<string, unknown>) => void;
   onRun: () => void;
@@ -361,6 +410,7 @@ function DetectorOptions(p: {
           <button type="submit" disabled={!p.newTarget.trim()}>Add target</button>
         </form>
       </PanelSection>
+      <OutputsSection detail={d} onSetOutputs={p.onSetOutputs} />
       <PanelSection title="Search">
         <label className="flow-check">
           <input type="checkbox" checked={d.rotate} onChange={(e) => p.onUpdate({ rotate: e.target.checked })} /> The part can be turned (search every angle)

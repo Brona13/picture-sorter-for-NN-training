@@ -365,7 +365,11 @@ export type FlowStep = number[] | { follow: { detector: string; target: string; 
 export interface FlowFollow {
   detector: string;
   target: string;
-  mode: "keep";
+  mode: string;
+  /** How the Crop can use the target; a mode is greyed out (`needs` names the outputs to tick on the detector) when the target does not offer them. */
+  modes: { id: string; label: string; enabled: boolean; needs: string[] }[];
+  /** The outputs the followed target offers now (read again every time the page is opened). */
+  offered: FlowOutput[];
   /** The picture the rectangle was drawn on, its size in pixels and its offset from the found target; null until drawn. */
   frame: string | null;
   size: [number, number] | null;
@@ -383,6 +387,13 @@ export interface FlowCrop {
   /** Set when the Crop is fed by one target of a detector. */
   follow?: FlowFollow | null;
 }
+/** What a detector target offers the box its line feeds: the found position, the angle of the found box, its size. */
+export type FlowOutput = "position" | "angle" | "size";
+export const FLOW_OUTPUTS: { id: FlowOutput; label: string }[] = [
+  { id: "position", label: "Position" },
+  { id: "angle", label: "Angle" },
+  { id: "size", label: "Size" },
+];
 export interface FlowDetector {
   kind: "detector";
   input: string | null;
@@ -391,7 +402,7 @@ export interface FlowDetector {
   /** Pictures a Crop above this detector (one that follows a detector) has no rectangle on: they are not shown or searched. */
   no_crop?: string[];
   /** `inside`: in a cascade, the input detector's target whose box this target searches in (none = the same name). */
-  targets: { name: string; inside?: string | null; examples: FlowExample[] }[];
+  targets: { name: string; inside?: string | null; outputs: FlowOutput[]; examples: FlowExample[] }[];
   /** A cascade: the input detector's targets (with examples) a target here can search inside. */
   parent_targets?: string[];
   rotate: boolean;
@@ -585,10 +596,11 @@ export const frameImageUrl = (camera: string, frame: string) =>
   `/api/cameras/${encodeURIComponent(camera)}/frames/${encodeURIComponent(frame)}/image`;
 
 /** The picture a Chain box works on (frame cut by the crops above it), or - `stage: "output"` on a Crop - the one it passes on. `key` (the crops) makes a changed crop load afresh. */
-export const flowPictureUrl = (camera: string, nodeId: string, frame: string, opts: { stage?: "input" | "output"; size?: number; key?: unknown } = {}) =>
+export const flowPictureUrl = (camera: string, nodeId: string, frame: string, opts: { stage?: "input" | "output"; size?: number; key?: unknown; straighten?: boolean } = {}) =>
   `/api/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(nodeId)}/picture?frame=${encodeURIComponent(frame)}` +
   (opts.stage ? `&stage=${opts.stage}` : "") +
   (opts.size ? `&size=${opts.size}` : "") +
+  (opts.straighten ? "&straighten=true" : "") +
   (opts.key !== undefined ? `&v=${encodeURIComponent(JSON.stringify(opts.key))}` : "");
 
 export const frameThumbUrl = (camera: string, frame: string, size = 96) =>
@@ -1173,6 +1185,11 @@ export const api = {
     request<{ source: string; target: string }>(`/cameras/${encodeURIComponent(camera)}/flow/edges/remove`, send("POST", point ? { source, target, point } : { source, target })),
   flowAddTarget: (camera: string, id: string, name: string, inside?: string) =>
     request<FlowNodeDetail>(`/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/targets`, send("POST", inside ? { name, inside } : { name })),
+  flowSetTargetOutputs: (camera: string, id: string, name: string, outputs: FlowOutput[]) =>
+    request<FlowNodeDetail>(
+      `/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/targets/${encodeURIComponent(name)}/outputs`,
+      send("PUT", { outputs }),
+    ),
   flowSetTargetInside: (camera: string, id: string, name: string, inside: string | null) =>
     request<FlowNodeDetail>(
       `/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/targets/${encodeURIComponent(name)}`,

@@ -108,10 +108,11 @@ def _on_frame(entry: dict, img_w: int, img_h: int) -> dict | None:
     as a position in pixel-edge coordinates (the half pixel from pixel indices to pixel edges is added). ``None`` when
     a Crop that follows a detector has no rectangle on this picture."""
     try:
-        ox, oy = flow.rect_offset(entry.get("rects") or [], img_w, img_h, entry.get("found"))
+        where = flow.rect_map(entry.get("rects") or [], img_w, img_h, entry.get("found"))
     except flow.NoCrop:
         return None
-    return {**entry, "x": float(entry["x"]) + ox + PIXEL_CENTRE, "y": float(entry["y"]) + oy + PIXEL_CENTRE}
+    x, y = where.point(entry["x"], entry["y"])
+    return {**entry, "x": x + PIXEL_CENTRE, "y": y + PIXEL_CENTRE, "angle": float(entry.get("angle", 0.0)) + where.turn}
 
 
 class Source:

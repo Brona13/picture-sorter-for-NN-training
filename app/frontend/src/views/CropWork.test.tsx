@@ -83,7 +83,7 @@ test("shows the cut-out as the result once a rectangle exists", async () => {
 // --- a Crop that follows a detector target ---
 const followDetail = (over: object = {}): FlowCrop => ({
   kind: "crop", rect: null, input_box: "det:1", crops: [],
-  follow: { detector: "det:1", target: "hole", mode: "keep", frame: "a.png", size: [40, 20], offset: [10, -5], missing: ["b.png"] },
+  follow: { detector: "det:1", target: "hole", mode: "keep", frame: "a.png", size: [40, 20], offset: [10, -5], missing: ["b.png"], offered: ["position"], modes: [{ id: "keep", label: "Position only: the picture stays upright", enabled: true, needs: [] }] },
   ...over,
 });
 
@@ -106,6 +106,15 @@ test("a following Crop shows the rectangle next to the target found on this pict
   await waitFor(() => expect(screen.getByTestId("roi-box")).toHaveStyle({ left: "45%", top: "35%", width: "20%", height: "20%" }));
   expect(await screen.findByRole("option", { name: "b.png — no target found" })).toBeInTheDocument();
   expect(screen.getByAltText("a.png cropped")).toHaveAttribute("src", expect.stringContaining("stage=output"));
+});
+
+test("a Crop that straightens draws on the picture turned back by the found angle", async () => {
+  followFetch();
+  const detail = followDetail();
+  setup({ ...detail, follow: { ...detail.follow!, mode: "straighten" } });
+  const img = await screen.findByAltText("Frame to draw on");
+  expect(img).toHaveAttribute("src", expect.stringContaining("straighten=true"));
+  expect(screen.getByText(/turned back by the found angle/)).toBeInTheDocument();
 });
 
 test("a following Crop saves the rectangle in pixels of the picture, with the picture it was drawn on, when the pointer is released", async () => {

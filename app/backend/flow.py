@@ -126,6 +126,8 @@ def step_box(step, width: int, height: int, found=None) -> tuple[int, int, int, 
     if entry is None:
         f = step["follow"]
         raise NoCrop(f"{f['detector']} found no {f['target']} on this picture.")
+    if is_straighten(step):
+        raise FlowError("A straightened Crop turns the picture; it has no plain rectangle.")
     w, h = (int(v) for v in step["size"])
     dx, dy = step["offset"]
     x0 = int(round(float(entry["x"]) + PIXEL_CENTRE + dx - w / 2))
@@ -143,6 +145,20 @@ def follow_of(graph: dict, crop_id: str) -> dict | None:
     return None
 
 
+def crop_mode(graph: dict, crop_id: str) -> str:
+    node = graph["nodes"].get(crop_id) or {}
+    return node.get("follow_mode") or (node.get("follow") or {}).get("mode", "keep")
+
+
+def is_straighten(step: object) -> bool:
+    return is_follow(step) and step["follow"].get("mode") == "straighten"
+
+
+def has_turn(steps: list) -> bool:
+    """True when a step turns the picture: boxes found behind it are in a turned picture."""
+    return any(is_straighten(s) for s in steps)
+
+
 def own_step(graph: dict, node_id: str):
     """The cut a Crop box makes: its fixed rectangle, a following step, or None (nothing drawn: the picture passes on)."""
     node = graph["nodes"].get(node_id)
@@ -153,7 +169,7 @@ def own_step(graph: dict, node_id: str):
         spec = node.get("follow") or {}
         if not spec.get("size") or not spec.get("offset"):
             return None
-        return {"follow": {**follow, "mode": spec.get("mode", "keep")}, "size": list(spec["size"]), "offset": list(spec["offset"])}
+        return {"follow": {**follow, "mode": crop_mode(graph, node_id)}, "size": list(spec["size"]), "offset": list(spec["offset"])}
     return node.get("rect") or None
 
 
@@ -176,15 +192,77 @@ def output_rects(graph: dict, node_id: str) -> list:
     return input_rects(graph, node_id) + ([step] if step else [])
 
 
+GREY = 128  # what the corners of a straightened picture are filled with
+
+
+def _straighten_matrix(step: dict, entry: dict) -> np.ndarray:
+    """The 3x3 matrix (pixel indices) from the picture a straightening Crop reads to the picture it passes on: the
+    picture is turned back by the found angle about the found target (``_straight_cut``'s convention) and the rectangle
+    drawn relative to the target, in the target's own upright frame, is moved to the output's centre."""
+    w, h = (int(v) for v in step["size"])
+    dx, dy = step["offset"]
+    tx, ty = float(entry["x"]), float(entry["y"])
+    rot = np.vstack([cv2.getRotationMatrix2D((tx, ty), -float(entry.get("angle", 0.0)), 1.0), [0.0, 0.0, 1.0]])
+    shift = np.array([[1.0, 0.0, (w - 1) / 2.0 - (tx + dx)], [0.0, 1.0, (h - 1) / 2.0 - (ty + dy)], [0.0, 0.0, 1.0]])
+    return shift @ rot
+
+
+def _straighten(image: np.ndarray, step: dict, entry: dict) -> np.ndarray:
+    w, h = (int(v) for v in step["size"])
+    return cv2.warpAffine(image, _straighten_matrix(step, entry)[:2], (w, h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=(GREY, GREY, GREY))
+
+
 def apply_rects(image: np.ndarray, rects: list, found=None) -> tuple[np.ndarray, int, int]:
-    """Cut ``image`` by each step in turn; also the pixel offset of the result inside the original picture.
+    """Cut ``image`` by each step in turn; also the pixel offset of the result inside the original picture (only
+    meaningful while no step turns the picture, see :func:`rect_map`).
     ``found`` resolves the following steps on this picture (see :class:`Finder`); :class:`NoCrop` when one has no box."""
     ox = oy = 0
     for rect in rects:
+        if is_straighten(rect):
+            entry = found(rect) if found else None
+            if entry is None:
+                f = rect["follow"]
+                raise NoCrop(f"{f['detector']} found no {f['target']} on this picture.")
+            image = _straighten(image, rect, entry)
+            continue
         x0, y0, x1, y1 = step_box(rect, image.shape[1], image.shape[0], found)
         image = image[y0:y1, x0:x1]
         ox, oy = ox + x0, oy + y0
     return image, ox, oy
+
+
+class Map:
+    """Where the picture behind some Crop steps lies on the whole picture: ``m`` takes pixel indices of the cropped
+    picture to indices of the whole one (a shift for a plain cut, a turn too for a straightening Crop), ``turn`` is
+    how far (degrees, counter-clockwise on screen) the cropped picture is turned back relative to the whole one."""
+
+    def __init__(self, m: np.ndarray | None = None, turn: float = 0.0) -> None:
+        self.m = np.eye(3) if m is None else m
+        self.turn = turn
+
+    def point(self, x: float, y: float) -> tuple[float, float]:
+        v = self.m @ np.array([float(x), float(y), 1.0])
+        return float(v[0]), float(v[1])
+
+
+def rect_map(rects: list, width: int, height: int, found=None) -> Map:
+    """The :class:`Map` of the picture the steps ``rects`` cut from a ``width`` x ``height`` frame (no pixels needed)."""
+    total = np.eye(3)
+    turn = 0.0
+    for rect in rects:
+        if is_straighten(rect):
+            entry = found(rect) if found else None
+            if entry is None:
+                f = rect["follow"]
+                raise NoCrop(f"{f['detector']} found no {f['target']} on this picture.")
+            total = total @ np.linalg.inv(_straighten_matrix(rect, entry))
+            turn += float(entry.get("angle", 0.0))
+            width, height = (int(v) for v in rect["size"])
+            continue
+        x0, y0, x1, y1 = step_box(rect, width, height, found)
+        total = total @ np.array([[1.0, 0.0, x0], [0.0, 1.0, y0], [0.0, 0.0, 1.0]])
+        width, height = x1 - x0, y1 - y0
+    return Map(total, turn)
 
 
 def rect_offset(rects: list, width: int, height: int, found=None) -> tuple[int, int]:
@@ -203,12 +281,22 @@ def _found_for(camera: str, rects: list, frame: str, finder: "Finder | None" = N
     return (finder or Finder(camera)).for_frame(db.frame_hash_for(camera, frame))
 
 
-def picture(camera: str, node_id: str, frame: str, stage: str = "input") -> np.ndarray:
-    """The picture a box works on (``stage="input"``), or - for a Crop - the one it passes on (``"output"``)."""
+def picture(camera: str, node_id: str, frame: str, stage: str = "input", straighten: bool = False) -> np.ndarray:
+    """The picture a box works on (``stage="input"``), or - for a Crop - the one it passes on (``"output"``).
+    ``straighten`` (a Crop that straightens, ``stage="input"``): the same picture turned back by the found angle about
+    the found target, whole and at the same size, so a rectangle can be drawn relative to the upright target."""
     graph = load_graph(camera)
     _node(graph, node_id)
     rects = output_rects(graph, node_id) if stage == "output" else input_rects(graph, node_id)
-    return apply_rects(_read(camera, frame), rects, _found_for(camera, rects, frame))[0]
+    image = apply_rects(_read(camera, frame), rects, _found_for(camera, rects, frame))[0]
+    follow = follow_of(graph, node_id) if kind_of(node_id) == "crop" else None
+    if straighten and follow and crop_mode(graph, node_id) == "straighten":
+        entry = Finder(camera).box(follow["detector"], db.frame_hash_for(camera, frame), follow["target"])
+        if entry is None:
+            raise NoCrop(f"{follow['detector']} found no {follow['target']} on this picture.")
+        rot = cv2.getRotationMatrix2D((float(entry["x"]), float(entry["y"])), -float(entry.get("angle", 0.0)), 1.0)
+        image = cv2.warpAffine(image, rot, (image.shape[1], image.shape[0]), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=(GREY, GREY, GREY))
+    return image
 
 
 # --- ids and graph ------------------------------------------------------------
@@ -467,6 +555,17 @@ def update_node(camera: str, node_id: str, raw: dict) -> dict:
             if follow:
                 raise FlowError("This Crop follows a target: draw its rectangle on a picture where the target was found.")
             node["rect"] = clean_rect(raw["rect"])
+        if "follow_mode" in raw:
+            if not follow:
+                raise FlowError("Connect one target of a detector to this Crop first.")
+            if raw["follow_mode"] not in FOLLOW_MODES:
+                raise FlowError("Unknown way to follow a target.")
+            detail_modes = {m["id"]: m for m in follow_detail(camera, graph, node_id)["modes"]}
+            if not detail_modes[raw["follow_mode"]]["enabled"]:
+                raise FlowError(f"Tick {', '.join(detail_modes[raw['follow_mode']]['needs'])} on {follow['detector']} for {follow['target']} first.")
+            if crop_mode(graph, node_id) != raw["follow_mode"]:
+                node["follow"] = None  # the rectangle's offset means another thing in the other mode: draw it again
+            node["follow_mode"] = raw["follow_mode"]
         if "follow" in raw:
             if not follow:
                 raise FlowError("Connect one target of a detector to this Crop first.")
@@ -546,7 +645,52 @@ def add_target(camera: str, node_id: str, name: str, inside: str | None = None) 
         raise FlowError(f"There is already a target named {name}.")
     if len(node["targets"]) >= MAX_TARGETS:
         raise FlowError(f"A detector can have at most {MAX_TARGETS} targets.")
-    node["targets"].append({"name": name, "examples": [], "inside": _clean_inside(graph, node_id, inside)})
+    node["targets"].append({"name": name, "examples": [], "inside": _clean_inside(graph, node_id, inside), "outputs": list(DEFAULT_OUTPUTS)})
+    save_graph(camera, graph)
+
+
+#: What a detector target can offer the next box. Position is on by default (and can be turned off); the angle and the
+#: size of the found box are stored for every found box, but only reach a box downstream when the target offers them.
+OUTPUTS = {"position": "Position", "angle": "Angle", "size": "Size"}
+DEFAULT_OUTPUTS = ["position"]
+
+#: How a Crop can use the target it follows: the outputs the mode needs, and what it does. More modes (Straighten
+#: needs the angle) are added here; a mode whose outputs the target does not offer is shown greyed out.
+FOLLOW_MODES = {
+    "keep": {"label": "Position only: the picture stays upright", "needs": ["position"]},
+    "straighten": {"label": "Position and angle: the picture is straightened", "needs": ["position", "angle"]},
+}
+
+
+def outputs_of(target: dict) -> list[str]:
+    """The outputs a target offers, in a fixed order (targets stored before v1.80.0 offer the position only)."""
+    stored = target.get("outputs", DEFAULT_OUTPUTS)
+    return [o for o in OUTPUTS if o in stored]
+
+
+def _output_users(graph: dict, node_id: str, name: str, output: str) -> list[str]:
+    """The boxes fed by this target's line that read ``output``: every line reads the position; a Crop that
+    straightens the picture reads the angle too."""
+    lines = [e["target"] for e in graph["edges"] if e["source"] == node_id and e.get("point") == name]
+    if output == "position":
+        return lines
+    return [b for b in lines if kind_of(b) == "crop" and output in FOLLOW_MODES.get(crop_mode(graph, b), {}).get("needs", [])]
+
+
+def set_target_outputs(camera: str, node_id: str, name: str, outputs: object) -> None:
+    graph = load_graph(camera)
+    node = _node(graph, node_id)
+    entry = next((t for t in node.get("targets", []) if t["name"] == name), None)
+    if entry is None:
+        raise FlowError(f"Unknown target: {name}")
+    if not isinstance(outputs, (list, tuple)) or any(o not in OUTPUTS for o in outputs):
+        raise FlowError(f"The outputs are some of: {', '.join(OUTPUTS)}.")
+    wanted = [o for o in OUTPUTS if o in outputs]
+    for output in OUTPUTS:
+        users = _output_users(graph, node_id, name, output) if output not in wanted else []
+        if users:
+            raise FlowError(f"{', '.join(users)} read the {output} of {name}. " + ("Delete its line first." if output == "position" else "Change its use of the target first."))
+    entry["outputs"] = wanted
     save_graph(camera, graph)
 
 
@@ -1058,7 +1202,8 @@ def calc_values(camera: str, calc_id: str, graph: dict | None = None) -> dict[st
     stored_a = load_stored(camera, det_a)["frames"]
     stored_b = stored_a if det_b == det_a else load_stored(camera, det_b)["frames"]
     rects_a, rects_b = input_rects(graph, det_a), input_rects(graph, det_b)
-    sizes = _frame_sizes(camera) if rects_a != rects_b else {}
+    turned = has_turn(rects_a) or has_turn(rects_b)  # the points must be measured on the whole picture, not in a turned one
+    sizes = _frame_sizes(camera) if rects_a != rects_b or turned else {}
     finder = Finder(camera)
 
     def _found(rects: list, key: str):
@@ -1071,16 +1216,16 @@ def calc_values(camera: str, calc_id: str, graph: dict | None = None) -> dict[st
             values[key] = None
             continue
         pa, pb = (box_a["x"], box_a["y"]), (box_b["x"], box_b["y"])
-        if rects_a != rects_b:
+        if rects_a != rects_b or turned:
             if key not in sizes:
                 values[key] = None
                 continue
             try:
-                (oxa, oya), (oxb, oyb) = (rect_offset(r, *sizes[key], found=_found(r, key)) for r in (rects_a, rects_b))
+                map_a, map_b = (rect_map(r, *sizes[key], found=_found(r, key)) for r in (rects_a, rects_b))
             except NoCrop:
                 values[key] = None
                 continue
-            pa, pb = (pa[0] + oxa, pa[1] + oya), (pb[0] + oxb, pb[1] + oyb)
+            pa, pb = map_a.point(*pa), map_b.point(*pb)
         values[key] = compute(node["op"], pa, pb, node["clockwise"])
     return values
 
@@ -1197,9 +1342,15 @@ def follow_detail(camera: str, graph: dict, crop_id: str) -> dict | None:
     if not follow:
         return None
     spec = graph["nodes"][crop_id].get("follow") or {}
+    mode = crop_mode(graph, crop_id)
+    target = next((t for t in graph["nodes"].get(follow["detector"], {}).get("targets", []) if t["name"] == follow["target"]), {})
+    offered = outputs_of(target)
     return {
         **follow,
-        "mode": spec.get("mode", "keep"),
+        "mode": mode,
+        "offered": offered,
+        "modes": [{"id": k, "label": m["label"], "enabled": all(o in offered for o in m["needs"]),
+                   "needs": [OUTPUTS[o] for o in m["needs"] if o not in offered]} for k, m in FOLLOW_MODES.items()],
         "frame": spec.get("frame"),
         "size": spec.get("size"),
         "offset": spec.get("offset"),
@@ -1230,7 +1381,7 @@ def node_detail(camera: str, node_id: str, graph: dict | None = None) -> dict:
             "crops": input_rects(graph, node_id),
             "no_crop": frames_without_crop(camera, graph, node_id),
             "targets": [
-                {"name": t["name"], "inside": t.get("inside"), "examples": [{"frame": e["frame"], "box": e["box"], "png": "data:image/png;base64," + e["png"], "scale": e.get("scale", 1.0), "angle": e.get("angle", 0.0)} for e in t["examples"]]}
+                {"name": t["name"], "inside": t.get("inside"), "outputs": outputs_of(t), "examples": [{"frame": e["frame"], "box": e["box"], "png": "data:image/png;base64," + e["png"], "scale": e.get("scale", 1.0), "angle": e.get("angle", 0.0)} for e in t["examples"]]}
                 for t in node["targets"]
             ],
             "rotate": node["rotate"],

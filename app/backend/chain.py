@@ -255,13 +255,14 @@ def overview_flow(camera: str, picture_frame: str | None) -> dict | None:
             found = flow.load_stored(camera, node["id"])["frames"].get(key) or {}
             rects = flow.input_rects(graph, node["id"])
             try:
-                ox, oy = flow.rect_offset(rects, *size, found=flow.Finder(camera).for_frame(key) if flow.has_follow(rects) else None)
+                where = flow.rect_map(rects, *size, found=flow.Finder(camera).for_frame(key) if flow.has_follow(rects) else None)
             except flow.NoCrop:
                 continue
             for target, box in found.items():
+                x, y = where.point(box["x"], box["y"])
                 boxes.append({
-                    "detector": node["id"], "target": target, "x": box["x"] + ox, "y": box["y"] + oy,
-                    "w": box["w"], "h": box["h"], "angle": box.get("angle", 0.0), "source": box.get("source", "auto"),
+                    "detector": node["id"], "target": target, "x": x, "y": y,
+                    "w": box["w"], "h": box["h"], "angle": box.get("angle", 0.0) + where.turn, "source": box.get("source", "auto"),
                 })
     return {
         "nodes": [{"id": n["id"], "kind": n["kind"], "label": n["label"], "summary": n["flow"]} for n in nodes],

@@ -218,6 +218,107 @@ class FlowTests(ApiTestCase):
         self.assertEqual(flow.load_stored(CAM, b)["frames"][key], {})
         self.assertEqual(self.node_detail(b)["summary"]["review"], 1)
 
+    def test_a_target_offers_its_position_by_default_and_the_ticks_are_kept_per_target(self) -> None:
+        a = self.detector({"A": LEFT_BOX})
+        self.post(f"/nodes/{a}/targets", {"name": "B"})
+        outputs = lambda: {t["name"]: t["outputs"] for t in self.node_detail(a)["targets"]}  # noqa: E731
+        self.assertEqual(outputs(), {"A": ["position"], "B": ["position"]})
+        r = self.client.put(f"{self.base}/nodes/{a}/targets/A/outputs", json={"outputs": ["size", "angle", "position"]})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(outputs(), {"A": ["position", "angle", "size"], "B": ["position"]})  # fixed order, B untouched
+        self.assertEqual(self.client.put(f"{self.base}/nodes/{a}/targets/A/outputs", json={"outputs": ["colour"]}).status_code, 422)
+        self.assertEqual(self.client.put(f"{self.base}/nodes/{a}/targets/Z/outputs", json={"outputs": []}).status_code, 422)
+        self.assertEqual(self.client.put(f"{self.base}/nodes/{a}/targets/B/outputs", json={"outputs": []}).status_code, 200)  # position can be unticked
+        # a target stored before the ticks existed offers its position
+        graph = flow.load_graph(CAM)
+        for t in graph["nodes"][a]["targets"]:
+            t.pop("outputs", None)
+        flow.save_graph(CAM, graph)
+        self.assertEqual(outputs(), {"A": ["position"], "B": ["position"]})
+
+    def test_the_position_cannot_be_unticked_while_a_line_reads_it_and_the_crop_lists_what_it_can_use(self) -> None:
+        a, crop, _, _ = self._following_crop()
+        r = self.client.put(f"{self.base}/nodes/{a}/targets/A/outputs", json={"outputs": ["angle"]})
+        self.assertEqual(r.status_code, 422)
+        self.assertIn(crop, r.text)
+        self.assertEqual(self.node_detail(a)["targets"][0]["outputs"], ["position"])
+        self.assertEqual(self.client.put(f"{self.base}/nodes/{a}/targets/A/outputs", json={"outputs": ["position", "angle"]}).status_code, 200)
+        self.assertEqual(self.node_detail(crop)["follow"]["offered"], ["position", "angle"])  # read fresh on every request
+        modes = self.node_detail(crop)["follow"]["modes"]
+        self.assertEqual([(m["id"], m["enabled"]) for m in modes], [("keep", True), ("straighten", True)])
+        self.assertEqual(self.client.put(f"{self.base}/nodes/{crop}", json={"follow_mode": "keep"}).status_code, 200)
+        self.assertEqual(self.client.put(f"{self.base}/nodes/{crop}", json={"follow_mode": "spin"}).status_code, 422)
+
+    def _straightening_crop(self):
+        """Detector A with Angle ticked -> a Crop that straightens, its rectangle drawn on the first picture."""
+        import labels  # noqa: PLC0415
+
+        a = self.detector({"A": LEFT_BOX})
+        self.assertEqual(self.client.put(f"{self.base}/nodes/{a}/targets/A/outputs", json={"outputs": ["position", "angle"]}).status_code, 200)
+        self.run_all()
+        key = labels.hash_map(CAM)[self.names[0]]
+        found = flow.load_stored(CAM, a)["frames"][key]["A"]
+        crop = self.node("crop")
+        self.post("/edges", {"source": a, "target": crop, "point": "A"})
+        self.put(f"/nodes/{crop}", {"follow_mode": "straighten"})
+        x0, y0 = int(round(found["x"])) - 45, int(round(found["y"])) - 40
+        self.put(f"/nodes/{crop}", {"follow": {"frame": self.names[0], "rect": [x0, y0, 90, 80]}})
+        return a, crop
+
+    def test_a_straightening_crop_shows_the_part_the_same_way_on_turned_pictures(self) -> None:
+        a, crop = self._straightening_crop()
+        outs = []
+        for name in self.names:
+            r = self.client.get(f"{self.base}/nodes/{crop}/picture", params={"frame": name, "stage": "output"})
+            self.assertEqual(r.status_code, 200, (name, r.text))
+            img = cv2.imdecode(np.frombuffer(r.content, np.uint8), cv2.IMREAD_GRAYSCALE)
+            self.assertEqual(img.shape, (80, 90), name)
+            outs.append(img.astype(np.float32))
+        for name, img in zip(self.names[1:], outs[1:]):  # 2, 30 and 358 degrees look like the upright one
+            self.assertLess(float(np.mean(np.abs(img - outs[0]))), 6.0, name)
+        # keeping the orientation would not: the same cut of the 30 degree picture is turned
+        self.put(f"/nodes/{crop}", {"follow_mode": "keep"})
+        self.assertIsNone(self.node_detail(crop)["follow"]["size"])  # another mode: draw the rectangle again
+
+    def test_the_straightened_whole_picture_keeps_its_size_and_the_target_in_place(self) -> None:
+        a, crop = self._straightening_crop()
+        for name, angle in zip(self.names, ANGLES):
+            r = self.client.get(f"{self.base}/nodes/{crop}/picture", params={"frame": name, "stage": "input", "straighten": True})
+            self.assertEqual(r.status_code, 200, r.text)
+            turned_back = cv2.imdecode(np.frombuffer(r.content, np.uint8), cv2.IMREAD_GRAYSCALE)
+            plain = cv2.imread(str(datamodel.unsorted_dir(CAM) / name), cv2.IMREAD_GRAYSCALE)
+            self.assertEqual(turned_back.shape, plain.shape)
+
+    def test_points_found_behind_a_straightening_crop_are_taken_back_to_the_whole_picture(self) -> None:
+        import labels  # noqa: PLC0415
+
+        a, crop = self._straightening_crop()
+        behind = self.detector({"P": LEFT_HOLE}, parent=crop, rotate=False)  # a detector behind the Crop
+        rects = flow.input_rects(flow.load_graph(CAM), behind)
+        hmap = labels.hash_map(CAM)
+        for name, angle in zip(self.names, ANGLES):
+            key = hmap[name]
+            entry = flow.load_stored(CAM, a)["frames"][key]["A"]
+            width, height = cv2.imread(str(datamodel.unsorted_dir(CAM) / name)).shape[1::-1]
+            where = flow.rect_map(rects, width, height, flow.Finder(CAM).for_frame(key))
+            # the target itself lies at the same place in every straightened crop: the rectangle's centre minus the offset
+            spec = flow.load_graph(CAM)["nodes"][crop]["follow"]
+            crop_xy = ((spec["size"][0] - 1) / 2.0 - spec["offset"][0], (spec["size"][1] - 1) / 2.0 - spec["offset"][1])
+            x, y = where.point(*crop_xy)
+            self.assertAlmostEqual(x, entry["x"], delta=0.01, msg=name)
+            self.assertAlmostEqual(y, entry["y"], delta=0.01, msg=name)
+            self.assertAlmostEqual(where.turn, entry.get("angle", 0.0), delta=0.01, msg=name)
+
+    def test_the_angle_cannot_be_unticked_while_a_crop_straightens_with_it(self) -> None:
+        a, crop = self._straightening_crop()
+        r = self.client.put(f"{self.base}/nodes/{a}/targets/A/outputs", json={"outputs": ["position"]})
+        self.assertEqual(r.status_code, 422)
+        self.assertIn(crop, r.text)
+        self.put(f"/nodes/{crop}", {"follow_mode": "keep"})
+        self.assertEqual(self.client.put(f"{self.base}/nodes/{a}/targets/A/outputs", json={"outputs": ["position"]}).status_code, 200)
+        r = self.client.put(f"{self.base}/nodes/{crop}", json={"follow_mode": "straighten"})
+        self.assertEqual(r.status_code, 422)  # the target no longer offers the angle
+
     def test_a_following_crop_is_drawn_for_one_target_and_needs_a_run_of_its_detector(self) -> None:
         a = self.detector({"A": LEFT_BOX})
         crop = self.node("crop")

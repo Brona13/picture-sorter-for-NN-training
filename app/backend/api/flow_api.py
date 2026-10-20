@@ -38,6 +38,10 @@ class TargetInsideBody(BaseModel):
     inside: str | None = None
 
 
+class TargetOutputsBody(BaseModel):
+    outputs: list[str]
+
+
 class ExampleBody(BaseModel):
     target: str
     frame: str
@@ -122,6 +126,14 @@ def set_target(camera: str, node_id: str, name: str, body: TargetInsideBody) -> 
     return flow.node_detail(camera, node_id)
 
 
+@router.put("/cameras/{camera}/flow/nodes/{node_id}/targets/{name}/outputs")
+def set_target_outputs(camera: str, node_id: str, name: str, body: TargetOutputsBody) -> dict:
+    """Which outputs (position, angle, size) this target offers to the boxes its line feeds."""
+    _known(camera, node_id)
+    _guard(flow.set_target_outputs, camera, node_id, name, body.outputs)
+    return flow.node_detail(camera, node_id)
+
+
 @router.delete("/cameras/{camera}/flow/nodes/{node_id}/targets/{name}")
 def remove_target(camera: str, node_id: str, name: str) -> dict:
     _known(camera, node_id)
@@ -182,13 +194,13 @@ def run_all(camera: str) -> dict:
 
 
 @router.get("/cameras/{camera}/flow/nodes/{node_id}/picture")
-def get_picture(camera: str, node_id: str, frame: str, stage: str = "input", size: int | None = None) -> Response:
+def get_picture(camera: str, node_id: str, frame: str, stage: str = "input", size: int | None = None, straighten: bool = False) -> Response:
     """The picture a box works on (``stage=input``), or - for a Crop - the picture it passes on (``output``). ``size``
     gives a JPEG thumbnail whose longer side is that many pixels; without it a PNG at full size."""
     _known(camera, node_id)
     if stage not in ("input", "output"):
         raise HTTPException(status_code=422, detail="stage must be input or output")
-    image = _guard(flow.picture, camera, node_id, frame, stage)
+    image = _guard(flow.picture, camera, node_id, frame, stage, straighten)
     if size:
         scale = min(1.0, max(16, min(size, 1024)) / max(image.shape[:2]))
         if scale < 1.0:
