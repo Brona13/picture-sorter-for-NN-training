@@ -225,6 +225,44 @@ def _flow_nodes(camera: str, graph: dict, stored: dict) -> list[dict]:
     return nodes
 
 
+def overview_flow(camera: str, picture_frame: str | None) -> dict | None:
+    """What the Overview shows of the measurement boxes: a light summary of each (same as on the Chain) and the boxes
+    the detectors found on ``picture_frame``, placed on the whole picture. ``None`` when the camera has no such boxes."""
+    graph = flow.load_graph(camera)
+    if not graph["nodes"]:
+        return None
+    stored = load_layout(camera)["nodes"]
+    order = {"crop": 0, "detector": 1, "calc": 2, "evaluation": 3}
+    nodes = sorted(_flow_nodes(camera, graph, stored), key=lambda n: (order[n["kind"]], n["id"]))
+    boxes: list[dict] = []
+    size = None
+    key = db.frame_hash_for(camera, picture_frame) if picture_frame else None
+    if key:
+        try:
+            from PIL import Image  # noqa: PLC0415
+
+            with Image.open(datamodel.unsorted_dir(camera) / picture_frame) as im:
+                size = im.size
+        except Exception:  # noqa: BLE001 - no readable picture, so nothing to draw on
+            size = None
+    if size:
+        for node in nodes:
+            if node["kind"] != "detector":
+                continue
+            found = flow.load_stored(camera, node["id"])["frames"].get(key) or {}
+            ox, oy = flow.rect_offset(flow.input_rects(graph, node["id"]), *size)
+            for target, box in found.items():
+                boxes.append({
+                    "detector": node["id"], "target": target, "x": box["x"] + ox, "y": box["y"] + oy,
+                    "w": box["w"], "h": box["h"], "angle": box.get("angle", 0.0), "source": box.get("source", "auto"),
+                })
+    return {
+        "nodes": [{"id": n["id"], "kind": n["kind"], "label": n["label"], "summary": n["flow"]} for n in nodes],
+        "boxes": boxes,
+        "size": {"w": size[0], "h": size[1]} if size else None,
+    }
+
+
 def _column(node: dict) -> int:
     """The chain level of a box: 0 Ingest, 1 product ROI, 2 its Classify box, 3 feature ROIs, 4 their Classify boxes."""
     if node["kind"] == "ingest":

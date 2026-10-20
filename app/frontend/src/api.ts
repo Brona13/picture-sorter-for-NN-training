@@ -242,6 +242,14 @@ export interface VerdictList {
   settings?: { per_page: number; cols: number; per_page_options: number[]; cols_options: number[] };
 }
 
+/** The measurement boxes of a camera as the Overview shows them (see `chain.overview_flow`). */
+export interface OverviewFlow {
+  nodes: { id: string; kind: "crop" | "detector" | "calc" | "evaluation"; label: string; summary: FlowSummary }[];
+  /** What the detectors found on the reference picture, centres in pixels of the whole picture. */
+  boxes: { detector: string; target: string; x: number; y: number; w: number; h: number; angle: number; source: string }[];
+  size: { w: number; h: number } | null;
+}
+
 export interface OverviewCamera {
   camera: string;
   frame_count: number;
@@ -251,6 +259,8 @@ export interface OverviewCamera {
   verdicts?: VerdictSummary;
   products: string[];
   classify_feature: string | null;
+  /** Crop / detector / Calculate / Evaluation boxes; null when the camera has none. */
+  flow?: OverviewFlow | null;
   rois: RoiInfo[];
 }
 

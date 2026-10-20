@@ -1,5 +1,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { api, OverviewCamera, PipelineStage, RoiInfo } from "../api";
+import { describeFlow } from "../chain/chainModel";
+import { drawn } from "../pixelCentre";
 import CameraDelete from "../CameraDelete";
 import { thumbUrl } from "../classify/Card";
 import PictureSizeSlider, { usePictureSize } from "../PictureSize";
@@ -70,6 +72,67 @@ function CameraPicture({
           }}
         />
       ))}
+      {cam.flow?.size && cam.flow.boxes.length > 0 && (
+        <svg
+          data-testid={`found-${cam.camera}`}
+          viewBox={`0 0 ${cam.flow.size.w} ${cam.flow.size.h}`}
+          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}
+        >
+          {cam.flow.boxes.map((b, i) => {
+            const c = drawn(b);
+            const color = FOUND_COLORS[i % FOUND_COLORS.length];
+            const halo = { vectorEffect: "non-scaling-stroke" as const };
+            return (
+              <g key={`${b.detector}/${b.target}`} transform={`translate(${c.x} ${c.y}) rotate(${-b.angle})`}>
+                <rect x={-b.w / 2} y={-b.h / 2} width={b.w} height={b.h} fill="none" stroke="rgba(0,0,0,.75)" strokeWidth={3.5} {...halo} />
+                <rect x={-b.w / 2} y={-b.h / 2} width={b.w} height={b.h} fill="none" stroke={color} strokeWidth={1.8} {...halo}>
+                  <title>{`${b.target} (${b.detector})`}</title>
+                </rect>
+              </g>
+            );
+          })}
+        </svg>
+      )}
+    </div>
+  );
+}
+
+const FOUND_COLORS = ["#ff9f1c", "#2ec4ff", "#7bd389", "#e07bff", "#ffe066"];
+
+const KIND_NAME = { crop: "Crop", detector: "Detector", calc: "Calculate", evaluation: "Evaluation" } as const;
+
+/** The camera's measurement chain (Crop, detectors, Calculate, Evaluation) as small cards, in the order of the chain. */
+function FlowCards({ cam, onOpen }: { cam: OverviewCamera; onOpen?: (camera: string, nodeId: string) => void }) {
+  const nodes = cam.flow?.nodes ?? [];
+  if (nodes.length === 0) return null;
+  return (
+    <div data-testid={`flow-${cam.camera}`} style={{ gridColumn: "1 / -1" }}>
+      <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>Measurement chain</div>
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "stretch", gap: 6 }}>
+        {nodes.map((n, i) => (
+          <div key={n.id} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            {i > 0 && <span aria-hidden style={{ color: "var(--muted)" }}>→</span>}
+            <button
+              aria-label={`${KIND_NAME[n.kind]} ${n.label} of ${cam.camera}`}
+              disabled={!onOpen}
+              onClick={() => onOpen?.(cam.camera, n.id)}
+              style={{
+                textAlign: "left",
+                padding: 6,
+                color: "var(--fg)",
+                background: "var(--bg)",
+                border: "1px solid var(--border)",
+                borderRadius: "var(--radius)",
+                cursor: onOpen ? "pointer" : "default",
+              }}
+            >
+              <span style={chip}>{KIND_NAME[n.kind]}</span>
+              <strong>{n.label}</strong>
+              <div style={{ fontSize: 12, color: "var(--muted)" }}>{describeFlow(n.kind, n.summary)}</div>
+            </button>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -82,12 +145,15 @@ export default function OverviewView({
   camera,
   onSelectCamera,
   onOpenStage,
+  onOpenFlow,
   onCameraCreated,
   onCameraDeleted,
 }: {
   camera: string;
   onSelectCamera: (camera: string) => void;
   onOpenStage?: (camera: string, roi: RoiInfo, stage: PipelineStage) => void;
+  /** Open the page of a measurement box (detector, Calculate, ...) of a camera. */
+  onOpenFlow?: (camera: string, nodeId: string) => void;
   /** Called after a camera was created from the wizard (select it and go and add pictures). */
   onCameraCreated?: (name: string) => void;
   onCameraDeleted?: (name: string) => void;
@@ -297,7 +363,7 @@ export default function OverviewView({
               <div
                 style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 10, alignContent: "start", flex: "1 1 320px", minWidth: 0 }}
               >
-                {cam.rois.length === 0 && <p style={{ color: "var(--muted)" }}>No ROIs yet — use the ROI editor.</p>}
+                {cam.rois.length === 0 && !cam.flow && <p style={{ color: "var(--muted)" }}>No ROIs yet — use the ROI editor.</p>}
                 {cam.rois.map((r) => {
                   const on = focus?.camera === cam.camera && focus.feature === r.feature;
                   return (
@@ -346,6 +412,7 @@ export default function OverviewView({
                     </div>
                   );
                 })}
+                <FlowCards cam={cam} onOpen={onOpenFlow} />
               </div>
             </div>
           </section>

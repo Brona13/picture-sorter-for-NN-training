@@ -183,3 +183,33 @@ test("each camera card shows its verdict bar with deleted and duplicate counts",
   expect(within(bar).getByRole("progressbar")).toHaveAttribute("aria-valuenow", "6");
   expect(screen.getAllByTestId("verdict-bar")).toHaveLength(1); // camB has no frames
 });
+
+test("a camera with measurement boxes shows the chain cards and the found boxes on its picture", async () => {
+  const flow = {
+    nodes: [
+      { id: "det:1", kind: "detector", label: "Detector 1", summary: { targets: ["hole"], status: "fresh", frames: 10, complete: 9 } },
+      { id: "calc:1", kind: "calc", label: "Calculate 1", summary: { op: "angle", a: "hole", b: "notch" } },
+      { id: "eval:1", kind: "evaluation", label: "Evaluation 1", summary: { nominal: 175, tolerance: 3, unit: "deg", counts: { pass: 8, fail: 1, undetermined: 1 } } },
+    ],
+    boxes: [{ detector: "det:1", target: "hole", x: 30, y: 20, w: 10, h: 8, angle: 5, source: "auto" }],
+    size: { w: 60, h: 40 },
+  };
+  install([{ ...CAMS[0], flow }]);
+  const onOpenFlow = vi.fn();
+  render(<OverviewView camera="camA" onSelectCamera={() => {}} onOpenFlow={onOpenFlow} />);
+  const card = await screen.findByRole("button", { name: "Detector Detector 1 of camA" });
+  expect(card).toHaveTextContent("1 target · 9/10 complete");
+  expect(screen.getByRole("button", { name: "Calculate Calculate 1 of camA" })).toHaveTextContent("angle hole → notch");
+  expect(screen.getByRole("button", { name: "Evaluation Evaluation 1 of camA" })).toHaveTextContent("175 ± 3 deg · 8 pass, 1 fail");
+  expect(screen.getByTestId("found-camA").querySelectorAll("g")).toHaveLength(1);
+  await userEvent.click(card);
+  expect(onOpenFlow).toHaveBeenCalledWith("camA", "det:1");
+});
+
+test("a camera without measurement boxes shows no chain", async () => {
+  install(CAMS);
+  render(<OverviewView camera="camA" onSelectCamera={() => {}} />);
+  await screen.findByAltText("camA reference frame");
+  expect(screen.queryByTestId("flow-camA")).toBeNull();
+  expect(screen.queryByTestId("found-camA")).toBeNull();
+});

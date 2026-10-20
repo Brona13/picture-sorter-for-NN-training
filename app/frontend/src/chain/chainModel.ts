@@ -1,5 +1,5 @@
 import type { NodeChange } from "@xyflow/react";
-import type { ChainCanvas, ChainEdge, ChainLayout, ChainNode } from "../api";
+import type { ChainCanvas, ChainEdge, ChainLayout, ChainNode, FlowSummary } from "../api";
 
 /** The handle id a product leaves the classify ROI by (matches `chain.product_handle`). */
 export const productHandle = (product: string) => `p:${product}`;
@@ -74,27 +74,28 @@ export function layoutOf(
   return { nodes: out, viewport };
 }
 
-/** Short line under a box's name: what it does to the pictures. */
-export function describeNode(n: ChainNode): string {
-  if (n.kind === "ingest") return `${n.frames} picture${n.frames === 1 ? "" : "s"}`;
-  if (n.kind === "classify") return `${n.labeled}/${n.frames} labeled`;
-  if (n.kind === "crop") {
-    const r = n.flow?.rect;
+/** Short line for a Crop, detector, Calculate or Evaluation box, from its light summary (the Chain and the Overview use it). */
+export function describeFlow(kind: string, f: FlowSummary | undefined): string {
+  if (kind === "crop") {
+    const r = f?.rect;
     return r ? `${Math.round(r[2] * 100)} × ${Math.round(r[3] * 100)} % of the picture` : "no crop drawn yet";
   }
-  if (n.kind === "detector") {
-    const f = n.flow;
+  if (kind === "detector") {
     const targets = f?.targets?.length ?? 0;
     const state = f?.status === "fresh" ? `${f.complete ?? 0}/${f.frames ?? 0} complete` : f?.status === "stale" ? "run again" : "not run";
     return `${targets} target${targets === 1 ? "" : "s"} · ${state}`;
   }
-  if (n.kind === "calc") return n.flow?.a && n.flow?.b ? `${n.flow.op ?? "angle"} ${n.flow.a} → ${n.flow.b}` : "connect a detector";
-  if (n.kind === "evaluation") {
-    const f = n.flow;
-    if (f?.nominal == null) return "set the nominal";
-    const c = f.counts;
-    return `${f.nominal} ± ${f.tolerance}${f.unit ? ` ${f.unit}` : ""}${c ? ` · ${c.pass} pass, ${c.fail} fail` : ""}`;
-  }
+  if (kind === "calc") return f?.a && f?.b ? `${f.op ?? "angle"} ${f.a} → ${f.b}` : "connect a detector";
+  if (f?.nominal == null) return "set the nominal";
+  const c = f.counts;
+  return `${f.nominal} ± ${f.tolerance}${f.unit ? ` ${f.unit}` : ""}${c ? ` · ${c.pass} pass, ${c.fail} fail` : ""}`;
+}
+
+/** Short line under a box's name: what it does to the pictures. */
+export function describeNode(n: ChainNode): string {
+  if (n.kind === "ingest") return `${n.frames} picture${n.frames === 1 ? "" : "s"}`;
+  if (n.kind === "classify") return `${n.labeled}/${n.frames} labeled`;
+  if (isFlowKind(n.kind)) return describeFlow(n.kind, n.flow);
   if (n.scope === "classify") return `${n.classes.length} products`;
   const where =
     n.scope === "name" ? n.product ?? "" : n.scope === "products" ? n.products.join(", ") : "whole camera";

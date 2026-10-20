@@ -316,6 +316,10 @@ export default function App() {
                 camera={camera}
                 onSelectCamera={setCamera}
                 onOpenStage={openStage}
+                onOpenFlow={(cam, id) => {
+                  setCamera(cam);
+                  navigate(`/flow?focus=${encodeURIComponent(id)}`);
+                }}
                 onCameraDeleted={(name) => {
                   if (name === camera) setCamera("");
                   loadCameras();

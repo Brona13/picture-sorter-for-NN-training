@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import datamodel
 import db
+import chain
 import pipeline
 import tags as camera_tags
 import tools_used
@@ -33,6 +34,7 @@ def overview() -> dict:
                     "verdicts": verdicts.summary(camera),
                     "products": datamodel.products(camera),
                     "classify_feature": datamodel.classify_feature(camera),
+                    "flow": chain.overview_flow(camera, ref),
                     "rois": [{**_describe(camera, r, len(frames)), "pipeline": pipeline.stages(camera, r.name)} for r in rois],
                 }
             )
