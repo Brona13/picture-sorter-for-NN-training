@@ -206,7 +206,10 @@ def _flow_nodes(camera: str, graph: dict, stored: dict) -> list[dict]:
         kind = node["kind"]
         summary: dict = {}
         if kind == "crop":
-            summary = {"rect": node["rect"]}
+            summary = {"rect": node["rect"], "follow": flow.follow_of(graph, node_id)}
+            if summary["follow"]:
+                spec = node.get("follow") or {}
+                summary["follow"] = {**summary["follow"], "size": spec.get("size")}
         elif kind == "detector":
             summary = {"targets": [t["name"] for t in node["targets"]], "status": flow.status(camera, node_id, graph), **flow.summarize_detector(camera, node_id)}
         elif kind == "calc":
@@ -250,7 +253,11 @@ def overview_flow(camera: str, picture_frame: str | None) -> dict | None:
             if node["kind"] != "detector":
                 continue
             found = flow.load_stored(camera, node["id"])["frames"].get(key) or {}
-            ox, oy = flow.rect_offset(flow.input_rects(graph, node["id"]), *size)
+            rects = flow.input_rects(graph, node["id"])
+            try:
+                ox, oy = flow.rect_offset(rects, *size, found=flow.Finder(camera).for_frame(key) if flow.has_follow(rects) else None)
+            except flow.NoCrop:
+                continue
             for target, box in found.items():
                 boxes.append({
                     "detector": node["id"], "target": target, "x": box["x"] + ox, "y": box["y"] + oy,

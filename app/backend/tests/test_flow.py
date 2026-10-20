@@ -138,6 +138,122 @@ class FlowTests(ApiTestCase):
         ox, _ = flow.rect_offset([[0.25, 0.5, 0.5, 0.5]], width, height)
         self.assertAlmostEqual(flow.calc_values(CAM, calc)[key], (10.0 + ox) - 100.0)
 
+    # --- a Crop that follows a detector target ---------------------------------------------------
+    def _following_crop(self):
+        """Detector A (left hole with its notch) -> Crop around it, drawn on the first picture. Returns (A, crop, x0, y0)."""
+        import labels  # noqa: PLC0415
+
+        a = self.detector({"A": LEFT_BOX})
+        self.run_all()
+        key = labels.hash_map(CAM)[self.names[0]]
+        found = flow.load_stored(CAM, a)["frames"][key]["A"]
+        x0, y0 = int(round(found["x"])) - 45, int(round(found["y"])) - 40
+        crop = self.node("crop")
+        self.post("/edges", {"source": a, "target": crop, "point": "A"})
+        self.put(f"/nodes/{crop}", {"follow": {"frame": self.names[0], "rect": [x0, y0, 90, 80]}})
+        return a, crop, x0, y0
+
+    def test_a_crop_follows_the_target_and_passes_on_a_picture_of_the_same_size(self) -> None:
+        a, crop, x0, y0 = self._following_crop()
+        detail = self.node_detail(crop)
+        self.assertEqual((detail["follow"]["detector"], detail["follow"]["target"], detail["follow"]["size"]), (a, "A", [90, 80]))
+        self.assertEqual(detail["follow"]["missing"], [])
+        for name in self.names:
+            r = self.client.get(f"{self.base}/nodes/{crop}/picture", params={"frame": name, "stage": "output"})
+            self.assertEqual(r.status_code, 200, (name, r.text))
+            self.assertEqual(cv2.imdecode(np.frombuffer(r.content, np.uint8), cv2.IMREAD_COLOR).shape[:2], (80, 90), name)
+        whole = cv2.imread(str(datamodel.unsorted_dir(CAM) / self.names[0]))
+        out = self.client.get(f"{self.base}/nodes/{crop}/picture", params={"frame": self.names[0], "stage": "output"})
+        self.assertTrue(np.array_equal(cv2.imdecode(np.frombuffer(out.content, np.uint8), cv2.IMREAD_COLOR), whole[y0:y0 + 80, x0:x0 + 90]))
+
+    def test_a_detector_behind_a_following_crop_is_placed_back_on_the_whole_picture(self) -> None:
+        import labels  # noqa: PLC0415
+
+        a, crop, x0, y0 = self._following_crop()
+        plain = self.detector({"P": LEFT_BOX})  # looks for what A looks for, on the whole picture
+        b = self.node("detector")
+        self.post("/edges", {"source": crop, "target": b})
+        self.post(f"/nodes/{b}/targets", {"name": "P"})
+        self.post(f"/nodes/{b}/examples", {"target": "P", "frame": self.names[0], "box": [LEFT_BOX[0] - x0, LEFT_BOX[1] - y0, LEFT_BOX[2], LEFT_BOX[3]]})
+        self.run_all()
+        graph = flow.load_graph(CAM)
+        rects = flow.input_rects(graph, b)
+        self.assertTrue(flow.has_follow(rects))
+        finder = flow.Finder(CAM)
+        sizes = flow._frame_sizes(CAM)
+        stored_b, stored_plain = flow.load_stored(CAM, b)["frames"], flow.load_stored(CAM, plain)["frames"]
+        for name in self.names:
+            key = labels.hash_map(CAM)[name]
+            ox, oy = flow.rect_offset(rects, *sizes[key], found=finder.for_frame(key))
+            self.assertAlmostEqual(stored_b[key]["P"]["x"] + ox, stored_plain[key]["P"]["x"], delta=2.0, msg=name)
+            self.assertAlmostEqual(stored_b[key]["P"]["y"] + oy, stored_plain[key]["P"]["y"], delta=2.0, msg=name)
+        # Calculate measures on the whole picture: dx between the two detectors' points equals the plain difference
+        calc = self.node("calc")
+        self.post("/edges", {"source": plain, "target": calc, "point": "P"})
+        self.post("/edges", {"source": b, "target": calc, "point": "P"})
+        self.put(f"/nodes/{calc}", {"op": "dx"})
+        values = flow.calc_values(CAM, calc)
+        key0 = labels.hash_map(CAM)[self.names[0]]
+        self.assertAlmostEqual(values[key0], 0.0, delta=2.0)
+
+    def test_a_picture_without_a_box_of_the_target_has_no_crop_and_is_listed(self) -> None:
+        import labels  # noqa: PLC0415
+
+        a, crop, x0, y0 = self._following_crop()
+        b = self.node("detector")
+        self.post("/edges", {"source": crop, "target": b})
+        self.post(f"/nodes/{b}/targets", {"name": "P"})
+        self.post(f"/nodes/{b}/examples", {"target": "P", "frame": self.names[0], "box": [LEFT_HOLE[0] - x0, LEFT_HOLE[1] - y0, LEFT_HOLE[2], LEFT_HOLE[3]]})
+        key = labels.hash_map(CAM)[self.names[2]]
+        stored = flow.load_stored(CAM, a)
+        del stored["frames"][key]["A"]
+        flow._store(CAM, a, stored["sig"], stored["frames"])
+        self.assertEqual(self.node_detail(crop)["follow"]["missing"], [self.names[2]])
+        self.assertEqual(self.node_detail(b)["no_crop"], [self.names[2]])
+        r = self.client.get(f"{self.base}/nodes/{crop}/picture", params={"frame": self.names[2], "stage": "output"})
+        self.assertEqual(r.status_code, 422)
+        flow.run_detector(CAM, b)
+        self.assertEqual(flow.load_stored(CAM, b)["frames"][key], {})
+        self.assertEqual(self.node_detail(b)["summary"]["review"], 1)
+
+    def test_a_following_crop_is_drawn_for_one_target_and_needs_a_run_of_its_detector(self) -> None:
+        a = self.detector({"A": LEFT_BOX})
+        crop = self.node("crop")
+        r = self.client.post(f"{self.base}/edges", json={"source": a, "target": crop})
+        self.assertEqual(r.status_code, 422)  # the arrow must carry a target
+        r = self.client.put(f"{self.base}/nodes/{crop}", json={"follow": {"frame": self.names[0], "rect": [0, 0, 50, 50]}})
+        self.assertEqual(r.status_code, 422)  # nothing is connected yet
+        self.post("/edges", {"source": a, "target": crop, "point": "A"})
+        r = self.client.put(f"{self.base}/nodes/{crop}", json={"follow": {"frame": self.names[0], "rect": [0, 0, 50, 50]}})
+        self.assertEqual(r.status_code, 422)  # the detector has found nothing yet
+        self.run_all()
+        b = self.node("detector")
+        self.post("/edges", {"source": crop, "target": b})
+        self.post(f"/nodes/{b}/targets", {"name": "P"})
+        self.assertEqual(self.node_detail(crop)["follow"]["size"], None)
+
+    def test_the_drawn_rectangle_is_forgotten_when_the_crop_follows_another_target(self) -> None:
+        a, crop, x0, y0 = self._following_crop()
+        self.post(f"/nodes/{a}/targets", {"name": "B"})
+        self.post(f"/nodes/{a}/examples", {"target": "B", "frame": self.names[0], "box": RIGHT_BOX})
+        self.post("/edges", {"source": a, "target": crop, "point": "B"})
+        self.assertEqual(self.node_detail(crop)["follow"]["size"], None)
+        self.assertEqual(self.node_detail(crop)["follow"]["target"], "B")
+
+    def test_a_detector_behind_a_following_crop_goes_stale_when_its_source_detector_changes(self) -> None:
+        a, crop, x0, y0 = self._following_crop()
+        b = self.node("detector")
+        self.post("/edges", {"source": crop, "target": b})
+        self.post(f"/nodes/{b}/targets", {"name": "P"})
+        self.post(f"/nodes/{b}/examples", {"target": "P", "frame": self.names[0], "box": [LEFT_HOLE[0] - x0, LEFT_HOLE[1] - y0, LEFT_HOLE[2], LEFT_HOLE[3]]})
+        self.run_all()
+        self.assertEqual(self.node_detail(b)["status"], "fresh")
+        self.put(f"/nodes/{a}", {"rotate": False})
+        self.assertEqual(self.node_detail(a)["status"], "stale")
+        self.assertEqual(self.node_detail(b)["status"], "stale")
+        with self.assertRaises(flow.FlowError):
+            flow.run_detector(CAM, b)  # run the detector the Crop follows first
+
     def test_typed_arrows_are_checked(self) -> None:
         d, c, t = self.node("detector"), self.node("calc"), self.node("evaluation")
         for source, target in ((t, c), (d, t), (c, d), ("ingest", c), (d, d)):

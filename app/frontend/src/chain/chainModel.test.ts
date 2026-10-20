@@ -175,3 +175,17 @@ test("classifyFollows: dragging an ROI carries its Classify box; a Classify box 
   expect(classifyFollows(boxes, [move("classify:seal", 0, 0)])).toEqual([]);
   expect(classifyFollows(boxes, [move("roi:seal", 110, 40), move("classify:seal", 310, 70)])).toEqual([]);
 });
+
+test("flowConnect: a detector's target dot feeds a Crop (the Crop follows that target); the main dot does not", async () => {
+  const { targetHandle } = await import("./chainModel");
+  const withCrop: ChainCanvas = { ...flowCanvas, nodes: [...flowCanvas.nodes, node({ id: "crop:1", kind: "crop", ref: null, role: null, scope: null, label: "Crop 1" })] };
+  expect(flowConnect(withCrop, { source: "det:1", sourceHandle: targetHandle("hole"), target: "crop:1" })).toEqual({ source: "det:1", target: "crop:1", point: "hole" });
+  expect(flowConnect(withCrop, link("det:1", "crop:1"))).toEqual({ error: expect.stringContaining("one target") });
+  expect(flowConnect(withCrop, { source: "ingest", sourceHandle: targetHandle("hole"), target: "crop:1" })).toHaveProperty("error");
+});
+
+test("describeNode: a Crop that follows a target says which and how big its rectangle is", () => {
+  const follow = { detector: "det:1", target: "hole", size: [90, 80] as [number, number] };
+  expect(describeNode(node({ kind: "crop", flow: { rect: null, follow } }))).toBe("follows hole · 90 × 80 px");
+  expect(describeNode(node({ kind: "crop", flow: { rect: null, follow: { ...follow, size: null } } }))).toBe("follows hole · draw the rectangle");
+});

@@ -89,16 +89,28 @@ def _entry(camera: str, detector: str, target: str, frame_hash: str) -> dict | N
     if not entry:
         return None
     graph = flow.load_graph(camera)
-    return {**entry, "rects": flow.input_rects(graph, detector) if detector in graph["nodes"] else []}
+    rects = flow.input_rects(graph, detector) if detector in graph["nodes"] else []
+    return {**entry, "rects": rects, **_finder(camera, rects, frame_hash)}
 
 
 PIXEL_CENTRE = 0.5  # a detector reports the index of the centre pixel; a pixel i covers [i, i + 1] when rectangles are cut
 
 
-def _on_frame(entry: dict, img_w: int, img_h: int) -> dict:
+def _finder(camera: str, rects: list, frame_hash: str, finder: "flow.Finder | None" = None) -> dict:
+    """``{"found": ...}`` for an entry whose detector sits behind a Crop that follows a detector (else nothing)."""
+    if not flow.has_follow(rects):
+        return {}
+    return {"found": (finder or flow.Finder(camera)).for_frame(frame_hash)}
+
+
+def _on_frame(entry: dict, img_w: int, img_h: int) -> dict | None:
     """The box in the coordinates of the whole picture (a detector behind a Crop box finds it in the cropped picture),
-    as a position in pixel-edge coordinates (the half pixel from pixel indices to pixel edges is added)."""
-    ox, oy = flow.rect_offset(entry.get("rects") or [], img_w, img_h)
+    as a position in pixel-edge coordinates (the half pixel from pixel indices to pixel edges is added). ``None`` when
+    a Crop that follows a detector has no rectangle on this picture."""
+    try:
+        ox, oy = flow.rect_offset(entry.get("rects") or [], img_w, img_h, entry.get("found"))
+    except flow.NoCrop:
+        return None
     return {**entry, "x": float(entry["x"]) + ox + PIXEL_CENTRE, "y": float(entry["y"]) + oy + PIXEL_CENTRE}
 
 
@@ -108,12 +120,14 @@ class Source:
     def __init__(self, camera: str, spec: dict) -> None:
         self.target = spec["target"]
         graph = flow.load_graph(camera)
+        self.camera = camera
         self.rects = flow.input_rects(graph, spec["detector"]) if spec["detector"] in graph["nodes"] else []
         self.frames = flow.load_stored(camera, spec["detector"])["frames"]
+        self.finder = flow.Finder(camera)
 
     def entry(self, frame_hash: str) -> dict | None:
         found = self.frames.get(frame_hash, {}).get(self.target)
-        return {**found, "rects": self.rects} if found else None
+        return {**found, "rects": self.rects, **_finder(self.camera, self.rects, frame_hash, self.finder)} if found else None
 
 
 def entry_for(camera: str, spec: dict, frame_hash: str, source: "Source | None" = None) -> dict | None:
@@ -145,6 +159,8 @@ def effective(camera: str, feature: str, spec: dict, source: "Source | None" = N
     except OSError:
         return spec
     entry = _on_frame(entry, width, height)
+    if entry is None:
+        return spec
     return {
         **spec,
         "angle0": float(entry["angle"]),
@@ -163,6 +179,8 @@ def found_box(camera: str, spec: dict, frame: str) -> dict | None:
         return None
     width, height = _image_size(camera, frame)
     entry = _on_frame(entry, width, height)
+    if entry is None:
+        return None
     x0, y0, x1, y1 = rotsearch.Match(entry["x"], entry["y"], entry["angle"], entry.get("score", 1.0), entry["w"], entry["h"]).bbox()
     x0, y0, x1, y1 = max(0.0, x0), max(0.0, y0), min(float(width), x1), min(float(height), y1)
     return {"x": x0 / width, "y": y0 / height, "w": (x1 - x0) / width, "h": (y1 - y0) / height}
@@ -204,6 +222,8 @@ def set_anchor(camera: str, feature: str, detector: str, target: str, frame: str
         if image_size is not None:  # known size (no file read): compute the snapshot here
             width, height = image_size
             entry = _on_frame(_entry(camera, detector, target, key), width, height)
+            if entry is None:
+                raise AnchorError(f"The Crop before {detector} has no rectangle on {frame}; pick another picture.")
             anchor.update({
                 "angle0": float(entry["angle"]),
                 "dx": round((roi.x + roi.w / 2) * width - float(entry["x"]), 2),
@@ -224,6 +244,8 @@ def rect_for(anchor: dict, entry: dict | None, name: str, img_w: int, img_h: int
     if not entry:
         return None
     entry = _on_frame(entry, img_w, img_h)
+    if entry is None:
+        return None
     if anchor.get("mode") == "box":
         x0, y0, x1, y1 = rotsearch.Match(entry["x"], entry["y"], entry["angle"], entry.get("score", 1.0), entry["w"], entry["h"]).bbox()
         gx, gy = (x1 - x0) * float(anchor.get("margin", DEFAULT_MARGIN)), (y1 - y0) * float(anchor.get("margin", DEFAULT_MARGIN))

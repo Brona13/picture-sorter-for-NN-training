@@ -79,3 +79,58 @@ test("shows the cut-out as the result once a rectangle exists", async () => {
   const result = await screen.findByAltText("a.png cropped");
   expect(result).toHaveAttribute("src", expect.stringContaining("stage=output"));
 });
+
+// --- a Crop that follows a detector target ---
+const followDetail = (over: object = {}): FlowCrop => ({
+  kind: "crop", rect: null, input_box: "det:1", crops: [],
+  follow: { detector: "det:1", target: "hole", mode: "keep", frame: "a.png", size: [40, 20], offset: [10, -5], missing: ["b.png"] },
+  ...over,
+});
+
+function followFetch() {
+  vi.stubGlobal("Image", class { naturalWidth = 200; naturalHeight = 100; onload: (() => void) | null = null; set src(_: string) { queueMicrotask(() => this.onload?.()); } });
+  vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+    const method = init?.method ?? "GET";
+    calls.push({ url, method, body: init?.body ? JSON.parse(init.body as string) : undefined });
+    if (url.includes("/frames")) return new Response(JSON.stringify({ frames: ["a.png", "b.png"], showing_all: true, total: 2, reference_frame: null }));
+    if (url.includes("/boxes")) return new Response(JSON.stringify({ boxes: { "a.png": { hole: { x: 99.5, y: 49.5, angle: 0, score: 1, w: 30, h: 20, source: "auto" } } }, review: [] }));
+    return new Response(JSON.stringify(followDetail()));
+  }));
+}
+
+test("a following Crop shows the rectangle next to the target found on this picture and marks pictures without one", async () => {
+  followFetch();
+  setup(followDetail());
+  await screen.findByAltText("Frame to draw on");
+  // target centre (100, 50) + offset (10, -5) = (110, 45); 40 x 20 px => x 90..130, y 35..55 of a 200 x 100 picture
+  await waitFor(() => expect(screen.getByTestId("roi-box")).toHaveStyle({ left: "45%", top: "35%", width: "20%", height: "20%" }));
+  expect(await screen.findByRole("option", { name: "b.png — no target found" })).toBeInTheDocument();
+  expect(screen.getByAltText("a.png cropped")).toHaveAttribute("src", expect.stringContaining("stage=output"));
+});
+
+test("a following Crop saves the rectangle in pixels of the picture, with the picture it was drawn on, when the pointer is released", async () => {
+  followFetch();
+  const { setDetail } = setup(followDetail({ follow: { detector: "det:1", target: "hole", mode: "keep", frame: null, size: null, offset: null, missing: [] } }));
+  await screen.findByAltText("Frame to draw on");
+  await waitFor(() => expect(calls.some((c) => c.url.includes("/boxes"))).toBe(true));
+  await new Promise((r) => setTimeout(r, 20));
+  const area = screen.getByTestId("roi-canvas");
+  pointer(area, "pointerDown", 10 + 20, 20 + 10);
+  pointer(area, "pointerMove", 10 + 120, 20 + 60);
+  expect(calls.filter((c) => c.method === "PUT")).toHaveLength(0);
+  pointer(area, "pointerUp", 10 + 120, 20 + 60);
+  await waitFor(() => expect(calls.filter((c) => c.method === "PUT")).toHaveLength(1));
+  const body = calls.find((c) => c.method === "PUT")!.body;
+  expect(body.follow.frame).toBe("a.png");
+  expect(body.follow.rect[0]).toBeCloseTo(20);
+  expect(body.follow.rect[2]).toBeCloseTo(100);
+  await waitFor(() => expect(setDetail).toHaveBeenCalled());
+});
+
+test("Clear rectangle forgets the rectangle of a following Crop", async () => {
+  followFetch();
+  setup(followDetail());
+  await screen.findByAltText("Frame to draw on");
+  fireEvent.click(screen.getByRole("button", { name: "Clear rectangle" }));
+  await waitFor(() => expect(calls.filter((c) => c.method === "PUT").at(-1)!.body).toEqual({ follow: null }));
+});

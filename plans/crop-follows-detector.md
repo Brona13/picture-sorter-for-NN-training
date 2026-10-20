@@ -1,7 +1,7 @@
 ---
 name: crop-follows-detector
 description: A Crop box fed by a detector target cuts a fixed-size rectangle around the found position on every picture, optionally straightened by the target's angle
-status: proposed 2026-10-20, waiting for the user's approval, no code yet
+status: phase 1 (keep orientation) built as v1.77.0 on 2026-10-20 (approved by the user); phases 2 and 3 open
 document_type: plan
 last_updated: 2026-10-20
 ---

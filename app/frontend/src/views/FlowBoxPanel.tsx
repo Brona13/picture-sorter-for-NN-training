@@ -269,6 +269,23 @@ export default function FlowBoxPanel({ camera, nodeId, detail, onDetail, onChang
 
 function CropOptions({ detail, onUpdate }: { detail: FlowCrop; onUpdate: (body: Record<string, unknown>) => void }) {
   const r = detail.rect;
+  const f = detail.follow;
+  if (f) {
+    return (
+      <PanelSection title="Crop follows a target">
+        <p className="muted">
+          This Crop is fed by target <strong>{f.target}</strong> of {f.detector}. Its rectangle has one size and keeps the same place
+          next to the found target on every picture. Draw it once on a picture where the target was found. The picture is not turned.
+        </p>
+        <p>{f.size ? `${f.size[0]} × ${f.size[1]} px · offset ${f.offset?.[0]}, ${f.offset?.[1]} px from the target` : "No rectangle drawn yet: the picture passes on unchanged."}</p>
+        <p className={f.missing.length ? "flow-missing" : "muted"} role="status">
+          {f.missing.length ? `${f.missing.length} picture${f.missing.length === 1 ? "" : "s"} where ${f.detector} found no ${f.target}: they get no crop and cannot be used behind it.` : `${f.detector} found ${f.target} on every picture.`}
+        </p>
+        {detail.crops.length > 0 && <p className="muted">This box reads a picture already cut by {detail.crops.length} Crop box{detail.crops.length === 1 ? "" : "es"} above it.</p>}
+        <button type="button" disabled={!f.size} onClick={() => onUpdate({ follow: null })}>Clear rectangle</button>
+      </PanelSection>
+    );
+  }
   return (
     <PanelSection title="Crop">
       <p className="muted">

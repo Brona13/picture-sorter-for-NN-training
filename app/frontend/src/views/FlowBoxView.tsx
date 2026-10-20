@@ -175,7 +175,12 @@ function DetectorWork(p: {
   const insideSel = parentNames.includes(insidePick) ? insidePick : parentNames[0] ?? "";
   // With no target yet (or "+ New target" picked) a drag starts a new target: the rectangle first, its name next.
   const naming = mode === "draw" && (names.length === 0 || creating);
-  const candidates = useMemo(() => (parentId ? frames.filter((f) => parentBoxes[f]?.[insideSel]) : frames), [frames, parentId, parentBoxes, insideSel]);
+  const noCrop = useMemo(() => new Set(detail.no_crop ?? []), [detail.no_crop]);
+  // A Crop above that follows a detector has no rectangle where that detector found nothing: those pictures cannot be shown.
+  const candidates = useMemo(
+    () => (parentId ? frames.filter((f) => parentBoxes[f]?.[insideSel]) : frames).filter((f) => !noCrop.has(f)),
+    [frames, parentId, parentBoxes, insideSel, noCrop],
+  );
   const shown = useMemo(() => (onlyReview ? candidates.filter((f) => review.includes(f)) : candidates), [candidates, review, onlyReview]);
   const at = Math.min(index, Math.max(0, shown.length - 1));
   const frame = shown[at];
@@ -498,6 +503,7 @@ function DetectorWork(p: {
         <button type="button" disabled={at >= shown.length - 1} onClick={() => setIndex(at + 1)}>Next ›</button>
         <span className="muted">{shown.length ? `${at + 1} / ${shown.length} · ${frame}` : ""}</span>
         {missing.length > 0 && detail.status === "fresh" && frame && <span role="status" className="flow-missing">Not found here: {missing.join(", ")}</span>}
+        {noCrop.size > 0 && <span role="status" className="flow-missing">{noCrop.size} picture{noCrop.size === 1 ? "" : "s"} not shown: the Crop above has no rectangle there (its detector found no target).</span>}
         <label className="flow-check flow-nav-right">
           <input type="checkbox" checked={onlyReview} onChange={(e) => setOnlyReview(e.target.checked)} /> Only pictures to review ({review.length})
         </label>

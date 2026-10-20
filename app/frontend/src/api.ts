@@ -336,6 +336,8 @@ export interface RoiAnchor {
 
 export interface FlowSummary {
   rect?: [number, number, number, number] | null;
+  /** A Crop fed by one detector target: which, and the size of its rectangle (null until drawn). */
+  follow?: { detector: string; target: string; size: [number, number] | null } | null;
   targets?: string[];
   status?: "none" | "fresh" | "stale";
   frames?: number;
@@ -355,19 +357,37 @@ export interface FlowExample {
   box: [number, number, number, number];
   png: string;
 }
+/** One cut above a box: a fixed rectangle (fractions), or a Crop that follows a detector target (pixels, relative to the found target). */
+export type FlowStep = number[] | { follow: { detector: string; target: string; mode: string }; size: [number, number]; offset: [number, number] };
+/** A Crop fed by one target of a detector: the rectangle is drawn once and moves with the target on every picture. */
+export interface FlowFollow {
+  detector: string;
+  target: string;
+  mode: "keep";
+  /** The picture the rectangle was drawn on, its size in pixels and its offset from the found target; null until drawn. */
+  frame: string | null;
+  size: [number, number] | null;
+  offset: [number, number] | null;
+  /** Pictures where the detector found no such target: they cannot be cut. */
+  missing: string[];
+}
 export interface FlowCrop {
   kind: "crop";
   /** x, y, width, height as fractions of the input picture, or null (the picture passes on unchanged). */
   rect: [number, number, number, number] | null;
   input_box: string | null;
   /** The crops above this box (outermost first): the input picture is the frame cut by each in turn. */
-  crops: number[][];
+  crops: FlowStep[];
+  /** Set when the Crop is fed by one target of a detector. */
+  follow?: FlowFollow | null;
 }
 export interface FlowDetector {
   kind: "detector";
   input: string | null;
   /** The crops above this detector: it works on the frame cut by each in turn. */
-  crops: number[][];
+  crops: FlowStep[];
+  /** Pictures a Crop above this detector (one that follows a detector) has no rectangle on: they are not shown or searched. */
+  no_crop?: string[];
   /** `inside`: in a cascade, the input detector's target whose box this target searches in (none = the same name). */
   targets: { name: string; inside?: string | null; examples: FlowExample[] }[];
   /** A cascade: the input detector's targets (with examples) a target here can search inside. */
@@ -389,7 +409,7 @@ export interface FlowCalc {
   measured: number;
   /** The detector the two points come from, and the crops above it (the picture its boxes are in). */
   input?: string | null;
-  crops?: number[][];
+  crops?: FlowStep[];
 }
 export interface FlowEvaluation {
   kind: "evaluation";
