@@ -3,7 +3,7 @@ name: current-project
 description: Authoritative snapshot of the current purpose, architecture, capabilities, limitations, and open work
 status: current
 document_type: project-status
-last_updated: 2026-10-19
+last_updated: 2026-10-20
 ---
 
 # Current project
@@ -77,6 +77,8 @@ See [[data-model]] for the canonical entities and invariants.
 ## Implemented capabilities
 
 ### Cameras and tags
+
+- **Faster Overview (v1.75.3):** `GET /api/overview` read the database through about 2,000 short-lived connections for 20 cameras (a file open and a pragma each, 8,600 queries), 1.4 s on a synthetic set of 20 cameras x 400 pictures x 7 ROIs. It now runs inside `db.shared_connection()` (one connection reused by the calling thread; `close()` only drops unsaved work, other threads and code outside the block still get their own), 0.32 s. `/api/tags` was never slow (0.01 s); it only waited behind the Overview request. Any other page that reads many small things can use the same block. Not yet done: the picture-folder listing per camera (sorted `Path`s) is now the largest part and grows with the number of pictures.
 
 - **Delete a camera (v1.52.0):** each camera on the Overview has **Delete camera…**. The warning lists what goes (files and size on disk, pictures, ROIs, labels, goldens, versions, detections, other records) and the **Delete camera permanently** button stays disabled until the camera's name is typed again; the API repeats that check (`DELETE /api/cameras/{camera}?confirm=<name>`, preview at `GET /api/cameras/{camera}/delete-preview`). `db.delete_camera_rows` removes, in one transaction, every row of every table that has a `camera` column (found from the schema, so a table added later is covered), the version items and results, and the `score_cache` vectors that only this camera's pictures use (a vector another camera's identical picture also uses stays); `datamodel.delete_camera` then removes the camera folder (pictures and exports) and the in-memory caches. A camera with a queued or running job is refused (409). Irreversible: there is no trash.
 

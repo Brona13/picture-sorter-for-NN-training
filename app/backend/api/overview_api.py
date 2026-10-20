@@ -17,7 +17,7 @@ router = APIRouter()
 @router.get("/overview")
 def overview() -> dict:
     cameras = []
-    with datamodel.render_snapshot():
+    with db.shared_connection(), datamodel.render_snapshot():
         for camera in datamodel.list_cameras():
             frames = [p.name for p in datamodel.list_unsorted(camera)]
             ref = db.get_setting(camera, "reference_frame")

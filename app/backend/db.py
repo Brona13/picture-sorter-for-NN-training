@@ -7,6 +7,8 @@ through explicit Versions rather than implicit append-only event logs.
 """
 from __future__ import annotations
 
+import contextlib
+import contextvars
 import json
 import sqlite3
 import threading
@@ -224,8 +226,64 @@ def _has_user_tables(con: sqlite3.Connection) -> bool:
     )
 
 
+class _SharedConnection:
+    """The connection a ``shared_connection()`` block hands out: every call is passed on to the
+    one real connection, except ``close()``, which only drops unsaved work, so the callers'
+    usual open / use / close pattern keeps working while the connection stays open."""
+
+    def __init__(self, con: sqlite3.Connection) -> None:
+        self._con = con
+
+    def close(self) -> None:
+        if self._con.in_transaction:
+            self._con.rollback()
+
+    def __getattr__(self, name: str):
+        return getattr(self._con, name)
+
+    def __enter__(self):
+        return self._con.__enter__()
+
+    def __exit__(self, *exc):
+        return self._con.__exit__(*exc)
+
+
+# (thread id, wrapper) while a ``shared_connection()`` block is open in this context.
+_shared: contextvars.ContextVar[tuple[int, _SharedConnection] | None] = contextvars.ContextVar(
+    "db_shared_connection", default=None
+)
+
+
+@contextlib.contextmanager
+def shared_connection():
+    """Reuse one connection for every ``connect()`` made by this thread inside the block.
+
+    Opening a connection costs a file open and a pragma, and a page that reads many small
+    things (the Overview: a few thousand queries) paid that for every query. Other threads,
+    and code outside the block, still get their own connections. Nested blocks share the outer one.
+    """
+    if _shared.get() is not None:
+        yield
+        return
+    real = _open()
+    token = _shared.set((threading.get_ident(), _SharedConnection(real)))
+    try:
+        yield
+    finally:
+        _shared.reset(token)
+        real.close()
+
+
 def connect() -> sqlite3.Connection:
     """Open a short-lived connection, creating or upgrading the schema in place."""
+    shared = _shared.get()
+    if shared is not None and shared[0] == threading.get_ident():
+        perf.count("db.connections.shared")
+        return shared[1]  # type: ignore[return-value]
+    return _open()
+
+
+def _open() -> sqlite3.Connection:
     perf.count("db.connections")
     path = db_path()
     path.parent.mkdir(parents=True, exist_ok=True)
