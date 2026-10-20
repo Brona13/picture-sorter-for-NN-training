@@ -42,6 +42,7 @@ class ExampleBody(BaseModel):
     target: str
     frame: str
     box: list[float]
+    angle: float = 0.0  # the rectangle is turned by this many degrees (counter-clockwise on screen) and cut upright
 
 
 class BoxBody(BaseModel):
@@ -132,18 +133,19 @@ def remove_target(camera: str, node_id: str, name: str) -> dict:
 @router.post("/cameras/{camera}/flow/nodes/{node_id}/examples", status_code=201)
 def add_example(camera: str, node_id: str, body: ExampleBody) -> dict:
     _known(camera, node_id)
-    _guard(flow.add_example, camera, node_id, body.target, body.frame, body.box)
+    _guard(flow.add_example, camera, node_id, body.target, body.frame, body.box, body.angle)
     return flow.node_detail(camera, node_id)
 
 
 class ExampleBoxBody(BaseModel):
     box: list[float]
+    angle: float | None = None  # none = keep the example's turn
 
 
 @router.put("/cameras/{camera}/flow/nodes/{node_id}/examples/{target}/{index}")
 def update_example(camera: str, node_id: str, target: str, index: int, body: ExampleBoxBody) -> dict:
     _known(camera, node_id)
-    _guard(flow.update_example, camera, node_id, target, index, body.box)
+    _guard(flow.update_example, camera, node_id, target, index, body.box, body.angle)
     return flow.node_detail(camera, node_id)
 
 

@@ -356,6 +356,8 @@ export interface FlowExample {
   frame: string;
   box: [number, number, number, number];
   png: string;
+  /** The rectangle is turned by this many degrees (counter-clockwise on screen); the stored crop is upright. */
+  angle?: number;
 }
 /** One cut above a box: a fixed rectangle (fractions), or a Crop that follows a detector target (pixels, relative to the found target). */
 export type FlowStep = number[] | { follow: { detector: string; target: string; mode: string }; size: [number, number]; offset: [number, number] };
@@ -1181,15 +1183,15 @@ export const api = {
       `/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/targets/${encodeURIComponent(name)}`,
       send("DELETE"),
     ),
-  flowAddExample: (camera: string, id: string, target: string, frame: string, box: number[]) =>
+  flowAddExample: (camera: string, id: string, target: string, frame: string, box: number[], angle = 0) =>
     request<FlowNodeDetail>(
       `/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/examples`,
-      send("POST", { target, frame, box }),
+      send("POST", angle ? { target, frame, box, angle } : { target, frame, box }),
     ),
-  flowUpdateExample: (camera: string, id: string, target: string, index: number, box: number[]) =>
+  flowUpdateExample: (camera: string, id: string, target: string, index: number, box: number[], angle?: number) =>
     request<FlowNodeDetail>(
       `/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/examples/${encodeURIComponent(target)}/${index}`,
-      send("PUT", { box }),
+      send("PUT", angle === undefined ? { box } : { box, angle }),
     ),
   flowRemoveExample: (camera: string, id: string, target: string, index: number) =>
     request<FlowNodeDetail>(

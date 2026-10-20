@@ -108,6 +108,11 @@ export default function FlowBoxView({ camera, focus }: { camera: string; focus: 
   );
 }
 
+/** A turn in degrees brought to -180..180 (counter-clockwise on screen). */
+function turnTo(angle: number): number {
+  return Math.round((((angle + 180) % 360 + 360) % 360 - 180) * 10) / 10;
+}
+
 function DetectorWork(p: {
   camera: string;
   nodeId: string;
@@ -121,7 +126,11 @@ function DetectorWork(p: {
   const [frames, setFrames] = useState<string[]>([]);
   const [index, setIndex] = useState(0);
   const [target, setTarget] = useState("");
-  const [mode, setMode] = useState<"draw" | "place">("draw");
+  const [mode, setMode] = useState<"draw" | "place" | "reuse">("draw");
+  // "Reuse rectangle": a copy of an existing example's rectangle, put on this picture, moved and turned, then added as an example.
+  const [reuseSrc, setReuseSrc] = useState("");
+  const [stamp, setStamp] = useState<{ cx: number; cy: number; angle: number } | null>(null);
+  const [stampDrag, setStampDrag] = useState<{ kind: "move" | "turn"; start: { x: number; y: number }; orig: { cx: number; cy: number } } | null>(null);
   const [onlyReview, setOnlyReview] = useState(false);
   const [creating, setCreating] = useState(false);
   const [sel, setSel] = useState<{ name: string; index: number } | null>(null);
@@ -203,7 +212,7 @@ function DetectorWork(p: {
   const found = frame ? boxes[frame] ?? {} : {};
   const missing = names.filter((n) => !(n in found));
   const examplesHere = detail.targets.flatMap((t, ti) =>
-    t.examples.flatMap((e, index) => (e.frame === frame ? [{ name: t.name, ti, index, box: e.box as Rect }] : [])),
+    t.examples.flatMap((e, index) => (e.frame === frame ? [{ name: t.name, ti, index, box: e.box as Rect, angle: e.angle ?? 0 }] : [])),
   );
   const statusOf = (f: string) => (detail.status === "none" ? "" : review.includes(f) ? "review" : f in boxes ? "ok" : "");
 
@@ -229,7 +238,20 @@ function DetectorWork(p: {
     return { x: inside(v.x + ((e.clientX - r.left) / r.width) * v.w, v.x, v.w), y: inside(v.y + ((e.clientY - r.top) / r.height) * v.h, v.y, v.h) };
   };
 
-  useEffect(() => { setSel(null); setEdit(null); }, [frame, mode]);
+  useEffect(() => { setSel(null); setEdit(null); setStamp(null); setStampDrag(null); }, [frame, mode]);
+  const allExamples = detail.targets.flatMap((t) => t.examples.map((ex, index) => ({ key: `${t.name}\u0000${index}`, name: t.name, index, ex })));
+  const source = allExamples.find((e) => e.key === reuseSrc) ?? allExamples.find((e) => e.name === chosen) ?? allExamples[0];
+  const [sw, sh] = source ? [source.ex.box[2], source.ex.box[3]] : [0, 0];
+  const turnPoint = (s: { cx: number; cy: number; angle: number }) => {
+    const t = (s.angle * Math.PI) / 180;
+    const d = sh / 2 + 26 / px;
+    return { x: s.cx - d * Math.sin(t), y: s.cy - d * Math.cos(t) };
+  };
+  const insideRotated = (q: { x: number; y: number }, cx: number, cy: number, w: number, h: number, angle: number) => {
+    const t = (angle * Math.PI) / 180;
+    const [dx, dy] = [q.x - cx, q.y - cy];
+    return Math.abs(dx * Math.cos(t) - dy * Math.sin(t)) <= w / 2 && Math.abs(dx * Math.sin(t) + dy * Math.cos(t)) <= h / 2;
+  };
   const selected = sel ? examplesHere.find((e) => e.name === sel.name && e.index === sel.index) : undefined;
   useEffect(() => setZoom(FIT_VIEW), [nodeId, view?.crop ? frame : null]); // a cascade shows another window on every picture
   // Screen pixels per picture pixel: handles, labels and the grab distance keep their size at any zoom.
@@ -240,7 +262,7 @@ function DetectorWork(p: {
 
   // What a press at q hits in draw mode: a handle of the selected example, else the inside of an example.
   const hitExample = (q: { x: number; y: number }) => {
-    if (selected) {
+    if (selected && !selected.angle) { // a turned example can be moved, not resized
       const r = selected.box;
       for (const h of HANDLES) {
         const c = handlePoint(r, h);
@@ -248,14 +270,14 @@ function DetectorWork(p: {
       }
     }
     for (const e of [...examplesHere].reverse()) {
-      if (q.x >= e.box[0] && q.x <= e.box[0] + e.box[2] && q.y >= e.box[1] && q.y <= e.box[1] + e.box[3]) return { e, kind: "move" as "move" | Handle };
+      if (insideRotated(q, e.box[0] + e.box[2] / 2, e.box[1] + e.box[3] / 2, e.box[2], e.box[3], e.angle)) return { e, kind: "move" as "move" | Handle };
     }
     return null;
   };
 
   // The cursor says what a press would do, as in the ROI editor: resize arrows on a handle, move over a box, crosshair to draw.
   const under = mode === "draw" && !edit && !drag && hover ? hitExample(hover) : null;
-  const cursor = edit ? grabCursor(edit.kind) : under ? grabCursor(under.kind) : "crosshair";
+  const cursor = mode === "reuse" ? (stamp ? "move" : "copy") : edit ? grabCursor(edit.kind) : under ? grabCursor(under.kind) : "crosshair";
 
   const commitEdit = async () => {
     if (!edit || !sel) return;
@@ -275,6 +297,17 @@ function DetectorWork(p: {
   const onDown = (e: React.PointerEvent<SVGSVGElement>) => {
     const q = point(e);
     (e.currentTarget as SVGSVGElement).setPointerCapture?.(e.pointerId);
+    if (mode === "reuse") {
+      if (!source) return;
+      if (stamp) {
+        const t = turnPoint(stamp);
+        if (Math.hypot(q.x - t.x, q.y - t.y) <= grab * 1.5) { setStampDrag({ kind: "turn", start: q, orig: { cx: stamp.cx, cy: stamp.cy } }); return; }
+        if (insideRotated(q, stamp.cx, stamp.cy, sw, sh, stamp.angle)) { setStampDrag({ kind: "move", start: q, orig: { cx: stamp.cx, cy: stamp.cy } }); return; }
+      }
+      setStamp({ cx: q.x, cy: q.y, angle: stamp?.angle ?? 0 });
+      setStampDrag({ kind: "move", start: q, orig: { cx: q.x, cy: q.y } });
+      return;
+    }
     const hit = mode === "draw" ? hitExample(q) : null;
     if (hit) {
       setSel({ name: hit.e.name, index: hit.e.index });
@@ -286,6 +319,15 @@ function DetectorWork(p: {
   };
   const onMove = (e: React.PointerEvent<SVGSVGElement>) => {
     if (view) setHover(point(e));
+    if (stampDrag && stamp) {
+      const q = point(e);
+      if (stampDrag.kind === "move") {
+        setStamp({ ...stamp, cx: stampDrag.orig.cx + (q.x - stampDrag.start.x), cy: stampDrag.orig.cy + (q.y - stampDrag.start.y) });
+      } else if (Math.hypot(q.x - stamp.cx, q.y - stamp.cy) > 1) {
+        setStamp({ ...stamp, angle: turnTo(Math.round((Math.atan2(-(q.x - stamp.cx), -(q.y - stamp.cy)) * 1800) / Math.PI) / 10) });
+      }
+      return;
+    }
     if (edit) {
       const q = point(e);
       const [dx, dy] = [q.x - edit.start.x, q.y - edit.start.y];
@@ -299,6 +341,7 @@ function DetectorWork(p: {
     }
   };
   const onUp = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (stampDrag) { setStampDrag(null); return; }
     if (edit) void commitEdit();
     else void finish(point(e));
   };
@@ -330,6 +373,17 @@ function DetectorWork(p: {
     } catch (e) { p.onError(msg(e)); }
   };
 
+  const addStamped = async () => {
+    if (!stamp || !source || !frame || !chosen) return;
+    const box = [Math.round(stamp.cx - sw / 2), Math.round(stamp.cy - sh / 2), sw, sh];
+    try {
+      p.setDetail(await api.flowAddExample(camera, nodeId, chosen, frame, box, stamp.angle));
+      setStamp(null);
+      p.onError(null);
+      p.onChanged();
+    } catch (e) { p.onError(msg(e)); }
+  };
+
   const saveNew = async () => {
     const name = newName.trim();
     if (!pending || !name) return;
@@ -351,6 +405,7 @@ function DetectorWork(p: {
         <div className="flow-segment" role="group" aria-label="What a drag does">
           <button type="button" aria-pressed={mode === "draw"} onClick={() => setMode("draw")}>Draw example</button>
           <button type="button" aria-pressed={mode === "place"} onClick={() => setMode("place")}>Place box</button>
+          <button type="button" aria-pressed={mode === "reuse"} disabled={allExamples.length === 0} title="Copy an existing example rectangle onto this picture, turn it, and add it as an example" onClick={() => setMode("reuse")}>Reuse rectangle</button>
         </div>
         {parentId && (
           <div className="flow-chips" role="group" aria-label="Search inside">
@@ -383,7 +438,7 @@ function DetectorWork(p: {
                 type="button"
                 className="flow-chip"
                 aria-pressed={!naming && name === chosen}
-                onClick={() => { setTarget(name); setCreating(false); setPending(null); if (parentId && t) setInsidePick(t.inside ?? t.name); }}
+                onClick={() => { setTarget(name); setReuseSrc(""); setCreating(false); setPending(null); if (parentId && t) setInsidePick(t.inside ?? t.name); }}
               >
                 <span className="flow-dot" style={{ background: COLORS[i % COLORS.length] }} />
                 {name}
@@ -411,10 +466,40 @@ function DetectorWork(p: {
                   ? "Drag a rectangle around what to find (one hole, say) and include the geometry that tells it from its twin. You name it next."
                   : mode === "draw"
                     ? `Drag a rectangle around the “${chosen}”. Include the geometry that tells it from its twin. Click a rectangle to move or resize it; run again afterwards.`
-                    : chosen
+                    : mode === "reuse"
+                      ? `Click on the picture to put a copy of the chosen rectangle there, drag it to move it, drag the round handle above it (or type the turn) to rotate it, then add it as an example of “${chosen}”.`
+                      : chosen
                       ? `Click where the centre of “${chosen}” is. Your box stays when the detector runs again.`
                       : "Draw an example of a target first."}
       </p>
+      {mode === "reuse" && source && (
+        <form className="flow-name" aria-label="Reuse rectangle" onSubmit={(e) => { e.preventDefault(); void addStamped(); }}>
+          <label>
+            Rectangle{" "}
+            <select
+              value={source.key}
+              onChange={(e) => { const next = allExamples.find((x) => x.key === e.target.value); setReuseSrc(e.target.value); if (next) setTarget(next.name); setStamp(null); }}
+            >
+              {allExamples.map((x) => <option key={x.key} value={x.key}>{x.name} · example {x.index + 1} ({x.ex.box[2]} × {x.ex.box[3]}){x.ex.angle ? `, turned ${x.ex.angle}°` : ""}</option>)}
+            </select>
+          </label>
+          <img src={source.ex.png} alt={`Example ${source.index + 1} of ${source.name}`} style={{ maxHeight: 48, maxWidth: 96, border: "1px solid var(--border)" }} />
+          <label>
+            Turn (°){" "}
+            <input
+              type="number"
+              step={1}
+              aria-label="Turn in degrees"
+              style={{ width: 70 }}
+              disabled={!stamp}
+              value={stamp ? stamp.angle : 0}
+              onChange={(e) => { const v = Number(e.target.value); if (stamp && Number.isFinite(v)) setStamp({ ...stamp, angle: turnTo(v) }); }}
+            />
+          </label>
+          <button type="submit" disabled={!stamp || !frame}>Add as example to {chosen}</button>
+          <button type="button" disabled={!stamp} onClick={() => setStamp(null)}>Cancel</button>
+        </form>
+      )}
       {pending && naming && (
         <form className="flow-name" onSubmit={(e) => { e.preventDefault(); void saveNew(); }}>
           <label>
@@ -465,11 +550,11 @@ function DetectorWork(p: {
                   const b = boxOf(e);
                   const active = sel?.name === e.name && sel.index === e.index;
                   return (
-                    <g key={`ex${e.name}${e.index}`}>
+                    <g key={`ex${e.name}${e.index}`} transform={e.angle ? `rotate(${-e.angle} ${b[0] + b[2] / 2} ${b[1] + b[3] / 2})` : undefined}>
                       {/* a dark line under the coloured one keeps it visible on a white part of the picture */}
                       <rect x={b[0]} y={b[1]} width={b[2]} height={b[3]} fill="none" stroke="rgba(0,0,0,.75)" strokeWidth={4} vectorEffect="non-scaling-stroke" pointerEvents="none" />
                       <rect x={b[0]} y={b[1]} width={b[2]} height={b[3]} fill={active ? ROI_FILL : under?.e.name === e.name && under.e.index === e.index ? ROI_HOVER : "none"} stroke={active ? ROI_RED : COLORS[e.ti % COLORS.length]} strokeWidth={2} strokeDasharray={active ? undefined : "6 3"} vectorEffect="non-scaling-stroke" data-testid="example-rect" />
-                      {active && HANDLES.map((h) => {
+                      {active && !e.angle && HANDLES.map((h) => {
                         const c = handlePoint(b, h);
                         return <rect key={h} data-testid={`handle-${h}`} x={c.x - handleSize / 2} y={c.y - handleSize / 2} width={handleSize} height={handleSize} fill={ROI_RED} stroke="#fff" strokeWidth={1} vectorEffect="non-scaling-stroke" />;
                       })}
@@ -489,6 +574,19 @@ function DetectorWork(p: {
                     </g>
                   );
                 })}
+                {mode === "reuse" && stamp && source && (() => {
+                  const t = turnPoint(stamp);
+                  return (
+                    <g pointerEvents="none" data-testid="stamp">
+                      <g transform={`translate(${stamp.cx} ${stamp.cy}) rotate(${-stamp.angle})`}>
+                        <rect x={-sw / 2} y={-sh / 2} width={sw} height={sh} fill="none" stroke="rgba(0,0,0,.75)" strokeWidth={4} vectorEffect="non-scaling-stroke" />
+                        <rect x={-sw / 2} y={-sh / 2} width={sw} height={sh} fill={ROI_FILL} stroke={ROI_RED} strokeWidth={2} vectorEffect="non-scaling-stroke" />
+                        <line x1={0} y1={-sh / 2} x2={0} y2={-sh / 2 - 26 / px} stroke={ROI_RED} strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
+                      </g>
+                      <circle data-testid="stamp-turn" cx={t.x} cy={t.y} r={6 / px} fill={ROI_RED} stroke="#fff" strokeWidth={1} vectorEffect="non-scaling-stroke" />
+                    </g>
+                  );
+                })()}
                 {pending && pending.frame === frame && (
                   <rect x={pending.box[0]} y={pending.box[1]} width={pending.box[2]} height={pending.box[3]} fill={ROI_FILL} stroke={ROI_RED} strokeWidth={2} strokeDasharray="6 3" vectorEffect="non-scaling-stroke" pointerEvents="none" />
                 )}

@@ -576,28 +576,53 @@ def _read(camera: str, frame: str) -> np.ndarray:
     return curation.load_image(datamodel.unsorted_dir(camera) / frame)
 
 
-def _cut(camera: str, frame: str, box: list[float], rects: list | None = None) -> tuple[list[int], str, float]:
+def clean_angle(raw: object) -> float:
+    """A turn in degrees, counter-clockwise as seen on screen, brought to -180..180."""
+    return round(((_finite(raw, "The turn") + 180.0) % 360.0) - 180.0, 2)
+
+
+def _straight_cut(image: np.ndarray, x: int, y: int, w: int, h: int, angle: float) -> np.ndarray:
+    """The ``w`` x ``h`` content of a rectangle with its centre at the centre of ``[x, y, w, h]`` and turned by ``angle``
+    (counter-clockwise on screen), turned back upright. What lies outside the picture repeats its edge."""
+    cx, cy = x + w / 2.0 - 0.5, y + h / 2.0 - 0.5  # pixel indices
+    m = cv2.getRotationMatrix2D((cx, cy), -angle, 1.0)
+    m[0, 2] += (w - 1) / 2.0 - cx
+    m[1, 2] += (h - 1) / 2.0 - cy
+    return cv2.warpAffine(image, m, (w, h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+
+
+def _cut(camera: str, frame: str, box: list[float], rects: list | None = None, angle: float = 0.0) -> tuple[list[int], str, float]:
     """The example crop of ``box`` (pixels ``[x, y, w, h]`` of the picture the detector works on, after any Crop boxes
-    above it) on ``frame``: the clipped box, the crop as base64 PNG and the scale it is stored at. A crop whose longer
-    side is over ``MAX_EXAMPLE_SIDE`` is stored shrunk (scale < 1, the box stays in picture pixels); ``run_detector``
-    then searches a picture shrunk by the same factor."""
+    above it) on ``frame``: the clipped box, the crop as base64 PNG and the scale it is stored at. With an ``angle`` the
+    rectangle is turned about its centre and cut upright (the box stays the unturned one, centre inside the picture).
+    A crop whose longer side is over ``MAX_EXAMPLE_SIDE`` is stored shrunk (scale < 1, the box stays in picture pixels);
+    ``run_detector`` then searches a picture shrunk by the same factor."""
     if not isinstance(box, (list, tuple)) or len(box) != 4:
         raise FlowError("The example box is x, y, width, height.")
     image = apply_rects(_read(camera, frame), rects or [], _found_for(camera, rects or [], frame))[0]
     x, y, w, h = (int(round(_finite(v, "Box"))) for v in box)
-    x0, y0 = max(0, x), max(0, y)
-    x1, y1 = min(image.shape[1], x + w), min(image.shape[0], y + h)
-    if x1 - x0 < 5 or y1 - y0 < 5:
-        raise FlowError("The example is too small; draw a larger box.")
-    crop = image[y0:y1, x0:x1]
+    if angle:
+        if w < 5 or h < 5:
+            raise FlowError("The example is too small; draw a larger box.")
+        if not (0 <= x + w / 2.0 <= image.shape[1] and 0 <= y + h / 2.0 <= image.shape[0]):
+            raise FlowError("The centre of the turned rectangle must lie on the picture.")
+        crop = _straight_cut(image, x, y, w, h, angle)
+        clipped = [x, y, w, h]
+    else:
+        x0, y0 = max(0, x), max(0, y)
+        x1, y1 = min(image.shape[1], x + w), min(image.shape[0], y + h)
+        if x1 - x0 < 5 or y1 - y0 < 5:
+            raise FlowError("The example is too small; draw a larger box.")
+        crop = image[y0:y1, x0:x1]
+        clipped = [x0, y0, x1 - x0, y1 - y0]
     if float(np.std(crop)) < rotsearch.MIN_TEXTURE:
         raise FlowError("The example is flat; there is nothing to recognise in it.")
-    scale = min(1.0, MAX_EXAMPLE_SIDE / float(max(x1 - x0, y1 - y0)))
+    scale = min(1.0, MAX_EXAMPLE_SIDE / float(max(crop.shape[1], crop.shape[0])))
     stored = cv2.resize(crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA) if scale < 1.0 else crop
     ok, buf = cv2.imencode(".png", stored)
     if not ok:
         raise FlowError("Cannot store the example.")
-    return [x0, y0, x1 - x0, y1 - y0], base64.b64encode(buf.tobytes()).decode(), scale
+    return clipped, base64.b64encode(buf.tobytes()).decode(), scale
 
 
 def _store_cut(example: dict, png: str, scale: float) -> None:
@@ -632,8 +657,10 @@ def _check_scale(node: dict) -> None:
                 )
 
 
-def add_example(camera: str, node_id: str, target: str, frame: str, box: list[float]) -> dict:
-    """Cut an example crop (pixels ``[x, y, w, h]`` of the frame) and keep it with the target."""
+def add_example(camera: str, node_id: str, target: str, frame: str, box: list[float], angle: float = 0.0) -> dict:
+    """Cut an example crop (pixels ``[x, y, w, h]`` of the frame) and keep it with the target. A rectangle turned by
+    ``angle`` (counter-clockwise on screen) is cut upright, so the example shows the part the way it sits in its own
+    frame whatever its turn in this picture."""
     graph = load_graph(camera)
     node = _node(graph, node_id)
     if node["kind"] != "detector":
@@ -643,8 +670,11 @@ def add_example(camera: str, node_id: str, target: str, frame: str, box: list[fl
         raise FlowError(f"Unknown target: {target}")
     if len(entry["examples"]) >= MAX_EXAMPLES:
         raise FlowError(f"A target can have at most {MAX_EXAMPLES} examples.")
-    clipped, png, scale = _cut(camera, frame, box, input_rects(graph, node_id))
+    turn = clean_angle(angle) if angle else 0.0
+    clipped, png, scale = _cut(camera, frame, box, input_rects(graph, node_id), turn)
     example = {"frame": frame, "box": clipped}
+    if turn:
+        example["angle"] = turn  # kept so the rectangle is drawn turned; the stored crop is already upright
     _store_cut(example, png, scale)
     entry["examples"].append(example)
     _check_scale(node)
@@ -652,7 +682,7 @@ def add_example(camera: str, node_id: str, target: str, frame: str, box: list[fl
     return example
 
 
-def update_example(camera: str, node_id: str, target: str, index: int, box: list[float]) -> dict:
+def update_example(camera: str, node_id: str, target: str, index: int, box: list[float], angle: float | None = None) -> dict:
     """Move or resize an example rectangle on its own picture; the crop is cut again (the detector then needs a new run)."""
     graph = load_graph(camera)
     node = _node(graph, node_id)
@@ -660,7 +690,12 @@ def update_example(camera: str, node_id: str, target: str, index: int, box: list
     if entry is None or not 0 <= index < len(entry["examples"]):
         raise FlowError("There is no such example.")
     example = entry["examples"][index]
-    example["box"], png, scale = _cut(camera, example["frame"], box, input_rects(graph, node_id))
+    turn = example.get("angle", 0.0) if angle is None else (clean_angle(angle) if angle else 0.0)
+    example["box"], png, scale = _cut(camera, example["frame"], box, input_rects(graph, node_id), turn)
+    if turn:
+        example["angle"] = turn
+    else:
+        example.pop("angle", None)
     _store_cut(example, png, scale)
     _check_scale(node)
     save_graph(camera, graph)
@@ -1195,7 +1230,7 @@ def node_detail(camera: str, node_id: str, graph: dict | None = None) -> dict:
             "crops": input_rects(graph, node_id),
             "no_crop": frames_without_crop(camera, graph, node_id),
             "targets": [
-                {"name": t["name"], "inside": t.get("inside"), "examples": [{"frame": e["frame"], "box": e["box"], "png": "data:image/png;base64," + e["png"], "scale": e.get("scale", 1.0)} for e in t["examples"]]}
+                {"name": t["name"], "inside": t.get("inside"), "examples": [{"frame": e["frame"], "box": e["box"], "png": "data:image/png;base64," + e["png"], "scale": e.get("scale", 1.0), "angle": e.get("angle", 0.0)} for e in t["examples"]]}
                 for t in node["targets"]
             ],
             "rotate": node["rotate"],

@@ -510,3 +510,61 @@ test("Detector page: no grid of findings before the detector has run", async () 
   await screen.findByRole("button", { name: "Show a.png" }, { timeout: 4000 });
   expect(screen.queryByTestId("detector-grid")).toBeNull();
 });
+
+test("Detector page: Reuse rectangle puts a copy of an example on the picture, turns it and adds it as an example", async () => {
+  const overlay = await openDetectorOn100px();
+  await userEvent.click(screen.getByRole("button", { name: "Reuse rectangle" }));
+  expect(screen.getByRole("form", { name: "Reuse rectangle" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /Add as example to left hole/ })).toBeDisabled();
+  fireEvent.pointerDown(overlay, { clientX: 60, clientY: 50 }); // put the copy: 40 x 30 centred here
+  fireEvent.pointerUp(overlay, { clientX: 60, clientY: 50 });
+  expect(await screen.findByTestId("stamp")).toBeInTheDocument();
+  // drag the copy to the right and down by 10, then turn it by typing
+  fireEvent.pointerDown(overlay, { clientX: 60, clientY: 50 });
+  fireEvent.pointerMove(overlay, { clientX: 70, clientY: 60 });
+  fireEvent.pointerUp(overlay, { clientX: 70, clientY: 60 });
+  fireEvent.change(screen.getByLabelText("Turn in degrees"), { target: { value: "30" } });
+  await userEvent.click(screen.getByRole("button", { name: /Add as example to left hole/ }));
+  await waitFor(() => expect(calls.some((c) => c.method === "POST" && c.url.endsWith("/examples"))).toBe(true));
+  expect(calls.find((c) => c.method === "POST" && c.url.endsWith("/examples"))?.body).toEqual({ target: "left hole", frame: "a.png", box: [50, 45, 40, 30], angle: 30 });
+  vi.unstubAllGlobals();
+});
+
+test("Detector page: dragging the round handle above the copy turns it", async () => {
+  const overlay = await openDetectorOn100px();
+  await userEvent.click(screen.getByRole("button", { name: "Reuse rectangle" }));
+  fireEvent.pointerDown(overlay, { clientX: 50, clientY: 60 });
+  fireEvent.pointerUp(overlay, { clientX: 50, clientY: 60 });
+  const handle = await screen.findByTestId("stamp-turn");
+  const hx = Number(handle.getAttribute("cx"));
+  const hy = Number(handle.getAttribute("cy"));
+  expect(hx).toBeCloseTo(50, 1); // straight above the centre
+  expect(hy).toBeLessThan(45);
+  fireEvent.pointerDown(overlay, { clientX: hx, clientY: hy });
+  fireEvent.pointerMove(overlay, { clientX: 20, clientY: 60 }); // the handle is now to the left of the centre: a quarter turn counter-clockwise
+  fireEvent.pointerUp(overlay, { clientX: 20, clientY: 60 });
+  expect(screen.getByLabelText("Turn in degrees")).toHaveValue(90);
+  vi.unstubAllGlobals();
+});
+
+test("Detector page: a turned example is drawn turned and has no resize handles", async () => {
+  vi.stubGlobal("PointerEvent", MouseEvent);
+  const detector = {
+    kind: "detector", input: "ingest", crops: [], rotate: true, angle_range: null, pad: 0.3, status: "fresh",
+    targets: [{ name: "left hole", examples: [{ frame: "a.png", box: [10, 10, 40, 30], png: "data:image/png;base64,AA", angle: 30 }] }],
+    summary: { frames: 2, found: { "left hole": 0 }, complete: 0, review: 0 },
+  };
+  routes(detector);
+  render(<FlowBoxView camera="camA" focus={{ nodeId: "det:1", onBack: () => {} }} />);
+  const img = await screen.findByAltText("a.png", {}, { timeout: 4000 });
+  Object.defineProperty(img, "naturalWidth", { value: 100 });
+  Object.defineProperty(img, "naturalHeight", { value: 100 });
+  fireEvent.load(img);
+  const overlay = await screen.findByTestId("flow-overlay", {}, { timeout: 4000 });
+  overlay.getBoundingClientRect = () => ({ left: 0, top: 0, width: 100, height: 100, right: 100, bottom: 100, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
+  expect(screen.getByTestId("example-rect").parentElement?.getAttribute("transform")).toBe("rotate(-30 30 25)");
+  fireEvent.pointerDown(overlay, { clientX: 30, clientY: 25 });
+  fireEvent.pointerUp(overlay, { clientX: 30, clientY: 25 });
+  expect(screen.queryByTestId("handle-se")).not.toBeInTheDocument();
+  vi.unstubAllGlobals();
+});

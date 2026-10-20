@@ -1,6 +1,8 @@
 """Detector -> Calculate -> Tolerance boxes on the chain (see ``flow.py``). Temp roots only."""
 from __future__ import annotations
 
+import base64
+
 import cv2
 import numpy as np
 
@@ -328,6 +330,37 @@ class FlowTests(ApiTestCase):
         for bad in ([0, 0, 2, 2], [500, 500, 40, 40]):  # too small; entirely outside the picture
             self.assertEqual(self.client.put(f"{self.base}/nodes/{d1}/examples/A/0", json={"box": bad}).status_code, 422)
         self.assertEqual(self.client.put(f"{self.base}/nodes/{d1}/examples/A/5", json={"box": LEFT_BOX}).status_code, 422)
+
+    def test_turned_rectangle_is_cut_upright_and_keeps_its_turn(self) -> None:
+        d1 = self.detector({"A": LEFT_BOX})
+        plain = self.client.get(f"{self.base}/nodes/{d1}").json()["targets"][0]["examples"][0]
+        self.assertEqual(plain["angle"], 0.0)
+        # where the left hole lies on the picture turned by 30 degrees (the picture is turned about its centre)
+        height, width = cv2.imread(str(datamodel.unsorted_dir(CAM) / self.names[2])).shape[:2]
+        m = cv2.getRotationMatrix2D(((width - 1) / 2.0, (height - 1) / 2.0), 30.0, 1.0)
+        cx, cy = LEFT_BOX[0] + LEFT_BOX[2] / 2.0 - 0.5, LEFT_BOX[1] + LEFT_BOX[3] / 2.0 - 0.5
+        nx, ny = m @ np.array([cx, cy, 1.0])
+        box = [int(round(nx + 0.5 - LEFT_BOX[2] / 2.0)), int(round(ny + 0.5 - LEFT_BOX[3] / 2.0)), LEFT_BOX[2], LEFT_BOX[3]]
+        added = self.post(f"/nodes/{d1}/examples", {"target": "A", "frame": self.names[2], "box": box, "angle": 30})
+        stamped = added["targets"][0]["examples"][1]
+        self.assertEqual(stamped["angle"], 30.0)
+        self.assertEqual(stamped["box"], box)
+
+        def pixels(example: dict) -> np.ndarray:
+            raw = base64.b64decode(example["png"].split(",", 1)[1])
+            return cv2.imdecode(np.frombuffer(raw, np.uint8), cv2.IMREAD_GRAYSCALE).astype(np.float32)
+
+        a, b = pixels(plain), pixels(stamped)
+        self.assertEqual(a.shape, b.shape)
+        self.assertGreater(float(np.corrcoef(a.ravel(), b.ravel())[0, 1]), 0.9)
+        # moving it keeps the turn unless a new one is given; a turn of 0 clears it
+        moved = self.put(f"/nodes/{d1}/examples/A/1", {"box": box})  # PUT replies 200
+        self.assertEqual(moved["targets"][0]["examples"][1]["angle"], 30.0)
+        cleared = self.put(f"/nodes/{d1}/examples/A/1", {"box": box, "angle": 0})
+        self.assertEqual(cleared["targets"][0]["examples"][1]["angle"], 0.0)
+        # the centre has to lie on the picture
+        off = self.client.post(f"{self.base}/nodes/{d1}/examples", json={"target": "A", "frame": self.names[2], "box": [width + 20, 10, 40, 40], "angle": 30})
+        self.assertEqual(off.status_code, 422)
 
     def test_one_hole_found_goes_to_review(self) -> None:
         d1 = self.detector({"A": LEFT_BOX})
