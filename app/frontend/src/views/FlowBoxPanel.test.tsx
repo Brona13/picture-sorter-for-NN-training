@@ -426,3 +426,27 @@ test("Detector panel in a cascade: each target says which parent target it searc
   await waitFor(() => expect(calls.some((c) => c.method === "PUT" && c.url.includes("/targets/hole%20left%20detail"))).toBe(true));
   expect(calls.find((c) => c.method === "PUT")!.body).toEqual({ inside: "hole right" });
 });
+
+test("Detector page: the picture size belongs to the picture it was measured on - a new picture never keeps the old size, and a cached load is not lost", async () => {
+  const detector = {
+    kind: "detector", input: "ingest", crops: [], rotate: true, angle_range: null, pad: 0.3, status: "fresh",
+    targets: [{ name: "left hole", examples: [{ frame: "a.png", box: [10, 10, 40, 30], png: "data:image/png;base64,AA" }] }],
+    summary: { frames: 2, found: { "left hole": 0 }, complete: 0, review: 0 },
+  };
+  routes(detector);
+  render(<FlowBoxView camera="camA" focus={{ nodeId: "det:1", onBack: () => {} }} />);
+  const a = await screen.findByAltText("a.png", {}, { timeout: 4000 });
+  Object.defineProperty(a, "naturalWidth", { value: 100, configurable: true });
+  Object.defineProperty(a, "naturalHeight", { value: 100, configurable: true });
+  fireEvent.load(a);
+  expect((await screen.findByTestId("flow-overlay", {}, { timeout: 4000 })).getAttribute("viewBox")).toBe("0 0 100 100");
+
+  await userEvent.click(await screen.findByRole("button", { name: "Show b.png" }));
+  // b.png has not reported its size yet: the 100x100 of a.png must not be applied to it
+  await waitFor(() => expect(screen.queryByTestId("flow-overlay")).toBeNull());
+  const b = await screen.findByAltText("b.png"); // the same <img> element, new src
+  Object.defineProperty(b, "naturalWidth", { value: 200, configurable: true });
+  Object.defineProperty(b, "naturalHeight", { value: 150, configurable: true });
+  fireEvent.load(b);
+  expect((await screen.findByTestId("flow-overlay")).getAttribute("viewBox")).toBe("0 0 200 150");
+});

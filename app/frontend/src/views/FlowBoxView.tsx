@@ -131,7 +131,7 @@ function DetectorWork(p: {
   const [parentBoxes, setParentBoxes] = useState<Record<string, Record<string, FlowBox>>>({});
   const [insidePick, setInsidePick] = useState("");
   const [review, setReview] = useState<string[]>([]);
-  const [size, setSize] = useState<{ w: number; h: number } | null>(null);
+  const [measured, setMeasured] = useState<{ src: string; w: number; h: number } | null>(null); // size of the picture at `src`, from its load
   const [drag, setDrag] = useState<{ from: { x: number; y: number }; to: { x: number; y: number } } | null>(null);
   const svg = useRef<SVGSVGElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
@@ -141,8 +141,14 @@ function DetectorWork(p: {
   const [hover, setHover] = useState<{ x: number; y: number } | null>(null);
   const strip = useRef<HTMLDivElement | null>(null);
 
+  const boxesAsked = useRef(0); // only the newest answer is shown: an older one arriving late must not put old boxes back
   const loadBoxes = useCallback(
-    () => api.flowBoxes(camera, nodeId).then((b) => { setBoxes(b.boxes); setReview(b.review); }).catch((e) => p.onError(msg(e))),
+    () => {
+      const asked = ++boxesAsked.current;
+      return api.flowBoxes(camera, nodeId)
+        .then((b) => { if (asked === boxesAsked.current) { setBoxes(b.boxes); setReview(b.review); } })
+        .catch((e) => p.onError(msg(e)));
+    },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [camera, nodeId],
   );
@@ -153,7 +159,9 @@ function DetectorWork(p: {
   const parentId = detail.input && detail.input !== "ingest" ? detail.input : null;
   useEffect(() => {
     if (!parentId) { setParentBoxes({}); return; }
-    api.flowBoxes(camera, parentId).then((b) => setParentBoxes(b.boxes)).catch((e) => p.onError(msg(e)));
+    let current = true; // the answer for an earlier parent or version must not replace this one
+    api.flowBoxes(camera, parentId).then((b) => { if (current) setParentBoxes(b.boxes); }).catch((e) => p.onError(msg(e)));
+    return () => { current = false; };
   }, [camera, parentId, p.version]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // With a Crop box above, the detector works on the cut-out: pictures, thumbnails and coordinates are those of the cut-out.
@@ -171,8 +179,13 @@ function DetectorWork(p: {
   const shown = useMemo(() => (onlyReview ? candidates.filter((f) => review.includes(f)) : candidates), [candidates, review, onlyReview]);
   const at = Math.min(index, Math.max(0, shown.length - 1));
   const frame = shown[at];
+  // The size counts only for the picture it was measured on. It used to be reset to "unknown" by an effect whenever the
+  // picture changed; a picture that loads at once (already cached) could report its size before that effect ran, the
+  // effect then threw the size away, and the page stayed on its 4:3 placeholder (a stretched picture, no overlay)
+  // until a hard refresh.
+  const pictureSrc = frame ? pictureUrl(frame) : "";
+  const size = useMemo(() => (measured && measured.src === pictureSrc ? { w: measured.w, h: measured.h } : null), [measured, pictureSrc]);
   useEffect(() => setIndex(0), [onlyReview]);
-  useEffect(() => setSize(null), [frame]);
   useEffect(() => {
     (strip.current?.querySelector('[aria-current="true"]') as HTMLElement | null)?.scrollIntoView?.({ inline: "center", block: "nearest" });
   }, [frame]);
@@ -422,11 +435,11 @@ function DetectorWork(p: {
             ].filter(Boolean).join("  |  ")}
           >
             <img
-              src={pictureUrl(frame)}
+              src={pictureSrc}
               alt={frame}
               draggable={false}
               style={view?.crop ? { display: "none" } : { width: "100%", height: "100%", display: "block" }}
-              onLoad={(e) => setSize({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })}
+              onLoad={(e) => { if (e.currentTarget.naturalWidth && e.currentTarget.naturalHeight) setMeasured({ src: pictureSrc, w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight }); }}
             />
             {size && view && (
               <svg
@@ -439,7 +452,7 @@ function DetectorWork(p: {
                 onPointerUp={onUp}
                 onPointerLeave={() => setHover(null)}
               >
-                {view.crop && <image href={pictureUrl(frame)} x={0} y={0} width={size.w} height={size.h} />}
+                {view.crop && <image href={pictureSrc} x={0} y={0} width={size.w} height={size.h} />}
                 {examplesHere.map((e) => {
                   const b = boxOf(e);
                   const active = sel?.name === e.name && sel.index === e.index;
