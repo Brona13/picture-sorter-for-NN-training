@@ -5,6 +5,7 @@ import PictureSizeSlider, { usePictureSize } from "../PictureSize";
 import SidePanel from "../SidePanel";
 import { drawn, stored } from "../pixelCentre";
 import { HANDLE_CURSOR } from "../roiGeometry";
+import DetectorGrid from "./DetectorGrid";
 import ZoomPane from "../ZoomPane";
 import { FIT_VIEW, fitSize, View } from "../zoomGeometry";
 import FlowBoxPanel, { EvaluationHistogram } from "./FlowBoxPanel";
@@ -169,6 +170,8 @@ function DetectorWork(p: {
   const pictureUrl = (f: string) => (cropped ? flowPictureUrl(camera, nodeId, f, { key: detail.crops }) : frameImageUrl(camera, f));
   const thumbUrl = (f: string) => (cropped ? flowPictureUrl(camera, nodeId, f, { size: 96, key: detail.crops }) : frameThumbUrl(camera, f));
   const names = detail.targets.map((t) => t.name);
+  const withExamples = detail.targets.filter((t) => t.examples.length > 0).map((t) => t.name);
+  const cardUrl = (f: string) => (cropped ? flowPictureUrl(camera, nodeId, f, { size: 200, key: detail.crops }) : frameThumbUrl(camera, f, 200));
   const chosen = names.includes(target) ? target : names[0] ?? "";
   // A cascade: the input detector's target whose box is on show (this detector's targets each search inside one of them).
   const parentNames = detail.parent_targets ?? [];
@@ -516,6 +519,21 @@ function DetectorWork(p: {
           </button>
         ))}
       </div>
+
+      {detail.status !== "none" && withExamples.length > 0 && (
+        <DetectorGrid
+          frames={shown}
+          boxes={boxes}
+          targets={withExamples}
+          current={frame}
+          size={size}
+          imageUrl={cardUrl}
+          onPick={(f) => {
+            setIndex(Math.max(0, shown.indexOf(f)));
+            contentRef.current?.scrollIntoView?.({ block: "center", behavior: "smooth" });
+          }}
+        />
+      )}
     </div>
   );
 }

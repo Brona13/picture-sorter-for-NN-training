@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { FlowNodeDetail, FlowEvaluation } from "../api";
@@ -485,4 +485,28 @@ test("histogram: a band of 355 +- 10 is drawn at both ends of the clock", () => 
   expect(screen.getByTestId("band-low")).toBeInTheDocument();
   expect(screen.getByTestId("band-high-wrap")).toBeInTheDocument();
   expect(screen.queryByTestId("band-low-wrap")).toBeNull();
+});
+
+test("Detector page: once the detector has run, a grid of findings below loads the clicked picture in the canvas", async () => {
+  const detector = {
+    kind: "detector", input: "ingest", crops: [], rotate: true, angle_range: null, pad: 0.3, status: "fresh",
+    targets: [{ name: "left hole", examples: [{ frame: "a.png", box: [10, 10, 40, 30], png: "data:image/png;base64,AA" }] }],
+    summary: { frames: 2, found: { "left hole": 1 }, complete: 1, review: 1 },
+  };
+  routes(detector, (url) => (url.includes("/boxes") ? { boxes: { "a.png": { "left hole": { x: 20, y: 20, angle: 0, score: 1, w: 40, h: 30, source: "auto" } } }, review: ["b.png"] } : undefined));
+  render(<FlowBoxView camera="camA" focus={{ nodeId: "det:1", onBack: () => {} }} />);
+  const grid = await screen.findByTestId("detector-grid", {}, { timeout: 4000 });
+  expect(await within(grid).findByTestId("finding-a.png", {}, { timeout: 4000 })).toHaveAttribute("aria-current", "true");
+  await userEvent.selectOptions(within(grid).getByLabelText("Show"), "missing");
+  expect(within(grid).queryByTestId("finding-a.png")).toBeNull();
+  await userEvent.click(within(grid).getByRole("button", { name: "Load b.png in the canvas" }));
+  await waitFor(() => expect(within(grid).getByTestId("finding-b.png")).toHaveAttribute("aria-current", "true"));
+  expect(screen.getByRole("button", { name: "Show b.png" })).toHaveAttribute("aria-current", "true");
+});
+
+test("Detector page: no grid of findings before the detector has run", async () => {
+  routes({ kind: "detector", input: "ingest", crops: [], rotate: true, angle_range: null, pad: 0.3, status: "none", targets: [{ name: "left hole", examples: [{ frame: "a.png", box: [10, 10, 40, 30], png: "data:image/png;base64,AA" }] }], summary: { frames: 0, found: {}, complete: 0, review: 0 } });
+  render(<FlowBoxView camera="camA" focus={{ nodeId: "det:1", onBack: () => {} }} />);
+  await screen.findByRole("button", { name: "Show a.png" }, { timeout: 4000 });
+  expect(screen.queryByTestId("detector-grid")).toBeNull();
 });
