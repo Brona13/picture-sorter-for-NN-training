@@ -9,10 +9,36 @@ export function deviation(value: number, nominal: number, wrap: boolean): number
   return wrap ? ((((d + 180) % 360) + 360) % 360) - 180 : d;
 }
 
-/** Nominal and tolerance after dragging one handle of the band to `value` (the tolerance never goes below 0). */
-export function dragBand(handle: "centre" | "low" | "high", value: number, nominal: number, tolerance: number): { nominal: number; tolerance: number } {
-  if (handle === "centre") return { nominal: value, tolerance };
-  return { nominal, tolerance: Math.max(0, Math.abs(value - nominal)) };
+/**
+ * Nominal and tolerance after dragging one handle of the band to `value` (the tolerance never goes below 0). For an
+ * angle (`wrap`) the nominal stays in 0-360 and the tolerance is the distance around the clock, at most 180, so a band
+ * dragged over 360 -> 0 keeps working (355 +- 10 covers 345-360 and 0-5).
+ */
+export function dragBand(
+  handle: "centre" | "low" | "high", value: number, nominal: number, tolerance: number, wrap = false,
+): { nominal: number; tolerance: number } {
+  if (handle === "centre") return { nominal: wrap ? ((value % 360) + 360) % 360 : value, tolerance };
+  const distance = Math.abs(deviation(value, nominal, wrap));
+  return { nominal, tolerance: wrap ? Math.min(180, distance) : Math.max(0, distance) };
+}
+
+/**
+ * The pieces of the nominal +- tolerance band that fall inside the shown range `view`. An angle band that crosses
+ * 360 -> 0 comes as two pieces (345-360 and 0-5 for 355 +- 10). `lowCut` / `highCut` say that the piece is cut by the
+ * edge of the chart there (so that edge is not a real edge of the band). `shift` is 0 for the band itself, +-360 for
+ * its copy on the other side of the clock.
+ */
+export function bandPieces(
+  band: { nominal: number; tolerance: number }, view: [number, number], wrap: boolean,
+): { shift: number; low: number; high: number; lowCut: boolean; highCut: boolean }[] {
+  const pieces = [];
+  for (const shift of wrap ? [0, -360, 360] : [0]) {
+    const lo = band.nominal - band.tolerance + shift;
+    const hi = band.nominal + band.tolerance + shift;
+    if (hi < view[0] || lo > view[1]) continue;
+    pieces.push({ shift, low: Math.max(lo, view[0]), high: Math.min(hi, view[1]), lowCut: lo < view[0], highCut: hi > view[1] });
+  }
+  return pieces;
 }
 
 type Band = { nominal: number; tolerance: number };
@@ -74,7 +100,7 @@ export function EvaluationHistogram({
     const start = band;
     let last: Band = start;
     const move = (ev: PointerEvent) => {
-      const next = dragBand(handle, valueAt(ev.clientX), start.nominal, start.tolerance);
+      const next = dragBand(handle, valueAt(ev.clientX), start.nominal, start.tolerance, detail.wrap);
       last = { nominal: next.nominal, tolerance: Number(next.tolerance.toFixed(2)) };
       setDrag(last);
     };
@@ -141,13 +167,24 @@ export function EvaluationHistogram({
             />
           );
         })}
-        {band && onBand && (
-          <div className="flow-band" style={{ left: pct(band.nominal - band.tolerance), right: `calc(100% - ${pct(band.nominal + band.tolerance)})` }} data-testid="tolerance-band">
-            <div className="flow-band-edge low" data-testid="band-low" title="Drag to change the tolerance" onPointerDown={grab("low")} />
-            <div className="flow-band-mid" data-testid="band-centre" title="Drag to move the nominal" onPointerDown={grab("centre")} />
-            <div className="flow-band-edge high" data-testid="band-high" title="Drag to change the tolerance" onPointerDown={grab("high")} />
-          </div>
-        )}
+        {band && onBand && bandPieces(band, view, detail.wrap).map((piece) => {
+          const id = piece.shift === 0 ? "" : "-wrap"; // the copy on the other side of the clock has its own test ids
+          return (
+            <div
+              key={piece.shift}
+              className="flow-band"
+              style={{
+                left: pct(piece.low), right: `calc(100% - ${pct(piece.high)})`,
+                ...(piece.lowCut ? { borderLeft: "none" } : {}), ...(piece.highCut ? { borderRight: "none" } : {}),
+              }}
+              data-testid={`tolerance-band${id}`}
+            >
+              {!piece.lowCut && <div className="flow-band-edge low" data-testid={`band-low${id}`} title="Drag to change the tolerance" onPointerDown={grab("low")} />}
+              <div className="flow-band-mid" data-testid={`band-centre${id}`} title="Drag to move the nominal" onPointerDown={grab("centre")} />
+              {!piece.highCut && <div className="flow-band-edge high" data-testid={`band-high${id}`} title="Drag to change the tolerance" onPointerDown={grab("high")} />}
+            </div>
+          );
+        })}
         {sel && <div className="flow-zoom-sel" data-testid="zoom-selection" style={{ left: pct(sel[0]), right: `calc(100% - ${pct(sel[1])})` }} />}
       </div>
       <div className="flow-histogram-axis">

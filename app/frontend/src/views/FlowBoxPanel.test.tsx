@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { FlowNodeDetail, FlowEvaluation } from "../api";
-import FlowBoxPanel, { deviation, dragBand, EvaluationHistogram, rebin } from "./FlowBoxPanel";
+import FlowBoxPanel, { bandPieces, deviation, dragBand, EvaluationHistogram, rebin } from "./FlowBoxPanel";
 import FlowBoxView, { grabCursor, Handle, rectOf, resizeRect } from "./FlowBoxView";
 
 let calls: { url: string; method: string; body?: any }[];
@@ -449,4 +449,40 @@ test("Detector page: the picture size belongs to the picture it was measured on 
   Object.defineProperty(b, "naturalHeight", { value: 150, configurable: true });
   fireEvent.load(b);
   expect((await screen.findByTestId("flow-overlay")).getAttribute("viewBox")).toBe("0 0 200 150");
+});
+
+test("bandPieces: an angle band over 360 comes as two pieces, a plain band as one", () => {
+  const view: [number, number] = [0, 360];
+  expect(bandPieces({ nominal: 355, tolerance: 10 }, view, true)).toEqual([
+    { shift: 0, low: 345, high: 360, lowCut: false, highCut: true },
+    { shift: -360, low: 0, high: 5, lowCut: true, highCut: false },
+  ]);
+  expect(bandPieces({ nominal: 5, tolerance: 10 }, view, true).map((p) => [p.low, p.high])).toEqual([[0, 15], [355, 360]]);
+  expect(bandPieces({ nominal: 180, tolerance: 10 }, view, true)).toHaveLength(1);
+  expect(bandPieces({ nominal: 355, tolerance: 10 }, view, false)).toHaveLength(1);
+  expect(bandPieces({ nominal: 355, tolerance: 10 }, [100, 200], true)).toEqual([]);
+});
+
+test("dragBand on an angle: the nominal stays in 0-360 and the tolerance is the distance around the clock", () => {
+  expect(dragBand("centre", 365, 355, 10, true)).toEqual({ nominal: 5, tolerance: 10 });
+  expect(dragBand("high", 5, 355, 10, true)).toEqual({ nominal: 355, tolerance: 10 });
+  expect(dragBand("high", 10, 355, 10, true)).toEqual({ nominal: 355, tolerance: 15 });
+  expect(dragBand("low", 170, 355, 10, true)).toEqual({ nominal: 355, tolerance: 175 });
+  expect(dragBand("high", 5, 355, 10, false)).toEqual({ nominal: 355, tolerance: 350 });
+});
+
+test("histogram: a band of 355 +- 10 is drawn at both ends of the clock", () => {
+  const tol = wrapped({ nominal: 355, tolerance: 10 });
+  render(<EvaluationHistogram detail={tol} onPick={() => {}} onBand={() => {}} />);
+  const main = screen.getByTestId("tolerance-band");
+  const wrap = screen.getByTestId("tolerance-band-wrap");
+  expect(main.style.left).toMatch(/^95\.83/);
+  expect(main.style.right).toMatch(/^calc\(0%\)|^calc\(100% - 100%\)/);
+  expect(wrap.style.left).toBe("0%");
+  expect(wrap.style.right).toMatch(/98\.61/);
+  // only the real edges can be dragged: the high edge of the first piece and the low edge of the second are cut by the chart
+  expect(screen.queryByTestId("band-high")).toBeNull();
+  expect(screen.getByTestId("band-low")).toBeInTheDocument();
+  expect(screen.getByTestId("band-high-wrap")).toBeInTheDocument();
+  expect(screen.queryByTestId("band-low-wrap")).toBeNull();
 });

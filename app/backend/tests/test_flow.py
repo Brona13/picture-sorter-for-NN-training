@@ -262,6 +262,10 @@ class FlowTests(ApiTestCase):
         self.assertAlmostEqual(flow.compute("angle", (0, 0), (0, -10), clockwise=True), 270.0)
         self.assertAlmostEqual(flow.compute("distance", (0, 0), (3, 4)), 5.0)
         self.assertAlmostEqual(flow.deviation(359.0, 1.0, True), -2.0)
+        # Nominal 355 +- 10 covers 345-360 and 0-5 (around the clock).
+        node = {"nominal": 355.0, "tolerance": 10.0}
+        self.assertEqual([flow.judge(v, node, True) for v in (345.0, 355.0, 359.9, 0.0, 5.0)], ["pass"] * 5)
+        self.assertEqual([flow.judge(v, node, True) for v in (344.0, 6.0, 180.0)], ["fail"] * 3)
 
     def test_bad_settings_are_refused(self) -> None:
         tol = self.node("evaluation")
