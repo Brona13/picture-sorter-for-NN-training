@@ -1,3 +1,4 @@
+import type { NodeChange } from "@xyflow/react";
 import type { ChainCanvas, ChainEdge, ChainLayout, ChainNode } from "../api";
 
 /** The handle id a product leaves the classify ROI by (matches `chain.product_handle`). */
@@ -112,7 +113,7 @@ export const isFlowKind = (kind: string | undefined): boolean => !!kind && (FLOW
 export const targetHandle = (target: string) => `t:${target}`;
 export const targetOfHandle = (handle: string | null | undefined): string | null => (handle && handle.startsWith("t:") ? handle.slice(2) : null);
 
-export type FlowLink = { source: string; target: string } | { anchor: { feature: string; detector: string; target: string } } | { error: string } | null;
+export type FlowLink = { source: string; target: string; point?: string } | { anchor: { feature: string; detector: string; target: string } } | { error: string } | null;
 
 export function flowConnect(canvas: ChainCanvas, c: Connection): FlowLink {
   const source = featureOf(canvas, c.source);
@@ -125,6 +126,10 @@ export function flowConnect(canvas: ChainCanvas, c: Connection): FlowLink {
     return { anchor: { feature: target.ref, detector: source.id, target: name } };
   }
   if (!isFlowKind(source.kind) && !isFlowKind(target.kind)) return null;
+  const point = targetOfHandle(c.sourceHandle);
+  if (point && !(source.kind === "detector" && target.kind === "calc")) {
+    return { error: "A target dot can feed one point of a Calculate box or anchor an ROI; use the detector's main dot for anything else." };
+  }
   const ok =
     ((source.kind === "ingest" || source.kind === "crop") && (target.kind === "crop" || target.kind === "detector")) ||
     (source.kind === "detector" && (target.kind === "detector" || target.kind === "calc")) ||
@@ -136,7 +141,30 @@ export function flowConnect(canvas: ChainCanvas, c: Connection): FlowLink {
     };
   }
   if (c.source === c.target) return { error: "A box cannot feed itself." };
-  return { source: c.source, target: c.target };
+  return point ? { source: c.source, target: c.target, point } : { source: c.source, target: c.target };
+}
+
+/** Extra position changes so an ROI box carries its Classify box when it is dragged (the Classify box alone moves alone). */
+export function classifyFollows(
+  boxes: { id: string; kind: string; ref: string | null; position: { x: number; y: number } }[],
+  changes: readonly NodeChange[],
+): { type: "position"; id: string; position: { x: number; y: number }; dragging: true }[] {
+  const moved = new Set(changes.flatMap((c) => (c.type === "position" ? [c.id] : [])));
+  const extra: { type: "position"; id: string; position: { x: number; y: number }; dragging: true }[] = [];
+  for (const c of changes) {
+    if (c.type !== "position" || !c.position) continue;
+    const roi = boxes.find((b) => b.id === c.id);
+    if (roi?.kind !== "roi" || !roi.ref) continue;
+    const partner = boxes.find((b) => b.kind === "classify" && b.ref === roi.ref);
+    if (!partner || moved.has(partner.id)) continue; // both selected and dragged: each already moves
+    extra.push({
+      type: "position",
+      id: partner.id,
+      position: { x: partner.position.x + c.position.x - roi.position.x, y: partner.position.y + c.position.y - roi.position.y },
+      dragging: true,
+    });
+  }
+  return extra;
 }
 
 /** An arrow from a detector to an ROI box is the ROI's anchor (stored in the anchor, not in the flow graph). */

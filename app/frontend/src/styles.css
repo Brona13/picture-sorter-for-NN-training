@@ -313,3 +313,11 @@ button[aria-pressed="true"] { background: var(--info-bg); color: var(--info-fg);
 .ingest-box h4 { margin: 0; }
 .ingest-page h3 { margin: 18px 0 6px; }
 .chain-node-target { color: var(--fg); }
+/* Magnetic anchor points: a large invisible hit area around each dot, and the dot that will take the arrow grows. */
+.chain-node .react-flow__handle { width: 10px; height: 10px; }
+.chain-node .react-flow__handle::before { content: ""; position: absolute; inset: -12px; border-radius: 50%; }
+.chain-node .react-flow__handle:hover { box-shadow: 0 0 0 5px color-mix(in srgb, #2e9e5b 35%, transparent); }
+.chain-node .react-flow__handle.connectingto.valid, .chain-node .react-flow__handle.connectionindicator.valid { background: #2e9e5b; box-shadow: 0 0 0 5px color-mix(in srgb, #2e9e5b 35%, transparent); }
+.chain-node .react-flow__handle.connectingto:not(.valid) { background: #c0392b; }
+
+.chain-canvas .react-flow__edge.selected .react-flow__edge-path { stroke: #2e6fd8; stroke-width: 3; }

@@ -15,7 +15,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, ChainCanvas, ChainDeletePreview, ChainNode, ChainViewport, FlowDeletePreview } from "../api";
-import { INGEST_ID, targetHandle, connectAction, describeNode, disconnectAction, flowConnect, freshName, isAnchorEdge, isFlowKind, layoutOf, productHandle } from "../chain/chainModel";
+import { INGEST_ID, classifyFollows, targetHandle, targetOfHandle, connectAction, describeNode, disconnectAction, flowConnect, freshName, isAnchorEdge, isFlowKind, layoutOf, productHandle } from "../chain/chainModel";
 import AnchorSection from "../chain/AnchorSection";
 import { useSharedFeature } from "../SharedFeature";
 import SidePanel from "../SidePanel";
@@ -89,6 +89,8 @@ function Box({ data, selected }: NodeProps<BoxNode>) {
 }
 
 const nodeTypes = { box: Box };
+/** How far (px) from an anchor point a dragged arrow still snaps to it. */
+const CONNECT_RADIUS = 40;
 const FLOW_PAGE = { crop: "Crop", detector: "Detector", calc: "Calculate", evaluation: "Evaluation" } as const;
 
 function toFlowNode(n: ChainNode, onRename: BoxData["onRename"], selected: boolean): BoxNode {
@@ -116,6 +118,7 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
   const [nodes, setNodes] = useState<BoxNode[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [adding, setAdding] = useState<"product" | null>(null);
   const [productNames, setProductNames] = useState("");
   const [preview, setPreview] = useState<ChainDeletePreview | null>(null);
@@ -167,7 +170,7 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [camera]);
 
-  const edges = useMemo(() => canvas?.edges.map(toFlowEdge) ?? [], [canvas]);
+  const edges = useMemo(() => canvas?.edges.map((e) => ({ ...toFlowEdge(e), selected: e.id === selectedEdgeId })) ?? [], [canvas, selectedEdgeId]);
   const shownNodes = useMemo(() => nodes.map((n) => ({ ...n, selected: n.id === selectedId })), [nodes, selectedId]);
   const selected = canvas?.nodes.find((n) => n.id === selectedId) ?? null;
   const selectedLive = selected ? (nodes.find((n) => n.id === selected.id)?.data.node ?? selected) : null;
@@ -205,7 +208,7 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
     else if ("anchor" in flowArrow) {
       const a = flowArrow.anchor; // the dot of a detector target dropped on an ROI: the ROI becomes that box
       void applyFlow(() => api.setRoiAnchor(camera, a.feature, { detector: a.detector, target: a.target, mode: "box" }));
-    } else void applyFlow(() => api.flowConnect(camera, flowArrow.source, flowArrow.target));
+    } else void applyFlow(() => api.flowConnect(camera, flowArrow.source, flowArrow.target, flowArrow.point));
   };
 
   const isValidConnection = (c: Connection | Edge) => {
@@ -331,7 +334,7 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
         </form>
       )}
       <h3>Selected box</h3>
-      {!selectedLive && <p className="muted">Click a box. Double-click its name to rename it. Drag from a handle to draw an arrow.</p>}
+      {!selectedLive && <p className="muted">Click a box. Double-click its name to rename it. Drag from a handle to draw an arrow; click an arrow and press Delete to remove it.</p>}
       {selectedLive?.kind === "classify" && (
         <p className="muted">
           {selectedLive.role === "classify"
@@ -434,9 +437,17 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
             nodesConnectable
             onConnect={onConnect}
             isValidConnection={isValidConnection}
-            onNodeClick={(_, n) => setSelectedId(n.id)}
-            onPaneClick={() => setSelectedId(null)}
-            onNodesChange={(changes) => setNodes((current) => applyNodeChanges(changes, current))}
+            onNodeClick={(_, n) => { setSelectedId(n.id); setSelectedEdgeId(null); }}
+            onEdgeClick={(_, e) => { setSelectedEdgeId(e.id); setSelectedId(null); }}
+            onPaneClick={() => { setSelectedId(null); setSelectedEdgeId(null); }}
+            connectionRadius={CONNECT_RADIUS}
+            deleteKeyCode={["Delete", "Backspace"]}
+            onNodesChange={(changes) =>
+              setNodes((current) => {
+                const carried = classifyFollows(current.map((n) => ({ id: n.id, kind: n.data.node.kind, ref: n.data.node.ref, position: n.position })), changes);
+                return applyNodeChanges([...changes, ...carried], current);
+              })
+            }
             onNodeDragStop={() => saveLayout(nodesRef.current)}
             onMoveEnd={(_, v) => {
               viewport.current = { x: v.x, y: v.y, zoom: v.zoom };
@@ -445,15 +456,16 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
             onBeforeDelete={async ({ nodes: doomed, edges: doomedEdges }) => {
               const box = doomed.find((n) => n.id !== INGEST_ID);
               if (box) requestDelete(box.id);
-              return { nodes: [], edges: doomedEdges };
+              return { nodes: [], edges: box ? [] : doomedEdges }; // a box is deleted by its own confirmation, not its arrows here
             }}
             onEdgesDelete={(gone) => {
+              setSelectedEdgeId(null);
               if (canvas) for (const e of gone) {
                 const edge = canvas.edges.find((x) => x.id === e.id);
                 if (!edge) continue;
                 const ends = [edge.source, edge.target].map((id) => canvas.nodes.find((n) => n.id === id)?.kind);
                 if (isAnchorEdge(canvas, edge)) void api.clearRoiAnchor(camera, canvas.nodes.find((n) => n.id === edge.target)!.ref!).then(() => reload()).catch(fail);
-                else if (ends.some((k) => isFlowKind(k))) void applyFlow(() => api.flowDisconnect(camera, edge.source, edge.target));
+                else if (ends.some((k) => isFlowKind(k))) void applyFlow(() => api.flowDisconnect(camera, edge.source, edge.target, targetOfHandle(edge.source_handle) ?? undefined));
                 else void apply(disconnectAction(canvas, edge));
               }
             }}

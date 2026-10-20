@@ -69,11 +69,72 @@ class FlowTests(ApiTestCase):
         self.post("/edges", {"source": calc, "target": tol})
         return d1, d2, calc, tol
 
-    def test_new_detector_reads_ingest_and_appears_on_the_canvas(self) -> None:
+    def test_first_detector_reads_ingest_and_appears_on_the_canvas(self) -> None:
         node = self.node("detector")
         canvas = self.client.get(f"/api/cameras/{CAM}/chain").json()
         self.assertIn(node, [n["id"] for n in canvas["nodes"]])
         self.assertIn(("ingest", node), {(e["source"], e["target"]) for e in canvas["edges"]})
+
+    def test_later_boxes_get_no_arrow_and_a_calculate_placed_first_none(self) -> None:
+        calc = self.node("calc")  # first: Calculate cannot follow Ingest
+        det, other = self.node("detector"), self.node("detector")
+        self.assertEqual(flow.load_graph(CAM)["edges"], [])
+        self.assertEqual(flow.parent_of(flow.load_graph(CAM), det), None)
+        self.assertEqual(other, "det:2")
+        self.assertEqual(calc, "calc:1")
+
+    def test_an_ingest_arrow_can_be_removed(self) -> None:
+        det = self.node("detector")
+        self.post("/edges/remove", {"source": "ingest", "target": det}, status=200)
+        self.assertEqual(flow.load_graph(CAM)["edges"], [])
+        canvas = self.client.get(f"/api/cameras/{CAM}/chain").json()
+        self.assertNotIn(det, [e["target"] for e in canvas["edges"]])
+
+    def test_calculate_points_come_from_the_lines(self) -> None:
+        d1, d2, calc, _ = self.chain()  # chain(): the whole of d2 feeds Calculate
+        self.run_all()
+        whole = flow.calc_values(CAM, calc)
+        self.assertTrue(any(v is not None for v in whole.values()))
+        # the same two points drawn as two single-target lines
+        self.post("/edges/remove", {"source": d2, "target": calc}, status=200)
+        self.post("/edges", {"source": d2, "target": calc, "point": "A"})
+        self.post("/edges", {"source": d2, "target": calc, "point": "B"})
+        self.assertEqual(flow.calc_values(CAM, calc), whole)
+        canvas = self.client.get(f"/api/cameras/{CAM}/chain").json()
+        lines = {(e["id"], e["source_handle"]) for e in canvas["edges"] if e["target"] == calc}
+        self.assertEqual(lines, {(f"{d2}->{calc}#A", "t:A"), (f"{d2}->{calc}#B", "t:B")})
+        # a third point is refused; removing a line frees the place
+        r = self.client.post(f"{self.base}/edges", json={"source": d1, "target": calc, "point": "A"})
+        self.assertEqual(r.status_code, 422)
+        self.post("/edges/remove", {"source": d2, "target": calc, "point": "B"}, status=200)
+        self.post("/edges", {"source": d1, "target": calc, "point": "B"})
+        self.assertEqual(sorted(flow.point_names(flow.load_graph(CAM), calc)), ["A", "B"])  # names are unique, so the plain name is the key
+        self.assertEqual(len(flow.calc_points(flow.load_graph(CAM), calc)), 2)
+        self.assertIsNone(flow.calc_detector(flow.load_graph(CAM), calc))  # the points come from two detectors
+
+    def test_points_of_detectors_behind_different_crops_are_measured_on_the_whole_picture(self) -> None:
+        import labels  # noqa: PLC0415
+
+        d1, d2 = self.node("detector"), self.node("detector")
+        crop = self.node("crop")
+        for det in (d1, d2):
+            self.post(f"/nodes/{det}/targets", {"name": "P"})
+            self.post(f"/nodes/{det}/examples", {"target": "P", "frame": self.names[0], "box": LEFT_BOX})
+        graph = flow.load_graph(CAM)
+        graph["nodes"][crop]["rect"] = [0.25, 0.5, 0.5, 0.5]
+        graph["edges"] = [{"source": crop, "target": d2}]
+        flow.save_graph(CAM, graph)
+        key = labels.hash_map(CAM)[self.names[0]]
+        flow._store(CAM, d1, None, {key: {"P": {"x": 100.0, "y": 50.0}}})
+        flow._store(CAM, d2, None, {key: {"P": {"x": 10.0, "y": 20.0}}})
+        calc = self.node("calc")
+        self.post("/edges", {"source": d1, "target": calc, "point": "P"})
+        self.post("/edges", {"source": d2, "target": calc, "point": "P"})
+        self.put(f"/nodes/{calc}", {"op": "dx"})
+        self.assertEqual(sorted(flow.point_names(flow.load_graph(CAM), calc)), [f"{d1}/P", f"{d2}/P"])
+        width, height = cv2.imread(str(datamodel.unsorted_dir(CAM) / self.names[0])).shape[1::-1]
+        ox, _ = flow.rect_offset([[0.25, 0.5, 0.5, 0.5]], width, height)
+        self.assertAlmostEqual(flow.calc_values(CAM, calc)[key], (10.0 + ox) - 100.0)
 
     def test_typed_arrows_are_checked(self) -> None:
         d, c, t = self.node("detector"), self.node("calc"), self.node("evaluation")
@@ -190,7 +251,8 @@ class FlowTests(ApiTestCase):
         graph = flow.load_graph(CAM)
         self.assertNotIn(d1, graph["nodes"])
         self.assertEqual(flow.load_stored(CAM, d1)["frames"], {})
-        self.assertIn(("ingest", d2), {(e["source"], e["target"]) for e in graph["edges"]})
+        self.assertNotIn("ingest", {e["source"] for e in graph["edges"] if e["target"] == d2})  # what it fed reads the whole picture
+        self.assertIsNone(flow.parent_of(graph, d2))
 
     def test_compute_conventions(self) -> None:
         self.assertAlmostEqual(flow.compute("angle", (0, 0), (10, 0)), 0.0)
@@ -337,17 +399,18 @@ class FlowTests(ApiTestCase):
         self.put(f"/nodes/{crop}", {"rect": [x / width, y / height, w / width, h / height]})
         return crop, width, height
 
-    def test_crop_arrows_are_typed_and_it_reads_ingest_by_default(self) -> None:
+    def test_crop_arrows_are_typed_and_only_the_first_box_reads_ingest(self) -> None:
         crop, other, det = self.node("crop"), self.node("crop"), self.node("detector")
         self.assertIn({"source": "ingest", "target": crop}, flow.load_graph(CAM)["edges"])
+        self.assertEqual(flow.parent_of(flow.load_graph(CAM), other), None)
         self.post("/edges", {"source": crop, "target": other})
         self.post("/edges", {"source": other, "target": det})
         self.assertEqual(flow.parent_of(flow.load_graph(CAM), det), other)
         for source, target in ((det, crop), (other, crop), ("ingest", "calc:9")):
             self.assertEqual(self.client.post(f"{self.base}/edges", json={"source": source, "target": target}).status_code, 422, (source, target))
-        # taking a Crop out puts what it fed back on Ingest
+        # taking a Crop out leaves what it fed unconnected (it then reads the whole picture)
         self.assertEqual(self.client.delete(f"{self.base}/nodes/{other}").status_code, 200)
-        self.assertEqual(flow.parent_of(flow.load_graph(CAM), det), "ingest")
+        self.assertIsNone(flow.parent_of(flow.load_graph(CAM), det))
         bad = self.client.put(f"{self.base}/nodes/{crop}", json={"rect": [0.5, 0.5, 0.8, 0.2]})
         self.assertEqual(bad.status_code, 422)
 

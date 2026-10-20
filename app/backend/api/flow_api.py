@@ -26,6 +26,7 @@ class NodeCreate(BaseModel):
 class EdgeBody(BaseModel):
     source: str
     target: str
+    point: str | None = None  # detector -> Calculate: the one target the arrow carries (none = the whole detector)
 
 
 class TargetBody(BaseModel):
@@ -94,14 +95,14 @@ def delete_node(camera: str, node_id: str) -> dict:
 @router.post("/cameras/{camera}/flow/edges", status_code=201)
 def add_edge(camera: str, body: EdgeBody) -> dict:
     require_camera(camera)
-    _guard(flow.connect, camera, body.source, body.target)
+    _guard(flow.connect, camera, body.source, body.target, body.point)
     return {"source": body.source, "target": body.target}
 
 
 @router.post("/cameras/{camera}/flow/edges/remove")
 def remove_edge(camera: str, body: EdgeBody) -> dict:
     require_camera(camera)
-    _guard(flow.disconnect, camera, body.source, body.target)
+    _guard(flow.disconnect, camera, body.source, body.target, body.point)
     return {"source": body.source, "target": body.target}
 
 

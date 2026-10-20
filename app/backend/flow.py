@@ -192,9 +192,10 @@ def create_node(camera: str, kind: str) -> str:
     while f"{PREFIX[kind]}:{n}" in graph["nodes"]:
         n += 1
     node_id = f"{PREFIX[kind]}:{n}"
+    first = not graph["nodes"]
     graph["nodes"][node_id] = {"kind": kind, **_default_config(kind)}
-    if kind in PICTURE_KINDS:
-        graph["edges"].append({"source": INGEST_ID, "target": node_id})
+    if kind in PICTURE_KINDS and first:
+        graph["edges"].append({"source": INGEST_ID, "target": node_id})  # only the first box joins Ingest by itself
     save_graph(camera, graph)
     return node_id
 
@@ -238,28 +239,44 @@ def edge_allowed(graph: dict, source: str, target: str) -> str | None:
     return None
 
 
-def connect(camera: str, source: str, target: str) -> None:
+def connect(camera: str, source: str, target: str, point: str | None = None) -> None:
+    """Store an arrow. ``point`` (a detector -> Calculate arrow only) names the one target the arrow carries;
+    without it the arrow carries the whole detector."""
     graph = load_graph(camera)
     reason = edge_allowed(graph, source, target)
     if reason:
         raise FlowError(reason)
-    if kind_of(target) == "evaluation" or kind_of(target) in ("crop", "detector", "calc"):
+    if point is not None:
+        if kind_of(source) != "detector" or kind_of(target) != "calc":
+            raise FlowError("Only a detector's target can feed one point of a Calculate box.")
+        if point not in [t["name"] for t in graph["nodes"][source]["targets"]]:
+            raise FlowError(f"{source} has no target {point}.")
+    edge = {"source": source, "target": target, **({"point": point} if point is not None else {})}
+    if kind_of(target) == "calc":
+        # Several arrows feed a Calculate box (the whole detector or single targets), two points in all.
+        before = calc_points(graph, target)
+        graph["edges"] = [e for e in graph["edges"] if not (e["source"] == source and e["target"] == target and e.get("point") == point)]
+        graph["edges"].append(edge)
+        after = calc_points(graph, target)
+        if len(before) >= 2 and len(after) > len(before):
+            raise FlowError("Calculate takes two points. Delete a line into it first.")
+    elif kind_of(target) in ("evaluation", "crop", "detector"):
         # One input per box: a new arrow replaces the old one.
         graph["edges"] = [e for e in graph["edges"] if e["target"] != target]
-    elif kind_of(target) == "classify":
-        graph["edges"] = [e for e in graph["edges"] if not (e["source"] == source and e["target"] == target)]
-    graph["edges"].append({"source": source, "target": target})
+        graph["edges"].append(edge)
+    else:
+        if kind_of(target) == "classify":
+            graph["edges"] = [e for e in graph["edges"] if not (e["source"] == source and e["target"] == target)]
+        graph["edges"].append(edge)
     save_graph(camera, graph)
 
 
-def disconnect(camera: str, source: str, target: str) -> None:
+def disconnect(camera: str, source: str, target: str, point: str | None = None) -> None:
     graph = load_graph(camera)
-    kept = [e for e in graph["edges"] if not (e["source"] == source and e["target"] == target)]
+    kept = [e for e in graph["edges"] if not (e["source"] == source and e["target"] == target and e.get("point") == point)]
     if len(kept) == len(graph["edges"]):
         raise FlowError("There is no such arrow.")
-    graph["edges"] = kept
-    if kind_of(target) in PICTURE_KINDS and parent_of(graph, target) is None:
-        graph["edges"].append({"source": INGEST_ID, "target": target})  # a picture box always reads something
+    graph["edges"] = kept  # a picture box with no arrow reads the whole picture, like one fed by Ingest
     save_graph(camera, graph)
 
 
@@ -279,11 +296,7 @@ def delete_node(camera: str, node_id: str) -> None:
     graph = load_graph(camera)
     _node(graph, node_id)
     del graph["nodes"][node_id]
-    orphans = [e["target"] for e in graph["edges"] if e["source"] == node_id and kind_of(e["target"]) in PICTURE_KINDS]
     graph["edges"] = [e for e in graph["edges"] if node_id not in (e["source"], e["target"])]
-    for orphan in orphans:
-        if orphan in graph["nodes"] and parent_of(graph, orphan) is None:
-            graph["edges"].append({"source": INGEST_ID, "target": orphan})
     save_graph(camera, graph)
     _drop_results(camera, node_id)
 
@@ -713,20 +726,67 @@ def review_frames(camera: str, node_id: str) -> list[str]:
 
 
 # --- calculate --------------------------------------------------------------------
-def point_names(graph: dict, calc_id: str) -> list[str]:
-    parent = parent_of(graph, calc_id)
-    if not parent or parent not in graph["nodes"]:
+def _detector_targets(graph: dict, detector: str) -> list[str]:
+    if detector not in graph["nodes"]:
         return []
-    return [t["name"] for t in graph["nodes"][parent]["targets"] if t["examples"]]
+    return [t["name"] for t in graph["nodes"][detector]["targets"] if t["examples"]]
+
+
+def calc_points(graph: dict, calc_id: str) -> list[tuple[str, str]]:
+    """The (detector, target) points the arrows into a Calculate box carry, in arrow order: an arrow from a whole
+    detector carries all its targets that have examples, an arrow from one target dot carries that target."""
+    out: list[tuple[str, str]] = []
+    for e in graph["edges"]:
+        if e["target"] != calc_id or kind_of(e["source"]) != "detector":
+            continue
+        names = _detector_targets(graph, e["source"])
+        for name in ([e["point"]] if e.get("point") in names else [] if e.get("point") else names):
+            if (e["source"], name) not in out:
+                out.append((e["source"], name))
+    return out
+
+
+def point_keys(graph: dict, calc_id: str) -> dict[str, tuple[str, str]]:
+    """Point key -> (detector, target). The key is the target name, or ``det:N/name`` when two detectors share a name."""
+    points = calc_points(graph, calc_id)
+    names = [name for _, name in points]
+    return {(name if names.count(name) == 1 else f"{det}/{name}"): (det, name) for det, name in points}
+
+
+def point_names(graph: dict, calc_id: str) -> list[str]:
+    return list(point_keys(graph, calc_id))
 
 
 def effective_points(graph: dict, calc_id: str) -> tuple[str | None, str | None]:
-    """The two points a Calculate box uses: its choice, else the first two targets of its detector."""
+    """The two points a Calculate box uses: its choice, else the first two points its arrows carry."""
     node = graph["nodes"][calc_id]
     names = point_names(graph, calc_id)
     a = node["a"] if node["a"] in names else (names[0] if names else None)
     b = node["b"] if node["b"] in names else next((n for n in names if n != a), None)
     return a, b
+
+
+def calc_detector(graph: dict, calc_id: str) -> str | None:
+    """The one detector both points come from, or None when they come from different detectors (or are missing)."""
+    keys = point_keys(graph, calc_id)
+    a, b = effective_points(graph, calc_id)
+    sources = {keys[k][0] for k in (a, b) if k in keys}
+    return sources.pop() if len(sources) == 1 and a and b else None
+
+
+def _frame_sizes(camera: str) -> dict[str, tuple[int, int]]:
+    """Picture size by frame hash (headers only)."""
+    from PIL import Image  # noqa: PLC0415
+
+    sizes: dict[str, tuple[int, int]] = {}
+    for name, key in labels.hash_map(camera).items():
+        if key not in sizes:
+            try:
+                with Image.open(datamodel.unsorted_dir(camera) / name) as im:
+                    sizes[key] = im.size
+            except Exception:  # noqa: BLE001 - an unreadable frame has no size, so no value
+                continue
+    return sizes
 
 
 def compute(op: str, a: tuple[float, float], b: tuple[float, float], clockwise: bool = False) -> float:
@@ -747,20 +807,33 @@ def compute(op: str, a: tuple[float, float], b: tuple[float, float], clockwise: 
 
 
 def calc_values(camera: str, calc_id: str, graph: dict | None = None) -> dict[str, float | None]:
-    """The measured number by frame hash (None when a point is missing)."""
+    """The measured number by frame hash (None when a point is missing). The two points may come from different
+    detectors; each is moved by the offset of the crops above its detector, so the number is measured on the whole picture."""
     graph = graph or load_graph(camera)
     node = _node(graph, calc_id)
-    parent = parent_of(graph, calc_id)
+    keys = point_keys(graph, calc_id)
     a, b = effective_points(graph, calc_id)
-    if not parent or a is None or b is None:
+    if a is None or b is None:
         return {}
-    frames = load_stored(camera, parent)["frames"]
+    (det_a, name_a), (det_b, name_b) = keys[a], keys[b]
+    stored_a = load_stored(camera, det_a)["frames"]
+    stored_b = stored_a if det_b == det_a else load_stored(camera, det_b)["frames"]
+    rects_a, rects_b = input_rects(graph, det_a), input_rects(graph, det_b)
+    sizes = _frame_sizes(camera) if rects_a != rects_b else {}
     values: dict[str, float | None] = {}
-    for key, boxes in frames.items():
-        if a in boxes and b in boxes:
-            values[key] = compute(node["op"], (boxes[a]["x"], boxes[a]["y"]), (boxes[b]["x"], boxes[b]["y"]), node["clockwise"])
-        else:
+    for key in dict.fromkeys([*stored_a, *stored_b]):
+        box_a, box_b = stored_a.get(key, {}).get(name_a), stored_b.get(key, {}).get(name_b)
+        if not box_a or not box_b:
             values[key] = None
+            continue
+        pa, pb = (box_a["x"], box_a["y"]), (box_b["x"], box_b["y"])
+        if rects_a != rects_b:
+            if key not in sizes:
+                values[key] = None
+                continue
+            (oxa, oya), (oxb, oyb) = (rect_offset(r, *sizes[key]) for r in (rects_a, rects_b))
+            pa, pb = (pa[0] + oxa, pa[1] + oya), (pb[0] + oxb, pb[1] + oyb)
+        values[key] = compute(node["op"], pa, pb, node["clockwise"])
     return values
 
 
@@ -882,11 +955,11 @@ def node_detail(camera: str, node_id: str, graph: dict | None = None) -> dict:
         names = point_names(graph, node_id)
         a, b = effective_points(graph, node_id)
         values = [v for v in calc_values(camera, node_id, graph).values() if v is not None]
-        parent = parent_of(graph, node_id)
+        parent = calc_detector(graph, node_id)
         detail.update({
             "op": node["op"], "operations": OPERATIONS, "points": names, "a": a, "b": b, "clockwise": node["clockwise"],
             "measured": len(values),
-            "input": parent,  # the detector whose boxes the points come from, and the crops above it (its picture)
+            "input": parent,  # the one detector both points come from (None when they come from two), and the crops above it
             "crops": input_rects(graph, parent) if parent else [],
         })
     elif kind == "evaluation":

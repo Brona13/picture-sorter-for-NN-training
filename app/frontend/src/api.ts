@@ -1123,8 +1123,8 @@ export const api = {
     request<FlowDeletePreview>(`/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/delete-preview`),
   flowDelete: (camera: string, id: string) =>
     request<{ removed: string }>(`/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}`, send("DELETE")),
-  flowConnect: (camera: string, source: string, target: string) =>
-    request<{ source: string; target: string }>(`/cameras/${encodeURIComponent(camera)}/flow/edges`, send("POST", { source, target })),
+  flowConnect: (camera: string, source: string, target: string, point?: string) =>
+    request<{ source: string; target: string }>(`/cameras/${encodeURIComponent(camera)}/flow/edges`, send("POST", point ? { source, target, point } : { source, target })),
   setRoiAnchor: (camera: string, feature: string, body: { detector: string; target: string; mode?: "box" | "rect"; margin?: number; frame?: string; follow_rotation?: boolean }) =>
     request<RoiAnchor>(`/cameras/${encodeURIComponent(camera)}/rois/${encodeURIComponent(feature)}/anchor`, send("PUT", body)),
   roiAnchor: (camera: string, feature: string) =>
@@ -1137,8 +1137,8 @@ export const api = {
     ),
   clearRoiAnchor: (camera: string, feature: string) =>
     request<{ feature: string; anchor: null }>(`/cameras/${encodeURIComponent(camera)}/rois/${encodeURIComponent(feature)}/anchor`, { method: "DELETE" }),
-  flowDisconnect: (camera: string, source: string, target: string) =>
-    request<{ source: string; target: string }>(`/cameras/${encodeURIComponent(camera)}/flow/edges/remove`, send("POST", { source, target })),
+  flowDisconnect: (camera: string, source: string, target: string, point?: string) =>
+    request<{ source: string; target: string }>(`/cameras/${encodeURIComponent(camera)}/flow/edges/remove`, send("POST", point ? { source, target, point } : { source, target })),
   flowAddTarget: (camera: string, id: string, name: string, inside?: string) =>
     request<FlowNodeDetail>(`/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/targets`, send("POST", inside ? { name, inside } : { name })),
   flowSetTargetInside: (camera: string, id: string, name: string, inside: string | null) =>

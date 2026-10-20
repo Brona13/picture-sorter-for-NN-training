@@ -156,3 +156,22 @@ test("flowConnect: Ingest or a Crop feeds a Crop or a detector; nothing feeds In
   expect(describeNode(node({ kind: "crop", flow: { rect: [0, 0, 0.5, 0.25] } }))).toBe("50 × 25 % of the picture");
   expect(describeNode(node({ kind: "crop", flow: { rect: null } }))).toBe("no crop drawn yet");
 });
+
+test("flowConnect: a detector's main dot feeds the whole detector to Calculate, a target dot feeds one point; target dots feed nothing else", async () => {
+  const { targetHandle } = await import("./chainModel");
+  expect(flowConnect(flowCanvas, link("det:1", "calc:1"))).toEqual({ source: "det:1", target: "calc:1" });
+  expect(flowConnect(flowCanvas, { source: "det:1", sourceHandle: targetHandle("left"), target: "calc:1" })).toEqual({ source: "det:1", target: "calc:1", point: "left" });
+  expect(flowConnect(flowCanvas, { source: "det:1", sourceHandle: targetHandle("left"), target: "det:2" })).toHaveProperty("error");
+});
+
+test("classifyFollows: dragging an ROI carries its Classify box; a Classify box moves alone; both dragged together do not double", async () => {
+  const { classifyFollows } = await import("./chainModel");
+  const boxes = [
+    { id: "roi:seal", kind: "roi", ref: "seal", position: { x: 100, y: 50 } },
+    { id: "classify:seal", kind: "classify", ref: "seal", position: { x: 300, y: 80 } },
+  ];
+  const move = (id: string, x: number, y: number) => ({ type: "position" as const, id, position: { x, y }, dragging: true });
+  expect(classifyFollows(boxes, [move("roi:seal", 110, 40)])).toEqual([move("classify:seal", 310, 70)]);
+  expect(classifyFollows(boxes, [move("classify:seal", 0, 0)])).toEqual([]);
+  expect(classifyFollows(boxes, [move("roi:seal", 110, 40), move("classify:seal", 310, 70)])).toEqual([]);
+});

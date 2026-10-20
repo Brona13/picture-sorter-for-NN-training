@@ -290,7 +290,11 @@ def get_canvas(camera: str) -> dict:
     known = {n["id"] for n in nodes}
     for e in graph["edges"]:
         if e["source"] in known and e["target"] in known:
-            edges.append({"id": f"{e['source']}->{e['target']}", "source": e["source"], "source_handle": None, "target": e["target"], "locked": e["source"] == INGEST_ID})
+            point = e.get("point")
+            edges.append({
+                "id": f"{e['source']}->{e['target']}" + (f"#{point}" if point else ""),
+                "source": e["source"], "source_handle": f"t:{point}" if point else None, "target": e["target"], "locked": False,
+            })
     for roi in rois:  # a detector-anchored ROI hangs from the detector too (the arrow is stored in the anchor)
         spec = anchor.get_anchor(camera, roi.name)
         if spec and spec["detector"] in known:
