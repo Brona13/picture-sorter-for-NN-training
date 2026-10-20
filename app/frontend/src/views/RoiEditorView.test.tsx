@@ -307,3 +307,16 @@ test("a ROI that is the found box has nothing to draw: the page says so", async 
   expect(await screen.findByText(/there is nothing to draw here/)).toBeInTheDocument();
   expect(screen.getByLabelText(/Frame to draw on/)).not.toBeDisabled();
 });
+
+test("the anchor settings live on the ROI page: the detector's targets can be chosen there", async () => {
+  install(focusData());
+  const inner = globalThis.fetch;
+  vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) =>
+    url.endsWith("/chain") ? new Response(JSON.stringify({ edges: [], nodes: [
+      { id: "det:1", kind: "detector", ref: null, label: "Detector 1", role: null, flow: { targets: ["hole"] } },
+      { id: "roi:seal", kind: "roi", ref: "seal", label: "seal", role: "quality", scope: "camera" },
+    ] })) : inner(url, init)));
+  render(<RoiEditorView camera="camA" focus={{ feature: "seal", onBack: () => {} }} />);
+  expect(await screen.findByRole("heading", { name: "Anchor" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Set anchor" })).toBeInTheDocument();
+});

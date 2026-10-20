@@ -16,7 +16,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, ChainCanvas, ChainDeletePreview, ChainNode, ChainViewport, FlowDeletePreview } from "../api";
 import { INGEST_ID, classifyFollows, targetHandle, targetOfHandle, connectAction, describeNode, disconnectAction, flowConnect, freshName, isAnchorEdge, isFlowKind, layoutOf, productHandle } from "../chain/chainModel";
-import AnchorSection from "../chain/AnchorSection";
 import { useSharedFeature } from "../SharedFeature";
 import SidePanel from "../SidePanel";
 
@@ -372,16 +371,6 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
             <button type="button" onClick={() => openPage(selectedLive, "classify")}>
               Classify
             </button>
-          )}
-          {selectedLive.kind === "roi" && selectedLive.role !== "classify" && canvas && (
-            <AnchorSection
-              key={`${selectedLive.id}:${selectedLive.anchor?.detector ?? ""}:${selectedLive.anchor?.target ?? ""}`}
-              camera={camera}
-              roi={selectedLive}
-              detectors={canvas.nodes.filter((n) => n.kind === "detector")}
-              onChanged={() => void reload()}
-              onError={setError}
-            />
           )}
           {selectedLive.kind === "roi" && (
             <button type="button" className="danger" onClick={() => requestDelete(selectedLive.id)}>

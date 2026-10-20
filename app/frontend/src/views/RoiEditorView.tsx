@@ -1,5 +1,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { api, frameImageUrl, FramesResponse, PRODUCTS_RENAMED, RoiInfo, RoisResponse, roiThumbUrl } from "../api";
+import { api, ChainNode, frameImageUrl, FramesResponse, PRODUCTS_RENAMED, RoiInfo, RoisResponse, roiThumbUrl } from "../api";
+import AnchorSection from "../chain/AnchorSection";
+import SidePanel from "../SidePanel";
 import ProductNamesEditor from "../classify/ProductNamesEditor";
 import PictureSizeSlider, { usePictureSize } from "../PictureSize";
 import RoiCanvas from "../RoiCanvas";
@@ -63,10 +65,17 @@ export default function RoiEditorView({ camera, product, focus }: { camera: stri
 
   // A ROI anchored to a detector box: in mode "rect" the rectangle is drawn on the example picture, next to the found box.
   const [anchorInfo, setAnchorInfo] = useState<Awaited<ReturnType<typeof api.roiAnchor>> | null>(null);
+  const [chainNodes, setChainNodes] = useState<ChainNode[]>([]);
+  const loadAnchor = useCallback(() => {
+    if (!focus?.feature) return;
+    api.roiAnchor(camera, focus.feature).then(setAnchorInfo).catch(() => setAnchorInfo(null)); // cosmetic
+    api.chain(camera).then((c) => setChainNodes(c.nodes)).catch(() => setChainNodes([])); // the anchor's detectors
+  }, [camera, focus?.feature]);
   useEffect(() => {
     setAnchorInfo(null);
-    if (focus?.feature) api.roiAnchor(camera, focus.feature).then(setAnchorInfo).catch(() => setAnchorInfo(null)); // cosmetic
-  }, [camera, focus?.feature]);
+    loadAnchor();
+  }, [loadAnchor]);
+  const roiNode = chainNodes.find((n) => n.kind === "roi" && n.ref === focus?.feature);
   const anchorFrame = anchorInfo?.context?.frame ?? null;
   useEffect(() => {
     if (anchorFrame && frames?.frames.includes(anchorFrame)) setFrame(anchorFrame);
@@ -149,7 +158,18 @@ export default function RoiEditorView({ camera, product, focus }: { camera: stri
   const classifyFeat = data?.classify_feature ?? null;
   const allProducts = data?.products ?? [];
 
-  return (
+  const anchorPanel = roiNode && roiNode.role !== "classify" ? (
+      <AnchorSection
+        key={`${roiNode.id}:${roiNode.anchor?.detector ?? ""}:${roiNode.anchor?.target ?? ""}:${roiNode.anchor?.mode ?? ""}`}
+        camera={camera}
+        roi={roiNode}
+        detectors={chainNodes.filter((n) => n.kind === "detector")}
+        onChanged={loadAnchor}
+        onError={setError}
+      />
+  ) : null;
+
+  const page = (
     <section>
       <h2>
         ROI editor — {camera}
@@ -213,7 +233,7 @@ export default function RoiEditorView({ camera, product, focus }: { camera: stri
       {anchorInfo?.anchor?.mode === "box" && (
         <p role="note">
           This ROI is the box the detector finds for <strong>{anchorInfo.anchor.target}</strong>, plus a margin of {Math.round(anchorInfo.anchor.margin * 100)} %:
-          there is nothing to draw here. To draw your own rectangle related to that box, switch the anchor to <em>My own rectangle</em> in the Anchor section on the Chain.
+          there is nothing to draw here. To draw your own rectangle related to that box, switch the anchor to <em>My own rectangle</em> in the Anchor section of the panel on the right.
         </p>
       )}
       {anchorFrame && (
@@ -420,6 +440,7 @@ export default function RoiEditorView({ camera, product, focus }: { camera: stri
       )}
     </section>
   );
+  return anchorPanel ? <SidePanel panel={anchorPanel}>{page}</SidePanel> : page;
 }
 
 /** The ROI's own name, before its data is loaded: "typeA::rod" -> "rod". */
