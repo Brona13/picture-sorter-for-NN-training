@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import cv2
+import numpy as np
 
+import benchmark_rotsearch as bench
 import datamodel
 import flow
 import ingest
@@ -633,3 +635,120 @@ def height_of(case: "FlowTests") -> int:
         detail = self.node_detail(calc)
         self.assertEqual(detail["input"], det)
         self.assertEqual(len(detail["crops"]), 1)
+
+
+class LargeExampleTests(ApiTestCase):
+    """An example over 400 px is stored shrunk and the detector shrinks the picture the same way (v1.75.0)."""
+
+    SIZE = 500
+    CENTRES = [(400.0, 350.0), (520.0, 420.0), (380.0, 300.0)]
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.cam = "camL"
+        datamodel.ensure_camera_dirs(self.cam)
+        rng = np.random.default_rng(3)
+        pattern = bench.pattern(self.SIZE)
+        self.names = []
+        for i, (cx, cy) in enumerate(self.CENTRES):
+            frame = bench.plant(bench.background(1000, rng), pattern, cx, cy, 0.0)
+            name = f"big_{i}.png"
+            cv2.imwrite(str(datamodel.unsorted_dir(self.cam) / name), frame)
+            self.names.append(name)
+        ingest.rebuild_index(self.cam)
+        self.base = f"/api/cameras/{self.cam}/flow"
+        self.det = self.client.post(f"{self.base}/nodes", json={"kind": "detector"}).json()["id"]
+        self.client.put(f"{self.base}/nodes/{self.det}", json={"rotate": False})
+
+    def target(self, name: str) -> None:
+        self.assertEqual(self.client.post(f"{self.base}/nodes/{self.det}/targets", json={"name": name}).status_code, 201)
+
+    def example(self, target: str, box: list[int], status: int = 201):
+        r = self.client.post(f"{self.base}/nodes/{self.det}/examples", json={"target": target, "frame": self.names[0], "box": box})
+        self.assertEqual(r.status_code, status, r.text)
+        return r
+
+    def detail(self) -> dict:
+        return self.client.get(f"{self.base}/nodes/{self.det}").json()
+
+    def test_a_large_example_is_stored_shrunk_and_the_box_stays_in_picture_pixels(self) -> None:
+        self.target("part")
+        self.example("part", [150, 100, 500, 500])  # was refused: "at most 400 pixels on a side"
+        example = self.detail()["targets"][0]["examples"][0]
+        self.assertEqual(example["box"], [150, 100, 500, 500])
+        self.assertAlmostEqual(example["scale"], 0.8, places=4)
+        png = cv2.imdecode(np.frombuffer(__import__("base64").b64decode(example["png"].split(",", 1)[1]), np.uint8), cv2.IMREAD_UNCHANGED)
+        self.assertEqual(png.shape[:2], (400, 400))
+
+    def test_the_detector_finds_a_large_example_in_original_pixels(self) -> None:
+        self.target("part")
+        self.example("part", [150, 100, 500, 500])
+        job = self.client.post(f"{self.base}/run").json()
+        self.assertEqual(wait_for_job(self.client, job["id"])["status"], "done")
+        boxes = self.client.get(f"{self.base}/nodes/{self.det}/boxes").json()["boxes"]
+        for name, (cx, cy) in zip(self.names, self.CENTRES):
+            found = boxes[name]["part"]
+            self.assertLess(abs(found["x"] - cx), 2.5, name)  # the shrink costs about 1 / scale pixel
+            self.assertLess(abs(found["y"] - cy), 2.5, name)
+            self.assertEqual((found["w"], found["h"]), (500, 500))  # the example's own size, not the shrunk one
+        self.assertEqual(self.detail()["status"], "fresh")
+
+    def test_a_small_example_of_the_same_detector_is_shrunk_with_it(self) -> None:
+        self.target("part")
+        self.target("notch")
+        self.example("part", [150, 100, 500, 500])
+        self.example("notch", [345, 295, 110, 110])  # inside the large pattern
+        job = self.client.post(f"{self.base}/run").json()
+        self.assertEqual(wait_for_job(self.client, job["id"])["status"], "done")
+        boxes = self.client.get(f"{self.base}/nodes/{self.det}/boxes").json()["boxes"]
+        found = boxes[self.names[1]]["notch"]
+        self.assertEqual((found["w"], found["h"]), (110, 110))
+        self.assertLess(abs(found["x"] - (400.0 + 120.0)), 3.0)  # the frame's pattern moved by (+120, +70)
+        self.assertLess(abs(found["y"] - (350.0 + 70.0)), 3.0)
+
+    def test_an_example_that_fits_keeps_its_old_form(self) -> None:
+        self.target("part")
+        self.example("part", [250, 200, 300, 300])
+        self.assertEqual(self.detail()["targets"][0]["examples"][0]["scale"], 1.0)
+        stored = flow.load_graph(self.cam)["nodes"][self.det]["targets"][0]["examples"][0]
+        self.assertNotIn("scale", stored)  # nothing new is stored for an example that was never shrunk
+
+    def test_resizing_a_large_example_to_fit_drops_the_scale(self) -> None:
+        self.target("part")
+        self.example("part", [150, 100, 500, 500])
+        r = self.client.put(f"{self.base}/nodes/{self.det}/examples/part/0", json={"box": [200, 150, 380, 380]})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["targets"][0]["examples"][0]["scale"], 1.0)
+
+    def test_an_example_too_large_for_a_small_one_of_the_detector_is_refused_with_a_reason(self) -> None:
+        self.target("part")
+        self.target("dot")
+        self.example("dot", [513, 344, 12, 12])  # on the edge of the dark disc
+        self.example("part", [150, 100, 500, 500])  # 12 px * 0.8 = 9.6 px: still fine
+        self.assertEqual(len(self.detail()["targets"][1]["examples"]), 1)
+        big = self.client.post(
+            f"{self.base}/nodes/{self.det}/examples", json={"target": "part", "frame": self.names[0], "box": [0, 0, 1000, 1000]}
+        )  # 12 px * 0.4 = 4.8 px < 8
+        self.assertEqual(big.status_code, 422, big.text)
+        self.assertIn("too large next to a small one", big.json()["detail"])
+        self.assertEqual(len(self.detail()["targets"][0]["examples"]), 1)  # nothing was added
+
+    def test_a_cascaded_detector_with_its_own_large_example_searches_inside_the_parent_box(self) -> None:
+        self.target("part")
+        self.example("part", [150, 100, 500, 500])  # parent, scale 0.8
+        child = self.client.post(f"{self.base}/nodes", json={"kind": "detector"}).json()["id"]
+        self.client.put(f"{self.base}/nodes/{child}", json={"rotate": False})
+        self.assertEqual(self.client.post(f"{self.base}/edges", json={"source": self.det, "target": child}).status_code, 201)
+        r = self.client.post(f"{self.base}/nodes/{child}/targets", json={"name": "inner", "inside": "part"})
+        self.assertEqual(r.status_code, 201, r.text)
+        r = self.client.post(f"{self.base}/nodes/{child}/examples", json={"target": "inner", "frame": self.names[0], "box": [190, 140, 420, 420]})
+        self.assertEqual(r.status_code, 201, r.text)  # 420 px: shrunk too
+        self.assertLess(self.client.get(f"{self.base}/nodes/{child}").json()["targets"][0]["examples"][0]["scale"], 1.0)
+        job = self.client.post(f"{self.base}/run").json()
+        self.assertEqual(wait_for_job(self.client, job["id"])["status"], "done")
+        boxes = self.client.get(f"{self.base}/nodes/{child}/boxes").json()["boxes"]
+        for name, (cx, cy) in zip(self.names, self.CENTRES):
+            found = boxes[name]["inner"]
+            self.assertLess(abs(found["x"] - cx), 3.0, name)
+            self.assertLess(abs(found["y"] - cy), 3.0, name)
+            self.assertEqual((found["w"], found["h"]), (420, 420))

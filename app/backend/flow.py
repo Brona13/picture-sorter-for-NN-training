@@ -46,7 +46,8 @@ OPERATIONS = {
 }
 MAX_TARGETS = 8
 MAX_EXAMPLES = 6
-MAX_EXAMPLE_SIDE = 400
+MAX_EXAMPLE_SIDE = 400  # longest side (px) an example is matched at; a larger one is stored shrunk and the detector shrinks the picture the same way
+MIN_MATCH_SIDE = 8  # after that shrinking, the shorter side of the smallest example of a detector must stay at least this many pixels
 NAME_MAX = 40
 HISTOGRAM_BINS = 36
 DEFAULT_PAD = 0.3
@@ -440,9 +441,11 @@ def _read(camera: str, frame: str) -> np.ndarray:
     return curation.load_image(datamodel.unsorted_dir(camera) / frame)
 
 
-def _cut(camera: str, frame: str, box: list[float], rects: list[list[float]] | None = None) -> tuple[list[int], str]:
+def _cut(camera: str, frame: str, box: list[float], rects: list[list[float]] | None = None) -> tuple[list[int], str, float]:
     """The example crop of ``box`` (pixels ``[x, y, w, h]`` of the picture the detector works on, after any Crop boxes
-    above it) on ``frame``: the clipped box and the crop as base64 PNG."""
+    above it) on ``frame``: the clipped box, the crop as base64 PNG and the scale it is stored at. A crop whose longer
+    side is over ``MAX_EXAMPLE_SIDE`` is stored shrunk (scale < 1, the box stays in picture pixels); ``run_detector``
+    then searches a picture shrunk by the same factor."""
     if not isinstance(box, (list, tuple)) or len(box) != 4:
         raise FlowError("The example box is x, y, width, height.")
     image = apply_rects(_read(camera, frame), rects or [])[0]
@@ -451,15 +454,47 @@ def _cut(camera: str, frame: str, box: list[float], rects: list[list[float]] | N
     x1, y1 = min(image.shape[1], x + w), min(image.shape[0], y + h)
     if x1 - x0 < 5 or y1 - y0 < 5:
         raise FlowError("The example is too small; draw a larger box.")
-    if max(x1 - x0, y1 - y0) > MAX_EXAMPLE_SIDE:
-        raise FlowError(f"The example can be at most {MAX_EXAMPLE_SIDE} pixels on a side.")
     crop = image[y0:y1, x0:x1]
     if float(np.std(crop)) < rotsearch.MIN_TEXTURE:
         raise FlowError("The example is flat; there is nothing to recognise in it.")
-    ok, buf = cv2.imencode(".png", crop)
+    scale = min(1.0, MAX_EXAMPLE_SIDE / float(max(x1 - x0, y1 - y0)))
+    stored = cv2.resize(crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA) if scale < 1.0 else crop
+    ok, buf = cv2.imencode(".png", stored)
     if not ok:
         raise FlowError("Cannot store the example.")
-    return [x0, y0, x1 - x0, y1 - y0], base64.b64encode(buf.tobytes()).decode()
+    return [x0, y0, x1 - x0, y1 - y0], base64.b64encode(buf.tobytes()).decode(), scale
+
+
+def _store_cut(example: dict, png: str, scale: float) -> None:
+    """Put a cut into an example. ``scale`` is kept only when the crop was shrunk, so examples (and the signature of
+    detectors) that never needed it stay exactly as they were before v1.75.0."""
+    example["png"] = png
+    if scale < 1.0:
+        example["scale"] = round(scale, 6)
+    else:
+        example.pop("scale", None)
+
+
+def match_scale(node: dict) -> float:
+    """The factor a detector shrinks its picture and examples by: the smallest scale any of its examples was stored
+    at, so the largest example is matched at ``MAX_EXAMPLE_SIDE`` and nothing is ever enlarged. 1 for a detector whose
+    examples all fit."""
+    return min((float(e.get("scale", 1.0)) for t in node.get("targets", []) for e in t["examples"]), default=1.0)
+
+
+def _check_scale(node: dict) -> None:
+    """Refuse an example that would make another one of the detector too small to match once the picture is shrunk."""
+    scale = match_scale(node)
+    if scale >= 1.0:
+        return
+    for t in node["targets"]:
+        for e in t["examples"]:
+            if min(e["box"][2], e["box"][3]) * scale < MIN_MATCH_SIDE:
+                raise FlowError(
+                    f"This example is too large next to a small one of this detector: the picture is shrunk to fit "
+                    f"{MAX_EXAMPLE_SIDE} px and the small example would drop under {MIN_MATCH_SIDE} px. "
+                    "Draw a smaller part of the large object, or use another detector for it."
+                )
 
 
 def add_example(camera: str, node_id: str, target: str, frame: str, box: list[float]) -> dict:
@@ -473,10 +508,13 @@ def add_example(camera: str, node_id: str, target: str, frame: str, box: list[fl
         raise FlowError(f"Unknown target: {target}")
     if len(entry["examples"]) >= MAX_EXAMPLES:
         raise FlowError(f"A target can have at most {MAX_EXAMPLES} examples.")
-    clipped, png = _cut(camera, frame, box, input_rects(graph, node_id))
-    entry["examples"].append({"frame": frame, "box": clipped, "png": png})
+    clipped, png, scale = _cut(camera, frame, box, input_rects(graph, node_id))
+    example = {"frame": frame, "box": clipped}
+    _store_cut(example, png, scale)
+    entry["examples"].append(example)
+    _check_scale(node)
     save_graph(camera, graph)
-    return entry["examples"][-1]
+    return example
 
 
 def update_example(camera: str, node_id: str, target: str, index: int, box: list[float]) -> dict:
@@ -487,7 +525,9 @@ def update_example(camera: str, node_id: str, target: str, index: int, box: list
     if entry is None or not 0 <= index < len(entry["examples"]):
         raise FlowError("There is no such example.")
     example = entry["examples"][index]
-    example["box"], example["png"] = _cut(camera, example["frame"], box, input_rects(graph, node_id))
+    example["box"], png, scale = _cut(camera, example["frame"], box, input_rects(graph, node_id))
+    _store_cut(example, png, scale)
+    _check_scale(node)
     save_graph(camera, graph)
     return example
 
@@ -513,7 +553,7 @@ def signature(graph: dict, node_id: str) -> str:
     parent = parent_of(graph, node_id)
     material = {
         "algo": ALGORITHM,
-        "targets": [(t["name"], [e["png"] for e in t["examples"]]) + ((t["inside"],) if t.get("inside") else ()) for t in node["targets"]],
+        "targets": [(t["name"], [(e["png"], e["scale"]) if "scale" in e else e["png"] for e in t["examples"]]) + ((t["inside"],) if t.get("inside") else ()) for t in node["targets"]],
         "rotate": node["rotate"],
         "range": node["angle_range"],
         "pad": node["pad"],
@@ -565,16 +605,32 @@ def _live_frames(camera: str) -> list[str]:
     return [p.name for p in datamodel.list_unsorted(camera) if p.name not in deleted]
 
 
-def _match_entry(match: rotsearch.Match, source: str = "auto") -> dict:
+def _match_entry(match: rotsearch.Match, source: str = "auto", scale: float = 1.0, size: tuple[int, int] | None = None) -> dict:
+    """A stored box. ``scale`` < 1 means the match was made on a picture shrunk by it: the centre is taken back to
+    the picture's own pixels and ``size`` is the example's own (unshrunk) width and height."""
+    x, y = float(match.x), float(match.y)
+    if scale < 1.0:
+        x, y = (x + 0.5) / scale - 0.5, (y + 0.5) / scale - 0.5
+    w, h = size if size is not None else (match.w, match.h)
     return {
-        "x": round(float(match.x), 2),
-        "y": round(float(match.y), 2),
+        "x": round(x, 2),
+        "y": round(y, 2),
         "angle": round(float(match.angle), 2),
         "score": round(float(match.score), 3),
-        "w": int(match.w),
-        "h": int(match.h),
+        "w": int(w),
+        "h": int(h),
         "source": source,
     }
+
+
+def _search_example(example: dict, scale: float) -> tuple[np.ndarray, tuple[int, int]]:
+    """An example as the detector matches it: its stored crop, shrunk further when it was stored at a larger scale
+    than the detector's ``scale``; and its own size in picture pixels."""
+    image = _example_image(example)
+    factor = scale / float(example.get("scale", 1.0))
+    if factor < 1.0 - 1e-9:
+        image = cv2.resize(image, None, fx=factor, fy=factor, interpolation=cv2.INTER_AREA)
+    return image, (int(example["box"][2]), int(example["box"][3]))
 
 
 def _as_match(entry: dict) -> rotsearch.Match:
@@ -619,7 +675,8 @@ def run_detector(camera: str, node_id: str, report=None, frames: list[str] | Non
         if status(camera, parent, graph) != "fresh":
             raise FlowError("Run the detector before this one first; its boxes are the search areas here.")
         parent_frames = load_stored(camera, parent)["frames"]
-    examples = {t["name"]: [_example_image(e) for e in t["examples"]] for t in usable}
+    scale = match_scale(node)  # < 1 when an example was too large to match as it is: the picture shrinks with it
+    examples = {t["name"]: [_search_example(e, scale) for e in t["examples"]] for t in usable}
     inside_names = {t["name"]: inside_of(t) for t in usable}  # the input detector's target each one searches in
     angle_range = tuple(node["angle_range"]) if node["angle_range"] else None
     if not node["rotate"]:
@@ -640,6 +697,7 @@ def run_detector(camera: str, node_id: str, report=None, frames: list[str] | Non
             except Exception:  # noqa: BLE001 - an unreadable frame has no boxes
                 picture = None
             if picture is not None:
+                searched = cv2.resize(picture, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA) if scale < 1.0 else picture
                 for name, imgs in examples.items():
                     if name in found:
                         continue
@@ -649,9 +707,16 @@ def run_detector(camera: str, node_id: str, report=None, frames: list[str] | Non
                         if inside is None:
                             continue
                         region = _as_match(inside).region(picture.shape, node["pad"])
-                    match = rotsearch.find_targets(picture, {name: imgs}, angle_range=angle_range, region=region)[name]
-                    if match is not None:
-                        found[name] = _match_entry(match)
+                        if scale < 1.0:
+                            region = (int(math.floor(region[0] * scale)), int(math.floor(region[1] * scale)),
+                                      int(math.ceil(region[2] * scale)) + 1, int(math.ceil(region[3] * scale)) + 1)
+                    best: tuple[rotsearch.Match, tuple[int, int]] | None = None
+                    for image, size in imgs:  # the best match over this target's examples
+                        match = rotsearch.find(searched, image, angle_range=angle_range, region=region)
+                        if match is not None and (best is None or match.score > best[0].score):
+                            best = (match, size)
+                    if best is not None:
+                        found[name] = _match_entry(best[0], scale=scale, size=best[1])
             out[key] = found
         if report:
             report({"phase": "detecting", "node": node_id, "done": i, "total": len(names)})
@@ -942,7 +1007,7 @@ def node_detail(camera: str, node_id: str, graph: dict | None = None) -> dict:
             "parent_targets": parent_target_names(graph, node_id),
             "crops": input_rects(graph, node_id),
             "targets": [
-                {"name": t["name"], "inside": t.get("inside"), "examples": [{"frame": e["frame"], "box": e["box"], "png": "data:image/png;base64," + e["png"]} for e in t["examples"]]}
+                {"name": t["name"], "inside": t.get("inside"), "examples": [{"frame": e["frame"], "box": e["box"], "png": "data:image/png;base64," + e["png"], "scale": e.get("scale", 1.0)} for e in t["examples"]]}
                 for t in node["targets"]
             ],
             "rotate": node["rotate"],
