@@ -158,3 +158,12 @@ test("an anchored ROI is outlined where the detector put it on this picture, and
   expect(await screen.findByText(/found no box here/)).toBeInTheDocument();
   expect(screen.queryByTestId("viewer-roi")).toBeNull();
 });
+
+test("an ROI fed by a Picture edits box is shown on that box's output picture, outlined in its own fractions", async () => {
+  const fed = { ...roiBody("seal"), rois: [{ ...roiBody("seal").rois[0], input: "crop:1", x: 0.1, y: 0.2, w: 0.5, h: 0.5 }] };
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify(fed))));
+  setup({ feature: "seal" });
+  expect(await screen.findByTestId("viewer-roi")).toHaveStyle({ left: "10%", top: "20%", width: "50%", height: "50%" });
+  const img = screen.getByAltText("b.png") as HTMLImageElement;
+  expect(img.getAttribute("src")).toMatch(/flow\/nodes\/crop%3A1\/picture\?frame=b\.png&stage=output/);
+});

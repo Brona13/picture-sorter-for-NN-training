@@ -1,5 +1,5 @@
 import { ReactNode, useEffect, useRef, useState } from "react";
-import { api, RoiInfo } from "../api";
+import { api, flowPictureUrl, RoiInfo } from "../api";
 import FramePane from "./FramePane";
 import PictureViewer from "./PictureViewer";
 import { useBrowse } from "./useBrowse";
@@ -176,7 +176,7 @@ export default function FrameViewer({ camera, feature, frames, start, classes, m
         </>
       }
     >
-      {(width) => <FramePane camera={camera} frame={frame} width={width} outline={outline} info={noAnchor ? `${roi!.short_name}: the detector found no box here, so there is no ROI on this picture` : note?.(frame)} />}
+      {(width) => <FramePane camera={camera} frame={frame} width={width} outline={outline} imageUrl={roi?.input ? flowPictureUrl(camera, roi.input, frame, { stage: "output" }) : undefined} info={noAnchor ? `${roi!.short_name}: the detector found no box here, so there is no ROI on this picture` : note?.(frame)} />}
     </PictureViewer>
   );
 }
