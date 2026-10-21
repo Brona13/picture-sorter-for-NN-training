@@ -167,3 +167,32 @@ test("an ROI fed by a Picture edits box is shown on that box's output picture, o
   const img = screen.getByAltText("b.png") as HTMLImageElement;
   expect(img.getAttribute("src")).toMatch(/flow\/nodes\/crop%3A1\/picture\?frame=b\.png&stage=output/);
 });
+
+test("with filters in the Picture edits box a switch chooses the original or the filtered picture, and keeps the choice", async () => {
+  const fed = { ...roiBody("seal"), rois: [{ ...roiBody("seal").rois[0], input: "crop:1" }] };
+  const box = {
+    kind: "crop",
+    steps: [{ id: "s1", op: "crop", rect: [0.1, 0.1, 0.5, 0.5] }, { id: "s2", op: "filter", name: "gaussian", params: { sigma: 2 } }],
+  };
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => new Response(JSON.stringify(url.includes("/flow/nodes/") ? box : fed))));
+  setup({ feature: "seal" });
+  const img = () => decodeURIComponent((screen.getByAltText("b.png") as HTMLImageElement).getAttribute("src") ?? "");
+  const original = await screen.findByRole("button", { name: "Original" });
+  expect(screen.getByRole("button", { name: "Filtered" })).toHaveAttribute("aria-pressed", "true");
+  expect(img()).not.toContain("steps=");
+  await userEvent.click(original);
+  expect(original).toHaveAttribute("aria-pressed", "true");
+  expect(img()).toContain('steps=[{"id":"s1","op":"crop","rect":[0.1,0.1,0.5,0.5]}]'); // crops stay, the filter is out
+  fireEvent.keyDown(window, { key: "ArrowRight" });
+  expect(await screen.findByAltText("c.png")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Original" })).toHaveAttribute("aria-pressed", "true"); // the choice is locked
+});
+
+test("no switch when the box has no filter", async () => {
+  const fed = { ...roiBody("seal"), rois: [{ ...roiBody("seal").rois[0], input: "crop:1" }] };
+  const box = { kind: "crop", steps: [{ id: "s1", op: "crop", rect: null }] };
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => new Response(JSON.stringify(url.includes("/flow/nodes/") ? box : fed))));
+  setup({ feature: "seal" });
+  await screen.findByTestId("viewer-roi");
+  expect(screen.queryByRole("button", { name: "Original" })).toBeNull();
+});

@@ -1,5 +1,5 @@
 import { ReactNode, useEffect, useRef, useState } from "react";
-import { api, flowPictureUrl, RoiInfo } from "../api";
+import { api, flowPictureUrl, FlowEdit, RoiInfo } from "../api";
 import FramePane from "./FramePane";
 import PictureViewer from "./PictureViewer";
 import { useBrowse } from "./useBrowse";
@@ -60,6 +60,20 @@ export default function FrameViewer({ camera, feature, frames, start, classes, m
     };
   }, [camera, feature]);
   const { frame, index, go } = useBrowse(frames, start, onClose, onShow);
+  // An ROI that reads a Picture edits box with filters in it: the picture can be examined as the ROI sees it (filtered) or
+  // with the filters taken out (the crops stay, so the outline lies in the same place). The choice stays while browsing.
+  const [boxSteps, setBoxSteps] = useState<FlowEdit[] | null>(null);
+  const [version, setVersion] = useState<"filtered" | "original">("filtered");
+  useEffect(() => {
+    if (!roi?.input) { setBoxSteps(null); return; }
+    let cancelled = false;
+    api.flowNode(camera, roi.input).then((d) => !cancelled && setBoxSteps(d.kind === "crop" ? d.steps : null)).catch(() => !cancelled && setBoxSteps(null));
+    return () => { cancelled = true; };
+  }, [camera, roi?.input]);
+  const hasFilter = !!boxSteps?.some((s) => s.op === "filter");
+  const pictureUrl = roi?.input
+    ? flowPictureUrl(camera, roi.input, frame, version === "original" && boxSteps ? { stage: "output", steps: boxSteps.filter((s) => s.op !== "filter") } : { stage: "output" })
+    : undefined;
   // A detector-anchored ROI sits somewhere else on every picture (or nowhere: the detector found no box).
   const [placed, setPlaced] = useState<{ frame: string; rect: { x: number; y: number; w: number; h: number } | null } | null>(null);
   useEffect(() => {
@@ -152,6 +166,22 @@ export default function FrameViewer({ camera, feature, frames, start, classes, m
       }
       tools={
         <>
+          {hasFilter && (
+            <span role="group" aria-label="Picture version" style={{ display: "inline-flex" }}>
+              {(["original", "filtered"] as const).map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  aria-pressed={version === v}
+                  title={v === "original" ? "The picture before the Picture edits filters (colours as taken)" : "The picture as the ROI sees it, with the Picture edits filters applied"}
+                  onClick={() => setVersion(v)}
+                  style={version === v ? { background: "rgba(80,160,255,.3)", borderColor: "#4a90e2" } : undefined}
+                >
+                  {v === "original" ? "Original" : "Filtered"}
+                </button>
+              ))}
+            </span>
+          )}
           {roi && (
             <button
               type="button"
@@ -176,7 +206,7 @@ export default function FrameViewer({ camera, feature, frames, start, classes, m
         </>
       }
     >
-      {(width) => <FramePane camera={camera} frame={frame} width={width} outline={outline} imageUrl={roi?.input ? flowPictureUrl(camera, roi.input, frame, { stage: "output" }) : undefined} info={noAnchor ? `${roi!.short_name}: the detector found no box here, so there is no ROI on this picture` : note?.(frame)} />}
+      {(width) => <FramePane camera={camera} frame={frame} width={width} outline={outline} imageUrl={pictureUrl} info={noAnchor ? `${roi!.short_name}: the detector found no box here, so there is no ROI on this picture` : note?.(frame)} />}
     </PictureViewer>
   );
 }
