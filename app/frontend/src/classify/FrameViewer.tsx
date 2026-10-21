@@ -167,20 +167,16 @@ export default function FrameViewer({ camera, feature, frames, start, classes, m
       tools={
         <>
           {hasFilter && (
-            <span role="group" aria-label="Picture version" style={{ display: "inline-flex" }}>
-              {(["original", "filtered"] as const).map((v) => (
-                <button
-                  key={v}
-                  type="button"
-                  aria-pressed={version === v}
-                  title={v === "original" ? "The picture before the Picture edits filters (colours as taken)" : "The picture as the ROI sees it, with the Picture edits filters applied"}
-                  onClick={() => setVersion(v)}
-                  style={version === v ? { background: "rgba(80,160,255,.3)", borderColor: "#4a90e2" } : undefined}
-                >
-                  {v === "original" ? "Original" : "Filtered"}
-                </button>
-              ))}
-            </span>
+            <button
+              type="button"
+              aria-label="Picture version"
+              aria-pressed={version === "original"}
+              title={version === "original" ? "Showing the picture as taken (before the Picture edits filters). Click for the filtered picture." : "Showing the picture as the ROI sees it (Picture edits filters applied). Click for the picture as taken."}
+              onClick={() => setVersion((v) => (v === "original" ? "filtered" : "original"))}
+              style={version === "original" ? { background: "rgba(80,160,255,.3)", borderColor: "#4a90e2" } : undefined}
+            >
+              {version === "original" ? "Original" : "Filtered"}
+            </button>
           )}
           {roi && (
             <button

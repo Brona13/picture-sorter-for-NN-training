@@ -176,16 +176,19 @@ test("with filters in the Picture edits box a switch chooses the original or the
   };
   vi.stubGlobal("fetch", vi.fn(async (url: string) => new Response(JSON.stringify(url.includes("/flow/nodes/") ? box : fed))));
   setup({ feature: "seal" });
-  const img = () => decodeURIComponent((screen.getByAltText("b.png") as HTMLImageElement).getAttribute("src") ?? "");
-  const original = await screen.findByRole("button", { name: "Original" });
-  expect(screen.getByRole("button", { name: "Filtered" })).toHaveAttribute("aria-pressed", "true");
+  const img = (name = "b.png") => decodeURIComponent((screen.getByAltText(name) as HTMLImageElement).getAttribute("src") ?? "");
+  const toggle = await screen.findByRole("button", { name: "Picture version" });
+  expect(toggle).toHaveTextContent("Filtered");
   expect(img()).not.toContain("steps=");
-  await userEvent.click(original);
-  expect(original).toHaveAttribute("aria-pressed", "true");
+  await userEvent.click(toggle);
+  expect(toggle).toHaveTextContent("Original");
   expect(img()).toContain('steps=[{"id":"s1","op":"crop","rect":[0.1,0.1,0.5,0.5]}]'); // crops stay, the filter is out
   fireEvent.keyDown(window, { key: "ArrowRight" });
   expect(await screen.findByAltText("c.png")).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Original" })).toHaveAttribute("aria-pressed", "true"); // the choice is locked
+  expect(screen.getByRole("button", { name: "Picture version" })).toHaveTextContent("Original"); // the choice is locked
+  expect(img("c.png")).toContain("steps=");
+  await userEvent.click(screen.getByRole("button", { name: "Picture version" }));
+  expect(img("c.png")).not.toContain("steps="); // and one click back to the filtered picture
 });
 
 test("no switch when the box has no filter", async () => {
@@ -194,5 +197,5 @@ test("no switch when the box has no filter", async () => {
   vi.stubGlobal("fetch", vi.fn(async (url: string) => new Response(JSON.stringify(url.includes("/flow/nodes/") ? box : fed))));
   setup({ feature: "seal" });
   await screen.findByTestId("viewer-roi");
-  expect(screen.queryByRole("button", { name: "Original" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Picture version" })).toBeNull();
 });
