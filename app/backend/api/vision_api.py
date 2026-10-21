@@ -9,6 +9,7 @@ import engine
 import labels
 import masking
 import preprocess
+import roi_input
 import vision_settings
 from api import jobs
 from api.cameras import require_feature
@@ -124,7 +125,7 @@ def preview(camera: str, feature: str, body: PreviewRequest) -> Response:
     path = frame_path(camera, body.frame)
     frame_hash = labels.frame_hash(camera, body.frame)
     try:
-        img = engine.resolve_roi(camera, feature).crop(curation.load_image(path))
+        img = engine.resolve_roi(camera, feature).crop(roi_input.apply(camera, feature, curation.load_image(path)))
         if body.filter:
             img = preprocess.apply(img, body.filter.name, body.filter.params)
         if body.mask and body.mask.enabled:

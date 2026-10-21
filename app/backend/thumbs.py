@@ -70,8 +70,12 @@ def thumb_data_uri(frame_path: str, roi_tuple: tuple, mtime: float, size: int = 
 
 def _generate_cutout(frame_path: str, roi_tuple: tuple) -> Image.Image:
     """Load, crop, and resize one thumbnail without retaining decoded pixels."""
-    roi = ROI(*roi_tuple) if len(roi_tuple) == 5 else ROI.full_frame("whole-frame")
+    roi = ROI(*roi_tuple[:5]) if len(roi_tuple) >= 5 else ROI.full_frame("whole-frame")
     img = curation.load_image(frame_path)
+    if len(roi_tuple) > 5 and roi_tuple[5]:  # the filter steps of a Picture edits box feeding this ROI (JSON)
+        import roi_input  # noqa: PLC0415
+
+        img = roi_input.apply_json(img, roi_tuple[5])
     cutout = roi.crop(img)
     pil = bgr_to_pil(cutout)
     if pil.width > THUMB_WIDTH:

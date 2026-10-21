@@ -40,7 +40,9 @@ def crop_for_frame(camera: str, feature: str, frame_path):
     import labels  # noqa: PLC0415
 
     path = Path(frame_path)
-    image = curation.load_image(path)
+    import roi_input  # noqa: PLC0415
+
+    image = roi_input.apply(camera, feature, curation.load_image(path))  # a ROI fed by a Picture edits box sees its filters
     roi = resolve_roi_for_frame(camera, feature, labels.hash_map(camera).get(path.name, ""), image.shape[1], image.shape[0])
     if roi is None:
         raise FileNotFoundError(f"No anchor box on {path.name}")

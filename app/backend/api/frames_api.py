@@ -5,6 +5,7 @@ import io
 from pathlib import Path
 
 import anchor
+import roi_input
 import config
 import cv2
 import datamodel
@@ -44,7 +45,8 @@ def _roi_tuple(camera: str, feature: str | None, path: Path | None = None) -> tu
         if placed is None:
             raise HTTPException(status_code=404, detail="The detector found no anchor on this picture.")
         roi = placed
-    return (roi.name, roi.x, roi.y, roi.w, roi.h)
+    edits = roi_input.tuple_part(camera, feature)
+    return (roi.name, roi.x, roi.y, roi.w, roi.h, edits) if edits else (roi.name, roi.x, roi.y, roi.w, roi.h)
 
 
 def _cached(request: Request, etag: str, content: bytes, media_type: str) -> Response:

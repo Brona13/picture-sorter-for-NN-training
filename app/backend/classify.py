@@ -37,6 +37,7 @@ import cv2
 import numpy as np
 
 import anchor
+import roi_input
 import config
 import curation
 import datamodel
@@ -110,6 +111,9 @@ def _roi_cache_key(roi, camera: str | None = None, feature: str | None = None, c
     sig = vision_settings.signature(camera, feature, con) if camera and feature else ""
     key = f"{key}|{sig}" if sig else key
     spec = anchor.get_anchor(camera, feature, con) if camera and feature else None
+    if camera and feature:
+        edits = roi_input.rule_key(camera, feature, con)
+        key = f"{key}|{edits}" if edits else key
     return f"{key}|{anchor.rule_key(spec, camera)}" if spec else key
 
 
@@ -242,7 +246,7 @@ def _prepare_vector_cache(
         for frame in frame_batch:
             try:
                 with perf.span("features.image_load_and_crop"):
-                    img = curation.load_image(datamodel.unsorted_dir(camera) / frame)
+                    img = roi_input.apply(camera, feature, curation.load_image(datamodel.unsorted_dir(camera) / frame))
                     frame_roi = roi
                     if frame in frame_entries:
                         frame_roi = anchor.rect_for(spec, frame_entries[frame], roi.name, img.shape[1], img.shape[0])

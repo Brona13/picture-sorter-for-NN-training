@@ -202,6 +202,10 @@ def set_anchor(camera: str, feature: str, detector: str, target: str, frame: str
     roi = datamodel.get_roi(camera, feature)
     if roi is None:
         raise AnchorError(f"Unknown ROI: {feature}")
+    import roi_input  # noqa: PLC0415
+
+    if roi_input.get_input(camera, feature):
+        raise AnchorError(f"{feature} reads a Picture edits box; remove that arrow first.")
     if mode not in MODES:
         raise AnchorError("The mode is box or rect.")
     if not 0.0 <= margin <= 1.0:

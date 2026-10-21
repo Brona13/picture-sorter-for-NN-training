@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import anchor
+import roi_input
 import config
 import datamodel
 import engine
@@ -84,6 +85,7 @@ def _describe(camera: str, r: ROI, inbox_total: int) -> dict:
         "version_count": len(vl),
         "active_version": active,
         "anchored": anchor.get_anchor(camera, r.name) is not None,
+        "input": (roi_input.get_input(camera, r.name) or {}).get("box"),
     }
 
 
@@ -252,6 +254,28 @@ def roi_rect(camera: str, feature: str, frame: str) -> dict:
     return {"anchored": True, "rect": None if placed is None else {"x": placed.x, "y": placed.y, "w": placed.w, "h": placed.h}}
 
 
+class InputBody(BaseModel):
+    box: str
+
+
+@router.put("/cameras/{camera}/rois/{feature}/input")
+def put_input(camera: str, feature: str, body: InputBody) -> dict:
+    """The ROI reads the picture a Picture edits box passes on (filters only; see ``roi_input.py``)."""
+    _require_roi(camera, feature)
+    try:
+        return {"feature": feature, "input": roi_input.set_input(camera, feature, body.box)}
+    except roi_input.RoiInputError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.delete("/cameras/{camera}/rois/{feature}/input")
+def delete_input(camera: str, feature: str) -> dict:
+    """Back to the whole, unedited picture."""
+    _require_roi(camera, feature)
+    roi_input.clear_input(camera, feature)
+    return {"feature": feature, "input": None}
+
+
 @router.delete("/cameras/{camera}/rois/{feature}/anchor")
 def delete_anchor(camera: str, feature: str) -> dict:
     """Back to the static rectangle."""
@@ -266,6 +290,7 @@ def delete_roi(camera: str, feature: str) -> dict:
     _require_roi(camera, feature)
     datamodel.delete_roi(camera, feature)
     anchor.clear_anchor(camera, feature)
+    roi_input.clear_input(camera, feature)
     flow.drop_classify_edges(camera, feature)
     return {"removed": labels.purge_feature(camera, feature)}
 

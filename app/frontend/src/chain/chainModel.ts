@@ -121,7 +121,7 @@ export const isFlowKind = (kind: string | undefined): boolean => !!kind && (FLOW
 export const targetHandle = (target: string) => `t:${target}`;
 export const targetOfHandle = (handle: string | null | undefined): string | null => (handle && handle.startsWith("t:") ? handle.slice(2) : null);
 
-export type FlowLink = { source: string; target: string; point?: string } | { anchor: { feature: string; detector: string; target: string } } | { error: string } | null;
+export type FlowLink = { source: string; target: string; point?: string } | { anchor: { feature: string; detector: string; target: string } } | { roiInput: { feature: string; box: string } } | { error: string } | null;
 
 export function flowConnect(canvas: ChainCanvas, c: Connection): FlowLink {
   const source = featureOf(canvas, c.source);
@@ -132,6 +132,12 @@ export function flowConnect(canvas: ChainCanvas, c: Connection): FlowLink {
     const name = targetOfHandle(c.sourceHandle);
     if (!name) return { error: "Drag from one of the detector's target dots (on its right edge) to the ROI." };
     return { anchor: { feature: target.ref, detector: source.id, target: name } };
+  }
+  if (source.kind === "crop" && target.kind === "roi") {
+    // A Picture edits box dropped on an ROI feature: the ROI is cut from the box's (filtered) picture.
+    if (target.role === "classify" || !target.ref) return { error: "The product-sorting ROI always reads the whole picture." };
+    if (c.sourceHandle) return { error: "Use the Picture edits box's main dot." };
+    return { roiInput: { feature: target.ref, box: source.id } };
   }
   if (!isFlowKind(source.kind) && !isFlowKind(target.kind)) return null;
   const point = targetOfHandle(c.sourceHandle);
@@ -177,6 +183,10 @@ export function classifyFollows(
   }
   return extra;
 }
+
+/** An arrow from a Picture edits box to an ROI box is the ROI's input (stored with the ROI, not in the flow graph). */
+export const isRoiInputEdge = (canvas: ChainCanvas, edge: ChainEdge): boolean =>
+  canvas.nodes.find((n) => n.id === edge.source)?.kind === "crop" && canvas.nodes.find((n) => n.id === edge.target)?.kind === "roi";
 
 /** An arrow from a detector to an ROI box is the ROI's anchor (stored in the anchor, not in the flow graph). */
 export const isAnchorEdge = (canvas: ChainCanvas, edge: ChainEdge): boolean =>

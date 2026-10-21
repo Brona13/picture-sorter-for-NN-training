@@ -317,6 +317,8 @@ export interface ChainNode {
   flow?: FlowSummary;
   /** ROI boxes only: the detector box the rectangle follows, or null/absent (see `anchor.py`). */
   anchor?: RoiAnchor | null;
+  /** ROI boxes only: the Picture edits box the ROI is cut from, or null/absent (see `roi_input.py`). */
+  input?: string | null;
 }
 
 export interface RoiAnchor {
@@ -1198,6 +1200,10 @@ export const api = {
     request<{ anchored: boolean; rect: { x: number; y: number; w: number; h: number } | null }>(
       `/cameras/${encodeURIComponent(camera)}/rois/${encodeURIComponent(feature)}/rect?frame=${encodeURIComponent(frame)}`,
     ),
+  setRoiInput: (camera: string, feature: string, box: string) =>
+    request<{ feature: string; input: { box: string } }>(`/cameras/${encodeURIComponent(camera)}/rois/${encodeURIComponent(feature)}/input`, send("PUT", { box })),
+  clearRoiInput: (camera: string, feature: string) =>
+    request<{ feature: string; input: null }>(`/cameras/${encodeURIComponent(camera)}/rois/${encodeURIComponent(feature)}/input`, { method: "DELETE" }),
   clearRoiAnchor: (camera: string, feature: string) =>
     request<{ feature: string; anchor: null }>(`/cameras/${encodeURIComponent(camera)}/rois/${encodeURIComponent(feature)}/anchor`, { method: "DELETE" }),
   flowDisconnect: (camera: string, source: string, target: string, point?: string) =>

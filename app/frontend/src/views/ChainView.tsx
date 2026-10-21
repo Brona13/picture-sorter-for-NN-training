@@ -15,7 +15,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, ChainCanvas, ChainDeletePreview, ChainNode, ChainViewport, FlowDeletePreview } from "../api";
-import { INGEST_ID, classifyFollows, targetHandle, targetOfHandle, connectAction, describeNode, disconnectAction, flowConnect, freshName, isAnchorEdge, isFlowKind, layoutOf, productHandle } from "../chain/chainModel";
+import { INGEST_ID, classifyFollows, targetHandle, targetOfHandle, connectAction, describeNode, disconnectAction, flowConnect, freshName, isAnchorEdge, isRoiInputEdge, isFlowKind, layoutOf, productHandle } from "../chain/chainModel";
 import { useSharedFeature } from "../SharedFeature";
 import SidePanel from "../SidePanel";
 
@@ -204,7 +204,10 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
     const flowArrow = flowConnect(canvas, link);
     if (flowArrow === null) void apply(connectAction(canvas, link));
     else if ("error" in flowArrow) setError(flowArrow.error);
-    else if ("anchor" in flowArrow) {
+    else if ("roiInput" in flowArrow) {
+      const a = flowArrow.roiInput; // a Picture edits box dropped on an ROI: the ROI is cut from that box's picture
+      void applyFlow(() => api.setRoiInput(camera, a.feature, a.box));
+    } else if ("anchor" in flowArrow) {
       const a = flowArrow.anchor; // the dot of a detector target dropped on an ROI: the ROI becomes that box
       void applyFlow(() => api.setRoiAnchor(camera, a.feature, { detector: a.detector, target: a.target, mode: "box" }));
     } else void applyFlow(() => api.flowConnect(camera, flowArrow.source, flowArrow.target, flowArrow.point));
@@ -453,7 +456,8 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
                 const edge = canvas.edges.find((x) => x.id === e.id);
                 if (!edge) continue;
                 const ends = [edge.source, edge.target].map((id) => canvas.nodes.find((n) => n.id === id)?.kind);
-                if (isAnchorEdge(canvas, edge)) void api.clearRoiAnchor(camera, canvas.nodes.find((n) => n.id === edge.target)!.ref!).then(() => reload()).catch(fail);
+                if (isRoiInputEdge(canvas, edge)) void api.clearRoiInput(camera, canvas.nodes.find((n) => n.id === edge.target)!.ref!).then(() => reload()).catch(fail);
+                else if (isAnchorEdge(canvas, edge)) void api.clearRoiAnchor(camera, canvas.nodes.find((n) => n.id === edge.target)!.ref!).then(() => reload()).catch(fail);
                 else if (ends.some((k) => isFlowKind(k))) void applyFlow(() => api.flowDisconnect(camera, edge.source, edge.target, targetOfHandle(edge.source_handle) ?? undefined));
                 else void apply(disconnectAction(canvas, edge));
               }

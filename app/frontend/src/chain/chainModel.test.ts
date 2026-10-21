@@ -126,6 +126,13 @@ test("flowConnect refuses arrows whose types do not fit, and leaves ROI arrows t
   expect(flowConnect(flowCanvas, link("ingest", "roi:seal"))).toBeNull();
 });
 
+test("a Picture edits box dropped on an ROI becomes the ROI's input; the product-sorting ROI refuses", () => {
+  const withBox: ChainCanvas = { ...flowCanvas, nodes: [...flowCanvas.nodes, node({ id: "crop:1", kind: "crop", ref: null, role: null, scope: null, label: "Picture edits 1" })] };
+  expect(flowConnect(withBox, link("crop:1", "roi:seal"))).toEqual({ roiInput: { feature: "seal", box: "crop:1" } });
+  expect(flowConnect(withBox, link("crop:1", "roi:type"))).toHaveProperty("error");
+  expect(flowConnect(withBox, { source: "crop:1", sourceHandle: "t:x", target: "roi:seal" })).toHaveProperty("error");
+});
+
 test("describeNode says what a flow box does", () => {
   const f = (over: object) => node({ kind: "evaluation", flow: over as ChainNode["flow"] });
   expect(describeNode(node({ kind: "detector", flow: { targets: ["A", "B"], status: "fresh", frames: 10, complete: 8 } }))).toBe("2 targets · 8/10 complete");
@@ -150,7 +157,7 @@ test("flowConnect: Ingest or a Crop feeds a Crop or a detector; nothing feeds In
   for (const [s, t] of [["ingest", "crop:1"], ["crop:1", "crop:2"], ["crop:2", "det:1"], ["crop:1", "det:2"]]) {
     expect(flowConnect(withCrop, link(s, t))).toEqual({ source: s, target: t });
   }
-  for (const [s, t] of [["det:1", "crop:1"], ["crop:1", "calc:1"], ["crop:1", "eval:1"], ["crop:1", "roi:seal"]]) {
+  for (const [s, t] of [["det:1", "crop:1"], ["crop:1", "calc:1"], ["crop:1", "eval:1"]]) {
     expect(flowConnect(withCrop, link(s, t))).toHaveProperty("error");
   }
   expect(describeNode(node({ kind: "crop", flow: { steps: [{ op: "crop", rect: [0, 0, 0.5, 0.25] }] } }))).toBe("50 × 25 % of the picture");

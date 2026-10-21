@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 
 import anchor
+import roi_input
 import cv2
 import flow
 from api import jobs
@@ -96,6 +97,7 @@ def delete_node(camera: str, node_id: str) -> dict:
     _known(camera, node_id)
     _guard(flow.delete_node, camera, node_id)
     anchor.drop_for_detector(camera, node_id)  # a ROI anchored to it goes back to its static rectangle
+    roi_input.drop_for_box(camera, node_id)  # and a ROI that read this box reads the whole picture again
     return {"removed": node_id}
 
 

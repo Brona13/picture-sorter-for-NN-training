@@ -20,6 +20,7 @@ import json
 import math
 
 import anchor
+import roi_input
 import datamodel
 import db
 import flow
@@ -138,6 +139,7 @@ def _roi_node(camera: str, roi: datamodel.ROI, stored: dict) -> dict:
         "product_counts": {},
         "unlabeled": 0,
         "anchor": anchor.get_anchor(camera, roi.name),
+        "input": (roi_input.get_input(camera, roi.name) or {}).get("box"),
     }
 
 
@@ -180,7 +182,7 @@ def _edges(camera: str, rois: list[datamodel.ROI], classify: str | None) -> list
         })
 
     classify_id = classify_node_id(classify) if classify else None
-    anchored = {r.name for r in rois if anchor.get_anchor(camera, r.name)}  # these hang from their detector instead
+    anchored = {r.name for r in rois if anchor.get_anchor(camera, r.name) or roi_input.get_input(camera, r.name)}  # these hang from their detector or Picture edits box instead
     if classify_id:
         add(INGEST_ID, roi_node_id(classify), locked=True)
         add(roi_node_id(classify), classify_id, locked=True)
@@ -352,6 +354,10 @@ def get_canvas(camera: str) -> dict:
         spec = anchor.get_anchor(camera, roi.name)
         if spec and spec["detector"] in known:
             edges.append({"id": f"{spec['detector']}->{roi_node_id(roi.name)}", "source": spec["detector"], "source_handle": f"t:{spec['target']}", "target": roi_node_id(roi.name), "locked": False})
+    for roi in rois:  # a ROI fed by a Picture edits box hangs from it
+        spec = roi_input.get_input(camera, roi.name)
+        if spec and spec["box"] in known:
+            edges.append({"id": f"{spec['box']}->{roi_node_id(roi.name)}", "source": spec["box"], "source_handle": None, "target": roi_node_id(roi.name), "locked": False})
     return {
         "camera": camera,
         "nodes": nodes,
