@@ -3,7 +3,7 @@ name: current-project
 description: Authoritative snapshot of the current purpose, architecture, capabilities, limitations, and open work
 status: current
 document_type: project-status
-last_updated: 2026-10-20
+last_updated: 2026-10-21
 ---
 
 # Current project
@@ -171,8 +171,8 @@ For each method, the application can show:
 - Novelty relative to all represented goldens
 
 Neural methods are optional. The classical method remains available without PyTorch.
-Neural inference uses conservative configurable batches with automatic smaller-batch
-retry on runtime capacity failures. Classify and near-duplicate analysis share the
+Neural inference uses configurable batches (32 on CUDA since v1.87.0) with automatic smaller-batch
+retry on runtime capacity failures, while worker threads prepare the next group of pictures. Classify and near-duplicate analysis share the
 same feature-cache pipeline.
 
 Classical SSIM retains its original formula and is evaluated concurrently across
@@ -382,6 +382,7 @@ One thin router per area, each delegating to the domain modules above:
 - `api.ts` — typed API client
 - `views/` — Overview, Chain, Status, Ingest, Dedup, ROI editor, Detector, Edge angle, Classify, Insights, Verdict, Augmentation, Versions (grouped into sections in `views.ts`)
 - `classify/` — `PictureGrid` (shared paged card grid + viewer), card, bulk, clear-labels, auto-assign, suggested-goldens panels, SVG scatter (drag a rectangle to zoom and list the frames inside, optionally delete them with a note, or label them all as one of the feature's classes with the "Label N as <class>" buttons, which overwrite existing labels and keep goldens in step; right-click resets), per-day Deleted view (follows the Classify per-page / column setting and pages through the days, newest first; v1.29.1), `FrameViewer.tsx` (full-size picture overlay), cluster browser (row of cluster tabs, paged card grid per cluster with its own grid size per ROI; cards can be labeled, made golden, made representative or deleted, with the same hover keys as Classify, plus Delete)
+- `views/PictureEditsPanel.tsx`, `PictureEditsWork.tsx`, `pictureEdits.ts` (`usePictureEdits`), `FilterParams.tsx` — the Picture edits box page (steps list with drag order, live Before/After picture) and the shared filter parameter controls (slider, toggle, drop-down)
 - `chain/chainModel.ts` + `views/ChainView.tsx` — the Chain canvas (React Flow, `@xyflow/react`); `classify/` also holds `ClassifyKpis` (the clickable numbers), `ClassifyScatter` / `ClassifyOutliers` (the Scatter and Outliers views of Classify) over the shared `ScatterWorkbench` (map, projection job, selection) and `OutlierPanel`, `useDedupState` (embedding choice), `SearchExtras` (the viewer's Product row, Show again and the zoom-line note), `ProductNamesEditor` (rename products), `CardGrid` (also the pager's file-name search), `toolInfo`, `paint` / `painter` / `useGridCard` (sweeps)
 - `RoiCanvas.tsx` + `roiGeometry.ts` — pointer-driven ROI draw/move/resize in normalised coordinates
 - `views/ConfigurationView.tsx` (method checkboxes), `methodTags.ts` (CPU/R18/R50), `views.ts` (menu icons, `SECTIONS` = Overview (Overview, Status), Management (Ingest), Manipulation (Dedup, ROI editor, Detector, Edge angle, Classify, Insights, Verdict, Augmentation), Export (Versions); `CONFIG_VIEW` is the ⚙️ button at the right of the top bar)
@@ -470,7 +471,9 @@ The project folder is portable, but `.venv/` is machine-specific and must be rec
 
 Listed in recommended priority order:
 
-00. **Chain measurement work, open items (2026-10-19; session notes `memory/2026-10-19-chain-crop-ingest-detector-session.md` and `memory/2026-10-20-chain-lines-and-points-session.md`):** check the two-hole chain (detector, cascaded detector, Calculate, Evaluation) on the real pictures (angle precision, 175 +- 3 deg); a **reference point per detector target** (the found position is the centre of the drawn example box, so "hole plus geometry" is off the hole); a **"no anchor" badge and filter** on the Classify cards for pictures without a detector box; **tags on pictures** and the Ingest date filter (design open); a **warning for mixed picture resolutions** in one camera; straightening a turned part; dots onto a Crop; the Calculate page's geometry for points of two detectors; a Crop fed by an ROI or detector; a detector behind an ROI / Classify with an OK / NG class filter (kept open on purpose). Two flaky tests fail under load but pass alone (`ClassifyView.test.tsx` deleted card, `test_clean_schema.py` parallel first connects).
+000. **Picture edits and filters, open items (2026-10-21, session notes `memory/2026-10-21-picture-edits-session.md`):** none of v1.82.0-v1.87.0 was clicked through in a real browser by Claude or run on real cameras. **Blob detector** (agreed, not built): a detector method that takes the blobs of a filtered picture (grey, threshold, keep biggest blobs) and gives each blob's centre, axis angle and size as targets, so Calculate and Evaluation can judge axis alignment and distance (OK / NG). **Crop steps in the box that feeds an ROI** work, but the ROI editor draws on one chosen picture only and other ROIs are hidden there. **Classify speed-up (v1.87.0)** is unmeasured: compare the GPU graph and the refresh time on the RTX A2000 before and after; half precision and GPU-side preprocessing were left out because they change the vectors. A Sobel-like edge map and blob filters work on pictures of any size, but the blob size is a percent of the picture. **Picture edits with a detector behind it** is stale-aware, but a box that follows a target and feeds an ROI leaves pictures without a target with no ROI picture (no scores).
+
+00. **Chain measurement work, open items (2026-10-19; session notes `memory/2026-10-19-chain-crop-ingest-detector-session.md` and `memory/2026-10-20-chain-lines-and-points-session.md`):** check the two-hole chain (detector, cascaded detector, Calculate, Evaluation) on the real pictures (angle precision, 175 +- 3 deg); a **reference point per detector target** (the found position is the centre of the drawn example box, so "hole plus geometry" is off the hole); a **"no anchor" badge and filter** on the Classify cards for pictures without a detector box; **tags on pictures** and the Ingest date filter (design open); a **warning for mixed picture resolutions** in one camera; straightening a turned part; dots onto a Crop; the Calculate page's geometry for points of two detectors; a detector behind an ROI / Classify with an OK / NG class filter (kept open on purpose). Two flaky tests fail under load but pass alone (`ClassifyView.test.tsx` deleted card, `test_clean_schema.py` parallel first connects).
 
 0a. **Easy access to hidden and deleted pictures** (noted 2026-10-18): the Classify numbers now leave out deleted and muted pictures so the user works only with valid ones, but the user must keep full control of the dataset. Add one obvious place (a view on the Overview or Status page, or a small section per camera) that lists the deleted pictures (with note, time, Restore) and the muted ones per ROI (with Unmute), and shows their counts. Today deleted ones are in Classify's *Show: Deleted*, muted ones behind its *Show muted* checkbox, and either can be found by the file-name search.
 
