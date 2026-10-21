@@ -95,23 +95,6 @@ test("Detector panel: the outputs are ticked per target, position first, and sav
   expect(screen.getByLabelText("Angle")).not.toBeChecked();
 });
 
-test("Crop panel: a way to use the target the detector does not offer is greyed out with the reason", () => {
-  detail = {
-    kind: "crop", rect: null, input_box: "det:1", crops: [],
-    follow: {
-      detector: "det:1", target: "hole", mode: "keep", frame: null, size: null, offset: null, missing: [], offered: ["position", "angle"],
-      modes: [
-        { id: "keep", label: "Position only", enabled: true, needs: [] },
-        { id: "straighten", label: "Straighten", enabled: false, needs: ["Angle"] },
-      ],
-    },
-  };
-  render(<FlowBoxPanel camera="camA" nodeId="crop:1" detail={detail as FlowNodeDetail} onDetail={() => {}} onChanged={() => {}} />);
-  expect(screen.getByText(/det:1 offers from hole: position, angle/)).toBeInTheDocument();
-  expect(screen.getByRole("option", { name: "Position only" })).toBeEnabled();
-  expect(screen.getByRole("option", { name: /Straighten.*tick Angle/ })).toBeDisabled();
-});
-
 const routes = (nodes: Record<string, unknown>, extra: (url: string, method: string) => unknown = () => undefined) => {
   vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
     const method = init?.method ?? "GET";

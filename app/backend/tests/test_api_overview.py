@@ -37,13 +37,13 @@ class OverviewApiTests(ApiTestCase):
         det = flow.create_node("camA", "detector")
         flow.add_target("camA", det, "P")
         graph = flow.load_graph("camA")
-        graph["nodes"][crop]["rect"] = [0.5, 0.0, 0.5, 1.0]  # starts at x = 30 px of the 60 x 40 picture
+        graph["nodes"][crop]["steps"][0]["rect"] = [0.5, 0.0, 0.5, 1.0]  # starts at x = 30 px of the 60 x 40 picture
         graph["edges"] = [{"source": crop, "target": det}]
         flow.save_graph("camA", graph)
         key = labels.hash_map("camA")[names[0]]
         flow._store("camA", det, None, {key: {"P": {"x": 10.0, "y": 20.0, "w": 8, "h": 6, "angle": 5.0, "source": "auto"}}})
         info = self.client.get("/api/overview").json()["cameras"][0]["flow"]
-        self.assertEqual([(n["kind"], n["label"]) for n in info["nodes"]], [("crop", "Crop 1"), ("detector", "Detector 1")])
+        self.assertEqual([(n["kind"], n["label"]) for n in info["nodes"]], [("crop", "Picture edits 1"), ("detector", "Detector 1")])
         self.assertEqual(info["size"], {"w": 60, "h": 40})
         self.assertEqual(
             info["boxes"],

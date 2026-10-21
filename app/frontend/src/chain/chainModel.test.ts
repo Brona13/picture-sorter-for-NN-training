@@ -153,8 +153,8 @@ test("flowConnect: Ingest or a Crop feeds a Crop or a detector; nothing feeds In
   for (const [s, t] of [["det:1", "crop:1"], ["crop:1", "calc:1"], ["crop:1", "eval:1"], ["crop:1", "roi:seal"]]) {
     expect(flowConnect(withCrop, link(s, t))).toHaveProperty("error");
   }
-  expect(describeNode(node({ kind: "crop", flow: { rect: [0, 0, 0.5, 0.25] } }))).toBe("50 × 25 % of the picture");
-  expect(describeNode(node({ kind: "crop", flow: { rect: null } }))).toBe("no crop drawn yet");
+  expect(describeNode(node({ kind: "crop", flow: { steps: [{ op: "crop", rect: [0, 0, 0.5, 0.25] }] } }))).toBe("50 × 25 % of the picture");
+  expect(describeNode(node({ kind: "crop", flow: { steps: [{ op: "crop", rect: null }] } }))).toBe("no crop drawn yet");
 });
 
 test("flowConnect: a detector's main dot feeds the whole detector to Calculate, a target dot feeds one point; target dots feed nothing else", async () => {
@@ -186,6 +186,15 @@ test("flowConnect: a detector's target dot feeds a Crop (the Crop follows that t
 
 test("describeNode: a Crop that follows a target says which and how big its rectangle is", () => {
   const follow = { detector: "det:1", target: "hole", size: [90, 80] as [number, number] };
-  expect(describeNode(node({ kind: "crop", flow: { rect: null, follow } }))).toBe("follows hole · 90 × 80 px");
-  expect(describeNode(node({ kind: "crop", flow: { rect: null, follow: { ...follow, size: null } } }))).toBe("follows hole · draw the rectangle");
+  const steps = [{ op: "crop" as const, follows: true }];
+  expect(describeNode(node({ kind: "crop", flow: { steps, follow } }))).toBe("follows hole · 90 × 80 px");
+  expect(describeNode(node({ kind: "crop", flow: { steps, follow: { ...follow, size: null } } }))).toBe("follows hole · draw the rectangle");
+});
+
+test("describeNode: a Picture edits box lists its steps in order", () => {
+  const steps = [{ op: "filter" as const, label: "Gaussian blur" }, { op: "crop" as const, rect: [0, 0, 0.5, 0.25] as [number, number, number, number] }, { op: "filter" as const, label: "Median blur" }];
+  expect(describeNode(node({ kind: "crop", flow: { steps } }))).toBe("Gaussian blur → crop 50 × 25 % → Median blur");
+  expect(describeNode(node({ kind: "crop", flow: { steps: [{ op: "filter", label: "Box filter" }] } }))).toBe("Box filter");
+  expect(describeNode(node({ kind: "crop", flow: { steps: [{ op: "filter", label: "Box filter" }, { op: "crop", rect: null }] } }))).toBe("Box filter");
+  expect(describeNode(node({ kind: "crop", flow: { steps: [] } }))).toBe("no steps yet");
 });

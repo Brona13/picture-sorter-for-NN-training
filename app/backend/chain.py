@@ -24,6 +24,7 @@ import datamodel
 import db
 import flow
 import labels
+import preprocess
 
 SETTING_KEY = "chain.canvas"
 INGEST_ID = "ingest"
@@ -206,7 +207,13 @@ def _flow_nodes(camera: str, graph: dict, stored: dict) -> list[dict]:
         kind = node["kind"]
         summary: dict = {}
         if kind == "crop":
-            summary = {"rect": node["rect"], "follow": flow.follow_of(graph, node_id)}
+            fid = flow.follow_step_id(graph, node_id)
+            steps = [
+                {"op": "filter", "label": preprocess.FILTERS[st["name"]]["label"]} if st["op"] == "filter"
+                else {"op": "crop", "rect": None if st["id"] == fid else st.get("rect"), "follows": st["id"] == fid}
+                for st in flow.crop_steps(node)
+            ]
+            summary = {"steps": steps, "follow": flow.follow_of(graph, node_id)}
             if summary["follow"]:
                 spec = node.get("follow") or {}
                 summary["follow"] = {**summary["follow"], "size": spec.get("size")}
@@ -218,7 +225,7 @@ def _flow_nodes(camera: str, graph: dict, stored: dict) -> list[dict]:
         else:
             state = flow.evaluation_state(camera, node_id)
             summary = {"nominal": node["nominal"], "tolerance": node["tolerance"], "unit": state["unit"], "counts": state["counts"]}
-        default = {"crop": "Crop", "detector": "Detector", "calc": "Calculate", "evaluation": "Evaluation"}[kind]
+        default = {"crop": "Picture edits", "detector": "Detector", "calc": "Calculate", "evaluation": "Evaluation"}[kind]
         entry = stored.get(node_id, {})
         nodes.append({
             "id": node_id, "kind": kind, "ref": None, "label": entry.get("label") or f"{default} {node_id.split(':')[1]}",

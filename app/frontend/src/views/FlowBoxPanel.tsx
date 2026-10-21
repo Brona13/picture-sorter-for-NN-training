@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { api, FLOW_OUTPUTS, FlowCalc, FlowCrop, FlowDetector, FlowNodeDetail, FlowEvaluation, FlowOutput } from "../api";
+import { api, FLOW_OUTPUTS, FlowCalc, FlowDetector, FlowNodeDetail, FlowEvaluation, FlowOutput } from "../api";
 import { PanelSection } from "../SidePanel";
 import { useJob } from "../useJob";
+import type { PictureEdits } from "./pictureEdits";
+import PictureEditsPanel from "./PictureEditsPanel";
 
 /** Signed distance from the nominal; an angle wraps around (359 and 1 degrees are 2 degrees apart). */
 export function deviation(value: number, nominal: number, wrap: boolean): number {
@@ -203,10 +205,12 @@ type Props = {
   onDetail: (d: FlowNodeDetail) => void;
   /** Something other pages draw from changed (a box, a setting): reload what depends on it. */
   onChanged: () => void;
+  /** A Picture edits box: the steps shared with the big picture (see `usePictureEdits`). */
+  edits?: PictureEdits;
 };
 
-/** The options of a detector, Calculate or Evaluation box, as sections of the page's right-hand panel (data in `flow.py`). */
-export default function FlowBoxPanel({ camera, nodeId, detail, onDetail, onChanged }: Props) {
+/** The options of a Picture edits, detector, Calculate or Evaluation box, as sections of the page's right-hand panel (data in `flow.py`). */
+export default function FlowBoxPanel({ camera, nodeId, detail, onDetail, onChanged, edits }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
   const [newTarget, setNewTarget] = useState("");
@@ -245,7 +249,7 @@ export default function FlowBoxPanel({ camera, nodeId, detail, onDetail, onChang
   return (
     <>
       {error && <p role="alert">{error}</p>}
-      {detail.kind === "crop" && <CropOptions detail={detail} onUpdate={update} />}
+      {detail.kind === "crop" && edits && <PictureEditsPanel edits={edits} />}
       {detail.kind === "detector" && (
         <DetectorOptions
           detail={detail}
@@ -265,61 +269,6 @@ export default function FlowBoxPanel({ camera, nodeId, detail, onDetail, onChang
       {detail.kind === "calc" && <CalcOptions detail={detail} onUpdate={update} />}
       {detail.kind === "evaluation" && <EvaluationOptions detail={detail} onUpdate={update} />}
     </>
-  );
-}
-
-function CropOptions({ detail, onUpdate }: { detail: FlowCrop; onUpdate: (body: Record<string, unknown>) => void }) {
-  const r = detail.rect;
-  const f = detail.follow;
-  if (f) {
-    return (
-      <PanelSection title="Crop follows a target">
-        <p className="muted">
-          This Crop is fed by target <strong>{f.target}</strong> of {f.detector}. Its rectangle has one size and keeps the same place
-          next to the found target on every picture. Draw it once on a picture where the target was found.
-        </p>
-        <p className="muted">
-          {f.detector} offers from {f.target}: {FLOW_OUTPUTS.filter((o) => f.offered.includes(o.id)).map((o) => o.label.toLowerCase()).join(", ") || "nothing"}.
-        </p>
-        <label>
-          Use of the target
-          <select value={f.mode} onChange={(e) => onUpdate({ follow_mode: e.target.value })}>
-            {f.modes.map((m) => (
-              <option key={m.id} value={m.id} disabled={!m.enabled} title={m.enabled ? undefined : `Tick ${m.needs.join(", ")} on ${f.detector} for ${f.target}`}>
-                {m.label}{m.enabled ? "" : ` (tick ${m.needs.join(", ")} on the detector)`}
-              </option>
-            ))}
-          </select>
-        </label>
-        <p className="muted">
-          {f.mode === "straighten"
-            ? "The picture is turned back by the found angle around the target before the cut, so the part is always upright in the same place (corners that fall outside the picture are grey)."
-            : "The picture is not turned: the rectangle only moves with the position."}
-          {" "}Changing this clears the rectangle; draw it again.
-        </p>
-        <p>{f.size ? `${f.size[0]} × ${f.size[1]} px · offset ${f.offset?.[0]}, ${f.offset?.[1]} px from the target` : "No rectangle drawn yet: the picture passes on unchanged."}</p>
-        <p className={f.missing.length ? "flow-missing" : "muted"} role="status">
-          {f.missing.length ? `${f.missing.length} picture${f.missing.length === 1 ? "" : "s"} where ${f.detector} found no ${f.target}: they get no crop and cannot be used behind it.` : `${f.detector} found ${f.target} on every picture.`}
-        </p>
-        {detail.crops.length > 0 && <p className="muted">This box reads a picture already cut by {detail.crops.length} Crop box{detail.crops.length === 1 ? "" : "es"} above it.</p>}
-        <button type="button" disabled={!f.size} onClick={() => onUpdate({ follow: null })}>Clear rectangle</button>
-      </PanelSection>
-    );
-  }
-  return (
-    <PanelSection title="Crop">
-      <p className="muted">
-        One rectangle cuts every picture before it goes on to the next box. It is stored as fractions of the picture, so
-        pictures of another size are cut in the same relative place. Nothing is written to disk.
-      </p>
-      <p>
-        {r
-          ? `From ${(r[0] * 100).toFixed(1)} %, ${(r[1] * 100).toFixed(1)} % · ${(r[2] * 100).toFixed(1)} % wide, ${(r[3] * 100).toFixed(1)} % tall`
-          : "No crop drawn yet: the picture passes on unchanged."}
-      </p>
-      {detail.crops.length > 0 && <p className="muted">This box reads a picture already cut by {detail.crops.length} Crop box{detail.crops.length === 1 ? "" : "es"} above it.</p>}
-      <button type="button" disabled={!r} onClick={() => onUpdate({ rect: null })}>Clear crop</button>
-    </PanelSection>
   );
 }
 

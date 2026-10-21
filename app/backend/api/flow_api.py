@@ -1,6 +1,8 @@
 """Measurement flow on the chain: detector, Calculate and Evaluation boxes (see ``flow.py``). Thin router."""
 from __future__ import annotations
 
+import json
+
 import anchor
 import cv2
 import flow
@@ -194,13 +196,22 @@ def run_all(camera: str) -> dict:
 
 
 @router.get("/cameras/{camera}/flow/nodes/{node_id}/picture")
-def get_picture(camera: str, node_id: str, frame: str, stage: str = "input", size: int | None = None, straighten: bool = False) -> Response:
-    """The picture a box works on (``stage=input``), or - for a Crop - the picture it passes on (``output``). ``size``
-    gives a JPEG thumbnail whose longer side is that many pixels; without it a PNG at full size."""
+def get_picture(camera: str, node_id: str, frame: str, stage: str = "input", size: int | None = None, straighten: bool = False,
+                step: str | None = None, steps: str | None = None) -> Response:
+    """The picture a box works on (``stage=input``), or - for a Picture Edits box - the picture it passes on (``output``).
+    ``step`` is one edit of that box: ``input`` is the picture entering it, ``output`` the one leaving it. ``steps`` (JSON)
+    is a list of edits not saved yet, read in place of the box's own (the live preview). ``size`` gives a JPEG thumbnail
+    whose longer side is that many pixels; without it a PNG at full size."""
     _known(camera, node_id)
     if stage not in ("input", "output"):
         raise HTTPException(status_code=422, detail="stage must be input or output")
-    image = _guard(flow.picture, camera, node_id, frame, stage, straighten)
+    draft = None
+    if steps is not None:
+        try:
+            draft = json.loads(steps)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="steps must be JSON") from exc
+    image = _guard(flow.picture, camera, node_id, frame, stage, straighten, step, draft)
     if size:
         scale = min(1.0, max(16, min(size, 1024)) / max(image.shape[:2]))
         if scale < 1.0:

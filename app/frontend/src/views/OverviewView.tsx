@@ -99,9 +99,9 @@ function CameraPicture({
 
 const FOUND_COLORS = ["#ff9f1c", "#2ec4ff", "#7bd389", "#e07bff", "#ffe066"];
 
-const KIND_NAME = { crop: "Crop", detector: "Detector", calc: "Calculate", evaluation: "Evaluation" } as const;
+const KIND_NAME = { crop: "Picture edits", detector: "Detector", calc: "Calculate", evaluation: "Evaluation" } as const;
 
-/** The camera's measurement chain (Crop, detectors, Calculate, Evaluation) as small cards, in the order of the chain. */
+/** The camera's measurement chain (Picture edits, detectors, Calculate, Evaluation) as small cards, in the order of the chain. */
 function FlowCards({ cam, onOpen }: { cam: OverviewCamera; onOpen?: (camera: string, nodeId: string) => void }) {
   const nodes = cam.flow?.nodes ?? [];
   if (nodes.length === 0) return null;

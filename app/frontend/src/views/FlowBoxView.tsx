@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, FlowBox, FlowCalc, FlowCrop, FlowDetector, FlowNodeDetail, FlowValues, flowPictureUrl, frameImageUrl, frameThumbUrl } from "../api";
-import CropWork from "./CropWork";
+import PictureEditsWork from "./PictureEditsWork";
+import { usePictureEdits } from "./pictureEdits";
 import PictureSizeSlider, { usePictureSize } from "../PictureSize";
 import SidePanel from "../SidePanel";
 import { drawn, stored } from "../pixelCentre";
@@ -56,7 +57,7 @@ const handlePoint = (r: Rect, h: Handle) => ({
   y: h.includes("n") ? r[1] : h.includes("s") ? r[1] + r[3] : r[1] + r[3] / 2,
 });
 
-const TITLES = { crop: "Crop", detector: "Detector", calc: "Calculate", evaluation: "Evaluation" } as const;
+const TITLES = { crop: "Picture edits", detector: "Detector", calc: "Calculate", evaluation: "Evaluation" } as const;
 
 export type FlowFocus = { nodeId: string; onBack: () => void };
 
@@ -81,9 +82,11 @@ export default function FlowBoxView({ camera, focus }: { camera: string; focus: 
 
   const changed = useCallback(() => setVersion((v) => v + 1), []);
   const title = detail ? TITLES[detail.kind] : "Measurement box";
+  // A Picture Edits box: its options panel (the steps) and its big picture share one live draft of the steps.
+  const edits = usePictureEdits(camera, nodeId, detail?.kind === "crop" ? detail : null, setDetail, changed, setError);
 
   const panel = detail ? (
-    <FlowBoxPanel camera={camera} nodeId={nodeId} detail={detail} onDetail={setDetail} onChanged={changed} />
+    <FlowBoxPanel camera={camera} nodeId={nodeId} detail={detail} onDetail={setDetail} onChanged={changed} edits={edits} />
   ) : (
     <p className="muted">{error ?? "Loading…"}</p>
   );
@@ -98,7 +101,7 @@ export default function FlowBoxView({ camera, focus }: { camera: string; focus: 
           <button type="button" onClick={focus.onBack}>← Back to chain</button>
         </p>
         {error && <p role="alert">{error}</p>}
-        {detail?.kind === "crop" && <CropWork camera={camera} nodeId={nodeId} detail={detail} setDetail={setDetail} onChanged={changed} onError={setError} />}
+        {detail?.kind === "crop" && <PictureEditsWork camera={camera} nodeId={nodeId} detail={detail} edits={edits} onError={setError} />}
         {detail?.kind === "detector" && <DetectorWork camera={camera} nodeId={nodeId} detail={detail} setDetail={setDetail} version={version} onChanged={changed} onError={setError} />}
         {detail && detail.kind !== "detector" && detail.kind !== "crop" && (
           <ValuesWork camera={camera} nodeId={nodeId} detail={detail} setDetail={setDetail} version={version} onError={setError} />
@@ -174,7 +177,7 @@ function DetectorWork(p: {
     return () => { current = false; };
   }, [camera, parentId, p.version]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // With a Crop box above, the detector works on the cut-out: pictures, thumbnails and coordinates are those of the cut-out.
+  // With a Picture edits box above, the detector works on the edited picture (cut and filtered): pictures, thumbnails and coordinates are those of the cut-out.
   const cropped = detail.crops.length > 0;
   const pictureUrl = (f: string) => (cropped ? flowPictureUrl(camera, nodeId, f, { key: detail.crops }) : frameImageUrl(camera, f));
   const thumbUrl = (f: string) => (cropped ? flowPictureUrl(camera, nodeId, f, { size: 96, key: detail.crops }) : frameThumbUrl(camera, f));
@@ -188,7 +191,7 @@ function DetectorWork(p: {
   // With no target yet (or "+ New target" picked) a drag starts a new target: the rectangle first, its name next.
   const naming = mode === "draw" && (names.length === 0 || creating);
   const noCrop = useMemo(() => new Set(detail.no_crop ?? []), [detail.no_crop]);
-  // A Crop above that follows a detector has no rectangle where that detector found nothing: those pictures cannot be shown.
+  // A Picture edits box above that follows a detector has no rectangle where that detector found nothing: those pictures cannot be shown.
   const candidates = useMemo(
     () => (parentId ? frames.filter((f) => parentBoxes[f]?.[insideSel]) : frames).filter((f) => !noCrop.has(f)),
     [frames, parentId, parentBoxes, insideSel, noCrop],
@@ -604,7 +607,7 @@ function DetectorWork(p: {
         <button type="button" disabled={at >= shown.length - 1} onClick={() => setIndex(at + 1)}>Next ›</button>
         <span className="muted">{shown.length ? `${at + 1} / ${shown.length} · ${frame}` : ""}</span>
         {missing.length > 0 && detail.status === "fresh" && frame && <span role="status" className="flow-missing">Not found here: {missing.join(", ")}</span>}
-        {noCrop.size > 0 && <span role="status" className="flow-missing">{noCrop.size} picture{noCrop.size === 1 ? "" : "s"} not shown: the Crop above has no rectangle there (its detector found no target).</span>}
+        {noCrop.size > 0 && <span role="status" className="flow-missing">{noCrop.size} picture{noCrop.size === 1 ? "" : "s"} not shown: the Picture edits box above has no rectangle there (its detector found no target).</span>}
         <label className="flow-check flow-nav-right">
           <input type="checkbox" checked={onlyReview} onChange={(e) => setOnlyReview(e.target.checked)} /> Only pictures to review ({review.length})
         </label>

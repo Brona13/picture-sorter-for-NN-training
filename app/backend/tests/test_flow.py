@@ -125,7 +125,7 @@ class FlowTests(ApiTestCase):
             self.post(f"/nodes/{det}/targets", {"name": "P"})
             self.post(f"/nodes/{det}/examples", {"target": "P", "frame": self.names[0], "box": LEFT_BOX})
         graph = flow.load_graph(CAM)
-        graph["nodes"][crop]["rect"] = [0.25, 0.5, 0.5, 0.5]
+        graph["nodes"][crop]["steps"][0]["rect"] = [0.25, 0.5, 0.5, 0.5]
         graph["edges"] = [{"source": crop, "target": d2}]
         flow.save_graph(CAM, graph)
         key = labels.hash_map(CAM)[self.names[0]]

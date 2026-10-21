@@ -16,7 +16,7 @@ export interface Outline {
  * optional yellow outline. The zoom and pan are kept when the frame changes, so the same spot can be compared across
  * pictures. Shared by the viewers that show a plain frame.
  */
-export default function FramePane({ camera, frame, width, outline, info, imageUrl, overlay }: {
+export default function FramePane({ camera, frame, width, outline, info, imageUrl, overlay, view: given, onViewChange }: {
   camera: string;
   frame: string;
   width: number;
@@ -26,9 +26,14 @@ export default function FramePane({ camera, frame, width, outline, info, imageUr
   imageUrl?: string;
   /** Drawn over the picture, given the picture's own size in pixels (an SVG with that viewBox fits it exactly). */
   overlay?: (size: { w: number; h: number }) => ReactNode;
+  /** Zoom and pan owned by the caller (so two views of one picture can share them); the pane keeps its own when not given. */
+  view?: View;
+  onViewChange?: (view: View) => void;
 }) {
   const [size, setSize] = useState({ w: 4, h: 3 });
-  const [view, setView] = useState<View>(FIT_VIEW);
+  const [own, setOwn] = useState<View>(FIT_VIEW);
+  const view = given ?? own;
+  const setView = onViewChange ?? setOwn;
   const contentRef = useRef<HTMLDivElement>(null);
   return (
     <ZoomPane imageSize={size} width={width} view={view} onViewChange={setView} panOnBackground contentRef={contentRef} resetOnZero={false} info={info}>

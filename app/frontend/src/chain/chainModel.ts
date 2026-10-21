@@ -74,12 +74,18 @@ export function layoutOf(
   return { nodes: out, viewport };
 }
 
-/** Short line for a Crop, detector, Calculate or Evaluation box, from its light summary (the Chain and the Overview use it). */
+/** Short line for a Picture edits, detector, Calculate or Evaluation box, from its light summary (the Chain and the Overview use it). */
 export function describeFlow(kind: string, f: FlowSummary | undefined): string {
   if (kind === "crop") {
-    if (f?.follow) return f.follow.size ? `follows ${f.follow.target} · ${f.follow.size[0]} × ${f.follow.size[1]} px` : `follows ${f.follow.target} · draw the rectangle`;
-    const r = f?.rect;
-    return r ? `${Math.round(r[2] * 100)} × ${Math.round(r[3] * 100)} % of the picture` : "no crop drawn yet";
+    const steps = f?.steps ?? [];
+    if (steps.length === 0) return "no steps yet";
+    const follows = f?.follow?.size ? `follows ${f.follow.target} · ${f.follow.size[0]} × ${f.follow.size[1]} px` : `follows ${f?.follow?.target ?? "a target"} · draw the rectangle`;
+    const crop = (s: Extract<NonNullable<FlowSummary["steps"]>[number], { op: "crop" }>, alone: boolean) =>
+      s.follows ? follows : s.rect ? `${alone ? "" : "crop "}${Math.round(s.rect[2] * 100)} × ${Math.round(s.rect[3] * 100)} %${alone ? " of the picture" : ""}` : null;
+    const only = steps.length === 1 && steps[0].op === "crop" ? steps[0] : null; // a single crop reads as the Crop box always did
+    if (only) return crop(only, true) ?? "no crop drawn yet";
+    const parts = steps.map((s) => (s.op === "filter" ? s.label : crop(s, false))).filter((t): t is string => !!t);
+    return parts.length ? parts.join(" → ") : "no crop drawn yet";
   }
   if (kind === "detector") {
     const targets = f?.targets?.length ?? 0;
@@ -107,9 +113,9 @@ export const FLOW_KINDS = ["crop", "detector", "calc", "evaluation"] as const;
 export const isFlowKind = (kind: string | undefined): boolean => !!kind && (FLOW_KINDS as readonly string[]).includes(kind);
 
 /**
- * An arrow that involves a Crop, detector, Calculate or Evaluation box. `null` when the arrow is not a flow arrow at all
+ * An arrow that involves a Picture edits, detector, Calculate or Evaluation box. `null` when the arrow is not a flow arrow at all
  * (the ROI rules in `connectAction` decide), `{ error }` when it is one that does not fit, else the arrow to store.
- * The types mirror `flow.edge_allowed`: Ingest or a Crop feeds a Crop or a detector, a detector feeds a detector, a Calculate box or (one target) a Crop, Calculate
+ * The types mirror `flow.edge_allowed`: Ingest or a Picture edits box feeds a Picture edits box or a detector, a detector feeds a detector, a Calculate box or (one target) a Picture edits box, Calculate
  * feeds Evaluation, Evaluation feeds a Classify box.
  */
 export const targetHandle = (target: string) => `t:${target}`;
@@ -130,10 +136,10 @@ export function flowConnect(canvas: ChainCanvas, c: Connection): FlowLink {
   if (!isFlowKind(source.kind) && !isFlowKind(target.kind)) return null;
   const point = targetOfHandle(c.sourceHandle);
   if (point && !(source.kind === "detector" && (target.kind === "calc" || target.kind === "crop"))) {
-    return { error: "A target dot can feed one point of a Calculate box, be followed by a Crop or anchor an ROI; use the detector's main dot for anything else." };
+    return { error: "A target dot can feed one point of a Calculate box, be followed by a Picture edits box or anchor an ROI; use the detector's main dot for anything else." };
   }
   if (source.kind === "detector" && target.kind === "crop" && !point) {
-    return { error: "A Crop follows one target of a detector: drag from that target's dot (on the detector's right edge) to the Crop." };
+    return { error: "A Picture edits box follows one target of a detector: drag from that target's dot (on the detector's right edge) to the box." };
   }
   const ok =
     ((source.kind === "ingest" || source.kind === "crop") && (target.kind === "crop" || target.kind === "detector")) ||
@@ -142,7 +148,7 @@ export function flowConnect(canvas: ChainCanvas, c: Connection): FlowLink {
     (source.kind === "evaluation" && target.kind === "classify" && target.role !== "classify");
   if (!ok) {
     return {
-      error: `${source.label} cannot feed ${target.label}. Ingest or a Crop feeds a Crop or a detector, a detector (one target) feeds a Crop, a detector feeds a detector or Calculate, Calculate feeds Evaluation, Evaluation feeds a feature's Classify box.`,
+      error: `${source.label} cannot feed ${target.label}. Ingest or a Picture edits box feeds a Picture edits box or a detector, a detector (one target) feeds a Picture edits box, a detector feeds a detector or Calculate, Calculate feeds Evaluation, Evaluation feeds a feature's Classify box.`,
     };
   }
   if (c.source === c.target) return { error: "A box cannot feed itself." };

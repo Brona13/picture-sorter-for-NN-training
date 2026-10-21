@@ -334,9 +334,13 @@ export interface RoiAnchor {
   h?: number;
 }
 
+/** One edit of a Picture Edits box in the light summary: a crop (its rectangle, or `follows` a detector target) or a filter. */
+export type FlowSummaryStep = { op: "crop"; rect?: [number, number, number, number] | null; follows?: boolean } | { op: "filter"; label: string };
+
 export interface FlowSummary {
-  rect?: [number, number, number, number] | null;
-  /** A Crop fed by one detector target: which, and the size of its rectangle (null until drawn). */
+  /** A Picture Edits box: its steps in order. */
+  steps?: FlowSummaryStep[];
+  /** A Picture Edits box fed by one detector target: which, and the size of its rectangle (null until drawn). */
   follow?: { detector: string; target: string; size: [number, number] | null } | null;
   targets?: string[];
   status?: "none" | "fresh" | "stale";
@@ -359,8 +363,15 @@ export interface FlowExample {
   /** The rectangle is turned by this many degrees (counter-clockwise on screen); the stored crop is upright. */
   angle?: number;
 }
-/** One cut above a box: a fixed rectangle (fractions), or a Crop that follows a detector target (pixels, relative to the found target). */
-export type FlowStep = number[] | { follow: { detector: string; target: string; mode: string }; size: [number, number]; offset: [number, number] };
+/** One edit above a box: a fixed rectangle (fractions), a Crop that follows a detector target (pixels, relative to the found target), or a filter. */
+export type FlowStep =
+  | number[]
+  | { follow: { detector: string; target: string; mode: string }; size: [number, number]; offset: [number, number] }
+  | { filter: { name: string; params: Record<string, number> } };
+/** A step of a Picture Edits box, as stored: a crop (a rectangle as fractions, or none drawn) or a filter from the catalogue. */
+export type FlowEdit =
+  | { id: string; op: "crop"; rect: [number, number, number, number] | null }
+  | { id: string; op: "filter"; name: string; params: Record<string, number> };
 /** A Crop fed by one target of a detector: the rectangle is drawn once and moves with the target on every picture. */
 export interface FlowFollow {
   detector: string;
@@ -377,14 +388,16 @@ export interface FlowFollow {
   /** Pictures where the detector found no such target: they cannot be cut. */
   missing: string[];
 }
+/** A Picture Edits box (kind `crop`): an ordered list of steps (crop, filter) run on every picture before the next box. */
 export interface FlowCrop {
   kind: "crop";
-  /** x, y, width, height as fractions of the input picture, or null (the picture passes on unchanged). */
-  rect: [number, number, number, number] | null;
+  steps: FlowEdit[];
+  /** The crop step that follows the detector target while a line feeds the box (the first crop step), else null. */
+  follow_step?: string | null;
   input_box: string | null;
-  /** The crops above this box (outermost first): the input picture is the frame cut by each in turn. */
+  /** The edits above this box (outermost first): the input picture is the frame after each in turn. */
   crops: FlowStep[];
-  /** Set when the Crop is fed by one target of a detector. */
+  /** Set when the box is fed by one target of a detector. */
   follow?: FlowFollow | null;
 }
 /** What a detector target offers the box its line feeds: the found position, the angle of the found box, its size. */
@@ -595,10 +608,16 @@ export interface DeviceInfo {
 export const frameImageUrl = (camera: string, frame: string) =>
   `/api/cameras/${encodeURIComponent(camera)}/frames/${encodeURIComponent(frame)}/image`;
 
-/** The picture a Chain box works on (frame cut by the crops above it), or - `stage: "output"` on a Crop - the one it passes on. `key` (the crops) makes a changed crop load afresh. */
-export const flowPictureUrl = (camera: string, nodeId: string, frame: string, opts: { stage?: "input" | "output"; size?: number; key?: unknown; straighten?: boolean } = {}) =>
+/**
+ * The picture a Chain box works on (frame after the edits above it), or - `stage: "output"` on a Picture Edits box - the
+ * one it passes on. `step` narrows that to one edit of the box (`input` enters it, `output` leaves it); `steps` is a list
+ * of edits not saved yet, read in place of the box's own (the live preview). `key` (the edits) makes a changed edit load afresh.
+ */
+export const flowPictureUrl = (camera: string, nodeId: string, frame: string, opts: { stage?: "input" | "output"; size?: number; key?: unknown; straighten?: boolean; step?: string; steps?: FlowEdit[] } = {}) =>
   `/api/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(nodeId)}/picture?frame=${encodeURIComponent(frame)}` +
   (opts.stage ? `&stage=${opts.stage}` : "") +
+  (opts.step ? `&step=${encodeURIComponent(opts.step)}` : "") +
+  (opts.steps ? `&steps=${encodeURIComponent(JSON.stringify(opts.steps))}` : "") +
   (opts.size ? `&size=${opts.size}` : "") +
   (opts.straighten ? "&straighten=true" : "") +
   (opts.key !== undefined ? `&v=${encodeURIComponent(JSON.stringify(opts.key))}` : "");

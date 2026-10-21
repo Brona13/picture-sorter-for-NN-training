@@ -90,7 +90,7 @@ function Box({ data, selected }: NodeProps<BoxNode>) {
 const nodeTypes = { box: Box };
 /** How far (px) from an anchor point a dragged arrow still snaps to it. */
 const CONNECT_RADIUS = 40;
-const FLOW_PAGE = { crop: "Crop", detector: "Detector", calc: "Calculate", evaluation: "Evaluation" } as const;
+const FLOW_PAGE = { crop: "Picture edits", detector: "Detector", calc: "Calculate", evaluation: "Evaluation" } as const;
 
 function toFlowNode(n: ChainNode, onRename: BoxData["onRename"], selected: boolean): BoxNode {
   return { id: n.id, type: "box", position: { x: n.x, y: n.y }, data: { node: n, onRename }, selected, deletable: n.kind === "roi" || isFlowKind(n.kind) };
@@ -306,7 +306,7 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
           + ROI feature
         </button>
         <button type="button" disabled={!canvas} onClick={() => void addFlowBox("crop")}>
-          + Crop
+          + Picture edits
         </button>
         <button type="button" disabled={!canvas} onClick={() => void addFlowBox("detector")}>
           + Detector

@@ -338,7 +338,7 @@ export default function App() {
               focusFeature ? (
                 <FlowBoxView camera={camera} focus={{ nodeId: focusFeature, onBack: () => navigate("/chain") }} />
               ) : (
-                <p className="muted">Open a Crop, detector, Calculate or Evaluation box from the Chain.</p>
+                <p className="muted">Open a Picture edits, detector, Calculate or Evaluation box from the Chain.</p>
               )
             }
           />
