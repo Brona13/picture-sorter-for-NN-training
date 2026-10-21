@@ -8,6 +8,7 @@ import anchor
 import roi_input
 import config
 import cv2
+import numpy as np
 import datamodel
 import db
 import engine
@@ -46,6 +47,13 @@ def _roi_tuple(camera: str, feature: str | None, path: Path | None = None) -> tu
             raise HTTPException(status_code=404, detail="The detector found no anchor on this picture.")
         roi = placed
     edits = roi_input.tuple_part(camera, feature)
+    if edits and path is not None:
+        with Image.open(path) as picture:
+            blank = np.zeros((picture.height, picture.width, 3), np.uint8)
+        try:
+            roi_input.edited(camera, feature, blank, path.name)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="No edited picture here: the detector found no target on this picture.") from exc
     return (roi.name, roi.x, roi.y, roi.w, roi.h, edits) if edits else (roi.name, roi.x, roi.y, roi.w, roi.h)
 
 

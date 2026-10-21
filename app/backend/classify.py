@@ -246,7 +246,7 @@ def _prepare_vector_cache(
         for frame in frame_batch:
             try:
                 with perf.span("features.image_load_and_crop"):
-                    img = roi_input.apply(camera, feature, curation.load_image(datamodel.unsorted_dir(camera) / frame))
+                    img = roi_input.edited(camera, feature, curation.load_image(datamodel.unsorted_dir(camera) / frame), frame)
                     frame_roi = roi
                     if frame in frame_entries:
                         frame_roi = anchor.rect_for(spec, frame_entries[frame], roi.name, img.shape[1], img.shape[0])

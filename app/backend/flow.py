@@ -531,16 +531,6 @@ def edge_allowed(graph: dict, source: str, target: str) -> str | None:
     return None
 
 
-def _check_roi_inputs(camera: str, graph: dict) -> None:
-    """A ROI that reads a Picture edits box needs it to stay filters only: refuse the change that would break that."""
-    import roi_input  # noqa: PLC0415
-
-    for feature, box in roi_input.all_inputs(camera).items():
-        why = roi_input.problem(graph, box)
-        if why:
-            raise FlowError(f"The ROI {feature} reads {box}: {why}")
-
-
 def connect(camera: str, source: str, target: str, point: str | None = None) -> None:
     """Store an arrow. ``point`` (a detector -> Calculate arrow only) names the one target the arrow carries;
     without it the arrow carries the whole detector."""
@@ -580,7 +570,6 @@ def connect(camera: str, source: str, target: str, point: str | None = None) -> 
         if kind_of(target) == "classify":
             graph["edges"] = [e for e in graph["edges"] if not (e["source"] == source and e["target"] == target)]
         graph["edges"].append(edge)
-    _check_roi_inputs(camera, graph)
     save_graph(camera, graph)
 
 
@@ -592,7 +581,6 @@ def disconnect(camera: str, source: str, target: str, point: str | None = None) 
     graph["edges"] = kept  # a picture box with no arrow reads the whole picture, like one fed by Ingest
     if kind_of(target) == "crop" and target in graph["nodes"] and follow_of(graph, target) is None:
         graph["nodes"][target]["follow"] = None
-    _check_roi_inputs(camera, graph)
     save_graph(camera, graph)
 
 
@@ -754,8 +742,6 @@ def update_node(camera: str, node_id: str, raw: dict) -> dict:
             if tolerance <= 0:
                 raise FlowError("The tolerance must be greater than zero.")
             node["tolerance"] = tolerance
-    if kind == "crop":
-        _check_roi_inputs(camera, graph)
     save_graph(camera, graph)
     return node
 

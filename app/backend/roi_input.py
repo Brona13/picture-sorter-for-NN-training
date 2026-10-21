@@ -1,8 +1,9 @@
 """A ROI that reads its picture from a Picture edits box (``crop:N``) instead of the plain frame.
 
-The ROI is cut from the box's output: the frame after the box's filter steps, in the same place (a box that moves
-the geometry - a drawn crop or a straightening - is refused, because the ROI's rectangle is stored as fractions of the
-whole picture). Scores, thumbnails and detectors that read the ROI see the filtered pixels.
+The ROI is cut from the box's output: the picture after all the box's steps (crops, a followed detector target,
+filters). The ROI's rectangle is then a fraction of that edited picture, not of the whole frame. A picture on which a
+following crop has no box (the detector found nothing there) has no ROI picture: no vectors, scores or thumbnail, like
+a detector-anchored ROI. Scores, thumbnails and detectors that read the ROI see the edited pixels.
 
 Stored in the camera setting ``roi.input.<feature>`` as ``{"box": "crop:N"}``; the ``rois`` table is unchanged.
 A ROI is either anchored to a detector or reads a Picture edits box, not both.
@@ -76,11 +77,6 @@ def problem(graph: dict, box: str) -> str | None:
     """Why a ROI cannot read ``box`` in ``graph`` (``None`` when it can)."""
     if box not in graph["nodes"] or flow.kind_of(box) != "crop":
         return "that is not a Picture edits box."
-    if flow.follow_of(graph, box) is not None:
-        return "it follows a detector target; the ROI would need a picture without a moving crop."
-    for step in flow.output_rects(graph, box):
-        if not flow.is_filter(step):
-            return "it crops the picture. Only filter steps can feed a ROI for now (clear the crop or remove the step)."
     return None
 
 
@@ -97,45 +93,59 @@ def set_input(camera: str, feature: str, box: str) -> dict:
     why = problem(flow.load_graph(camera), box)
     if why:
         raise RoiInputError(f"{feature} cannot read {box}: {why}")
+    if not get_input(camera, feature):  # its rectangle was drawn on the whole frame: start from the whole edited picture
+        rois = datamodel.load_rois(camera)
+        for r in rois:
+            if r.name == feature:
+                r.x, r.y, r.w, r.h = 0.0, 0.0, 1.0, 1.0
+        datamodel.save_rois(camera, rois)
     spec = {"box": box}
     db.set_setting(camera, _key(feature), json.dumps(spec))
     return spec
 
 
-def steps(camera: str, feature: str, graph: dict | None = None) -> list[dict]:
-    """The filter steps (``{"filter": ...}``) a ROI's picture goes through first; empty when it reads the plain frame."""
+def _rects(camera: str, feature: str, graph: dict | None = None) -> list | None:
     spec = get_input(camera, feature)
     if not spec:
-        return []
+        return None
     graph = graph or flow.load_graph(camera)
     if problem(graph, spec["box"]):
-        return []  # the box changed under it; the guards in flow keep this from happening
-    return [s for s in flow.output_rects(graph, spec["box"]) if flow.is_filter(s)]
+        return None  # the box is gone (deleting it frees the ROI, so this is only a stale read)
+    return flow.output_rects(graph, spec["box"])
 
 
-def apply(camera: str, feature: str, image):
-    """``image`` after the ROI's input box (unchanged when it has none)."""
-    for step in steps(camera, feature):
-        image = flow.preprocess.apply(image, step["filter"]["name"], step["filter"]["params"])
-    return image
+def edited(camera: str, feature: str, image, frame: str):
+    """``image`` (the whole frame ``frame``) after the ROI's input box; unchanged when it has none. Raises
+    ``FileNotFoundError`` when a following crop has no box on this picture (callers treat that as "no picture")."""
+    rects = _rects(camera, feature)
+    if rects is None:
+        return image
+    try:
+        return flow.apply_rects(image, rects, flow._found_for(camera, rects, frame))[0]
+    except flow.NoCrop as exc:
+        raise FileNotFoundError(str(exc)) from exc
 
 
 def rule_key(camera: str, feature: str, con=None) -> str:
-    """Part of the ROI's cache key: changes when the box's filters change. Empty without an input."""
+    """Part of the ROI's cache key: changes when the box's steps (or a followed detector) change. Empty without an input."""
     spec = get_input(camera, feature, con)
     if not spec:
         return ""
-    material = json.dumps(steps(camera, feature), sort_keys=True)
-    return "pe=" + hashlib.sha1(material.encode()).hexdigest()[:12]
+    graph = flow.load_graph(camera)
+    rects = _rects(camera, feature, graph) or []
+    material = [
+        {**r, "sig": flow.signature(graph, r["follow"]["detector"])} if flow.is_follow(r) and r["follow"]["detector"] in graph["nodes"] else r
+        for r in rects
+    ]
+    return "pe=" + hashlib.sha1(json.dumps(material, sort_keys=True, default=str).encode()).hexdigest()[:12]
 
 
 def tuple_part(camera: str, feature: str) -> str:
-    """The sixth element of a thumbnail's ROI tuple: the filter steps as JSON ('' for none)."""
-    s = steps(camera, feature)
-    return json.dumps(s, sort_keys=True) if s else ""
+    """The sixth element of a thumbnail's ROI tuple (empty without an input): camera, feature and the rule key."""
+    key = rule_key(camera, feature)
+    return f"{camera}\t{feature}\t{key}" if key else ""
 
 
-def apply_json(image, steps_json: str):
-    for step in json.loads(steps_json) if steps_json else []:
-        image = flow.preprocess.apply(image, step["filter"]["name"], step["filter"]["params"])
-    return image
+def edited_for_tuple(part: str, image, frame: str):
+    camera, feature, _ = part.split("\t")
+    return edited(camera, feature, image, frame)

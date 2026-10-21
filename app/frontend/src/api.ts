@@ -193,6 +193,8 @@ export interface RoiInfo {
   active_version: number | null;
   /** The rectangle follows a detector's box (see `anchor.py`); `x, y, w, h` are then the one it was drawn with. */
   anchored?: boolean;
+  /** The Picture edits box this ROI is cut from: its rectangle is then relative to that box's output picture (see `roi_input.py`). */
+  input?: string | null;
   /** Where this ROI stands in the pipeline (the Overview page only). */
   pipeline?: PipelineInfo;
 }

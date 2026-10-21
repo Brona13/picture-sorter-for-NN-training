@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { api, ChainNode, frameImageUrl, FramesResponse, PRODUCTS_RENAMED, RoiInfo, RoisResponse, roiThumbUrl } from "../api";
+import { api, ChainNode, flowPictureUrl, frameImageUrl, FramesResponse, PRODUCTS_RENAMED, RoiInfo, RoisResponse, roiThumbUrl } from "../api";
 import AnchorSection from "../chain/AnchorSection";
 import SidePanel from "../SidePanel";
 import ProductNamesEditor from "../classify/ProductNamesEditor";
@@ -272,11 +272,11 @@ export default function RoiEditorView({ camera, product, focus }: { camera: stri
         <>
           <PictureSizeSlider value={size} onChange={setSize} min={200} max={1600} />
           <RoiCanvas
-            imageUrl={frameImageUrl(camera, frame)}
+            imageUrl={editing && target?.input ? flowPictureUrl(camera, target.input, frame, { stage: "output" }) : frameImageUrl(camera, frame)}
             mode={editing ? "edit" : "draw"}
             box={box}
             onChange={setBox}
-            others={others}
+            others={editing && target?.input ? [] : others}
             width={size}
             view={view}
             onViewChange={setView}

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import base64
 import io
+from pathlib import Path
 from functools import lru_cache
 
 import cv2
@@ -72,10 +73,10 @@ def _generate_cutout(frame_path: str, roi_tuple: tuple) -> Image.Image:
     """Load, crop, and resize one thumbnail without retaining decoded pixels."""
     roi = ROI(*roi_tuple[:5]) if len(roi_tuple) >= 5 else ROI.full_frame("whole-frame")
     img = curation.load_image(frame_path)
-    if len(roi_tuple) > 5 and roi_tuple[5]:  # the filter steps of a Picture edits box feeding this ROI (JSON)
+    if len(roi_tuple) > 5 and roi_tuple[5]:  # the ROI reads a Picture edits box: cut from its output picture
         import roi_input  # noqa: PLC0415
 
-        img = roi_input.apply_json(img, roi_tuple[5])
+        img = roi_input.edited_for_tuple(roi_tuple[5], img, Path(frame_path).name)
     cutout = roi.crop(img)
     pil = bgr_to_pil(cutout)
     if pil.width > THUMB_WIDTH:

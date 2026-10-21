@@ -125,7 +125,7 @@ def preview(camera: str, feature: str, body: PreviewRequest) -> Response:
     path = frame_path(camera, body.frame)
     frame_hash = labels.frame_hash(camera, body.frame)
     try:
-        img = engine.resolve_roi(camera, feature).crop(roi_input.apply(camera, feature, curation.load_image(path)))
+        img = engine.resolve_roi(camera, feature).crop(roi_input.edited(camera, feature, curation.load_image(path), body.frame))
         if body.filter:
             img = preprocess.apply(img, body.filter.name, body.filter.params)
         if body.mask and body.mask.enabled:
@@ -133,6 +133,8 @@ def preview(camera: str, feature: str, body: PreviewRequest) -> Response:
             img = masking.apply(img, body.mask.shape, offset)
     except _BAD_SETTINGS as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except FileNotFoundError as exc:  # a following Picture edits crop has no box on this picture
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 90])
     if not ok:
         raise HTTPException(status_code=415, detail="Cannot encode preview")

@@ -41,11 +41,11 @@ class RoiInputTests(ApiTestCase):
 
     def test_crop_sees_filtered_pixels(self) -> None:
         self.steps([self.BLUR])
-        plain = engine.crop_for_frame(CAM, "seal", datamodel.unsorted_dir(CAM) / self.name)
+        whole = cv2.imread(str(datamodel.unsorted_dir(CAM) / self.name))
         self.feed()
         cut = engine.crop_for_frame(CAM, "seal", datamodel.unsorted_dir(CAM) / self.name)
-        self.assertEqual(cut.shape, plain.shape)  # same place
-        self.assertLess(cut.astype(float).std(), plain.astype(float).std())  # blurred noise
+        self.assertEqual(cut.shape, whole.shape)  # the whole edited picture (the ROI starts as 0, 0, 1, 1)
+        self.assertLess(cut.astype(float).std(), whole.astype(float).std())  # blurred noise
 
     def test_cache_key_follows_the_box_filters(self) -> None:
         self.steps([self.BLUR])
@@ -65,14 +65,36 @@ class RoiInputTests(ApiTestCase):
         fed = self.client.get(url, params={"feature": "seal"}).content
         self.assertNotEqual(plain, fed)
 
-    def test_a_cropping_box_is_refused_and_cannot_become_one(self) -> None:
-        self.steps([{"id": "s1", "op": "crop", "rect": [0.1, 0.1, 0.5, 0.5]}])
-        self.feed(status=422)
-        self.steps([self.BLUR])
+    def test_a_cropping_box_cuts_the_roi_from_the_edited_picture(self) -> None:
+        self.steps([{"op": "crop", "rect": [0.25, 0.25, 0.5, 0.5]}, self.BLUR])
         self.feed()
-        self.steps([{"op": "crop", "rect": [0.1, 0.1, 0.5, 0.5]}], status=422)  # seal reads this box
-        self.client.delete(f"{self.roi}/seal/input")
-        self.steps([{"op": "crop", "rect": [0.1, 0.1, 0.5, 0.5]}])  # free again
+        roi = engine.resolve_roi(CAM, "seal")
+        self.assertEqual((roi.x, roi.y, roi.w, roi.h), (0.0, 0.0, 1.0, 1.0))  # starts as the whole edited picture
+        cut = engine.crop_for_frame(CAM, "seal", datamodel.unsorted_dir(CAM) / self.name)
+        self.assertEqual(cut.shape[:2], (40, 60))  # half of 80 x 120
+
+    def test_a_following_crop_gives_no_picture_where_the_detector_found_nothing(self) -> None:
+        import flow  # noqa: PLC0415
+        import labels  # noqa: PLC0415
+
+        cv2.imwrite(str(datamodel.unsorted_dir(CAM) / "p_1.png"), np.zeros((80, 120, 3), np.uint8))
+        ingest.rebuild_index(CAM)
+        det = self.client.post(f"{self.flow}/nodes", json={"kind": "detector"}).json()["id"]
+        self.client.post(f"{self.flow}/nodes/{det}/targets", json={"name": "A"})
+        key = labels.hash_map(CAM)[self.name]
+        flow._store(CAM, det, flow.signature(flow.load_graph(CAM), det), {key: {"A": {"x": 60.0, "y": 40.0}}})
+        self.assertEqual(self.client.post(f"{self.flow}/edges", json={"source": det, "target": self.box, "point": "A"}).status_code, 201)
+        r = self.client.put(f"{self.flow}/nodes/{self.box}", json={"follow": {"frame": self.name, "rect": [30, 20, 60, 40]}})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.steps([self.client.get(f"{self.flow}/nodes/{self.box}").json()["steps"][0], self.BLUR])
+        self.feed()
+        cut = engine.crop_for_frame(CAM, "seal", datamodel.unsorted_dir(CAM) / self.name)
+        self.assertEqual(cut.shape[:2], (40, 60))
+        with self.assertRaises(FileNotFoundError):
+            engine.crop_for_frame(CAM, "seal", datamodel.unsorted_dir(CAM) / "p_1.png")
+        thumb = f"/api/cameras/{CAM}/frames/p_1.png/thumb"
+        self.assertEqual(self.client.get(thumb, params={"feature": "seal"}).status_code, 404)
+        self.assertEqual(self.client.get(f"/api/cameras/{CAM}/frames/{self.name}/thumb", params={"feature": "seal"}).status_code, 200)
 
     def test_anchored_roi_cannot_read_a_box_and_back(self) -> None:
         det = self.client.post(f"{self.flow}/nodes", json={"kind": "detector"}).json()["id"]
