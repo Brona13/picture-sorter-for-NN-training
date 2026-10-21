@@ -18,10 +18,11 @@ import ShapeCanvas from "../ShapeCanvas";
 import { addVertex, defaultShape, MaskShape, ShapeKind } from "../shapeGeometry";
 import { useJob } from "../useJob";
 import { usePreview } from "../usePreview";
+import FilterParams from "./FilterParams";
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
-const defaultsOf = (spec: FilterSpec): Record<string, number> =>
+const defaultsOf = (spec: FilterSpec): Record<string, number | string> =>
   Object.fromEntries(Object.entries(spec.params).map(([k, p]) => [k, p.default]));
 
 const SHAPE_LABELS: Record<ShapeKind, string> = { rect: "Rectangle", circle: "Circle", polygon: "Polygon" };
@@ -691,27 +692,7 @@ export default function DetectorView({ camera, product }: { camera: string; prod
                   ))}
                 </select>
               </label>
-              {filter &&
-                spec &&
-                Object.entries(spec.params).map(([key, p]) => (
-                  <div key={key}>
-                    <label>
-                      {key}{" "}
-                      <input
-                        type="range"
-                        aria-label={key}
-                        min={p.min}
-                        max={p.max}
-                        step={p.step}
-                        value={filter.params[key] ?? p.default}
-                        onChange={(e) =>
-                          setFilter({ ...filter, params: { ...filter.params, [key]: Number(e.target.value) } })
-                        }
-                      />{" "}
-                      <output>{filter.params[key] ?? p.default}</output>
-                    </label>
-                  </div>
-                ))}
+              {filter && spec && <FilterParams spec={spec} params={filter.params} onChange={(key, value) => setFilter({ ...filter, params: { ...filter.params, [key]: value } })} />}
             </>
           )}
 

@@ -163,3 +163,18 @@ class PictureEditsTests(ApiTestCase):
         self.steps(box, [self.GAUSS], 422)  # the crop step cannot be taken out while the line is there
         r = self.client.put(f"{self.base}/nodes/{box}", json={"rect": RECT})
         self.assertEqual(r.status_code, 422)  # the rectangle of a following crop is drawn relative to the target
+
+    def test_a_chain_of_grey_threshold_blobs_and_outline_runs_through_the_box(self) -> None:
+        box = self.node()
+        chain = [
+            {"op": "filter", "name": "grey", "params": {}},
+            {"op": "filter", "name": "threshold", "params": {"mode": "otsu", "objects": "dark"}},
+            {"op": "filter", "name": "blobs", "params": {"count": 2, "min_size": 1.0}},
+            {"op": "filter", "name": "outline", "params": {"mode": "ellipse_filled"}},
+        ]
+        self.steps(box, chain)
+        out = self.picture(box, stage="output")
+        self.assertEqual(out.shape[:2], self.src.shape[:2])
+        self.assertTrue(set(np.unique(out)) <= {0, 255})
+        self.steps(box, [{"op": "filter", "name": "threshold", "params": {"mode": "bogus"}}], status=422)
+

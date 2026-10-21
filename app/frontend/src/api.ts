@@ -375,7 +375,7 @@ export type FlowStep =
 /** A step of a Picture Edits box, as stored: a crop (a rectangle as fractions, or none drawn) or a filter from the catalogue. */
 export type FlowEdit =
   | { id: string; op: "crop"; rect: [number, number, number, number] | null }
-  | { id: string; op: "filter"; name: string; params: Record<string, number> };
+  | { id: string; op: "filter"; name: string; params: Record<string, number | string> };
 /** A Crop fed by one target of a detector: the rectangle is drawn once and moves with the target on every picture. */
 export interface FlowFollow {
   detector: string;
@@ -519,19 +519,18 @@ export interface ChainDeletePreview {
   dependents: string[];
 }
 
-export interface FilterParamSpec {
-  min: number;
-  max: number;
-  step: number;
-  default: number;
-}
+/** A number parameter (slider) or a choice (`options`: value -> label; two options show as a toggle, more as a drop-down). */
+export type FilterNumberSpec = { min: number; max: number; step: number; default: number; label?: string; unit?: string; options?: undefined };
+export type FilterChoiceSpec = { options: Record<string, string>; default: string; label?: string };
+export type FilterParamSpec = FilterNumberSpec | FilterChoiceSpec;
+export const isChoiceParam = (p: FilterParamSpec): p is FilterChoiceSpec => p.options !== undefined;
 export interface FilterSpec {
   label: string;
   params: Record<string, FilterParamSpec>;
 }
 export interface FilterChoice {
   name: string;
-  params: Record<string, number>;
+  params: Record<string, number | string>;
 }
 export interface MaskChoice {
   enabled: boolean;

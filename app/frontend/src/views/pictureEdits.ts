@@ -49,7 +49,7 @@ export interface PictureEdits {
   setOp: (id: string, op: "crop" | "filter") => void;
   setRect: (id: string, rect: [number, number, number, number] | null) => void;
   setFilter: (id: string, name: string) => void;
-  setParam: (id: string, key: string, value: number) => void;
+  setParam: (id: string, key: string, value: number | string) => void;
   /** Any other change of the box (how a followed target is used, the rectangle of a following crop). */
   update: (body: Record<string, unknown>) => Promise<void>;
 }

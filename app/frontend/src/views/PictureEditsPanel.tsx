@@ -1,7 +1,7 @@
 import { DragEvent, useState } from "react";
 import { FLOW_OUTPUTS, FlowCrop, FlowEdit } from "../api";
 import { PanelSection } from "../SidePanel";
-import WheelRange from "../WheelRange";
+import FilterParams, { paramText } from "./FilterParams";
 import type { PictureEdits } from "./pictureEdits";
 
 const OPS = { crop: "Crop", filter: "Filter" } as const;
@@ -10,7 +10,7 @@ const OPS = { crop: "Crop", filter: "Filter" } as const;
 export function describeEdit(s: FlowEdit, filters: PictureEdits["filters"], follows: boolean): string {
   if (s.op === "filter") {
     const spec = filters[s.name];
-    const params = Object.entries(s.params).map(([k, v]) => `${k} ${v}`).join(", ");
+    const params = Object.entries(s.params).map(([k, v]) => `${spec?.params[k]?.label ?? k} ${paramText(spec?.params[k], v)}`).join(", ");
     return `${spec?.label ?? s.name}${params ? ` · ${params}` : ""}`;
   }
   if (follows) return "follows the target";
@@ -115,15 +115,7 @@ function StepBody({ step, edits, follows, detail }: { step: FlowEdit; edits: Pic
             {!spec && <option value={step.name}>{step.name}</option>}
           </select>
         </label>
-        {spec && Object.entries(spec.params).map(([key, p]) => (
-          <div key={key}>
-            <label>
-              {key}{" "}
-              <WheelRange aria-label={key} min={p.min} max={p.max} step={p.step} value={step.params[key] ?? p.default} onValue={(v) => edits.setParam(step.id, key, v)} />{" "}
-              <output>{step.params[key] ?? p.default}</output>
-            </label>
-          </div>
-        ))}
+        {spec && <FilterParams spec={spec} params={step.params} onChange={(key, value) => edits.setParam(step.id, key, value)} />}
         <p className="muted">The big picture shows the result as you change it. Applied to the picture as it is at this step, so the order matters.</p>
       </div>
     );

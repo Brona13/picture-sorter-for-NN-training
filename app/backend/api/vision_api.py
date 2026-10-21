@@ -24,7 +24,7 @@ router = APIRouter()
 
 class FilterChoice(BaseModel):
     name: str
-    params: dict[str, float] = {}
+    params: dict[str, float | str] = {}
 
 
 class MaskChoice(BaseModel):
