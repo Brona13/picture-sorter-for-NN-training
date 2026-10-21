@@ -210,6 +210,11 @@ def _prepare_vector_cache(
         frame: [kind for kind in kinds if kind not in blobs_by_hash.get(h, {})]
         for frame, h in frame_hashes.items()
     }
+    # Soft-deleted pictures are hidden everywhere but the Deleted view: do not compute vectors for them (cached ones stay).
+    deleted = db.deleted_frames_of(camera)
+    for frame, missing in missing_by_frame.items():
+        if missing and frame in deleted:
+            unavailable.add(frame)
     perf.count(
         "score_cache.kind_hits",
         sum(len(kinds) - len(missing) for missing in missing_by_frame.values()),
