@@ -63,13 +63,14 @@ EMBEDDING_ENABLED = True            # auto-disabled if torch isn't installed
 EMBEDDING_DEVICE = "auto"           # "auto" (GPU if present, CUDA or ROCm, else cpu) | "cpu" | "cuda"
 EMBEDDING_BACKBONES = ["resnet18", "resnet50"]
 EMBEDDING_BATCH_SIZE_CPU = 8       # conservative bounded inference batches
-EMBEDDING_BATCH_SIZE_CUDA = 8      # safe default for modest GPU memory
+EMBEDDING_BATCH_SIZE_CUDA = 32     # a batch the GPU can chew on; a CUDA out-of-memory error halves it automatically
 
 # SQLite cache work is bounded so large cameras do not exceed the connection's
 # parameter limit or hold one very large transaction in memory.
 FEATURE_CACHE_QUERY_BATCH_SIZE = 400
 FEATURE_CACHE_WRITE_BATCH_SIZE = 128
-SCORING_VECTOR_BATCH_SIZE = 32       # decoded candidates retained at one time
+SCORING_VECTOR_BATCH_SIZE = 64       # decoded candidates per group (the next group is loaded while this one is scored)
+SCORING_LOAD_WORKERS = 4             # threads that load, cut and describe pictures while the network works
 CLASSICAL_COMPARISON_WORKERS = 4     # exact SSIM pairs evaluated concurrently
 
 # --- Folder / file names within a camera -------------------------------------

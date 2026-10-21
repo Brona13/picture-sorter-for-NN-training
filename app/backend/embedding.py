@@ -15,7 +15,9 @@ from __future__ import annotations
 
 import platform
 import shutil
+import os
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
 
 import cv2
@@ -169,6 +171,12 @@ def _load(backbone: str, device: str):
     model.fc = _torch.nn.Identity()  # drop classifier -> penultimate features
     model.eval()
     model.to(device)
+    if device == "cuda":
+        try:  # faster convolutions on Nvidia; the numbers are the same
+            model.to(memory_format=_torch.channels_last)
+            _torch.backends.cudnn.benchmark = True
+        except Exception:  # noqa: BLE001 - an optimisation only
+            pass
     return model, weights.transforms()  # transforms() = resize/crop/normalize for these weights
 
 
@@ -186,6 +194,17 @@ def embed(cutout_bgr: np.ndarray, backbone: str) -> np.ndarray:
     return embed_batch([cutout_bgr], backbone)[0]
 
 
+_pool: ThreadPoolExecutor | None = None
+
+
+def _prepare_pool() -> ThreadPoolExecutor:
+    """Threads that resize and normalise the crops of a batch (PIL and numpy release the GIL for most of it)."""
+    global _pool
+    if _pool is None:
+        _pool = ThreadPoolExecutor(max_workers=max(1, min(8, os.cpu_count() or 4)), thread_name_prefix="embed-prep")
+    return _pool
+
+
 def _configured_batch_size(device: str) -> int:
     key = "EMBEDDING_BATCH_SIZE_CUDA" if device == "cuda" else "EMBEDDING_BATCH_SIZE_CPU"
     return max(1, int(getattr(config, key, 8)))
@@ -197,11 +216,17 @@ def _infer_batch(model, preprocess, images: list[np.ndarray], backbone: str, dev
         with perf.span(f"embedding.{backbone}"):
             perf.count(f"embedding.{backbone}.batches")
             perf.count(f"embedding.{backbone}.images", len(images))
-            tensors = []
-            for cutout_bgr in images:
-                rgb = cv2.cvtColor(cutout_bgr, cv2.COLOR_BGR2RGB)
-                tensors.append(preprocess(Image.fromarray(rgb)))
-            batch = _torch.stack(tensors).to(device)
+            def prepare(cutout_bgr: np.ndarray):
+                return preprocess(Image.fromarray(cv2.cvtColor(cutout_bgr, cv2.COLOR_BGR2RGB)))
+
+            tensors = list(_prepare_pool().map(prepare, images)) if len(images) > 1 else [prepare(images[0])]  # resize/normalise in parallel
+            batch = _torch.stack(tensors)
+            if device == "cuda":
+                try:
+                    batch = batch.contiguous(memory_format=_torch.channels_last)
+                except Exception:  # noqa: BLE001
+                    pass
+            batch = batch.to(device)
             inference_context = getattr(_torch, "inference_mode", _torch.no_grad)
             with inference_context():
                 feats = model(batch)

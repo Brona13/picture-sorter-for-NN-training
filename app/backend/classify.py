@@ -246,77 +246,86 @@ def _prepare_vector_cache(
 
     prep_size = max(1, int(getattr(config, "SCORING_VECTOR_BATCH_SIZE", 32)))
     frames_missing_any = [frame for frame in frames if missing_by_frame[frame] and frame not in unavailable]
-    for frame_batch in _chunks(frames_missing_any, prep_size):
-        cutouts: dict[str, np.ndarray] = {}
-        for frame in frame_batch:
-            try:
-                with perf.span("features.image_load_and_crop"):
-                    img = roi_input.edited(camera, feature, curation.load_image(datamodel.unsorted_dir(camera) / frame), frame)
-                    frame_roi = roi
-                    if frame in frame_entries:
-                        frame_roi = anchor.rect_for(spec, frame_entries[frame], roi.name, img.shape[1], img.shape[0])
-                        if frame_roi is None:  # the rectangle lies outside this picture
-                            raise FileNotFoundError(frame)
-                    cutouts[frame] = frame_roi.crop(img)
-                    cutouts[frame] = vision_settings.apply_settings(
-                        vision, cutouts[frame], frame_offsets.get(frame)
-                    )
-            except FileNotFoundError:
-                unavailable.add(frame)
+
+    def prepare(frame: str):
+        """Load, cut and compute the classical features of one picture. Touches nothing shared, so it runs in a worker
+        thread while the neural network works on the previous group (None: the picture has no ROI picture)."""
+        try:
+            img = roi_input.edited(camera, feature, curation.load_image(datamodel.unsorted_dir(camera) / frame), frame)
+            frame_roi = roi
+            if frame in frame_entries:
+                frame_roi = anchor.rect_for(spec, frame_entries[frame], roi.name, img.shape[1], img.shape[0])
+                if frame_roi is None:  # the rectangle lies outside this picture
+                    raise FileNotFoundError(frame)
+            cutout = vision_settings.apply_settings(vision, frame_roi.crop(img), frame_offsets.get(frame))
+        except FileNotFoundError:
+            return None
+        missing = missing_by_frame[frame]
+        blobs: dict[str, bytes] = {}
+        if "hist" in missing:
+            blobs["hist"] = curation._hsv_histogram(cutout).astype(np.float32).tobytes()
+        if "gray" in missing:
+            ok, buf = cv2.imencode(".png", (curation._gray_standard(cutout) * 255).astype(np.uint8))
+            if not ok:
+                raise RuntimeError("could not encode cached grayscale feature")
+            blobs["gray"] = buf.tobytes()
+        return cutout, blobs
+
+    workers = max(1, int(getattr(config, "SCORING_LOAD_WORKERS", 4)))
+    batches = list(_chunks(frames_missing_any, prep_size))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        def submit(batch: list[str]) -> dict:
+            return {frame: pool.submit(prepare, frame) for frame in batch}
+
+        pending = submit(batches[0]) if batches else {}
+        for index, frame_batch in enumerate(batches):
+            upcoming = submit(batches[index + 1]) if index + 1 < len(batches) else {}  # the next group loads meanwhile
+            cutouts: dict[str, np.ndarray] = {}
+            prepared_blobs: dict[str, dict[str, bytes]] = {}
+            with perf.span("features.image_load_and_crop"):  # time spent waiting for the workers
+                for frame in frame_batch:
+                    got = pending[frame].result()
+                    if got is None:
+                        unavailable.add(frame)
+                        report_ready(frame)
+                    else:
+                        cutouts[frame], prepared_blobs[frame] = got
+            pending = upcoming
+
+            available_batch = [frame for frame in frame_batch if frame in cutouts]
+            classical_rows: list[tuple] = []
+            ts = time.time()
+            for frame in available_batch:
+                h = frame_hashes[frame]
+                blobs = blobs_by_hash.setdefault(h, {})
+                for kind, blob in prepared_blobs[frame].items():
+                    blobs[kind] = blob
+                    classical_rows.append((h, feature, roi_key, kind, blob, ts))
+            _write_cache_rows(con, classical_rows)
+            for frame in available_batch:
                 report_ready(frame)
 
-        available_batch = [frame for frame in frame_batch if frame in cutouts]
-        classical_rows: list[tuple] = []
-        ts = time.time()
-        for frame in available_batch:
-            h = frame_hashes[frame]
-            blobs = blobs_by_hash.setdefault(h, {})
-            missing = missing_by_frame[frame]
-            if "hist" in missing:
-                with perf.span("features.histogram"):
-                    blob = (
-                        curation._hsv_histogram(cutouts[frame])
-                        .astype(np.float32)
-                        .tobytes()
-                    )
-                blobs["hist"] = blob
-                classical_rows.append((h, feature, roi_key, "hist", blob, ts))
-            if "gray" in missing:
-                with perf.span("features.gray"):
-                    gray01 = curation._gray_standard(cutouts[frame])
-                    ok, buf = cv2.imencode(
-                        ".png", (gray01 * 255).astype(np.uint8)
-                    )
-                    if not ok:
-                        raise RuntimeError("could not encode cached grayscale feature")
-                    blob = buf.tobytes()
-                blobs["gray"] = blob
-                classical_rows.append((h, feature, roi_key, "gray", blob, ts))
-        _write_cache_rows(con, classical_rows)
-        for frame in available_batch:
-            report_ready(frame)
-
-        for backbone in backbones:
-            missing_frames = [
-                frame for frame in available_batch
-                if backbone in missing_by_frame[frame]
-            ]
-            missing_cutouts = [cutouts[frame] for frame in missing_frames]
-            for start, matrix in embedding.iter_embed_batches(
-                missing_cutouts, backbone
-            ):
-                batch_frames = missing_frames[start : start + len(matrix)]
-                rows: list[tuple] = []
-                for frame, vec in zip(batch_frames, matrix, strict=True):
-                    h = frame_hashes[frame]
-                    blob = vec.astype(np.float32).tobytes()
-                    blobs_by_hash.setdefault(h, {})[backbone] = blob
-                    rows.append(
-                        (h, feature, roi_key, backbone, blob, time.time())
-                    )
-                _write_cache_rows(con, rows)
-                for frame in batch_frames:
-                    report_ready(frame)
+            for backbone in backbones:
+                missing_frames = [
+                    frame for frame in available_batch
+                    if backbone in missing_by_frame[frame]
+                ]
+                missing_cutouts = [cutouts[frame] for frame in missing_frames]
+                for start, matrix in embedding.iter_embed_batches(
+                    missing_cutouts, backbone
+                ):
+                    batch_frames = missing_frames[start : start + len(matrix)]
+                    rows: list[tuple] = []
+                    for frame, vec in zip(batch_frames, matrix, strict=True):
+                        h = frame_hashes[frame]
+                        blob = vec.astype(np.float32).tobytes()
+                        blobs_by_hash.setdefault(h, {})[backbone] = blob
+                        rows.append(
+                            (h, feature, roi_key, backbone, blob, time.time())
+                        )
+                    _write_cache_rows(con, rows)
+                    for frame in batch_frames:
+                        report_ready(frame)
 
     kept = [frame for frame in frames if frame not in unavailable]
     return _PreparedVectorCache(frame_hashes, blobs_by_hash, kept, kinds)
