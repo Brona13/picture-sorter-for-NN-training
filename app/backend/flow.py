@@ -28,6 +28,7 @@ import numpy as np
 import datamodel
 import db
 import labels
+import lines
 import preprocess
 import rotsearch
 
@@ -518,6 +519,9 @@ def edge_allowed(graph: dict, source: str, target: str) -> str | None:
     ks, kt = kind_of(source), kind_of(target)
     if source == target:
         return "A box cannot feed itself."
+    why = lines.line_error(ks, kt)
+    if why:
+        return why
     if (ks, kt) not in {("ingest", "crop"), ("crop", "crop"), ("crop", "detector"), ("ingest", "detector"), ("detector", "detector"), ("detector", "crop"), ("detector", "calc"), ("calc", "evaluation"), ("evaluation", "classify")}:
         names = {"ingest": "Ingest", "crop": "Picture edits", "detector": "a detector", "calc": "Calculate", "evaluation": "Evaluation", "classify": "a Classify box"}
         return f"{names.get(ks, ks)} cannot feed {names.get(kt, kt)}."
