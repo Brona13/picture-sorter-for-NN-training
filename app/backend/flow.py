@@ -473,9 +473,9 @@ def save_graph(camera: str, graph: dict) -> None:
 
 def _default_config(kind: str) -> dict:
     if kind == "crop":
-        return {"steps": [{"id": "s1", "op": "crop", "rect": None}], "follow": None}
+        return {"steps": [{"id": "s1", "op": "crop", "rect": None}], "follow": None, "source": None}
     if kind == "detector":
-        return {"targets": [], "angle_range": None, "rotate": True, "pad": DEFAULT_PAD}
+        return {"targets": [], "angle_range": None, "rotate": True, "pad": DEFAULT_PAD, "source": None}
     if kind == "calc":
         return {"op": "angle", "a": None, "b": None, "clockwise": False}
     if kind == "dedup":
@@ -570,7 +570,7 @@ def connect(camera: str, source: str, target: str, point: str | None = None) -> 
         before_follow = follow_of(graph, target) if kind_of(target) == "crop" else None
         graph["edges"] = [e for e in graph["edges"] if e["target"] != target]
         graph["edges"].append(edge)
-        if kind_of(target) == "dedup":
+        if kind_of(target) in ("dedup", "crop", "detector"):
             graph["nodes"][target]["source"] = None  # one input: a line from Ingest or Picture edits replaces a Classifier dot
         if kind_of(target) == "crop" and follow_of(graph, target) != before_follow:
             graph["nodes"][target]["follow"] = None  # the rectangle was drawn for another target
@@ -683,6 +683,12 @@ def update_node(camera: str, node_id: str, raw: dict) -> dict:
     graph = load_graph(camera)
     node = _node(graph, node_id)
     kind = node["kind"]
+    if kind in ("crop", "detector") and "source" in raw:
+        node["source"] = _dedup_source(camera, node_id, raw["source"])
+        if node["source"]:
+            graph["edges"] = [e for e in graph["edges"] if e["target"] != node_id]  # one input: the Classifier dot replaces the line
+            if kind == "crop":
+                node["follow"] = None  # a following rectangle was drawn for a detector target
     if kind == "crop":
         follow = follow_of(graph, node_id)
         if "steps" in raw:
@@ -1090,6 +1096,26 @@ def _live_frames(camera: str) -> list[str]:
     return [p.name for p in datamodel.list_unsorted(camera) if p.name not in deleted]
 
 
+def node_source(graph: dict, node_id: str) -> dict | None:
+    """``{"feature", "dot"}`` when a Picture edits or detector box reads one dot of a Classifier (v1.98.0), else ``None``."""
+    src = (graph["nodes"].get(node_id) or {}).get("source")
+    return src if isinstance(src, dict) and src.get("feature") and src.get("dot") else None
+
+
+def node_frames(camera: str, node_id: str, graph: dict | None = None) -> list[str]:
+    """The pictures a box works on: the pictures on its Classifier dot, or the whole camera when no dot feeds it.
+    Deleted and removed pictures never; a class that went away gives none."""
+    src = node_source(graph or load_graph(camera), node_id)
+    if not src:
+        return _live_frames(camera)
+    try:
+        names = lines.frames_on_dot(camera, src["feature"], src["dot"])
+    except ValueError:
+        return []
+    live = set(_live_frames(camera))
+    return [f for f in names if f in live]
+
+
 def _match_entry(match: rotsearch.Match, source: str = "auto", scale: float = 1.0, size: tuple[int, int] | None = None) -> dict:
     """A stored box. ``scale`` < 1 means the match was made on a picture shrunk by it: the centre is taken back to
     the picture's own pixels and ``size`` is the example's own (unshrunk) width and height."""
@@ -1172,7 +1198,7 @@ def run_detector(camera: str, node_id: str, report=None, frames: list[str] | Non
         angle_range = (0.0, 0.0)
     previous = load_stored(camera, node_id)["frames"]
     hmap = labels.hash_map(camera)
-    names = frames if frames is not None else _live_frames(camera)
+    names = frames if frames is not None else node_frames(camera, node_id, graph)
     out: dict[str, dict] = {}
     import curation  # noqa: PLC0415
 
@@ -1265,7 +1291,7 @@ def frame_boxes(camera: str, node_id: str) -> dict[str, dict]:
     stored = load_stored(camera, node_id)["frames"]
     hmap = labels.hash_map(camera)
     result: dict[str, dict] = {}
-    for frame in _live_frames(camera):
+    for frame in node_frames(camera, node_id):
         key = hmap.get(frame)
         if key in stored:
             result[frame] = stored[key]

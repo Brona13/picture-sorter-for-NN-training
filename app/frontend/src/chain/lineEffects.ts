@@ -54,6 +54,7 @@ export function deleteNote(canvas: ChainCanvas, edge: ChainEdge): LineNote | nul
     return { title, lines: [`${roi?.label ?? target} becomes static: its rectangle stays in one place on every picture instead of following ${source}.`, "Scores and thumbnails of this ROI are computed again."] };
   }
   if (isDedupSourceEdge(canvas, edge)) {
+    if (node(canvas, edge.target)?.kind !== "dedup") return { title, lines: [`Only the line goes. ${target} reads the whole camera again instead of ${source}.`, "What it found or made stays; run it again for the other pictures."] };
     return { title, lines: [`Only the line goes. ${target} reads the whole camera again instead of ${source}.`, "What it muted stays muted. Its clusters are for the pictures it read; run the clustering again."] };
   }
   if (isDedupInputEdge(canvas, edge)) {

@@ -208,12 +208,13 @@ def _flow_nodes(camera: str, graph: dict, stored: dict) -> list[dict]:
                 else {"op": "crop", "rect": None if st["id"] == fid else st.get("rect"), "follows": st["id"] == fid, "enabled": st.get("enabled") is not False}
                 for st in flow.crop_steps(node)
             ]
-            summary = {"steps": steps, "follow": flow.follow_of(graph, node_id)}
+            summary = {"steps": steps, "follow": flow.follow_of(graph, node_id), "source": flow.node_source(graph, node_id)}
             if summary["follow"]:
                 spec = node.get("follow") or {}
                 summary["follow"] = {**summary["follow"], "size": spec.get("size")}
         elif kind == "detector":
-            summary = {"targets": [t["name"] for t in node["targets"]], "status": flow.status(camera, node_id, graph), **flow.summarize_detector(camera, node_id)}
+            summary = {"targets": [t["name"] for t in node["targets"]], "status": flow.status(camera, node_id, graph), **flow.summarize_detector(camera, node_id),
+                       "source": flow.node_source(graph, node_id), "in_scope": len(flow.node_frames(camera, node_id, graph))}
         elif kind == "calc":
             a, b = flow.effective_points(graph, node_id)
             summary = {"op": node["op"], "a": a, "b": b}
@@ -352,7 +353,8 @@ def get_canvas(camera: str) -> dict:
         spec = anchor.get_anchor(camera, roi.name)
         if spec and spec["detector"] in known:
             edges.append({"id": f"{spec['detector']}->{roi_node_id(roi.name)}", "source": spec["detector"], "source_handle": f"t:{spec['target']}", "target": roi_node_id(roi.name), "locked": False})
-    for box in dedup_box.boxes(camera):  # a Dedup box reading one dot of a Classifier hangs from that dot
+    reading = sorted(i for i, n in graph["nodes"].items() if n["kind"] in ("dedup", "crop", "detector"))
+    for box in reading:  # a Dedup, Picture edits or detector box reading one dot of a Classifier hangs from that dot
         src = dedup_box.source_of(camera, box, graph)
         if src and roi_node_id(src["feature"]) in known and box in known:
             handle = ALL_HANDLE if src["dot"] == ALL_HANDLE else product_handle(src["dot"])

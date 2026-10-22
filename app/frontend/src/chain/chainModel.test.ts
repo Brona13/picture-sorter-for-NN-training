@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import type { ChainCanvas, ChainNode } from "../api";
-import { connectAction, describeNode, disconnectAction, freshName, layoutOf, productOfHandle } from "./chainModel";
+import { connectAction, describeFlow, describeNode, disconnectAction, freshName, layoutOf, productOfHandle } from "./chainModel";
 
 const node = (over: Partial<ChainNode>): ChainNode => ({
   id: "roi:x", kind: "roi", ref: "x", label: "x", x: 0, y: 0, role: "quality", scope: "camera", product: null,
@@ -212,4 +212,20 @@ test("Dedup boxes: Ingest / Picture edits / a Classifier dot feed them, they fee
   for (const [s, t] of [["dedup:1", "crop:1"], ["dedup:1", "det:1"], ["dedup:1", "calc:1"]]) {
     expect(flowConnect(withBox, link(s, t))).toHaveProperty("error");
   }
+});
+
+test("a Classifier dot feeds a detector or a Picture edits box, which then works on that dot's pictures", () => {
+  const withBoxes: ChainCanvas = {
+    ...flowCanvas,
+    nodes: [
+      ...flowCanvas.nodes,
+      node({ id: "crop:9", kind: "crop", ref: null, role: null, scope: null, label: "Picture edits 9" }),
+      node({ id: "det:9", kind: "detector", ref: null, role: null, scope: null, label: "Detector 9" }),
+    ],
+  };
+  expect(flowConnect(withBoxes, { source: "roi:seal", sourceHandle: "p:OK", target: "det:9" })).toEqual({ dedupSource: { box: "det:9", feature: "seal", dot: "OK" } });
+  expect(flowConnect(withBoxes, { source: "roi:seal", sourceHandle: "all", target: "crop:9" })).toEqual({ dedupSource: { box: "crop:9", feature: "seal", dot: "all" } });
+  expect(flowConnect(withBoxes, { source: "roi:seal", sourceHandle: null, target: "det:9" })).toHaveProperty("error");
+  expect(describeFlow("detector", { targets: ["P"], status: "none", source: { feature: "seal", dot: "OK" }, in_scope: 12 })).toBe("1 target · not run · OK · 12 pictures");
+  expect(describeFlow("detector", { targets: ["P"], status: "none" })).toBe("1 target · not run");
 });

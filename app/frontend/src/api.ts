@@ -375,6 +375,8 @@ export interface FlowSummary {
   counts?: { pass: number; fail: number; undetermined: number };
   /** A Dedup box: the Classifier dot it reads (null: the camera or the box a line comes from), the pictures it sees, its mutes, the Classifiers it feeds. */
   source?: { feature: string; dot: string } | null;
+  /** A detector fed by a Classifier dot: how many pictures that dot gives it. */
+  in_scope?: number;
   muted?: number;
   deleted?: number;
   feeds?: string[];

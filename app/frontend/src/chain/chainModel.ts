@@ -86,6 +86,15 @@ export function layoutOf(
 
 /** Short line for a Picture edits, detector, Calculate or Evaluation box, from its light summary (the Chain and the Overview use it). */
 export function describeFlow(kind: string, f: FlowSummary | undefined): string {
+  const base = describeFlowBox(kind, f);
+  if ((kind === "crop" || kind === "detector") && f?.source) {
+    const where = `${f.source.dot === ALL_HANDLE ? "all" : f.source.dot}${f.in_scope != null ? ` · ${f.in_scope} pictures` : ""}`;
+    return `${base} · ${where}`;
+  }
+  return base;
+}
+
+function describeFlowBox(kind: string, f: FlowSummary | undefined): string {
   if (kind === "crop") {
     const steps = f?.steps ?? [];
     if (steps.length === 0) return "no steps yet";
@@ -152,15 +161,15 @@ export function flowConnect(canvas: ChainCanvas, c: Connection): FlowLink {
     if (c.sourceHandle) return { error: "Use the Picture edits box's main dot." };
     return { roiInput: { feature: target.ref, box: source.id } };
   }
-  if (source.kind === "roi" && target.kind === "dedup") {
-    // A dot of a Classifier dropped on a Dedup box: the box reads only the pictures on that dot.
+  if (source.kind === "roi" && (target.kind === "dedup" || target.kind === "crop" || target.kind === "detector")) {
+    // A dot of a Classifier dropped on a Dedup, Picture edits or detector box: the box works only on the pictures on that dot.
     const dot = c.sourceHandle === ALL_HANDLE ? ALL_HANDLE : productOfHandle(c.sourceHandle);
-    if (!dot || !source.ref) return { error: "Drag from one of the Classifier's dots (a class or all) to the Dedup box." };
+    if (!dot || !source.ref) return { error: `Drag from one of the Classifier's dots (a class or all) to ${target.kind === "dedup" ? "the Dedup box" : target.label}.` };
     if (target.flow?.feeds?.includes(source.ref)) return { error: `${target.label} feeds ${source.label}, so it cannot read it too.` };
     return { dedupSource: { box: target.id, feature: source.ref, dot } };
   }
   if (source.kind === "roi" && isFlowKind(target.kind)) {
-    return { error: "A Classifier's dots feed a Dedup box or another Classifier. Lines from a class dot to Picture edits or a detector are not made yet." };
+    return { error: "A Classifier's dots feed a Dedup box, Picture edits, a detector or another Classifier." };
   }
   if (source.kind === "dedup" && target.kind === "roi") {
     // A Dedup box dropped on a Classifier: the Classifier hides what the box muted.
@@ -196,9 +205,11 @@ export function flowConnect(canvas: ChainCanvas, c: Connection): FlowLink {
   return point ? { source: c.source, target: c.target, point } : { source: c.source, target: c.target };
 }
 
-/** A line from a Classifier dot to a Dedup box is the box's source (stored in the box, not in the flow lines). */
-export const isDedupSourceEdge = (canvas: ChainCanvas, edge: ChainEdge): boolean =>
-  canvas.nodes.find((n) => n.id === edge.source)?.kind === "roi" && canvas.nodes.find((n) => n.id === edge.target)?.kind === "dedup";
+/** A line from a Classifier dot to a Dedup, Picture edits or detector box is the box's source (stored in the box, not in the flow lines). */
+export const isDedupSourceEdge = (canvas: ChainCanvas, edge: ChainEdge): boolean => {
+  const kind = canvas.nodes.find((n) => n.id === edge.target)?.kind;
+  return canvas.nodes.find((n) => n.id === edge.source)?.kind === "roi" && (kind === "dedup" || kind === "crop" || kind === "detector");
+};
 
 /** A line from a Dedup box to a Classifier is the Classifier's Dedup input (stored with the Classifier). */
 export const isDedupInputEdge = (canvas: ChainCanvas, edge: ChainEdge): boolean =>
