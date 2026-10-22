@@ -384,13 +384,23 @@ export default function App() {
   );
 }
 
-const DEDUP_TOOLS = new Set<string>(["scatter", "clusters", "outliers"]);
+const DEDUP_TOOLS = new Set<string>(["grid", "scatter", "clusters", "outliers"]);
 
 function DedupRoute({ camera }: { camera: string }) {
   const { tool = "" } = useParams();
   const [search] = useSearchParams();
+  const navigate = useNavigate();
   if (!DEDUP_TOOLS.has(tool)) return <Navigate to="/dedup/scatter" replace />;
-  return <DedupView camera={camera} box={search.get("box") ?? undefined} tool={tool as DedupTool} />;
+  const box = search.get("box") ?? undefined;
+  return (
+    <DedupView
+      camera={camera}
+      box={box}
+      tool={tool as DedupTool}
+      onBack={() => navigate("/chain")}
+      onTool={(t, b) => navigate(`/dedup/${t}?box=${encodeURIComponent(b)}`)}
+    />
+  );
 }
 
 function describe(e: unknown): string {

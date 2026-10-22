@@ -367,6 +367,7 @@ export interface FlowSummary {
   /** A Dedup box: the Classifier dot it reads (null: the camera or the box a line comes from), the pictures it sees, its mutes, the Classifiers it feeds. */
   source?: { feature: string; dot: string } | null;
   muted?: number;
+  deleted?: number;
   feeds?: string[];
 }
 
@@ -1179,6 +1180,10 @@ export const api = {
       send("PATCH", box),
     ),
   /** The Dedup boxes of the Chain, for the Dedup pages' box picker. */
+  dedupFrames: (camera: string, feature: string) =>
+    request<{ frames: string[]; muted: string[]; source: string; classes: string[]; marks: Record<string, { label: string | null; golden: string | null }> }>(
+      `/cameras/${encodeURIComponent(camera)}/dedup/frames?feature=${encodeURIComponent(feature)}`,
+    ),
   dedupBoxes: (camera: string) => request<{ feature: string; label: string }[]>(`/cameras/${encodeURIComponent(camera)}/dedup/boxes`),
   /** Make a Dedup box the one a Classifier reads through (null removes it). */
   setChainDedup: (camera: string, feature: string, box: string | null) =>

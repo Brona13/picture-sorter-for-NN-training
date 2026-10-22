@@ -221,6 +221,7 @@ def _flow_nodes(camera: str, graph: dict, stored: dict) -> list[dict]:
                 "source": dedup_box.source_of(camera, node_id, graph),
                 "frames": len(dedup_box.frames(camera, node_id)),
                 "muted": len(db.muted_frames(camera, node_id)),
+                "deleted": len(db.deleted_frames_of(camera)),
                 "feeds": dedup_box.fed_by(camera).get(node_id, []),
             }
         else:

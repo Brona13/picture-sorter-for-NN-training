@@ -45,6 +45,8 @@ beforeEach(() => {
       calls.push({ url, method, body: init?.body ? JSON.parse(init.body as string) : undefined });
       const ok = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status });
       if (url.includes("/dedup/boxes")) return ok([{ feature: "seal", label: "seal" }]);
+      if (url.includes("/dedup/frames"))
+        return ok({ frames: ["a.png", "b.png", "c.png"], muted: ["b.png"], source: "seal", classes: ["OK", "NG"], marks: {} });
       if (url.includes("/dedup/state")) return ok(state);
       if (url.includes("/dedup/settings")) return ok({ params });
       if (url.endsWith("/dedup/cluster")) return ok({ id: "c1", status: "queued", progress: {} }, 202);
@@ -445,4 +447,25 @@ test("the options panel picks a Dedup box and has no product picker", async () =
   const panel = await screen.findByRole("complementary", { name: "Options" });
   expect(within(panel).getByLabelText("Dedup box")).toBeInTheDocument();
   expect(within(panel).queryByLabelText("Product")).toBeNull();
+});
+
+test("the box page has a way back and a Grid / Scatter / Clusters / Outliers switch", async () => {
+  const onBack = vi.fn();
+  const onTool = vi.fn();
+  render(<DedupView camera="camA" box="seal" tool="grid" onBack={onBack} onTool={onTool} />);
+  await userEvent.click(await screen.findByRole("button", { name: /Back to chain/ }));
+  expect(onBack).toHaveBeenCalled();
+  const group = screen.getByRole("group", { name: "View" });
+  expect(within(group).getAllByRole("button").map((b) => b.textContent)).toEqual(["Grid", "Scatter", "Clusters", "Outliers"]);
+  await userEvent.click(within(group).getByRole("button", { name: "Clusters" }));
+  expect(onTool).toHaveBeenCalledWith("clusters", "seal");
+});
+
+test("the Grid lists the box's pictures, hides muted ones until Show muted is ticked", async () => {
+  render(<DedupView camera="camA" box="seal" tool="grid" />);
+  const view = await screen.findByTestId("grid-view");
+  await waitFor(() => expect(view).toHaveTextContent("2 pictures · 1 muted"));
+  await userEvent.click(screen.getByLabelText("Show muted"));
+  await waitFor(() => expect(view).toHaveTextContent("3 pictures · 1 muted"));
+  expect(view).toHaveTextContent("muted");
 });

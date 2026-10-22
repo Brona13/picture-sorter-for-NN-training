@@ -1,5 +1,6 @@
 import { ReactNode, useCallback, useEffect, useState } from "react";
-import { api, DedupParams, DedupResult, DedupState, OutlierResult } from "../api";
+import { api, CardData, DedupParams, DedupResult, DedupState, OutlierResult } from "../api";
+import PictureGrid from "../classify/PictureGrid";
 import ClusterBrowser, { Marks } from "../classify/ClusterBrowser";
 import { OutlierControls, OutlierResults, useOutliers } from "../classify/OutlierPanel";
 import { ColourBy } from "../classify/Scatter";
@@ -28,8 +29,8 @@ const CLUSTERS_INFO = (
   </>
 );
 /** The three duplicate tools; the top bar picks one, and its controls fill the options panel and its results the centre. */
-export type DedupTool = "scatter" | "clusters" | "outliers";
-const TITLES: Record<DedupTool, string> = { scatter: "Scatter", clusters: "Clusters", outliers: "Outliers" };
+export type DedupTool = "grid" | "scatter" | "clusters" | "outliers";
+const TITLES: Record<DedupTool, string> = { grid: "Grid", scatter: "Scatter", clusters: "Clusters", outliers: "Outliers" };
 
 /** Each frame's outlier score scaled to [0, 1] against the 95th percentile, so one extreme frame cannot wash out the rest. */
 export function outlierShades(r: OutlierResult): Record<string, number> {
@@ -41,12 +42,22 @@ export default function DedupView({
   camera,
   box,
   tool = "scatter",
+  onBack,
+  onTool,
 }: {
   camera: string;
   /** The Dedup box to open (from the Chain); else the first one. */
   box?: string;
   tool?: DedupTool;
+  /** From the Chain: the way back. */
+  onBack?: () => void;
+  /** Switch to another tool of the same box. */
+  onTool?: (tool: DedupTool, box: string) => void;
 }) {
+  const [gridData, setGridData] = useState<Awaited<ReturnType<typeof api.dedupFrames>> | null>(null);
+  const [gridPage, setGridPage] = useState(1);
+  const [showMuted, setShowMuted] = useState(false);
+  const [gridRev, setGridRev] = useState(0);
   // The pages work on one Dedup box of the Chain (its id is the "feature" of the API).
   const [features, setFeatures] = useState<{ feature: string; label: string }[]>([]);
   const [feature, setFeature] = useState("");
@@ -106,6 +117,11 @@ export default function DedupView({
     setConfirmClear(false);
     load();
   }, [load]);
+
+  useEffect(() => {
+    if (!camera || !feature || tool !== "grid") return;
+    api.dedupFrames(camera, feature).then(setGridData).catch((e: unknown) => setError(msg(e)));
+  }, [camera, feature, tool, gridRev, st?.muted_count]);
 
   useEffect(() => {
     if (cj?.status === "done" && cj.result) {
@@ -185,6 +201,11 @@ export default function DedupView({
               ))}
             </select>
           </label>
+          {active === "grid" && (
+            <label>
+              <input type="checkbox" checked={showMuted} onChange={(e) => { setShowMuted(e.target.checked); setGridPage(1); }} /> Show muted
+            </label>
+          )}
           {active === "clusters" && st && st.frames > 0 && params && (
             <ToolControls tool="clusters" info={CLUSTERS_INFO}>
               <label>
@@ -320,11 +341,75 @@ export default function DedupView({
       }
     >
     <section>
+      {(onBack || onTool) && (
+        <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", margin: "8px 0" }}>
+          {onBack && (
+            <button type="button" onClick={onBack}>
+              ← Back to chain
+            </button>
+          )}
+          {onTool && (
+            <div role="group" aria-label="View" style={{ display: "flex", gap: 6, marginLeft: 14 }}>
+              {(["grid", "scatter", "clusters", "outliers"] as DedupTool[]).map((t) => (
+                <button key={t} type="button" aria-pressed={tool === t} onClick={() => onTool(t, feature)}>
+                  {TITLES[t]}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
       {error && <p role="alert">{error}</p>}
       {notice && <p role="status">{notice}</p>}
 
       {boxesLoaded && features.length === 0 && <p>There is no Dedup box yet. Add one on the Chain (the Dedup tile) and connect it.</p>}
       {st && st.frames === 0 && <p>This Dedup box has no pictures yet: ingest some, or label some for the Classifier it reads.</p>}
+
+      {active === "grid" && gridData && st && (() => {
+        const mutedSet = new Set(gridData.muted);
+        const shownFrames = showMuted ? gridData.frames : gridData.frames.filter((f) => !mutedSet.has(f));
+        const cardOf = (frame: string): CardData => ({
+          frame,
+          label: gridData.marks[frame]?.label ?? null,
+          golden: gridData.marks[frame]?.golden ?? null,
+          deleted: false,
+          leanings: {},
+          bars: null,
+          cluster: null,
+        });
+        return (
+          <div data-testid="grid-view">
+            <p role="status">
+              {shownFrames.length} {shownFrames.length === 1 ? "picture" : "pictures"} · {gridData.muted.length} muted
+            </p>
+            <PictureGrid
+              camera={camera}
+              feature={gridData.source}
+              classes={gridData.classes}
+              frames={shownFrames}
+              cardOf={cardOf}
+              via="Dedup grid"
+              grid={st.grid}
+              onGrid={(perPage, cols) =>
+                api
+                  .dedupGridSettings(camera, feature, perPage, cols)
+                  .then((g) => {
+                    setSt((x) => (x ? { ...x, grid: g } : x));
+                    setGridPage(1);
+                  })
+                  .catch((e: unknown) => setError(msg(e)))
+              }
+              page={gridPage}
+              onPage={setGridPage}
+              where="grid"
+              extras={(f) => (mutedSet.has(f) ? { caption: "muted" } : {})}
+              onChanged={() => setGridRev((r) => r + 1)}
+              onDeleted={() => setGridRev((r) => r + 1)}
+              onError={setError}
+            />
+          </div>
+        );
+      })()}
 
       {active === "scatter" && (
         <div data-testid="scatter-view">

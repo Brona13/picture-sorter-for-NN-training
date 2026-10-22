@@ -249,3 +249,15 @@ test("a Picture edits box has one fixed size and shows icons with a badge, not i
   expect(box).not.toHaveTextContent("Gaussian blur");
   expect(screen.getByTestId("chain-node-roi:seal")).toHaveClass("chain-node-roi"); // every box carries its type: its size and colour come from it
 });
+
+test("a Dedup box shows icon counters (pictures, muted, bin) instead of a text line", async () => {
+  current = canvas({
+    nodes: [...canvas().nodes, node({ id: "dedup:1", kind: "dedup", ref: null, label: "Dedup 1", x: 300, y: 300, role: null, scope: null, classes: [], flow: { source: null, frames: 12, muted: 5, deleted: 2, feeds: [] } })],
+  });
+  renderView();
+  const box = await screen.findByTestId("chain-node-dedup:1");
+  expect(box).toHaveTextContent("▦ 12");
+  expect(box).toHaveTextContent("🔇 5");
+  expect(box).toHaveTextContent("🗑 2");
+  expect(box).not.toHaveTextContent("whole camera");
+});

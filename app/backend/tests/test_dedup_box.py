@@ -50,6 +50,18 @@ class DedupBoxTests(ApiTestCase):
         self.assertEqual(sorted(dedup_box.frames(CAM, self.d1)), sorted(self.frames[:4]))  # no unlabeled picture
         self.assertEqual(sorted(dedup_box.frames(CAM, self.d2)), sorted(self.frames[2:4]))
 
+    def test_the_grid_endpoint_lists_the_pictures_the_muted_ones_and_the_labels(self) -> None:
+        flow.update_node(CAM, self.d1, {"source": {"feature": "type", "dot": "all"}})
+        self.mute(self.d1, self.frames[:1])
+        r = self.client.get(f"{self.base}/dedup/frames", params={"feature": self.d1})
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertEqual(sorted(body["frames"]), sorted(self.frames[:4]))
+        self.assertEqual(body["muted"], self.frames[:1])
+        self.assertEqual(body["source"], "type")
+        self.assertEqual(body["marks"][self.frames[0]]["label"], "A")
+        self.assertEqual(self.client.get(f"{self.base}/dedup/frames", params={"feature": "seal"}).status_code, 404)
+
     def test_the_source_line_is_drawn_from_the_dot_and_replaced_by_a_line_from_ingest(self) -> None:
         flow.update_node(CAM, self.d1, {"source": {"feature": "type", "dot": "A"}})
         self.assertIn(("roi:type", "p:A", self.d1), self.edges())

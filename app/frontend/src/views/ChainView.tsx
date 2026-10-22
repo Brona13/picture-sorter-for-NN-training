@@ -74,7 +74,13 @@ function Box({ data, selected }: NodeProps<BoxNode>) {
           node.label
         )}
       </div>
-      {isEdits ? <StepIcons steps={node.flow?.steps} /> : <div className="chain-node-sub chain-node-line" title={describeNode(node)}>{describeNode(node)}</div>}
+      {node.kind === "dedup" ? (
+        <div className="chain-node-counters" aria-label="Counters" title={describeNode(node)}>
+          <span title="Pictures it sees">▦ {node.flow?.frames ?? 0}</span>
+          <span title="Muted by this box">🔇 {node.flow?.muted ?? 0}</span>
+          <span title="In the bin (deleted)">🗑 {node.flow?.deleted ?? 0}</span>
+        </div>
+      ) : isEdits ? <StepIcons steps={node.flow?.steps} /> : <div className="chain-node-sub chain-node-line" title={describeNode(node)}>{describeNode(node)}</div>}
       {isClassifier && (
         <>
           {/* One row and one dot per class; the "all" dot passes every classified picture and never an unlabeled one. */}
@@ -472,7 +478,7 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
                 type="button"
                 onClick={() =>
                   selectedLive.kind === "dedup"
-                    ? navigate(`/dedup/scatter?box=${encodeURIComponent(selectedLive.id)}`) // the Dedup pages work on one box
+                    ? navigate(`/dedup/grid?box=${encodeURIComponent(selectedLive.id)}`) // the Dedup pages work on one box
                     : onOpenFlow ? onOpenFlow(selectedLive.id) : navigate(`/flow?focus=${encodeURIComponent(selectedLive.id)}`)
                 }
               >

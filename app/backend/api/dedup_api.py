@@ -206,6 +206,21 @@ def state(camera: str, feature: str) -> dict:
     }
 
 
+@router.get("/cameras/{camera}/dedup/frames")
+def box_frames(camera: str, feature: str) -> dict:
+    """The pictures a Dedup box sees (for its Grid), which of them it muted, and the labels of the Classifier it reads."""
+    require_box(camera, feature)
+    frames = dedup.live_frames(camera, feature)
+    own = db.muted_frames(camera, feature)
+    return {
+        "frames": frames,
+        "muted": [f for f in frames if f in own],
+        "source": dedup_box.label_source(camera, feature),
+        "classes": datamodel.classes_for(camera, dedup_box.label_source(camera, feature)),
+        "marks": marks_for(camera, feature, frames),
+    }
+
+
 @router.put("/cameras/{camera}/dedup/settings")
 def save_settings(camera: str, body: Params) -> dict:
     _validate(camera, body)
