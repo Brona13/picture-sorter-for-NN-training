@@ -362,8 +362,39 @@ function DetectorOptions(p: {
       <OutputsSection detail={d} onSetOutputs={p.onSetOutputs} />
       <PanelSection title="Search">
         <label className="flow-check">
-          <input type="checkbox" checked={d.rotate} onChange={(e) => p.onUpdate({ rotate: e.target.checked })} /> The part can be turned (search every angle)
+          <input type="checkbox" checked={d.rotate} onChange={(e) => p.onUpdate({ rotate: e.target.checked })} /> The part can be turned
         </label>
+        {d.rotate && (
+          <>
+            <label className="flow-check">
+              <input
+                type="checkbox"
+                aria-label="Limit the angle"
+                checked={d.angle_range !== null}
+                onChange={(e) => p.onUpdate({ angle_range: e.target.checked ? [-10, 10] : null })}
+              />{" "}
+              Limit the angle (otherwise every angle is searched)
+            </label>
+            {d.angle_range !== null && (
+              <label>
+                Turned by at most ± (degrees from the example)
+                <input
+                  type="number"
+                  aria-label="Angle limit"
+                  min={0}
+                  max={180}
+                  step={1}
+                  defaultValue={Math.max(Math.abs(d.angle_range[0]), Math.abs(d.angle_range[1]))}
+                  key={`${d.angle_range[0]}:${d.angle_range[1]}`}
+                  onBlur={(e) => {
+                    const n = Math.min(180, Math.max(0, Number(e.target.value) || 0));
+                    p.onUpdate({ angle_range: [-n, n] });
+                  }}
+                />
+              </label>
+            )}
+          </>
+        )}
         {cascade && (
           <label>
             Search area around each input box (× its size)

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { FlowBox } from "../api";
 import CardGrid from "../classify/CardGrid";
 import { PagerSettings } from "../classify/Pager";
+import { isPageSize } from "../classify/gridSizes";
 import { drawn } from "../pixelCentre";
 
 const OPTIONS = { per_page_options: [12, 24, 48, 96], cols_options: [3, 4, 5, 6, 8] };
@@ -11,7 +12,7 @@ export const TARGET_COLORS = ["#ff9f1c", "#2ec4ff", "#7bd389", "#e07bff", "#ffe0
 function stored(): { per_page: number; cols: number } {
   try {
     const raw = JSON.parse(localStorage.getItem(STORE) ?? "{}");
-    if (OPTIONS.per_page_options.includes(raw.per_page) && OPTIONS.cols_options.includes(raw.cols)) return raw;
+    if (isPageSize(raw.per_page) && OPTIONS.cols_options.includes(raw.cols)) return raw;
   } catch { /* the grid still works without the remembered size */ }
   return { per_page: 24, cols: 4 };
 }

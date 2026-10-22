@@ -1,6 +1,7 @@
 """Classify: scored grid, label/golden/delete actions, refresh job, bulk and auto-assign."""
 from __future__ import annotations
 
+import grid_sizes
 import dataclasses
 import hashlib
 from typing import Annotated
@@ -23,8 +24,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 router = APIRouter()
-PER_PAGE_OPTIONS = [12, 24, 48, 96]
-COLS_OPTIONS = [3, 4, 5, 6, 8]
+PER_PAGE_OPTIONS = grid_sizes.all_per_page()  # alone (no column count): any size that is valid for some column count
+COLS_OPTIONS = list(grid_sizes.COLS)
 
 
 class GridQuery(BaseModel):
@@ -209,7 +210,7 @@ class GridSettings(BaseModel):
 @router.put("/cameras/{camera}/classify/grid-settings")
 def set_grid_settings(camera: str, body: GridSettings) -> dict:
     require_feature(camera, body.feature)
-    if body.per_page not in PER_PAGE_OPTIONS or body.cols not in COLS_OPTIONS:
+    if not grid_sizes.is_valid(body.per_page, body.cols):
         raise HTTPException(status_code=422, detail="Unsupported per_page or cols value.")
     db.set_setting(camera, f"grid.perpage.{body.feature}", str(body.per_page))
     db.set_setting(camera, f"grid.cols.{body.feature}", str(body.cols))
@@ -268,7 +269,7 @@ def state(camera: str, feature: str) -> dict:
         "settings": {
             "per_page": _grid_setting(camera, feature, "perpage", PER_PAGE_OPTIONS, 24),
             "cols": _grid_setting(camera, feature, "cols", COLS_OPTIONS, 4),
-            "per_page_options": PER_PAGE_OPTIONS,
+            "per_page_options": grid_sizes.per_page_options(_grid_setting(camera, feature, "cols", COLS_OPTIONS, 4)),
             "cols_options": COLS_OPTIONS,
         },
     }

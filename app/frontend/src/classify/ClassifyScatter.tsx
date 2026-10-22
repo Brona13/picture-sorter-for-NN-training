@@ -3,7 +3,7 @@ import { PanelPortal, PanelSection } from "../SidePanel";
 import { SCATTER_INFO } from "./toolInfo";
 import { PagerSettings } from "./Pager";
 import { ColourBy } from "./Scatter";
-import { effectiveColour, ScatterMapView, useScatterMap } from "./ScatterWorkbench";
+import { effectiveColour, ProjectionProgress, ScatterMapView, useScatterMap } from "./ScatterWorkbench";
 import { EmbeddingSelect, useDedupState } from "./useDedupState";
 
 /**
@@ -65,11 +65,7 @@ export default function ClassifyScatter({
               {map.scatter ? "Recompute map" : "Compute map"}
             </button>
           </div>
-          {map.projecting && (
-            <p aria-live="polite">
-              <progress /> Projecting…
-            </p>
-          )}
+          {map.projecting && <ProjectionProgress progress={map.progress} />}
         </PanelSection>
       </PanelPortal>
       {!map.scatter && !map.projecting && map.cached === false && (

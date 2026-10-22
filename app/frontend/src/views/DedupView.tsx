@@ -5,7 +5,7 @@ import ClusterBrowser, { Marks } from "../classify/ClusterBrowser";
 import { OutlierControls, OutlierResults, useOutliers } from "../classify/OutlierPanel";
 import { ColourBy } from "../classify/Scatter";
 import { OUTLIERS_INFO, SCATTER_INFO } from "../classify/toolInfo";
-import { effectiveColour, ScatterMapView, useScatterMap } from "../classify/ScatterWorkbench";
+import { effectiveColour, ProjectionProgress, ScatterMapView, useScatterMap } from "../classify/ScatterWorkbench";
 import InfoTip from "../InfoTip";
 import SidePanel from "../SidePanel";
 import WheelRange from "../WheelRange";
@@ -325,11 +325,7 @@ export default function DedupView({
                   Compute projection
                 </button>
               </div>
-              {projecting && (
-                <p aria-live="polite">
-                  <progress /> Projecting…
-                </p>
-              )}
+              {projecting && <ProjectionProgress progress={map.progress} />}
             </ToolControls>
           )}
           {active === "outliers" && st && params && params.method && (

@@ -157,6 +157,6 @@ test("the selection's grid is the one passed in (Classify's), and changing it go
   expect((await within(panel).findAllByLabelText("Per page selection top"))[0]).toHaveValue("48");
   expect((await within(panel).findAllByLabelText("Columns selection top"))[0]).toHaveValue("6");
   await userEvent.selectOptions((await within(panel).findAllByLabelText("Columns selection top"))[0], "8");
-  expect(props.onGrid).toHaveBeenCalledWith(48, 8);
+  expect(props.onGrid).toHaveBeenCalledWith(64, 8); // 8 rows stay 8 rows in the wider grid
   expect(calls.some((c) => c.url.includes("grid-settings"))).toBe(false); // no second, separate setting
 });

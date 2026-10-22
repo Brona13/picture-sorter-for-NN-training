@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { fitPerPage, perPageOptions } from "./gridSizes";
 
 export interface PagerGrid {
   page: number;
@@ -108,7 +109,8 @@ export default function Pager({ grid, settings, onPage, onSettings, where, searc
           value={settings.per_page}
           onChange={(e) => onSettings(Number(e.target.value), settings.cols)}
         >
-          {settings.per_page_options.map((n) => (
+          {/* whole rows only; a size remembered from before stays in the list while it is the current one */}
+          {[...new Set([...perPageOptions(settings.cols), settings.per_page])].sort((a, b) => a - b).map((n) => (
             <option key={n}>{n}</option>
           ))}
         </select>
@@ -118,7 +120,7 @@ export default function Pager({ grid, settings, onPage, onSettings, where, searc
         <select
           aria-label={`Columns ${where}`}
           value={settings.cols}
-          onChange={(e) => onSettings(settings.per_page, Number(e.target.value))}
+          onChange={(e) => onSettings(fitPerPage(settings.per_page, settings.cols, Number(e.target.value)), Number(e.target.value))}
         >
           {settings.cols_options.map((n) => (
             <option key={n}>{n}</option>

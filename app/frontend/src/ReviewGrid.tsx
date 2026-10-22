@@ -3,6 +3,7 @@ import { DetectionRow } from "./api";
 import { thumbUrl } from "./classify/Card";
 import CardGrid from "./classify/CardGrid";
 import { PagerSettings } from "./classify/Pager";
+import { isPageSize } from "./classify/gridSizes";
 import { useGridCard } from "./classify/useGridCard";
 import { lastSession } from "./lastSession";
 import { markReviewPainted, reviewCursor, reviewPainter } from "./reviewPaint";
@@ -16,7 +17,7 @@ const OPTIONS = { per_page_options: [12, 24, 48, 96], cols_options: [3, 4, 5, 6,
 function useGridSettings(): [PagerSettings, (perPage: number, cols: number) => void] {
   const [chosen, setChosen] = useState(() => {
     const [p, c] = lastSession.reviewGrid().split("x").map(Number);
-    return { per_page: OPTIONS.per_page_options.includes(p) ? p : 24, cols: OPTIONS.cols_options.includes(c) ? c : 4 };
+    return { per_page: isPageSize(p) ? p : 24, cols: OPTIONS.cols_options.includes(c) ? c : 4 };
   });
   const change = (per_page: number, cols: number) => {
     lastSession.setReviewGrid(`${per_page}x${cols}`);

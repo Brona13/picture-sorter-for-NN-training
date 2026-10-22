@@ -74,7 +74,7 @@ function install() {
       const ok = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status });
       if (url.includes("/versions/features")) return ok([{ feature: "seal", label: "seal" }]);
       if (url.includes("/classify/state")) return ok(state);
-      if (url.includes("/classify/grid-settings")) return ok({ per_page: 48, cols: 4 });
+      if (url.includes("/classify/grid-settings")) return ok({ per_page: 32, cols: 4 });
       if (url.includes("/classify/grid")) return ok(grid(url));
       if (url.endsWith("/classify/refresh")) return ok({ id: "job1", status: "queued", progress: {} }, 202);
       if (url === "/api/jobs/job1")
@@ -348,9 +348,9 @@ test("changing Show filters the request and returns to page 1; pager buttons req
 test("per-page change is persisted through grid-settings", async () => {
   render(<ClassifyView camera="camA" />);
   await cardEl("a.png");
-  await userEvent.selectOptions(screen.getByLabelText("Per page top"), "48");
+  await userEvent.selectOptions(screen.getByLabelText("Per page top"), "32"); // 8 rows of 4 columns
   await waitFor(() => expect(calls.some((c) => c.url.includes("/grid-settings"))).toBe(true));
-  expect(calls.find((c) => c.url.includes("/grid-settings"))!.body).toEqual({ feature: "seal", per_page: 48, cols: 4 });
+  expect(calls.find((c) => c.url.includes("/grid-settings"))!.body).toEqual({ feature: "seal", per_page: 32, cols: 4 });
 });
 
 test("bulk panel previews the selection and labels it on click", async () => {

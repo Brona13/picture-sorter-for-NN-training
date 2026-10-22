@@ -91,7 +91,8 @@ export function useScatterMap({
     () => (scatter ? scatter.points.flatMap((p) => (p.frame in overrides ? (overrides[p.frame] === null ? [] : [{ ...p, ...overrides[p.frame] }]) : [p])) : []),
     [scatter, overrides],
   );
-  return { projection, setProjection, scatter, projecting, run, cached, selected, setSelected, overrides, setOverrides, mapPoints, gen: genRef.current.gen };
+  const progress = (sj?.progress ?? {}) as Record<string, unknown>;
+  return { projection, setProjection, scatter, projecting, progress, run, cached, selected, setSelected, overrides, setOverrides, mapPoints, gen: genRef.current.gen };
 }
 
 export type ScatterMap = ReturnType<typeof useScatterMap>;
@@ -372,5 +373,24 @@ export function ScatterSelection({
         </>
       )}
     </div>
+  );
+}
+
+/** The projection's bar: the embedding step counts pictures, the layout step counts its own steps and shows a percentage. */
+export function ProjectionProgress({ progress }: { progress: Record<string, unknown> }) {
+  const done = Number(progress.done ?? 0);
+  const total = Number(progress.total ?? 0);
+  if (progress.phase === "embedding") {
+    return (
+      <p aria-live="polite">
+        <progress value={done} max={total || undefined} /> Embedding {done}/{total}
+      </p>
+    );
+  }
+  const share = total > 0 ? Math.round((100 * done) / total) : null;
+  return (
+    <p aria-live="polite">
+      <progress value={share === null ? undefined : done} max={total || undefined} /> Projecting{share === null ? "…" : ` ${share} %`}
+    </p>
   );
 }

@@ -6,6 +6,7 @@ server restart simply means "run Cluster again".
 """
 from __future__ import annotations
 
+import grid_sizes
 import dataclasses
 import threading
 
@@ -30,8 +31,8 @@ EPSILON_RANGE = (0.001, 0.20)
 MIN_POINTS_RANGE = (2, 10)
 DEFAULT_EPSILON = 0.02
 DEFAULT_MIN_POINTS = 2
-PER_PAGE_OPTIONS = [12, 24, 48, 96]
-COLS_OPTIONS = [3, 4, 5, 6, 8]
+PER_PAGE_OPTIONS = grid_sizes.all_per_page()  # alone (no column count): any size that is valid for some column count
+COLS_OPTIONS = list(grid_sizes.COLS)
 
 def require_box(camera: str, feature: str) -> str:
     """Dedup works on Dedup boxes of the Chain (``dedup:N``), not on ROIs."""
@@ -162,7 +163,7 @@ def _grid_settings(camera: str, feature: str) -> dict:
     return {
         "per_page": pick("perpage", PER_PAGE_OPTIONS, 24),
         "cols": pick("cols", COLS_OPTIONS, 4),
-        "per_page_options": PER_PAGE_OPTIONS,
+        "per_page_options": grid_sizes.per_page_options(pick("cols", COLS_OPTIONS, 4)),
         "cols_options": COLS_OPTIONS,
     }
 
@@ -239,7 +240,7 @@ class GridSettings(BaseModel):
 def save_grid_settings(camera: str, body: GridSettings) -> dict:
     """Per-ROI grid size of the cluster browser (kept apart from Classify's)."""
     require_box(camera, body.feature)
-    if body.per_page not in PER_PAGE_OPTIONS or body.cols not in COLS_OPTIONS:
+    if not grid_sizes.is_valid(body.per_page, body.cols):
         raise HTTPException(status_code=422, detail="Unsupported per_page or cols value.")
     db.set_setting(camera, f"dedup.grid.perpage.{body.feature}", str(body.per_page))
     db.set_setting(camera, f"dedup.grid.cols.{body.feature}", str(body.cols))
@@ -334,7 +335,7 @@ def run_scatter(camera: str, body: ScatterBody) -> dict:
     result = held if held is not None and held.method == method else None
 
     def work(report):
-        report({"phase": "projecting", "done": 0, "total": 1})
+        report({"phase": "projecting", "done": 0, "total": 1000})
         if result is not None:
             frame_order, matrix = result.frame_order, result.embeddings
         else:
@@ -345,9 +346,12 @@ def run_scatter(camera: str, body: ScatterBody) -> dict:
         if matrix.shape[0] < 2:
             raise RuntimeError("Not enough frames to project.")
         try:
+            def layout_progress(share: float) -> None:
+                report({"phase": "projecting", "done": int(share * 1000), "total": 1000})
+
             proj = scatter.project(
                 frame_order, matrix, camera=camera, feature=body.feature,
-                backbone=method, method=body.projection,
+                backbone=method, method=body.projection, progress=layout_progress,
             )
         except ImportError as exc:
             raise RuntimeError(

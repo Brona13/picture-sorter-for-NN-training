@@ -584,3 +584,23 @@ test("Detector page: a turned example is drawn turned and has no resize handles"
   expect(screen.queryByTestId("handle-se")).not.toBeInTheDocument();
   vi.unstubAllGlobals();
 });
+
+test("Detector panel: the angle can be limited to ± some degrees, or left to search every angle", async () => {
+  detail = {
+    kind: "detector", input: "ingest", crops: [], rotate: true, angle_range: null, pad: 0.3, status: "none",
+    targets: [{ name: "left hole", outputs: ["position"], examples: [] }], summary: { frames: 0, found: {}, complete: 0, review: 0 },
+  };
+  const { rerender } = render(<FlowBoxPanel camera="camA" nodeId="det:1" detail={detail as FlowNodeDetail} onDetail={() => {}} onChanged={() => {}} />);
+  expect(screen.queryByLabelText("Angle limit")).toBeNull(); // every angle: no number asked
+  await userEvent.click(screen.getByLabelText("Limit the angle"));
+  await waitFor(() => expect(calls.some((c) => c.method === "PUT" && JSON.stringify(c.body) === JSON.stringify({ angle_range: [-10, 10] }))).toBe(true));
+  detail = { ...detail, angle_range: [-10, 10] };
+  rerender(<FlowBoxPanel camera="camA" nodeId="det:1" detail={detail as FlowNodeDetail} onDetail={() => {}} onChanged={() => {}} />);
+  const limit = screen.getByLabelText("Angle limit");
+  expect(limit).toHaveValue(10);
+  fireEvent.change(limit, { target: { value: "5" } });
+  fireEvent.blur(limit);
+  await waitFor(() => expect(calls.some((c) => c.method === "PUT" && JSON.stringify(c.body) === JSON.stringify({ angle_range: [-5, 5] }))).toBe(true));
+  await userEvent.click(screen.getByLabelText("Limit the angle"));
+  await waitFor(() => expect(calls.some((c) => c.method === "PUT" && JSON.stringify(c.body) === JSON.stringify({ angle_range: null }))).toBe(true));
+});

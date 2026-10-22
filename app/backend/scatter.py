@@ -8,14 +8,49 @@ The cache is invalidated when the frame set signature changes.
 """
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
+import re
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import numpy as np
 
 import db
+
+
+#: Called with the share done (0 to 1) while the layout is being optimised.
+ProgressFn = Callable[[float], None]
+
+_UMAP_EPOCH = re.compile(r"(\d+)/(\d+)")
+_TSNE_ITER = re.compile(r"Iteration (\d+)")
+TSNE_ITERATIONS = 1000  # scikit-learn's default number of optimisation steps
+
+
+class _ProgressSink:
+    """A file-like that turns the progress text of UMAP (tqdm epochs, "n/total") or t-SNE ("Iteration n") into a share done."""
+
+    def __init__(self, kind: str, progress: ProgressFn) -> None:
+        self.kind, self.progress = kind, progress
+
+    def write(self, text: str) -> int:
+        try:
+            if self.kind == "umap":
+                m = _UMAP_EPOCH.search(text)
+                if m and int(m.group(2)) > 0:
+                    self.progress(min(1.0, int(m.group(1)) / int(m.group(2))))
+            else:
+                m = _TSNE_ITER.search(text)
+                if m:
+                    self.progress(min(1.0, int(m.group(1)) / TSNE_ITERATIONS))
+        except Exception:  # noqa: BLE001  (progress is a courtesy; it never breaks the projection)
+            pass
+        return len(text)
+
+    def flush(self) -> None:
+        pass
 
 
 DEFAULT_METHOD = "umap"
@@ -50,6 +85,7 @@ def project(
     backbone: str,
     method: str = DEFAULT_METHOD,
     use_cache: bool = True,
+    progress: ProgressFn | None = None,
 ) -> Projection:
     """Reduce ``matrix`` (N, D) to 2D using UMAP or t-SNE, with cache round-trip.
 
@@ -92,9 +128,9 @@ def project(
         xy = np.zeros((n, 2), dtype=np.float32)
         xy[:, 0] = np.arange(n, dtype=np.float32)
     elif method == "umap":
-        xy = _umap(matrix)
+        xy = _umap(matrix, progress)
     else:
-        xy = _tsne(matrix)
+        xy = _tsne(matrix, progress)
 
     if use_cache and n:
         _save_cached(camera, feature, method, backbone, fsig, frames, xy)
@@ -119,23 +155,28 @@ def _umap_baseline(matrix: np.ndarray) -> np.ndarray:
     return reducer.fit_transform(matrix).astype(np.float32)
 
 
-def _tsne(matrix: np.ndarray) -> np.ndarray:
+def _tsne(matrix: np.ndarray, progress: ProgressFn | None = None) -> np.ndarray:
     from sklearn.manifold import TSNE  # noqa: PLC0415
 
     n = matrix.shape[0]
     perplexity = min(30.0, max(2.0, (n - 1) / 3))
     tsne = TSNE(
         n_components=2, metric="cosine", perplexity=perplexity,
-        init="pca", random_state=42,
+        init="pca", random_state=42, verbose=2 if progress else 0,
     )
-    return tsne.fit_transform(matrix).astype(np.float32)
+    if progress is None:
+        return tsne.fit_transform(matrix).astype(np.float32)
+    with contextlib.redirect_stdout(_ProgressSink("tsne", progress)):  # its step messages are the progress
+        xy = tsne.fit_transform(matrix).astype(np.float32)
+    progress(1.0)  # it may stop before its last step when the error no longer improves
+    return xy
 
 
 EPOCHS_FULL_BELOW = 500  # below this many frames UMAP's own default (500 epochs) is cheap enough
 EPOCHS_LARGE = 200
 
 
-def _umap(matrix: np.ndarray) -> np.ndarray:
+def _umap(matrix: np.ndarray, progress: ProgressFn | None = None) -> np.ndarray:
     """UMAP on PCA-50 unit vectors: NN-descent neighbours, multi-threaded, fewer layout epochs on larger sets.
 
     Measured in docs/scatter-performance.md: same layout quality (trustworthiness), up to ~10x faster.
@@ -143,7 +184,7 @@ def _umap(matrix: np.ndarray) -> np.ndarray:
     """
     n = matrix.shape[0]
     epochs = None if n < EPOCHS_FULL_BELOW else EPOCHS_LARGE
-    return _umap_with(matrix, pca=True, parallel=True, epochs=epochs, approx=True)
+    return _umap_with(matrix, pca=True, parallel=True, epochs=epochs, approx=True, progress=progress)
 
 
 _warm_lock = threading.Lock()
@@ -186,7 +227,8 @@ def _pca_unit(matrix: np.ndarray, dims: int = 50) -> np.ndarray:
 
 
 def _umap_with(
-    matrix: np.ndarray, *, pca: bool, parallel: bool, epochs: int | None = None, approx: bool = False
+    matrix: np.ndarray, *, pca: bool, parallel: bool, epochs: int | None = None, approx: bool = False,
+    progress: ProgressFn | None = None,
 ) -> np.ndarray:
     import umap  # noqa: PLC0415
 
@@ -204,7 +246,16 @@ def _umap_with(
         kw["n_jobs"] = -1  # a fixed random_state would force UMAP onto a single thread
     else:
         kw["random_state"] = 42
-    return umap.UMAP(**kw).fit_transform(data).astype(np.float32)
+    if progress is None:
+        return umap.UMAP(**kw).fit_transform(data).astype(np.float32)
+    # The layout's epoch bar (tqdm) is written to a sink that reports the share done; the other verbose text is swallowed.
+    sink = _ProgressSink("umap", progress)
+    kw["verbose"] = True
+    kw["tqdm_kwds"] = {"file": sink, "mininterval": 0.2, "bar_format": "{n}/{total}"}
+    with contextlib.redirect_stdout(sink):
+        xy = umap.UMAP(**kw).fit_transform(data).astype(np.float32)
+    progress(1.0)
+    return xy
 
 
 def _tsne_with(matrix: np.ndarray, *, pca: bool, jobs: int | None) -> np.ndarray:

@@ -4,6 +4,7 @@ import CardGrid from "../classify/CardGrid";
 import FramePane from "../classify/FramePane";
 import PictureViewer from "../classify/PictureViewer";
 import { PagerSettings } from "../classify/Pager";
+import { isPageSize } from "../classify/gridSizes";
 import { useBrowse } from "../classify/useBrowse";
 
 export interface ValueRow {
@@ -21,7 +22,7 @@ const STORE = "flow.grid"; // the size of this grid is remembered for every page
 function stored(): { per_page: number; cols: number } {
   try {
     const raw = JSON.parse(localStorage.getItem(STORE) ?? "{}");
-    if (OPTIONS.per_page_options.includes(raw.per_page) && OPTIONS.cols_options.includes(raw.cols)) return raw;
+    if (isPageSize(raw.per_page) && OPTIONS.cols_options.includes(raw.cols)) return raw;
   } catch { /* the grid still works without the remembered size */ }
   return { per_page: 24, cols: 4 };
 }

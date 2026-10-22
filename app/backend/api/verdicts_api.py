@@ -1,6 +1,7 @@
 """Project verdicts: summary, paged listing and the user's own decisions (see ``verdicts.py``)."""
 from __future__ import annotations
 
+import grid_sizes
 import db
 import verdicts
 from api.cameras import require_camera
@@ -11,8 +12,8 @@ from pydantic import BaseModel
 router = APIRouter()
 
 
-PER_PAGE_OPTIONS = [12, 24, 48, 96]
-COLS_OPTIONS = [3, 4, 5, 6, 8]
+PER_PAGE_OPTIONS = grid_sizes.all_per_page()  # alone (no column count): any size that is valid for some column count
+COLS_OPTIONS = list(grid_sizes.COLS)
 
 
 def _grid_settings(camera: str) -> dict:
@@ -28,7 +29,7 @@ def _grid_settings(camera: str) -> dict:
     return {
         "per_page": pick("perpage", PER_PAGE_OPTIONS, 24),
         "cols": pick("cols", COLS_OPTIONS, 4),
-        "per_page_options": PER_PAGE_OPTIONS,
+        "per_page_options": grid_sizes.per_page_options(pick("cols", COLS_OPTIONS, 4)),
         "cols_options": COLS_OPTIONS,
     }
 
@@ -41,7 +42,7 @@ class GridBody(BaseModel):
 @router.put("/cameras/{camera}/verdicts/grid-settings")
 def save_grid_settings(camera: str, body: GridBody) -> dict:
     require_camera(camera)
-    if body.per_page not in PER_PAGE_OPTIONS or body.cols not in COLS_OPTIONS:
+    if not grid_sizes.is_valid(body.per_page, body.cols):
         raise HTTPException(status_code=422, detail="Unsupported per_page or cols value.")
     db.set_setting(camera, "verdict.grid.perpage", str(body.per_page))
     db.set_setting(camera, "verdict.grid.cols", str(body.cols))

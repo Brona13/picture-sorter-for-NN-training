@@ -146,7 +146,7 @@ test("uses the saved grid: columns, the pager, and saving a new choice", async (
   expect(screen.getByTestId("verdict-card-a.png").parentElement!.style.gridTemplateColumns).toBe("repeat(5, minmax(0, 1fr))");
   expect(screen.getAllByText(/Page/)[0]).toHaveTextContent("Page 1 of 3");
   await userEvent.selectOptions(screen.getByLabelText("Columns top"), "3");
-  await waitFor(() => expect(calls.find((c) => c.url.includes("/verdicts/grid-settings"))?.body).toEqual({ per_page: 12, cols: 3 }));
+  await waitFor(() => expect(calls.find((c) => c.url.includes("/verdicts/grid-settings"))?.body).toEqual({ per_page: 6, cols: 3 })); // 12 on 5 columns is 2 rows, so 2 rows of 3
 });
 
 test("hover keys decide: 1 = OK, 2 = NG, 0 clears an existing decision", async () => {

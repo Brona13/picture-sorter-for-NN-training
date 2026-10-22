@@ -70,7 +70,7 @@ test("paging is remembered per cluster while the grid size is shared", async () 
   await userEvent.click(screen.getByRole("button", { name: /Cluster 0/ }));
   expect(screen.getByTestId("card-m12.png")).toBeInTheDocument(); // cluster 0 is still on page 2
   await userEvent.selectOptions(screen.getByLabelText("Columns top"), "6");
-  expect(onGrid).toHaveBeenCalledWith(12, 6);
+  expect(onGrid).toHaveBeenCalledWith(24, 6); // the page size follows the columns in whole rows
 });
 
 test("hover shortcuts work on a cluster card: a number labels, Delete deletes", async () => {

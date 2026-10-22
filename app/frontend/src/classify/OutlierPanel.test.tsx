@@ -89,7 +89,7 @@ test("deleting a card fades it in place, reports it, and turning the grid drops 
   expect(within(screen.getByTestId("card-far.png")).getByRole("button", { name: "Restore frame" })).toBeEnabled();
   expect(screen.getByRole("status").textContent).toContain("2 frame(s)");
   // turning the grid (here: the page size) drops it
-  await user.selectOptions(screen.getAllByLabelText("Per page outliers top")[0], "24");
+  await user.selectOptions(screen.getAllByLabelText("Per page outliers top")[0], "32");
   await waitFor(() => expect(screen.queryByText("outlier 0.420")).toBeNull());
   expect(screen.getAllByRole("listitem")).toHaveLength(2);
 });
@@ -102,7 +102,7 @@ test("a card deleted here can be restored in place, and the list takes it back",
   await waitFor(() => expect(screen.getByRole("status").textContent).toContain("3 frame(s)"));
   expect(calls.some((c) => c.url.endsWith("/classify/restore"))).toBe(true);
   expect(screen.getAllByRole("listitem")).toHaveLength(3);
-  await user.selectOptions(screen.getAllByLabelText("Per page outliers top")[0], "24"); // it was restored, so it stays
+  await user.selectOptions(screen.getAllByLabelText("Per page outliers top")[0], "32"); // it was restored, so it stays
   expect(screen.getByTestId("card-far.png")).toBeInTheDocument();
   expect(within(screen.getByTestId("card-far.png")).getByRole("button", { name: "Delete frame" })).toBeEnabled();
 });
