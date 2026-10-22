@@ -246,3 +246,18 @@ test("a detector box shows a dot per target; dots are the ones to drag onto an R
   expect(box.querySelectorAll('[data-handleid^="t:"]')).toHaveLength(2);
   expect(box.querySelector('[data-handleid="t:left hole"]')).not.toBeNull();
 });
+
+test("a Picture edits box has one fixed size and shows icons with a badge, not its step list (v1.89.0)", async () => {
+  current = canvas();
+  current.nodes.push(node({
+    id: "crop:1", kind: "crop", ref: null, label: "Picture edits 1", x: 300, y: 300, role: null, scope: null, classes: [],
+    flow: { steps: [{ op: "crop", rect: null, enabled: true }, { op: "filter", label: "Gaussian blur", enabled: true }, { op: "filter", label: "Median blur", enabled: false }] },
+  }));
+  renderView();
+  const box = await screen.findByTestId("chain-node-crop:1");
+  expect(box).toHaveClass("chain-node-fixed");
+  expect(screen.getByTestId("step-icon-crop")).not.toHaveTextContent(/\d/);
+  expect(screen.getByTestId("step-icon-filter")).toHaveTextContent("2");
+  expect(box).not.toHaveTextContent("Gaussian blur");
+  expect(screen.getByTestId("chain-node-roi:seal")).not.toHaveClass("chain-node-fixed"); // other boxes keep their size until the palette step
+});

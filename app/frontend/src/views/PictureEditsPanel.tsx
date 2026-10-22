@@ -40,30 +40,33 @@ export default function PictureEditsPanel({ edits }: { edits: PictureEdits }) {
     <PanelSection title="Picture edits">
       <p className="muted">
         Each step runs on every picture, top to bottom, before the picture goes on to the next box. Nothing is written to
-        disk. Drag a step by its grip to change the order.
+        disk. Drag a step by its grip to change the order; the switch skips a step without removing it.
       </p>
       {steps.length === 0 && <p className="muted">No steps yet: the picture passes on unchanged.</p>}
-      <ol className="pe-steps" aria-label="Steps" style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 6 }}>
+      <ol className="pe-steps" aria-label="Steps" style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 4 }}>
         {steps.map((s, i) => {
-          const isSelected = s.id === selected;
+          const isOpen = s.id === selected; // only the selected step is open: it is the one the big picture shows
           const follows = !!following && s.id === followId;
+          const on = s.enabled !== false;
+          const name = s.op === "filter" ? (filters[s.name]?.label ?? s.name) : OPS.crop;
           return (
             <li
               key={s.id}
               data-testid={`step-${s.id}`}
-              aria-current={isSelected ? "step" : undefined}
+              aria-current={isOpen ? "step" : undefined}
               onDragOver={(e) => { if (from !== null) { e.preventDefault(); setOver(i); } }}
               onDrop={drop(i)}
               style={{
-                border: `1px solid ${isSelected ? "var(--accent, #2b6cb0)" : "var(--border)"}`,
+                border: `1px solid ${isOpen ? "var(--accent, #2b6cb0)" : "var(--border)"}`,
                 boxShadow: over === i && from !== null && from !== i ? "0 -3px 0 var(--accent, #2b6cb0)" : undefined, // where the dragged step would land
                 borderRadius: 4,
-                padding: 6,
+                padding: "3px 6px",
                 opacity: from === i ? 0.5 : 1,
-                background: isSelected ? "var(--selected-bg, rgba(43,108,176,.08))" : undefined,
+                background: isOpen ? "var(--selected-bg, rgba(43,108,176,.08))" : undefined,
               }}
             >
-              <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }} onClick={() => edits.select(s.id)}>
+              {/* One line: grip, name, expand arrow, on/off. A step that is off stays in its place and is dimmed. */}
+              <div className="pe-step-line" style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "nowrap", cursor: "pointer" }} title={describeEdit(s, filters, follows)} onClick={() => edits.select(s.id)}>
                 <span
                   role="img"
                   aria-label={`Drag step ${i + 1}`}
@@ -76,17 +79,45 @@ export default function PictureEditsPanel({ edits }: { edits: PictureEdits }) {
                 >
                   ⠿
                 </span>
-                <strong>{i + 1}</strong>
-                <select aria-label={`Step ${i + 1} operation`} value={s.op} onChange={(e) => edits.setOp(s.id, e.target.value as "crop" | "filter")}>
-                  {(Object.keys(OPS) as (keyof typeof OPS)[]).map((op) => <option key={op} value={op} disabled={follows && op !== "crop"}>{OPS[op]}</option>)}
-                </select>
-                <span style={{ marginLeft: "auto", display: "inline-flex", gap: 2 }}>
-                  <button type="button" aria-label={`Move step ${i + 1} up`} disabled={i === 0} onClick={(e) => { e.stopPropagation(); edits.moveStep(i, i - 1); }}>▲</button>
-                  <button type="button" aria-label={`Move step ${i + 1} down`} disabled={i === steps.length - 1} onClick={(e) => { e.stopPropagation(); edits.moveStep(i, i + 1); }}>▼</button>
-                  <button type="button" aria-label={`Remove step ${i + 1}`} disabled={follows} title={follows ? "Disconnect the line from the detector first" : undefined} onClick={(e) => { e.stopPropagation(); edits.removeStep(s.id); }}>✕</button>
+                <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", opacity: on ? 1 : 0.45, textDecoration: on ? undefined : "line-through" }}>
+                  <strong>{i + 1}</strong> {name}
                 </span>
+                <button
+                  type="button"
+                  aria-label={isOpen ? `Step ${i + 1} is open` : `Open step ${i + 1}`}
+                  aria-expanded={isOpen}
+                  onClick={(e) => { e.stopPropagation(); edits.select(s.id); }}
+                  style={{ padding: "0 4px" }}
+                >
+                  {isOpen ? "▾" : "▸"}
+                </button>
+                <input
+                  type="checkbox"
+                  role="switch"
+                  aria-label={`Step ${i + 1} on`}
+                  title={follows ? "This step follows the target: disconnect the line from the detector to switch it off" : on ? "On: click to skip this step" : "Off: click to use this step again"}
+                  checked={on}
+                  disabled={follows}
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={(e) => edits.setEnabled(s.id, e.target.checked)}
+                />
               </div>
-              {isSelected ? <StepBody step={s} edits={edits} follows={follows} detail={detail} /> : <p className="muted" style={{ margin: "4px 0 0" }}>{describeEdit(s, filters, follows)}</p>}
+              {isOpen && (
+                <div style={{ marginTop: 6 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <select aria-label={`Step ${i + 1} operation`} value={s.op} onChange={(e) => edits.setOp(s.id, e.target.value as "crop" | "filter")}>
+                      {(Object.keys(OPS) as (keyof typeof OPS)[]).map((op) => <option key={op} value={op} disabled={follows && op !== "crop"}>{OPS[op]}</option>)}
+                    </select>
+                    <span style={{ marginLeft: "auto", display: "inline-flex", gap: 2 }}>
+                      <button type="button" aria-label={`Move step ${i + 1} up`} disabled={i === 0} onClick={() => edits.moveStep(i, i - 1)}>▲</button>
+                      <button type="button" aria-label={`Move step ${i + 1} down`} disabled={i === steps.length - 1} onClick={() => edits.moveStep(i, i + 1)}>▼</button>
+                      <button type="button" aria-label={`Remove step ${i + 1}`} disabled={follows} title={follows ? "Disconnect the line from the detector first" : undefined} onClick={() => edits.removeStep(s.id)}>✕</button>
+                    </span>
+                  </div>
+                  {!on && <p className="muted" style={{ margin: "4px 0 0" }}>This step is off: the picture passes it unchanged. You can still change it and switch it on again.</p>}
+                  <StepBody step={s} edits={edits} follows={follows} detail={detail} />
+                </div>
+              )}
             </li>
           );
         })}

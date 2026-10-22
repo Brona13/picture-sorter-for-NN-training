@@ -211,8 +211,8 @@ def _flow_nodes(camera: str, graph: dict, stored: dict) -> list[dict]:
         if kind == "crop":
             fid = flow.follow_step_id(graph, node_id)
             steps = [
-                {"op": "filter", "label": preprocess.FILTERS[st["name"]]["label"]} if st["op"] == "filter"
-                else {"op": "crop", "rect": None if st["id"] == fid else st.get("rect"), "follows": st["id"] == fid}
+                {"op": "filter", "label": preprocess.FILTERS[st["name"]]["label"], "enabled": st.get("enabled") is not False} if st["op"] == "filter"
+                else {"op": "crop", "rect": None if st["id"] == fid else st.get("rect"), "follows": st["id"] == fid, "enabled": st.get("enabled") is not False}
                 for st in flow.crop_steps(node)
             ]
             summary = {"steps": steps, "follow": flow.follow_of(graph, node_id)}

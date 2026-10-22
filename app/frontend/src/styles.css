@@ -328,3 +328,11 @@ button[aria-pressed="true"] { background: var(--info-bg); color: var(--info-fg);
 .line-confirm p { margin: 0 0 4px; }
 .line-confirm ul { margin: 0; padding-left: 18px; }
 .line-confirm-buttons { display: flex; gap: 8px; margin-top: 6px; }
+
+/* Picture edits box: one fixed size, icons instead of a step list (v1.89.0). */
+.chain-node-fixed { box-sizing: border-box; width: 200px; height: 86px; overflow: hidden; }
+.chain-node-fixed .chain-node-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chain-step-icons { display: flex; gap: 14px; margin-top: 6px; }
+.chain-step-icon { position: relative; display: inline-flex; color: hsl(var(--hue) 55% 38%); }
+.chain-step-icon.off { opacity: 0.35; }
+.chain-step-badge { position: absolute; top: -6px; right: -9px; min-width: 15px; padding: 0 3px; border-radius: 8px; background: hsl(var(--hue) 55% 38%); color: #fff; font-size: 10px; line-height: 15px; text-align: center; }

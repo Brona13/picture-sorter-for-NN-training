@@ -17,6 +17,7 @@ import { useNavigate } from "react-router-dom";
 import { api, ChainCanvas, ChainDeletePreview, ChainEdge, ChainNode, ChainViewport, FlowDeletePreview } from "../api";
 import { INGEST_ID, classifyFollows, targetHandle, targetOfHandle, connectAction, describeNode, disconnectAction, flowConnect, freshName, isAnchorEdge, isRoiInputEdge, isFlowKind, layoutOf, productHandle } from "../chain/chainModel";
 import LineConfirm from "../chain/LineConfirm";
+import StepIcons from "../chain/StepIcons";
 import { deleteNote, disconnectError, replaceNote, scopeNote, type LineNote } from "../chain/lineEffects";
 import { useSharedFeature } from "../SharedFeature";
 import SidePanel from "../SidePanel";
@@ -42,9 +43,11 @@ function Box({ data, selected }: NodeProps<BoxNode>) {
     else setDraft(node.label);
   };
   const isClassify = node.kind === "classify";
+  const isEdits = node.kind === "crop"; // a Picture edits box has one fixed size and shows icons, not its step list
   return (
     <div
-      className={`chain-node${selected ? " selected" : ""}`}
+      className={`chain-node${isEdits ? " chain-node-fixed" : ""}${selected ? " selected" : ""}`}
+      title={isEdits ? describeNode(node) : undefined}
       style={{ ["--hue" as string]: hueOf(node) }}
       data-testid={`chain-node-${node.id}`}
     >
@@ -68,7 +71,7 @@ function Box({ data, selected }: NodeProps<BoxNode>) {
           node.label
         )}
       </div>
-      <div className="chain-node-sub">{describeNode(node)}</div>
+      {isEdits ? <StepIcons steps={node.flow?.steps} /> : <div className="chain-node-sub">{describeNode(node)}</div>}
       {isClassify &&
         node.classes.map((product) => (
           <div className="chain-node-product" key={product}>

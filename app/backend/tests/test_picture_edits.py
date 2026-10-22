@@ -137,6 +137,38 @@ class PictureEditsTests(ApiTestCase):
         self.assertEqual(sigs[1], sigs[3])  # the same steps, the same signature
         self.assertEqual(flow.input_rects(flow.load_graph(CAM), det)[0], RECT)
 
+    def test_a_step_switched_off_keeps_its_place_and_is_skipped(self) -> None:
+        node = self.node()
+        r = self.steps(node, [self.GAUSS, {**self.CROP, "enabled": False}])
+        stored = r.json()["steps"]
+        self.assertEqual([s.get("enabled") for s in stored], [None, False])  # stored only when off
+        self.assertTrue(np.array_equal(self.picture(node, stage="output"), preprocess.apply(self.src, "gaussian", {"sigma": 2.0})))
+        self.assertEqual(len(self.detail(node)["steps"]), 2)  # still in the list, in the same place
+        off_filter = self.steps(node, [{**self.GAUSS, "enabled": False}, self.CROP]).json()["steps"]
+        self.assertTrue(np.array_equal(self.picture(node, stage="output"), self._cut(self.src)))
+        self.assertIs(off_filter[0]["enabled"], False)
+        back = self.steps(node, [{**s, "enabled": True} for s in off_filter]).json()["steps"]
+        self.assertTrue(all("enabled" not in s for s in back))  # on again: stored as before
+        self.assertTrue(np.array_equal(self.picture(node, stage="output"), self._cut(preprocess.apply(self.src, "gaussian", {"sigma": 2.0}))))
+
+    def test_switching_a_step_off_or_on_changes_the_signature_of_a_detector_behind(self) -> None:
+        box, det = self.node(), self.node("detector")
+        self.client.post(f"{self.base}/edges", json={"source": box, "target": det})
+        sigs = []
+        for steps in ([self.GAUSS, self.CROP], [{**self.GAUSS, "enabled": False}, self.CROP], [self.GAUSS, self.CROP]):
+            self.steps(box, steps)
+            sigs.append(flow.signature(flow.load_graph(CAM), det))
+        self.assertNotEqual(sigs[0], sigs[1])
+        self.assertEqual(sigs[0], sigs[2])
+        # a step that was never on or off before keeps the signature boxes made earlier had
+        self.assertEqual(flow.clean_steps([self.GAUSS])[0].keys(), {"id", "op", "name", "params"})
+
+    def test_the_chain_summary_tells_which_steps_are_off(self) -> None:
+        node = self.node()
+        self.steps(node, [self.GAUSS, {**self.CROP, "enabled": False}])
+        summary = next(n for n in self.client.get(f"/api/cameras/{CAM}/chain").json()["nodes"] if n["id"] == node)["flow"]["steps"]
+        self.assertEqual([s["enabled"] for s in summary], [True, False])
+
     def test_a_filter_does_not_move_anything(self) -> None:
         box, det = self.node(), self.node("detector")
         self.client.post(f"{self.base}/edges", json={"source": box, "target": det})

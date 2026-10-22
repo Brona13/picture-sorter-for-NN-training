@@ -47,6 +47,8 @@ export interface PictureEdits {
   removeStep: (id: string) => void;
   moveStep: (from: number, to: number) => void;
   setOp: (id: string, op: "crop" | "filter") => void;
+  /** Switch a step off (it keeps its place and is skipped) or on. The server stores the flag only while it is off. */
+  setEnabled: (id: string, on: boolean) => void;
   setRect: (id: string, rect: [number, number, number, number] | null) => void;
   setFilter: (id: string, name: string) => void;
   setParam: (id: string, key: string, value: number | string) => void;
@@ -167,6 +169,11 @@ export function usePictureEdits(
       const first = Object.keys(filters)[0];
       commit(steps.map((s) => (s.id === id ? (op === "crop" ? { id, op: "crop", rect: null } : filterStep(id, first ?? "gaussian", filters)) : s)));
     },
+    setEnabled: (id, on) =>
+      patch(id, (s) => {
+        const { enabled: _was, ...rest } = s;
+        return (on ? rest : { ...rest, enabled: false }) as FlowEdit;
+      }),
     setRect: (id, rect) => patch(id, (s) => (s.op === "crop" ? { ...s, rect } : s)),
     setFilter: (id, name) => patch(id, (s) => (s.op === "filter" ? filterStep(id, name, filters) : s)),
     setParam: (id, key, value) => patch(id, (s) => (s.op === "filter" ? { ...s, params: { ...s.params, [key]: value } } : s), SAVE_DELAY),

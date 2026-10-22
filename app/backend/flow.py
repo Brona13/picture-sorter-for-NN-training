@@ -204,7 +204,9 @@ def _resolved(graph: dict, node_id: str) -> list[tuple[str, object]]:
     fid = follow_step_id(graph, node_id)
     out: list[tuple[str, object]] = []
     for s in crop_steps(node):
-        if s["op"] == "filter":
+        if s.get("enabled") is False:
+            out.append((s["id"], None))  # switched off: the step keeps its place and is skipped when processing (v1.89.0)
+        elif s["op"] == "filter":
             out.append((s["id"], {"filter": {"name": s["name"], "params": dict(s.get("params") or {})}}))
         elif follow and s["id"] == fid:
             spec = node.get("follow") or {}
@@ -381,7 +383,8 @@ def picture(camera: str, node_id: str, frame: str, stage: str = "input", straigh
 
 def clean_steps(raw: object, following: bool = False) -> list[dict]:
     """The steps of a Picture Edits box from a request: a list of ``{"op": "crop", "rect": [x, y, w, h] | None}`` and
-    ``{"op": "filter", "name": ..., "params": {...}}``, in the order they run. Ids are kept (or given); a filter's
+    ``{"op": "filter", "name": ..., "params": {...}}``, in the order they run; ``"enabled": false`` switches a step off
+    (it keeps its place and is skipped). Ids are kept (or given); a filter's
     parameters are checked against the filter catalogue and completed with its defaults. A box fed by a detector target
     keeps at least one crop step: the first one follows the target."""
     if not isinstance(raw, (list, tuple)):
@@ -395,12 +398,13 @@ def clean_steps(raw: object, following: bool = False) -> list[dict]:
         sid = item.get("id")
         if not isinstance(sid, str) or not sid or len(sid) > 20 or any(o["id"] == sid for o in out):
             sid = new_step_id(out + [{"id": i["id"]} for i in raw if isinstance(i, dict) and isinstance(i.get("id"), str)])
+        off = {"enabled": False} if item.get("enabled") is False else {}  # stored only when off, so boxes made before keep their signature
         if item["op"] == "crop":
-            out.append({"id": sid, "op": "crop", "rect": clean_rect(item.get("rect"))})
+            out.append({"id": sid, "op": "crop", "rect": clean_rect(item.get("rect")), **off})
             continue
         try:
             name = item.get("name")
-            out.append({"id": sid, "op": "filter", "name": name, "params": preprocess.normalize(name, item.get("params"))})
+            out.append({"id": sid, "op": "filter", "name": name, "params": preprocess.normalize(name, item.get("params")), **off})
         except preprocess.FilterError as exc:
             raise FlowError(str(exc)) from exc
     if following and not any(s["op"] == "crop" for s in out):
