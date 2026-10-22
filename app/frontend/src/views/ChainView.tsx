@@ -14,8 +14,10 @@ import {
 } from "@xyflow/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api, ChainCanvas, ChainDeletePreview, ChainNode, ChainViewport, FlowDeletePreview } from "../api";
+import { api, ChainCanvas, ChainDeletePreview, ChainEdge, ChainNode, ChainViewport, FlowDeletePreview } from "../api";
 import { INGEST_ID, classifyFollows, targetHandle, targetOfHandle, connectAction, describeNode, disconnectAction, flowConnect, freshName, isAnchorEdge, isRoiInputEdge, isFlowKind, layoutOf, productHandle } from "../chain/chainModel";
+import LineConfirm from "../chain/LineConfirm";
+import { deleteNote, disconnectError, replaceNote, scopeNote, type LineNote } from "../chain/lineEffects";
 import { useSharedFeature } from "../SharedFeature";
 import SidePanel from "../SidePanel";
 
@@ -122,6 +124,8 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
   const [productNames, setProductNames] = useState("");
   const [preview, setPreview] = useState<ChainDeletePreview | null>(null);
   const [flowPreview, setFlowPreview] = useState<FlowDeletePreview | null>(null);
+  // A line change waiting for Enter (do it) or Esc (leave everything as it is).
+  const [lineDialog, setLineDialog] = useState<{ notes: LineNote[]; confirmLabel: string; run: () => void } | null>(null);
   const viewport = useRef<ChainViewport | null>(null);
   const nodesRef = useRef<BoxNode[]>([]);
   nodesRef.current = nodes;
@@ -202,15 +206,70 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
     if (!canvas) return;
     const link = { source: c.source, sourceHandle: c.sourceHandle, target: c.target };
     const flowArrow = flowConnect(canvas, link);
-    if (flowArrow === null) void apply(connectAction(canvas, link));
-    else if ("error" in flowArrow) setError(flowArrow.error);
-    else if ("roiInput" in flowArrow) {
+    const target = canvas.nodes.find((n) => n.id === c.target);
+    let run: () => void;
+    let note: LineNote | null = null;
+    if (flowArrow === null) {
+      run = () => void apply(connectAction(canvas, link));
+      note = scopeNote(canvas, link);
+    } else if ("error" in flowArrow) {
+      setError(flowArrow.error);
+      return;
+    } else if ("roiInput" in flowArrow) {
       const a = flowArrow.roiInput; // a Picture edits box dropped on an ROI: the ROI is cut from that box's picture
-      void applyFlow(() => api.setRoiInput(camera, a.feature, a.box));
+      // An ROI is anchored or reads a box, never both: a taken input is cleared first, after the confirmation.
+      run = () => void applyFlow(async () => {
+        if (target?.anchor) await api.clearRoiAnchor(camera, a.feature);
+        await api.setRoiInput(camera, a.feature, a.box);
+      });
+      note = replaceNote(canvas, link, flowArrow);
     } else if ("anchor" in flowArrow) {
       const a = flowArrow.anchor; // the dot of a detector target dropped on an ROI: the ROI becomes that box
-      void applyFlow(() => api.setRoiAnchor(camera, a.feature, { detector: a.detector, target: a.target, mode: "box" }));
-    } else void applyFlow(() => api.flowConnect(camera, flowArrow.source, flowArrow.target, flowArrow.point));
+      run = () => void applyFlow(async () => {
+        if (target?.input) await api.clearRoiInput(camera, a.feature);
+        await api.setRoiAnchor(camera, a.feature, { detector: a.detector, target: a.target, mode: "box" });
+      });
+      note = replaceNote(canvas, link, flowArrow);
+    } else {
+      run = () => void applyFlow(() => api.flowConnect(camera, flowArrow.source, flowArrow.target, flowArrow.point));
+      note = replaceNote(canvas, link, flowArrow);
+    }
+    // An output feeds any number of boxes. Only a taken single-source input asks first; Cancel leaves the old line alone.
+    if (note) setLineDialog({ notes: [note], confirmLabel: "Replace", run });
+    else run();
+  };
+
+  /** Removes one line, whatever it stands for (an ROI's input or anchor, a product line, a flow line). */
+  const removeEdge = (edge: ChainEdge) => {
+    if (!canvas) return;
+    const targetNode = canvas.nodes.find((n) => n.id === edge.target);
+    const ends = [edge.source, edge.target].map((id) => canvas.nodes.find((n) => n.id === id)?.kind);
+    if (isRoiInputEdge(canvas, edge)) void api.clearRoiInput(camera, targetNode!.ref!).then(() => reload()).catch(fail);
+    else if (isAnchorEdge(canvas, edge)) void api.clearRoiAnchor(camera, targetNode!.ref!).then(() => reload()).catch(fail);
+    else if (ends.some((k) => isFlowKind(k))) void applyFlow(() => api.flowDisconnect(camera, edge.source, edge.target, targetOfHandle(edge.source_handle) ?? undefined));
+    else void apply(disconnectAction(canvas, edge));
+  };
+
+  /** Delete pressed on selected lines: say what changes first. Nothing is removed until Enter. */
+  const requestLineDelete = (gone: Edge[]) => {
+    if (!canvas) return;
+    const edges = gone.map((e) => canvas.edges.find((x) => x.id === e.id)).filter((e): e is ChainEdge => !!e && !e.locked);
+    const blocked = edges.map((e) => disconnectError(canvas, e)).find((r) => r);
+    if (blocked) {
+      setError(blocked);
+      return;
+    }
+    const notes = edges.map((e) => deleteNote(canvas, e)).filter((n): n is LineNote => !!n);
+    if (!notes.length) return;
+    setError(null);
+    setLineDialog({
+      notes,
+      confirmLabel: notes.length > 1 ? `Delete ${notes.length} lines` : "Delete line",
+      run: () => {
+        setSelectedEdgeId(null);
+        for (const e of edges) removeEdge(e);
+      },
+    });
   };
 
   const isValidConnection = (c: Connection | Edge) => {
@@ -336,7 +395,7 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
         </form>
       )}
       <h3>Selected box</h3>
-      {!selectedLive && <p className="muted">Click a box. Double-click its name to rename it. Drag from a handle to draw an arrow; click an arrow and press Delete to remove it.</p>}
+      {!selectedLive && <p className="muted">Click a box. Double-click its name to rename it. Drag from a handle to draw an arrow; click an arrow and press Delete to remove it (Enter confirms, Esc cancels).</p>}
       {selectedLive?.kind === "classify" && (
         <p className="muted">
           {selectedLive.role === "classify"
@@ -416,6 +475,18 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
   return (
     <SidePanel panel={panel}>
       {error && <p role="alert">{error}</p>}
+      {lineDialog && (
+        <LineConfirm
+          notes={lineDialog.notes}
+          confirmLabel={lineDialog.confirmLabel}
+          onConfirm={() => {
+            const run = lineDialog.run;
+            setLineDialog(null);
+            run();
+          }}
+          onCancel={() => setLineDialog(null)}
+        />
+      )}
       {!canvas && !error && <p className="muted">Loading…</p>}
       {canvas && (
         <div className="chain-canvas" data-testid="chain-canvas">
@@ -447,20 +518,9 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
             }}
             onBeforeDelete={async ({ nodes: doomed, edges: doomedEdges }) => {
               const box = doomed.find((n) => n.id !== INGEST_ID);
-              if (box) requestDelete(box.id);
-              return { nodes: [], edges: box ? [] : doomedEdges }; // a box is deleted by its own confirmation, not its arrows here
-            }}
-            onEdgesDelete={(gone) => {
-              setSelectedEdgeId(null);
-              if (canvas) for (const e of gone) {
-                const edge = canvas.edges.find((x) => x.id === e.id);
-                if (!edge) continue;
-                const ends = [edge.source, edge.target].map((id) => canvas.nodes.find((n) => n.id === id)?.kind);
-                if (isRoiInputEdge(canvas, edge)) void api.clearRoiInput(camera, canvas.nodes.find((n) => n.id === edge.target)!.ref!).then(() => reload()).catch(fail);
-                else if (isAnchorEdge(canvas, edge)) void api.clearRoiAnchor(camera, canvas.nodes.find((n) => n.id === edge.target)!.ref!).then(() => reload()).catch(fail);
-                else if (ends.some((k) => isFlowKind(k))) void applyFlow(() => api.flowDisconnect(camera, edge.source, edge.target, targetOfHandle(edge.source_handle) ?? undefined));
-                else void apply(disconnectAction(canvas, edge));
-              }
+              if (box) requestDelete(box.id); // a box is deleted by its own confirmation, not its arrows here
+              else if (doomedEdges.length) requestLineDelete(doomedEdges);
+              return { nodes: [], edges: [] }; // a line goes only after Enter in the overlay
             }}
             proOptions={{ hideAttribution: true }}
           >

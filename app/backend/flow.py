@@ -37,7 +37,7 @@ INGEST_ID = "ingest"
 KINDS = ("crop", "detector", "calc", "evaluation")
 PREFIX = {"crop": "crop", "detector": "det", "calc": "calc", "evaluation": "eval"}
 KIND_OF = {v: k for k, v in PREFIX.items()}
-PICTURE_KINDS = ("crop", "detector")  # boxes that read a picture: always connected to something
+PICTURE_KINDS = ("crop", "detector")  # boxes that read a picture (a box with no line reads the whole picture)
 ALGORITHM = 1  # bump when detection changes, so stored boxes are recomputed
 OPERATIONS = {
     "angle": "Angle A to B",
@@ -484,10 +484,9 @@ def create_node(camera: str, kind: str) -> str:
     while f"{PREFIX[kind]}:{n}" in graph["nodes"]:
         n += 1
     node_id = f"{PREFIX[kind]}:{n}"
-    first = not graph["nodes"]
     graph["nodes"][node_id] = {"kind": kind, **_default_config(kind)}
-    if kind in PICTURE_KINDS and first:
-        graph["edges"].append({"source": INGEST_ID, "target": node_id})  # only the first box joins Ingest by itself
+    # No line is drawn for a new box (v1.88.0): every connection is made by the user. A picture box with no line
+    # reads the whole picture, like one fed by Ingest.
     save_graph(camera, graph)
     return node_id
 

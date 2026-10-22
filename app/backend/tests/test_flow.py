@@ -73,15 +73,17 @@ class FlowTests(ApiTestCase):
         self.post("/edges", {"source": calc, "target": tol})
         return d1, d2, calc, tol
 
-    def test_first_detector_reads_ingest_and_appears_on_the_canvas(self) -> None:
-        node = self.node("detector")
+    def test_first_detector_appears_on_the_canvas_without_a_line(self) -> None:
+        node = self.node("detector")  # v1.88.0: no automatic line, not even for the first box
         canvas = self.client.get(f"/api/cameras/{CAM}/chain").json()
         self.assertIn(node, [n["id"] for n in canvas["nodes"]])
-        self.assertIn(("ingest", node), {(e["source"], e["target"]) for e in canvas["edges"]})
+        self.assertNotIn(node, [e["target"] for e in canvas["edges"]])
+        self.assertEqual(flow.load_graph(CAM)["edges"], [])
 
-    def test_later_boxes_get_no_arrow_and_a_calculate_placed_first_none(self) -> None:
-        calc = self.node("calc")  # first: Calculate cannot follow Ingest
+    def test_no_box_gets_an_arrow_by_itself(self) -> None:
+        calc = self.node("calc")
         det, other = self.node("detector"), self.node("detector")
+        crop = self.node("crop")
         self.assertEqual(flow.load_graph(CAM)["edges"], [])
         self.assertEqual(flow.parent_of(flow.load_graph(CAM), det), None)
         self.assertEqual(other, "det:2")
@@ -89,6 +91,7 @@ class FlowTests(ApiTestCase):
 
     def test_an_ingest_arrow_can_be_removed(self) -> None:
         det = self.node("detector")
+        self.post("/edges", {"source": "ingest", "target": det})
         self.post("/edges/remove", {"source": "ingest", "target": det}, status=200)
         self.assertEqual(flow.load_graph(CAM)["edges"], [])
         canvas = self.client.get(f"/api/cameras/{CAM}/chain").json()
@@ -655,9 +658,9 @@ class FlowTests(ApiTestCase):
         self.put(f"/nodes/{crop}", {"rect": [x / width, y / height, w / width, h / height]})
         return crop, width, height
 
-    def test_crop_arrows_are_typed_and_only_the_first_box_reads_ingest(self) -> None:
+    def test_crop_arrows_are_typed_and_no_box_reads_ingest_by_itself(self) -> None:
         crop, other, det = self.node("crop"), self.node("crop"), self.node("detector")
-        self.assertIn({"source": "ingest", "target": crop}, flow.load_graph(CAM)["edges"])
+        self.assertNotIn({"source": "ingest", "target": crop}, flow.load_graph(CAM)["edges"])
         self.assertEqual(flow.parent_of(flow.load_graph(CAM), other), None)
         self.post("/edges", {"source": crop, "target": other})
         self.post("/edges", {"source": other, "target": det})

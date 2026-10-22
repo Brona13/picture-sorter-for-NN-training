@@ -321,3 +321,10 @@ button[aria-pressed="true"] { background: var(--info-bg); color: var(--info-fg);
 .chain-node .react-flow__handle.connectingto:not(.valid) { background: #c0392b; }
 
 .chain-canvas .react-flow__edge.selected .react-flow__edge-path { stroke: #2e6fd8; stroke-width: 3; }
+
+/* Confirmation before a line is deleted or replaced on the Chain (v1.88.0). */
+.line-confirm-backdrop { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.35); }
+.line-confirm { max-width: 480px; padding: 14px 16px; border-radius: var(--radius); background: var(--danger-bg); color: var(--danger-fg); box-shadow: 0 6px 24px rgba(0, 0, 0, 0.3); display: flex; flex-direction: column; gap: 8px; }
+.line-confirm p { margin: 0 0 4px; }
+.line-confirm ul { margin: 0; padding-left: 18px; }
+.line-confirm-buttons { display: flex; gap: 8px; margin-top: 6px; }
