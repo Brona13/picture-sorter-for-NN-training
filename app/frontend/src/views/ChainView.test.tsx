@@ -16,16 +16,12 @@ const canvas = (over: Record<string, unknown> = {}) => ({
   viewport: null,
   nodes: [
     node({ id: "ingest", kind: "ingest", ref: null, label: "Ingest", role: null, scope: null }),
-    node({ id: "roi:type", ref: "type", label: "type", x: 280, role: "classify", scope: "classify", classes: ["A", "B"] }),
-    node({ id: "classify:type", kind: "classify", ref: "type", label: "Classify", x: 560, role: "classify", scope: null, classes: ["A", "B"], labeled: 3, unlabeled: 1, product_counts: { A: 2, B: 1 } }),
-    node({ id: "classify:seal", kind: "classify", ref: "seal", label: "Classify", x: 1120, role: "quality", scope: null, classes: ["OK", "NG"], frames: 4, labeled: 3, unlabeled: 1, product_counts: { OK: 2, NG: 1 } }),
-    node({ id: "roi:seal", ref: "seal", label: "seal", x: 840, scope: "products", products: ["A"] }),
+    node({ id: "roi:type", ref: "type", label: "type", x: 280, role: "classify", mode: "product", scope: "classify", classes: ["A", "B"], labeled: 3, unlabeled: 1, deleted: 2, product_counts: { A: 2, B: 1 } }),
+    node({ id: "roi:seal", ref: "seal", label: "seal", x: 840, mode: "feature", scope: "products", products: ["A"], classes: ["OK", "NG"], labeled: 3, unlabeled: 1, product_counts: { OK: 2, NG: 1 }, evaluation: null }),
   ],
   edges: [
     { id: "e1", source: "ingest", source_handle: null, target: "roi:type", locked: false },
-    { id: "e1b", source: "roi:type", source_handle: null, target: "classify:type", locked: true },
-    { id: "e3", source: "roi:seal", source_handle: null, target: "classify:seal", locked: true },
-    { id: "e2", source: "classify:type", source_handle: "p:A", target: "roi:seal", locked: false },
+    { id: "e2", source: "roi:type", source_handle: "p:A", target: "roi:seal", locked: false },
   ],
   ...over,
 });
@@ -59,15 +55,17 @@ afterEach(() => vi.unstubAllGlobals());
 const renderView = (onOpenRoi?: (feature: string, view: "roi" | "classify") => void) =>
   render(<MemoryRouter><ChainView camera="camA" onOpenRoi={onOpenRoi} /></MemoryRouter>);
 
-test("draws a box for Ingest, each ROI and the Classify box with the product counts", async () => {
+test("draws a box for Ingest and one Classifier per ROI with its class counts, the all dot and the counters", async () => {
   renderView();
   expect(await screen.findByTestId("chain-node-ingest")).toBeInTheDocument();
-  const classify = screen.getByTestId("chain-node-classify:type");
-  expect(classify).toHaveTextContent("A: 2");
-  expect(classify).toHaveTextContent("B: 1");
-  expect(classify).toHaveTextContent("1 not labeled yet");
-  expect(screen.getByTestId("chain-node-roi:type")).not.toHaveTextContent("A: 2");
-  expect(screen.getByTestId("chain-node-roi:seal")).toHaveTextContent("A · 1/4 labeled");
+  const product = screen.getByTestId("chain-node-roi:type");
+  expect(product).toHaveTextContent("A2");
+  expect(product).toHaveTextContent("B1");
+  expect(product).toHaveTextContent("all3");
+  expect(product.querySelector(".chain-node-counters")).toHaveTextContent("● 3○ 1🗑 2");
+  expect(product).toHaveTextContent("Product · 3/4 labeled");
+  expect(screen.getByTestId("chain-node-roi:seal")).toHaveTextContent("Feature · A · 3/4 labeled");
+  expect(screen.queryByTestId("chain-node-classify:type")).not.toBeInTheDocument();
 });
 
 test("deleting a box first shows what would be lost, and only then deletes", async () => {
@@ -93,54 +91,52 @@ test("Keep it closes the confirmation without deleting", async () => {
   expect(calls.some((c) => c.method === "DELETE")).toBe(false);
 });
 
-test("a feature ROI has its own Classify box with its classes, and no product handles", async () => {
-  const onOpenRoi = vi.fn();
-  renderView(onOpenRoi);
-  const box = await screen.findByTestId("chain-node-classify:seal");
-  expect(box).toHaveTextContent("OK: 2");
-  expect(box).toHaveTextContent("NG: 1");
-  expect(box).toHaveTextContent("1 not labeled yet");
-  expect(box.querySelectorAll('[data-handleid^="p:"]')).toHaveLength(0);
-  expect(screen.getByTestId("chain-node-classify:type").querySelectorAll('[data-handleid^="p:"]')).toHaveLength(2);
-  fireEvent.click(box);
-  expect(screen.getByText(/Label this ROI's pictures here \(OK \/ NG\)/)).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Classify" }));
-  expect(onOpenRoi).toHaveBeenLastCalledWith("seal", "classify");
-  expect(screen.queryByRole("button", { name: /Delete…/ })).not.toBeInTheDocument();
-});
-
-test("the Classify box opens the Classify page and cannot be deleted on its own", async () => {
+test("every Classifier has one dot per class and the all dot, and no other output dot", async () => {
   renderView();
-  fireEvent.click(await screen.findByTestId("chain-node-classify:type"));
-  expect(screen.getByRole("button", { name: "Classify" })).toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: /Delete…/ })).not.toBeInTheDocument();
+  const product = await screen.findByTestId("chain-node-roi:type");
+  expect([...product.querySelectorAll(".source")].map((h) => h.getAttribute("data-handleid"))).toEqual(["p:A", "p:B", "all"]);
+  const feature = screen.getByTestId("chain-node-roi:seal");
+  expect([...feature.querySelectorAll(".source")].map((h) => h.getAttribute("data-handleid"))).toEqual(["p:OK", "p:NG", "all"]);
+  expect(product.querySelectorAll(".chain-node-class")[0]).toHaveTextContent("A");
 });
 
-test("ROI editor and Classify hand the ROI and the page to the app, which sets the product scope", async () => {
+test("a Classifier opens the ROI editor and the Classify page, and a feature Classifier can be deleted", async () => {
   const onOpenRoi = vi.fn();
   renderView(onOpenRoi);
-  fireEvent.click(await screen.findByTestId("chain-node-classify:type"));
+  fireEvent.click(await screen.findByTestId("chain-node-roi:type"));
   fireEvent.click(screen.getByRole("button", { name: "Classify" }));
   expect(onOpenRoi).toHaveBeenLastCalledWith("type", "classify");
   fireEvent.click(screen.getByTestId("chain-node-roi:seal"));
   fireEvent.click(screen.getByRole("button", { name: "ROI editor" }));
   expect(onOpenRoi).toHaveBeenLastCalledWith("seal", "roi");
-  fireEvent.click(screen.getByRole("button", { name: "Classify" })); // an ROI box has both
-  expect(onOpenRoi).toHaveBeenLastCalledWith("seal", "classify");
+  expect(screen.getByRole("button", { name: /Delete…/ })).toBeInTheDocument();
 });
 
-test("every ROI box, the product ROI too, offers both ROI editor and Classify; the Classify box only Classify; Ingest only Ingest", async () => {
+test("every Classifier offers ROI editor and Classify; Ingest only Ingest", async () => {
   renderView(vi.fn());
   for (const [id, wanted, absent] of [
     ["roi:type", ["ROI editor", "Classify"], ["Ingest"]],
     ["roi:seal", ["ROI editor", "Classify"], ["Ingest"]],
-    ["classify:seal", ["Classify"], ["ROI editor", "Ingest"]],
     ["ingest", ["Ingest"], ["ROI editor", "Classify"]],
   ] as [string, string[], string[]][]) {
     fireEvent.click(await screen.findByTestId(`chain-node-${id}`));
     for (const name of wanted) expect(screen.getByRole("button", { name })).toBeInTheDocument();
     for (const name of absent) expect(screen.queryByRole("button", { name })).not.toBeInTheDocument();
   }
+});
+
+test("the Evaluation of a Classifier is picked in its panel and cleared with None", async () => {
+  const user = userEvent.setup();
+  current = canvas();
+  current.nodes.push(node({ id: "eval:1", kind: "evaluation", ref: null, label: "Evaluation 1", x: 600, y: 300, role: null, scope: null, classes: [], flow: { nominal: 1, tolerance: 1 } }));
+  renderView();
+  fireEvent.click(await screen.findByTestId("chain-node-roi:seal"));
+  const pick = screen.getByRole("combobox", { name: "Evaluation" });
+  expect(pick).toHaveValue("");
+  await user.selectOptions(pick, "eval:1");
+  await waitFor(() => expect(calls.some((c) => c.method === "PUT" && c.url.endsWith("/chain/seal/evaluation") && c.body.box === "eval:1")).toBe(true));
+  await user.selectOptions(screen.getByRole("combobox", { name: "Evaluation" }), "");
+  await waitFor(() => expect(calls.some((c) => c.method === "PUT" && c.url.endsWith("/chain/seal/evaluation") && c.body.box === null)).toBe(true));
 });
 
 test("Ingest has no Delete button", async () => {
@@ -155,7 +151,7 @@ test("the ROI feature tile creates a real ROI with a free name", async () => {
   const user = userEvent.setup();
   renderView();
   await screen.findByTestId("chain-node-ingest");
-  await user.click(screen.getByRole("button", { name: "Add ROI feature" }));
+  await user.click(screen.getByRole("button", { name: "Add Feature classifier" }));
   await waitFor(() => expect(calls.some((c) => c.method === "PUT" && c.url.endsWith("/rois"))).toBe(true));
   const put = calls.find((c) => c.method === "PUT" && c.url.endsWith("/rois"))!;
   expect(put.body.name).toBe("feature");
@@ -164,7 +160,7 @@ test("the ROI feature tile creates a real ROI with a free name", async () => {
 test("the ROI product tile is disabled once the camera has its product-sorting ROI", async () => {
   renderView();
   await screen.findByTestId("chain-node-ingest");
-  expect(screen.getByRole("button", { name: "Add ROI product" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Add Product classifier" })).toBeDisabled();
 });
 
 test("renaming a box saves the layout, not the ROI", async () => {
@@ -179,14 +175,6 @@ test("renaming a box saves the layout, not the ROI", async () => {
   expect(save.method).toBe("PUT");
   expect(save.body.nodes["roi:seal"].label).toBe("My seal");
   expect(calls.some((c) => c.url.includes("/rois"))).toBe(false);
-});
-
-test("a feature ROI box has an output handle, so its fixed arrow to its Classify box can be drawn", async () => {
-  renderView(vi.fn());
-  const feature = await screen.findByTestId("chain-node-roi:seal");
-  expect(feature.querySelectorAll(".source")).toHaveLength(1);
-  const classifyBox = screen.getByTestId("chain-node-classify:seal");
-  expect(classifyBox.querySelectorAll(".source")).toHaveLength(0);
 });
 
 test("the Detector tile creates a detector box through the flow API", async () => {

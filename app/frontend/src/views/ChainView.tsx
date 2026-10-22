@@ -16,7 +16,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, ChainCanvas, ChainDeletePreview, ChainEdge, ChainNode, ChainViewport, FlowDeletePreview } from "../api";
-import { INGEST_ID, classifyFollows, targetHandle, targetOfHandle, connectAction, describeNode, disconnectAction, flowConnect, freshName, isAnchorEdge, isRoiInputEdge, isFlowKind, layoutOf, productHandle } from "../chain/chainModel";
+import { ALL_HANDLE, INGEST_ID, targetHandle, targetOfHandle, connectAction, describeNode, disconnectAction, flowConnect, freshName, isAnchorEdge, isRoiInputEdge, isFlowKind, layoutOf, productHandle } from "../chain/chainModel";
 import LineConfirm from "../chain/LineConfirm";
 import Palette, { PALETTE_DRAG } from "../chain/Palette";
 import { BOX_SIZE, HUE, dropPosition, freeSpot, paletteItem, type PaletteKind } from "../chain/palette";
@@ -44,7 +44,8 @@ function Box({ data, selected }: NodeProps<BoxNode>) {
     if (label && label !== node.label) onRename(node.id, label);
     else setDraft(node.label);
   };
-  const isClassify = node.kind === "classify";
+  const isClassifier = node.kind === "roi";
+  const productMode = node.role === "classify";
   const isEdits = node.kind === "crop"; // a Picture edits box has one fixed size and shows icons, not its step list
   return (
     <div
@@ -74,14 +75,28 @@ function Box({ data, selected }: NodeProps<BoxNode>) {
         )}
       </div>
       {isEdits ? <StepIcons steps={node.flow?.steps} /> : <div className="chain-node-sub chain-node-line" title={describeNode(node)}>{describeNode(node)}</div>}
-      {isClassify &&
-        node.classes.map((product) => (
-          <div className="chain-node-product" key={product}>
-            {product}: {node.product_counts[product] ?? 0}
-            {node.role === "classify" && <Handle type="source" position={Position.Right} id={productHandle(product)} />}
+      {isClassifier && (
+        <>
+          {/* One row and one dot per class; the "all" dot passes every classified picture and never an unlabeled one. */}
+          {node.classes.map((cls) => (
+            <div className="chain-node-product" key={cls} title={`${cls}: ${node.product_counts[cls] ?? 0} pictures`}>
+              <span className="chain-node-class">{cls}</span>
+              <span className="chain-node-count">{node.product_counts[cls] ?? 0}</span>
+              <Handle type="source" position={Position.Right} id={productHandle(cls)} isConnectable={productMode} />
+            </div>
+          ))}
+          <div className="chain-node-product chain-node-all" title="All classified pictures (no unlabeled one)">
+            <span className="chain-node-class">all</span>
+            <span className="chain-node-count">{node.labeled}</span>
+            <Handle type="source" position={Position.Right} id={ALL_HANDLE} isConnectable={productMode} />
           </div>
-        ))}
-      {isClassify && node.unlabeled > 0 && <div className="chain-node-sub">{node.unlabeled} not labeled yet</div>}
+          <div className="chain-node-counters" aria-label="Counters">
+            <span title="Labeled pictures">● {node.labeled}</span>
+            <span title="Not labeled yet">○ {node.unlabeled}</span>
+            <span title="In the bin (deleted)">🗑 {node.deleted ?? 0}</span>
+          </div>
+        </>
+      )}
       {node.kind === "detector" &&
         (node.flow?.targets ?? []).map((target) => (
           <div className="chain-node-product chain-node-target" key={target} title={`Drag this dot onto an ROI feature: the ROI becomes the box found for ${target}`}>
@@ -89,7 +104,7 @@ function Box({ data, selected }: NodeProps<BoxNode>) {
             <Handle type="source" position={Position.Right} id={targetHandle(target)} />
           </div>
         ))}
-      {!isClassify && <Handle type="source" position={Position.Right} style={node.kind === "detector" ? { top: 16 } : undefined} />}
+      {!isClassifier && <Handle type="source" position={Position.Right} style={node.kind === "detector" ? { top: 16 } : undefined} />}
     </div>
   );
 }
@@ -351,8 +366,7 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
     try {
       const made = await api.saveRoi(camera, { name: freshName("feature", taken), x: 0.25, y: 0.25, w: 0.5, h: 0.5 });
       setError(null);
-      // The ROI comes with its Classify box and their line; the two are placed side by side.
-      await placeBoxes({ [`roi:${made.feature}`]: spot, [`classify:${made.feature}`]: { x: spot.x + 280, y: spot.y } });
+      await placeBoxes({ [`roi:${made.feature}`]: spot });
       return;
     } catch (e) {
       fail(e);
@@ -369,7 +383,7 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
       setAdding(null);
       setProductNames("");
       setProductAt(null);
-      await placeBoxes({ [`roi:${made.feature}`]: spot, [`classify:${made.feature}`]: { x: spot.x + 280, y: spot.y } });
+      await placeBoxes({ [`roi:${made.feature}`]: spot });
       return;
     } catch (e) {
       fail(e);
@@ -433,14 +447,6 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
       )}
       <h3>Selected box</h3>
       {!selectedLive && <p className="muted">Click a box. Double-click its name to rename it. Drag from a handle to draw an arrow; click an arrow and press Delete to remove it (Enter confirms, Esc cancels).</p>}
-      {selectedLive?.kind === "classify" && (
-        <p className="muted">
-          {selectedLive.role === "classify"
-            ? "Label the pictures here to tell which product each one is."
-            : "Label this ROI's pictures here (OK / NG)."}{" "}
-          It goes when its ROI is deleted.
-        </p>
-      )}
       {selectedLive && (
         <div className="chain-selected">
           <p><strong>{selectedLive.label}</strong></p>
@@ -466,10 +472,23 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
               ROI editor
             </button>
           )}
-          {(selectedLive.kind === "roi" || selectedLive.kind === "classify") && (
+          {selectedLive.kind === "roi" && (
             <button type="button" onClick={() => openPage(selectedLive, "classify")}>
               Classify
             </button>
+          )}
+          {selectedLive.kind === "roi" && selectedLive.ref && (
+            <label className="chain-evaluation">
+              Evaluation shown on the cards
+              <select
+                aria-label="Evaluation"
+                value={selectedLive.evaluation ?? ""}
+                onChange={(e) => void applyFlow(() => api.setChainEvaluation(camera, selectedLive.ref!, e.target.value || null))}
+              >
+                <option value="">None</option>
+                {(canvas?.nodes ?? []).filter((n) => n.kind === "evaluation").map((n) => <option key={n.id} value={n.id}>{n.label}</option>)}
+              </select>
+            </label>
           )}
           {selectedLive.kind === "roi" && (
             <button type="button" className="danger" onClick={() => requestDelete(selectedLive.id)}>
@@ -492,7 +511,7 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
       {preview && (
         <div className="chain-delete" role="alertdialog" aria-label="Confirm delete">
           <p><strong>Delete {preview.feature}?</strong> This cannot be undone.</p>
-          {preview.role === "classify" && <p>Its Classify box and the product labels go with it.</p>}
+          {preview.role === "classify" && <p>The product labels go with it.</p>}
           <ul>
             <li>{preview.counts.labels} labels</li>
             <li>{preview.counts.goldens} goldens</li>
@@ -550,8 +569,7 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
             deleteKeyCode={["Delete", "Backspace"]}
             onNodesChange={(changes) =>
               setNodes((current) => {
-                const carried = classifyFollows(current.map((n) => ({ id: n.id, kind: n.data.node.kind, ref: n.data.node.ref, position: n.position })), changes);
-                return applyNodeChanges([...changes, ...carried], current);
+                return applyNodeChanges([...changes], current);
               })
             }
             onNodeDragStop={() => saveLayout(nodesRef.current)}

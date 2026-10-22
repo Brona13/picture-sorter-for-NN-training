@@ -156,10 +156,10 @@ class ProductRenameTests(ApiTestCase):
         self.assertIn("roi:Alpha::rod", ids)
         self.assertNotIn("roi:A::rod", ids)
         self.assertEqual((ids["roi:Alpha::rod"]["x"], ids["roi:Alpha::rod"]["y"], ids["roi:Alpha::rod"]["label"]), (1, 2, "My rod"))  # position and name kept
-        self.assertEqual((ids["classify:Alpha::rod"]["x"], ids["classify:Alpha::rod"]["y"]), (3, 4))
+        self.assertNotIn("classify:Alpha::rod", ids)  # the Classify box is part of the Classifier now
         edges = {(e["source"], e["source_handle"], e["target"]) for e in canvas["edges"]}
-        self.assertIn(("classify:type", "p:Alpha", "roi:Alpha::rod"), edges)
-        self.assertIn(("classify:type", "p:Alpha", "roi:seal"), edges)
+        self.assertIn(("roi:type", "p:Alpha", "roi:Alpha::rod"), edges)
+        self.assertIn(("roi:type", "all", "roi:seal"), edges)  # seal covers every product: one line from the all dot
 
     def test_several_products_at_once(self) -> None:
         r = self.rename({"A": "Alpha", "B": "Beta"})

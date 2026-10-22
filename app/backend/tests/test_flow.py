@@ -490,7 +490,8 @@ class FlowTests(ApiTestCase):
         opinions = self.client.get(f"{self.base}/opinions/part").json()
         self.assertEqual(opinions["boxes"][0]["counts"], {"pass": 3, "fail": 1, "undetermined": 0})
         canvas = self.client.get(f"/api/cameras/{CAM}/chain").json()
-        self.assertIn((tol, "classify:part"), {(e["source"], e["target"]) for e in canvas["edges"]})
+        self.assertEqual(next(n for n in canvas["nodes"] if n["id"] == "roi:part")["evaluation"], tol)  # picked, not drawn
+        self.assertFalse([e for e in canvas["edges"] if e["source"] == tol])
         state = self.client.get(f"/api/cameras/{CAM}/classify/state", params={"feature": "part"}).json()
         self.assertIn("Measurement: fail", state["views"])
         # Deleting the ROI forgets the arrow.

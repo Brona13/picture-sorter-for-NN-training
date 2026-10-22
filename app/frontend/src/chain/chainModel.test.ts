@@ -15,8 +15,7 @@ const canvas: ChainCanvas = {
   edges: [],
   nodes: [
     node({ id: "ingest", kind: "ingest", ref: null, role: null, scope: null }),
-    node({ id: "roi:type", ref: "type", role: "classify", scope: "classify", classes: ["A", "B"] }),
-    node({ id: "classify:type", kind: "classify", ref: "type", label: "Classify", role: "classify", scope: null, classes: ["A", "B"], labeled: 3, unlabeled: 1, product_counts: { A: 2, B: 1 } }),
+    node({ id: "roi:type", ref: "type", role: "classify", mode: "product", scope: "classify", classes: ["A", "B"], labeled: 3, unlabeled: 1, product_counts: { A: 2, B: 1 } }),
     node({ id: "roi:seal", ref: "seal", scope: "products", products: ["A"] }),
     node({ id: "roi:edge", ref: "edge" }),
     node({ id: "roi:B::rod", ref: "B::rod", scope: "name", product: "B", label: "rod" }),
@@ -24,16 +23,16 @@ const canvas: ChainCanvas = {
 };
 
 test("a product handle adds its product to the feature", () => {
-  expect(connectAction(canvas, { source: "classify:type", sourceHandle: "p:B", target: "roi:seal" })).toEqual({
+  expect(connectAction(canvas, { source: "roi:type", sourceHandle: "p:B", target: "roi:seal" })).toEqual({
     feature: "seal", products: ["A", "B"],
   });
-  expect(connectAction(canvas, { source: "classify:type", sourceHandle: "p:A", target: "roi:edge" })).toEqual({
+  expect(connectAction(canvas, { source: "roi:type", sourceHandle: "p:A", target: "roi:edge" })).toEqual({
     feature: "edge", products: ["A"],
   });
 });
 
 test("the same product twice does not repeat it", () => {
-  expect(connectAction(canvas, { source: "classify:type", sourceHandle: "p:A", target: "roi:seal" })).toEqual({
+  expect(connectAction(canvas, { source: "roi:type", sourceHandle: "p:A", target: "roi:seal" })).toEqual({
     feature: "seal", products: ["A"],
   });
 });
@@ -46,26 +45,30 @@ test("an arrow from Ingest puts the feature back on the whole camera", () => {
 
 test("refuses arrows that mean nothing", () => {
   const bad = [
-    { source: "classify:type", sourceHandle: null, target: "roi:seal" },
-    { source: "roi:type", sourceHandle: "p:A", target: "roi:seal" },
-    { source: "ingest", sourceHandle: null, target: "classify:type" },
+    { source: "roi:type", sourceHandle: null, target: "roi:seal" },
+    { source: "roi:edge", sourceHandle: "p:OK", target: "roi:seal" }, // a feature Classifier's dots feed nothing yet
     { source: "roi:seal", sourceHandle: null, target: "roi:edge" },
     { source: "ingest", sourceHandle: null, target: "roi:type" },
     { source: "ingest", sourceHandle: null, target: "ingest" },
-    { source: "classify:type", sourceHandle: "p:A", target: "roi:B::rod" },
+    { source: "roi:type", sourceHandle: "p:A", target: "roi:B::rod" },
   ];
   for (const c of bad) expect(connectAction(canvas, c)).toHaveProperty("error");
 });
 
+test("the all dot puts every product on the feature; deleting that line sends it back to the whole camera", () => {
+  expect(connectAction(canvas, { source: "roi:type", sourceHandle: "all", target: "roi:edge" })).toEqual({ feature: "edge", products: ["A", "B"] });
+  expect(disconnectAction(canvas, { id: "e", source: "roi:type", source_handle: "all", target: "roi:seal", locked: false })).toEqual({ feature: "seal", products: [] });
+});
+
 test("deleting a product arrow drops that product; the last one means the whole camera", () => {
-  const edge = { id: "e", source: "classify:type", source_handle: "p:A", target: "roi:seal", locked: false };
+  const edge = { id: "e", source: "roi:type", source_handle: "p:A", target: "roi:seal", locked: false };
   expect(disconnectAction(canvas, edge)).toEqual({ feature: "seal", products: [] });
   const two = { ...canvas, nodes: canvas.nodes.map((n) => (n.id === "roi:seal" ? { ...n, products: ["A", "B"] } : n)) };
   expect(disconnectAction(two, edge)).toEqual({ feature: "seal", products: ["B"] });
 });
 
 test("locked and Ingest arrows cannot be deleted", () => {
-  expect(disconnectAction(canvas, { id: "l", source: "classify:type", source_handle: "p:B", target: "roi:B::rod", locked: true }))
+  expect(disconnectAction(canvas, { id: "l", source: "roi:type", source_handle: "p:B", target: "roi:B::rod", locked: true }))
     .toHaveProperty("error");
   expect(disconnectAction(canvas, { id: "i", source: "ingest", source_handle: null, target: "roi:edge", locked: false }))
     .toHaveProperty("error");
@@ -91,11 +94,10 @@ test("layoutOf keeps a name only when there is one", () => {
 
 test("describeNode", () => {
   expect(describeNode(canvas.nodes[0])).toBe("4 pictures");
-  expect(describeNode(canvas.nodes[1])).toBe("2 products");
-  expect(describeNode(canvas.nodes[2])).toBe("3/4 labeled");
-  expect(describeNode(canvas.nodes[3])).toBe("A · 1/4 labeled");
-  expect(describeNode(canvas.nodes[4])).toBe("whole camera · 1/4 labeled");
-  expect(describeNode(canvas.nodes[5])).toBe("B · 1/4 labeled");
+  expect(describeNode(canvas.nodes[1])).toBe("Product · 3/4 labeled");
+  expect(describeNode(canvas.nodes[2])).toBe("Feature · A · 1/4 labeled");
+  expect(describeNode(canvas.nodes[3])).toBe("Feature · whole camera · 1/4 labeled");
+  expect(describeNode(canvas.nodes[4])).toBe("Feature · B · 1/4 labeled");
 });
 
 import { flowConnect } from "./chainModel";
@@ -104,7 +106,6 @@ const flowCanvas: ChainCanvas = {
   ...canvas,
   nodes: [
     ...canvas.nodes,
-    node({ id: "classify:seal", kind: "classify", ref: "seal", role: "quality", scope: null }),
     node({ id: "det:1", kind: "detector", ref: null, role: null, scope: null, label: "Detector 1" }),
     node({ id: "det:2", kind: "detector", ref: null, role: null, scope: null, label: "Detector 2" }),
     node({ id: "calc:1", kind: "calc", ref: null, role: null, scope: null, label: "Calculate 1" }),
@@ -113,14 +114,14 @@ const flowCanvas: ChainCanvas = {
 };
 const link = (source: string, target: string) => ({ source, sourceHandle: null, target });
 
-test("flowConnect accepts the typed chain Ingest -> detector -> detector -> Calculate -> Evaluation -> Classify", () => {
-  for (const [s, t] of [["ingest", "det:1"], ["det:1", "det:2"], ["det:2", "calc:1"], ["calc:1", "eval:1"], ["eval:1", "classify:seal"]]) {
+test("flowConnect accepts the typed chain Ingest -> detector -> detector -> Calculate -> Evaluation", () => {
+  for (const [s, t] of [["ingest", "det:1"], ["det:1", "det:2"], ["det:2", "calc:1"], ["calc:1", "eval:1"]]) {
     expect(flowConnect(flowCanvas, link(s, t))).toEqual({ source: s, target: t });
   }
 });
 
 test("flowConnect refuses arrows whose types do not fit, and leaves ROI arrows to connectAction", () => {
-  for (const [s, t] of [["eval:1", "calc:1"], ["det:1", "eval:1"], ["calc:1", "det:1"], ["ingest", "calc:1"], ["det:1", "det:1"], ["eval:1", "classify:type"]]) {
+  for (const [s, t] of [["eval:1", "calc:1"], ["det:1", "eval:1"], ["calc:1", "det:1"], ["ingest", "calc:1"], ["det:1", "det:1"], ["eval:1", "roi:seal"], ["roi:type", "det:1"]]) {
     expect(flowConnect(flowCanvas, link(s, t))).toHaveProperty("error");
   }
   expect(flowConnect(flowCanvas, link("ingest", "roi:seal"))).toBeNull();
@@ -171,17 +172,6 @@ test("flowConnect: a detector's main dot feeds the whole detector to Calculate, 
   expect(flowConnect(flowCanvas, { source: "det:1", sourceHandle: targetHandle("left"), target: "det:2" })).toHaveProperty("error");
 });
 
-test("classifyFollows: dragging an ROI carries its Classify box; a Classify box moves alone; both dragged together do not double", async () => {
-  const { classifyFollows } = await import("./chainModel");
-  const boxes = [
-    { id: "roi:seal", kind: "roi", ref: "seal", position: { x: 100, y: 50 } },
-    { id: "classify:seal", kind: "classify", ref: "seal", position: { x: 300, y: 80 } },
-  ];
-  const move = (id: string, x: number, y: number) => ({ type: "position" as const, id, position: { x, y }, dragging: true });
-  expect(classifyFollows(boxes, [move("roi:seal", 110, 40)])).toEqual([move("classify:seal", 310, 70)]);
-  expect(classifyFollows(boxes, [move("classify:seal", 0, 0)])).toEqual([]);
-  expect(classifyFollows(boxes, [move("roi:seal", 110, 40), move("classify:seal", 310, 70)])).toEqual([]);
-});
 
 test("flowConnect: a detector's target dot feeds a Crop (the Crop follows that target); the main dot does not", async () => {
   const { targetHandle } = await import("./chainModel");

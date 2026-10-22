@@ -28,8 +28,7 @@ beforeEach(() => {
     }
     if (url.endsWith("/rois") && method === "PUT") {
       const name = body.name;
-      current.nodes.push(node({ id: `roi:${name}`, ref: name, label: name, x: 0, y: 150 }), node({ id: `classify:${name}`, kind: "classify", ref: name, label: "Classify", x: 280, y: 150 }));
-      current.edges.push({ id: `e:${name}`, source: `roi:${name}`, source_handle: null, target: `classify:${name}`, locked: true });
+      current.nodes.push(node({ id: `roi:${name}`, ref: name, label: name, x: 0, y: 150 }));
       if (body.make_classifier) current.classify = name;
       return new Response(JSON.stringify({ feature: name }));
     }
@@ -57,7 +56,7 @@ test("the tiles are grouped by in / out type and each is draggable", async () =>
   for (const g of ["Picture in, picture out", "Picture in, points out", "Points in, number or verdict out", "Sorts pictures into classes"]) {
     expect(screen.getByRole("region", { name: g })).toBeInTheDocument();
   }
-  for (const label of ["Picture edits", "Detector", "Calculate", "Evaluation", "ROI product", "ROI feature"]) {
+  for (const label of ["Picture edits", "Detector", "Calculate", "Evaluation", "Product classifier", "Feature classifier"]) {
     expect(screen.getByRole("button", { name: `Add ${label}` })).toHaveAttribute("draggable", "true");
   }
 });
@@ -101,12 +100,12 @@ test("a click adds the box at a free spot, never on top of another box", async (
   expect(calls.some((c) => c.url.endsWith("/flow/edges"))).toBe(false);
 });
 
-test("a feature tile drops the ROI with its Classify box beside it", async () => {
+test("a feature tile drops one Classifier where it was dropped", async () => {
   const canvas = await open();
   drop(canvas, "feature", 600, 400);
   await waitFor(() => expect(layout()?.nodes["roi:feature"]).toBeDefined());
   expect(layout().nodes["roi:feature"]).toMatchObject({ x: 500, y: 358 });
-  expect(layout().nodes["classify:feature"]).toMatchObject({ x: 780, y: 358 }); // the two travel together
+  expect(layout().nodes["classify:feature"]).toBeUndefined(); // there is no separate Classify box
 });
 
 test("the product tile asks for the names first, then drops the box where it was dropped", async () => {

@@ -5,11 +5,16 @@ Boxes are created, connected and deleted through the ROI endpoints; this router 
 from __future__ import annotations
 
 import chain
+import flow
 from api.cameras import require_camera
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 router = APIRouter()
+
+
+class EvaluationBody(BaseModel):
+    box: str | None = None
 
 
 class LayoutBody(BaseModel):
@@ -41,3 +46,14 @@ def delete_preview(camera: str, feature: str) -> dict:
         return chain.delete_preview(camera, feature)
     except chain.ChainError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.put("/cameras/{camera}/chain/{feature:path}/evaluation")
+def put_evaluation(camera: str, feature: str, body: EvaluationBody) -> dict:
+    """Pick the Evaluation box a Classifier shows on its cards (``box`` null clears it)."""
+    require_camera(camera)
+    try:
+        flow.set_feature_evaluation(camera, feature, body.box)
+    except flow.FlowError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return chain.get_canvas(camera)

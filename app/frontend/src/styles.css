@@ -350,7 +350,13 @@ button[aria-pressed="true"] { background: var(--info-bg); color: var(--info-fg);
 .chain-node-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .chain-node-line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .chain-node-ingest { width: 170px; height: 64px; min-width: 0; overflow: hidden; }
-.chain-node-roi, .chain-node-crop, .chain-node-calc, .chain-node-evaluation { width: 200px; height: 84px; min-width: 0; overflow: hidden; }
+.chain-node-crop, .chain-node-calc, .chain-node-evaluation { width: 200px; height: 84px; min-width: 0; overflow: hidden; }
 .chain-node-crop { height: 86px; }
 .chain-node-calc, .chain-node-evaluation { height: 86px; }
-.chain-node-classify, .chain-node-detector { width: 200px; min-height: 84px; min-width: 0; }
+.chain-node-roi, .chain-node-classify, .chain-node-detector { width: 200px; min-height: 84px; min-width: 0; }
+.chain-node-roi .chain-node-product { display: flex; align-items: center; gap: 6px; text-align: left; }
+.chain-node-class { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chain-node-count { font-variant-numeric: tabular-nums; }
+.chain-node-all { font-weight: 600; }
+.chain-node-counters { display: flex; justify-content: space-between; gap: 6px; margin-top: 6px; padding-top: 4px; border-top: 1px dashed var(--border); font-size: 12px; font-variant-numeric: tabular-nums; }
+.chain-evaluation { display: block; margin-top: 8px; }

@@ -26,14 +26,13 @@ beforeEach(() => {
     nodes: [
       node({ id: "ingest", kind: "ingest", ref: null, label: "Ingest", role: null, scope: null }),
       node({ id: "roi:type", ref: "type", label: "type", role: "classify", scope: "classify", classes: ["A", "B"] }),
-      node({ id: "classify:type", kind: "classify", ref: "type", label: "Classify", role: "classify", scope: null, classes: ["A", "B"] }),
       node({ id: "roi:seal", ref: "seal", label: "seal", scope: "products", products: ["A"] }),
       flowNode("crop:1", "crop", "Picture edits 1"),
       flowNode("det:1", "detector", "Detector 1"),
       flowNode("det:2", "detector", "Detector 2"),
     ],
     edges: [
-      { id: "e2", source: "classify:type", source_handle: "p:A", target: "roi:seal", locked: false },
+      { id: "e2", source: "roi:type", source_handle: "p:A", target: "roi:seal", locked: false },
       { id: "f1", source: "crop:1", source_handle: null, target: "det:1", locked: false },
       { id: "f0", source: "ingest", source_handle: null, target: "roi:type", locked: true },
     ],
@@ -61,7 +60,7 @@ test("Delete on a selected line shows the overlay and removes nothing yet", asyn
   let result: any;
   await act(async () => { result = await flowProps.onBeforeDelete({ nodes: [], edges: [{ id: "e2" }] }); });
   expect(result).toEqual({ nodes: [], edges: [] }); // React Flow itself deletes nothing
-  expect(dialog()).toHaveTextContent("Delete the line Classify → seal");
+  expect(dialog()).toHaveTextContent("Delete the line type → seal");
   expect(dialog()).toHaveTextContent("no longer applies to A");
   expect(writes()).toHaveLength(0);
 });

@@ -295,11 +295,11 @@ export interface CameraDeletePreview {
   bytes: number;
 }
 
-/** One box of the chain canvas: Ingest, one ROI, or the Classify box of the product-sorting ROI (see `chain.py`). */
+/** One box of the chain canvas: Ingest, a Classifier (one ROI with its labeling) or a measurement box (see `chain.py`). */
 export interface ChainNode {
   id: string;
   kind: "ingest" | "roi" | "classify" | "crop" | "detector" | "calc" | "evaluation";
-  /** The ROI's feature name (null for Ingest); for the Classify box, the product-sorting ROI it labels. */
+  /** The ROI's feature name (null for Ingest). */
   ref: string | null;
   label: string;
   x: number;
@@ -312,9 +312,15 @@ export interface ChainNode {
   classes: string[];
   frames: number;
   labeled: number;
-  /** Classify box only: pictures per product, and how many are not labeled yet. */
+  /** Classifier only: pictures per class, and how many are not labeled yet. */
   product_counts: Record<string, number>;
   unlabeled: number;
+  /** Classifier only: "product" sorts every picture into products, "feature" labels its own classes. */
+  mode?: "product" | "feature";
+  /** Classifier only: pictures in the bin (deleted) on this camera. */
+  deleted?: number;
+  /** Classifier only: the Evaluation box its cards show (picked in its panel), or null. */
+  evaluation?: string | null;
   /** Detector / Calculate / Evaluation boxes only: a light summary (see `flow.py`). */
   flow?: FlowSummary;
   /** ROI boxes only: the detector box the rectangle follows, or null/absent (see `anchor.py`). */
@@ -484,7 +490,7 @@ export interface FlowDeletePreview {
 export interface ChainEdge {
   id: string;
   source: string;
-  /** `p:<product>` for an arrow that leaves one product handle of the classify ROI. */
+  /** `p:<product>` for a line that leaves one product dot of the product Classifier, `all` for its "all" dot. */
   source_handle: string | null;
   target: string;
   /** An arrow fixed by the ROI's name (`<product>::<roi>`); it cannot be removed. */
@@ -1166,6 +1172,8 @@ export const api = {
       `/cameras/${encodeURIComponent(camera)}/rois/${encodeURIComponent(feature)}/geometry`,
       send("PATCH", box),
     ),
+  setChainEvaluation: (camera: string, feature: string, box: string | null) =>
+    request<ChainCanvas>(`/cameras/${encodeURIComponent(camera)}/chain/${encodeURIComponent(feature)}/evaluation`, send("PUT", { box })),
   setRoiProducts: (camera: string, feature: string, products: string[]) =>
     request<RoiInfo>(
       `/cameras/${encodeURIComponent(camera)}/rois/${encodeURIComponent(feature)}/products`,

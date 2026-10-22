@@ -1,5 +1,5 @@
 import type { ChainCanvas, ChainEdge, ChainNode } from "../api";
-import { disconnectAction, isAnchorEdge, isFlowKind, isRoiInputEdge, productOfHandle, targetOfHandle } from "./chainModel";
+import { ALL_HANDLE, disconnectAction, isAnchorEdge, isFlowKind, isRoiInputEdge, productOfHandle, targetOfHandle } from "./chainModel";
 import type { Connection, FlowLink } from "./chainModel";
 
 /** What the confirmation overlay says: a title and one line per effect. */
@@ -57,7 +57,7 @@ export function deleteNote(canvas: ChainCanvas, edge: ChainEdge): LineNote | nul
   const result = disconnectAction(canvas, edge);
   if ("error" in result) return null;
   const left = result.products;
-  const product = productOfHandle(edge.source_handle);
+  const product = productOfHandle(edge.source_handle) ?? (edge.source_handle === ALL_HANDLE ? "the classified pictures" : null);
   return {
     title,
     lines: [

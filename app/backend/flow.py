@@ -1455,6 +1455,31 @@ def feature_opinions(camera: str, feature: str) -> dict:
     return {"feature": feature, "boxes": boxes}
 
 
+def feature_evaluation(camera: str, feature: str) -> str | None:
+    """The Evaluation box this feature's cards show (picked in the Classifier's panel), or None."""
+    graph = load_graph(camera)
+    target = f"classify:{feature}"
+    for e in graph["edges"]:
+        if e["target"] == target and kind_of(e["source"]) == "evaluation" and e["source"] in graph["nodes"]:
+            return e["source"]
+    return None
+
+
+def set_feature_evaluation(camera: str, feature: str, box: str | None) -> None:
+    """Pick the one Evaluation box a feature's cards show, or none. Stored as the arrow ``eval -> classify:<feature>``."""
+    if datamodel.get_roi(camera, feature) is None:
+        raise FlowError(f"Unknown ROI: {feature}")
+    graph = load_graph(camera)
+    target = f"classify:{feature}"
+    if box is not None:
+        if kind_of(box) != "evaluation" or box not in graph["nodes"]:
+            raise FlowError(f"{box} is not an Evaluation box.")
+    graph["edges"] = [e for e in graph["edges"] if not (e["target"] == target and kind_of(e["source"]) == "evaluation")]
+    if box is not None:
+        graph["edges"].append({"source": box, "target": target})
+    save_graph(camera, graph)
+
+
 def freeze_record(camera: str, feature: str) -> list[dict]:
     """What a freeze records about these rules (settings and counts, never pictures)."""
     return [{"box": b["box"], "nominal": b["nominal"], "tolerance": b["tolerance"], "counts": b["counts"]} for b in feature_opinions(camera, feature)["boxes"]]

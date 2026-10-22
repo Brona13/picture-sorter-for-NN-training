@@ -1,15 +1,18 @@
-"""Chain canvas: a per-camera map of the processing chain (Ingest -> product ROI -> feature ROIs).
+"""Chain canvas: a per-camera map of the processing chain (Ingest -> product Classifier -> feature Classifiers).
 
-The map is a *view* of the ROI definitions, not a second copy of them. Every box is Ingest, one row of ``rois``,
-or the Classify box of an ROI (the labeling step; it exists whenever its ROI does). The Classify box of the
-product-sorting ROI tells which picture belongs to which product; that of a feature ROI labels its classes
-(OK / NG). Every arrow is derived from those rows:
+The map is a *view* of the ROI definitions, not a second copy of them. Every box is Ingest or one row of ``rois``
+(a **Classifier**: its ROI and its labeling in one box) or a measurement box (``flow.py``). A Classifier in mode
+*product* sorts every picture of the camera into products; one in mode *feature* labels its own classes (OK / NG).
+Each class is a dot on the box, and an "all" dot passes every classified picture (see ``lines.py``). Every line
+is derived from the ROI rows:
 
-  * Ingest -> the product-sorting (classify) ROI -> its Classify box;
-  * Ingest -> a feature ROI that applies to the whole camera;
-  * a product handle of the product ROI's Classify box -> a feature ROI scoped to that product, either by name
-    (``"<product>::<roi>"``, locked) or through the ROI's ``products`` list;
-  * every feature ROI -> its own Classify box.
+  * Ingest -> the product Classifier, locked;
+  * Ingest -> a feature Classifier that applies to the whole camera;
+  * a product dot (or the "all" dot) of the product Classifier -> a feature Classifier scoped to that product, either by
+    name (``"<product>::<roi>"``, locked) or through the ROI's ``products`` list.
+
+The Evaluation a Classifier shows on its cards is picked in its panel and stored as before (an arrow ``eval ->
+classify:<feature>`` in the flow graph); it is not drawn as a line.
 
 Only the layout (box positions, display names, viewport) is stored, as the camera setting ``chain.canvas``.
 Creating, connecting and deleting boxes goes through the existing ROI endpoints, so the invariants live in one place.
@@ -25,6 +28,7 @@ import datamodel
 import db
 import flow
 import labels
+import lines
 import preprocess
 
 SETTING_KEY = "chain.canvas"
@@ -49,6 +53,9 @@ def classify_node_id(feature: str) -> str:
 
 def product_handle(product: str) -> str:
     return f"p:{product}"
+
+
+ALL_HANDLE = lines.ALL_DOT  # the dot that passes every classified picture
 
 
 def _number(value: object, name: str) -> float:
@@ -113,6 +120,7 @@ def _frame_count(camera: str, feature: str | None) -> int:
 
 
 def _roi_node(camera: str, roi: datamodel.ROI, stored: dict) -> dict:
+    """A Classifier box: the ROI and its labeling in one. ``mode`` is "product" for the product-sorting ROI, else "feature"."""
     owner, short = datamodel.split_feature(roi.name)
     if roi.role == "classify":
         scope = "classify"
@@ -122,6 +130,10 @@ def _roi_node(camera: str, roi: datamodel.ROI, stored: dict) -> dict:
         scope = "products"
     else:
         scope = "camera"
+    current = labels.current_labels(camera, roi.name)
+    classes = list(datamodel.classes_for(camera, roi.name))
+    # The product-sorting ROI labels every picture of the camera; a feature ROI only those it applies to.
+    frames = _frame_count(camera, None if roi.role == "classify" else roi.name)
     return {
         "id": roi_node_id(roi.name),
         "kind": "roi",
@@ -130,42 +142,19 @@ def _roi_node(camera: str, roi: datamodel.ROI, stored: dict) -> dict:
         "x": stored.get("x"),
         "y": stored.get("y"),
         "role": roi.role,
+        "mode": "product" if roi.role == "classify" else "feature",
         "scope": scope,
         "product": owner,
         "products": list(roi.products or []),
-        "classes": list(datamodel.classes_for(camera, roi.name)),
-        "frames": _frame_count(camera, roi.name),
-        "labeled": len(labels.current_labels(camera, roi.name)),
-        "product_counts": {},
-        "unlabeled": 0,
-        "anchor": anchor.get_anchor(camera, roi.name),
-        "input": (roi_input.get_input(camera, roi.name) or {}).get("box"),
-    }
-
-
-def _classify_node(camera: str, roi: datamodel.ROI, stored: dict) -> dict:
-    """The labeling step of the product-sorting ROI: how many pictures are in each product, and how many are not yet."""
-    current = labels.current_labels(camera, roi.name)
-    classes = list(datamodel.classes_for(camera, roi.name))
-    counts = {c: sum(1 for v in current.values() if v == c) for c in classes}
-    # The product-sorting ROI labels every picture of the camera; a feature ROI only those it applies to.
-    frames = _frame_count(camera, None if roi.role == "classify" else roi.name)
-    return {
-        "id": classify_node_id(roi.name),
-        "kind": "classify",
-        "ref": roi.name,
-        "label": stored.get("label") or "Classify",
-        "x": stored.get("x"),
-        "y": stored.get("y"),
-        "role": roi.role,
-        "scope": None,
-        "product": None,
-        "products": [],
         "classes": classes,
         "frames": frames,
         "labeled": len(current),
-        "product_counts": counts,
+        "product_counts": {c: sum(1 for v in current.values() if v == c) for c in classes},
         "unlabeled": max(0, frames - len(current)),
+        "deleted": len(db.deleted_frames_of(camera)),
+        "evaluation": flow.feature_evaluation(camera, roi.name),
+        "anchor": anchor.get_anchor(camera, roi.name),
+        "input": (roi_input.get_input(camera, roi.name) or {}).get("box"),
     }
 
 
@@ -181,22 +170,24 @@ def _edges(camera: str, rois: list[datamodel.ROI], classify: str | None) -> list
             "locked": locked,
         })
 
-    classify_id = classify_node_id(classify) if classify else None
+    classify_id = roi_node_id(classify) if classify else None
+    classes = datamodel.classes_for(camera, classify) if classify else []
     anchored = {r.name for r in rois if anchor.get_anchor(camera, r.name) or roi_input.get_input(camera, r.name)}  # these hang from their detector or Picture edits box instead
     if classify_id:
-        add(INGEST_ID, roi_node_id(classify), locked=True)
-        add(roi_node_id(classify), classify_id, locked=True)
+        add(INGEST_ID, classify_id, locked=True)
     for roi in rois:
         if roi.role == "classify":
             continue
-        add(roi_node_id(roi.name), classify_node_id(roi.name), locked=True)
         target = roi_node_id(roi.name)
         owner = datamodel.split_feature(roi.name)[0]
         if classify_id and owner:
             add(classify_id, target, product_handle(owner), locked=True)
         elif classify_id and roi.products:
-            for product in roi.products:
-                add(classify_id, target, product_handle(product))
+            if len(classes) > 1 and set(roi.products) >= set(classes):
+                add(classify_id, target, ALL_HANDLE)  # every product: the "all" dot (classified pictures only)
+            else:
+                for product in roi.products:
+                    add(classify_id, target, product_handle(product))
         elif roi.name not in anchored:
             add(INGEST_ID, target)
     return edges
@@ -281,7 +272,7 @@ def overview_flow(camera: str, picture_frame: str | None) -> dict | None:
 
 
 def _column(node: dict) -> int:
-    """The chain level of a box: 0 Ingest, 1 product ROI, 2 its Classify box, 3 feature ROIs, 4 their Classify boxes."""
+    """The chain level of a box: 0 Ingest, 1 product Classifier, 3 feature Classifiers (measurement boxes sit between)."""
     if node["kind"] == "ingest":
         return 0
     if node["kind"] in ("crop", "detector"):
@@ -290,8 +281,6 @@ def _column(node: dict) -> int:
         return 2
     if node["kind"] == "evaluation":
         return 3
-    if node["kind"] == "classify":
-        return 2 if node["role"] == "classify" else 4
     return 1 if node["role"] == "classify" else 3
 
 
@@ -338,7 +327,6 @@ def get_canvas(camera: str) -> dict:
     }]
     for roi in rois:
         nodes.append(_roi_node(camera, roi, stored.get(roi_node_id(roi.name), {})))
-        nodes.append(_classify_node(camera, roi, stored.get(classify_node_id(roi.name), {})))
     nodes.extend(_flow_nodes(camera, graph, stored))
     _place_missing(nodes)
     edges = _edges(camera, rois, classify)

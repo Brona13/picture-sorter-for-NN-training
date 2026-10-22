@@ -1,8 +1,9 @@
-import type { NodeChange } from "@xyflow/react";
 import type { ChainCanvas, ChainEdge, ChainLayout, ChainNode, FlowSummary } from "../api";
 
-/** The handle id a product leaves the classify ROI by (matches `chain.product_handle`). */
+/** The handle id a product leaves the product Classifier by (matches `chain.product_handle`). */
 export const productHandle = (product: string) => `p:${product}`;
+/** The dot that passes every classified picture (matches `lines.ALL_DOT`). */
+export const ALL_HANDLE = "all";
 export const INGEST_ID = "ingest";
 
 /** The product a `p:<product>` handle stands for, or null for any other handle. */
@@ -33,25 +34,32 @@ function featureOf(canvas: ChainCanvas, id: string): ChainNode | undefined {
 }
 
 /**
- * Only two arrows can be drawn: from a product handle of the product-sorting ROI to a feature ROI (scope it to that
- * product), and from Ingest to a feature ROI (scope it back to the whole camera). Everything else is refused.
+ * Only two lines can be drawn between Classifiers: from a product dot (or the "all" dot) of the product Classifier to a
+ * feature Classifier (scope it to that product, or to every classified picture), and from Ingest to a feature
+ * Classifier (scope it back to the whole camera). Everything else is refused.
  */
 export function connectAction(canvas: ChainCanvas, c: Connection): ConnectResult {
   const target = featureOf(canvas, c.target);
   const source = featureOf(canvas, c.source);
   if (!target || !source) return { error: "Unknown box." };
   if (target.kind !== "roi" || target.role === "classify" || !target.ref) {
-    return { error: "An arrow can only end at a feature ROI." };
+    return { error: "A line can only end at a feature Classifier." };
   }
   if (target.scope === "name") {
     return { error: `${target.label} belongs to ${target.product} by its name, so its product cannot change.` };
   }
   if (source.kind === "ingest") return { feature: target.ref, products: [] };
+  if (source.kind === "roi" && source.role !== "classify") {
+    return { error: "A feature Classifier's class dots do not feed another box yet. Start the line at Ingest or at a dot of the product Classifier." };
+  }
+  if (source.kind === "roi" && c.sourceHandle === ALL_HANDLE) {
+    return { feature: target.ref, products: [...source.classes] }; // every product: the classified pictures, never an unlabeled one
+  }
   const product = productOfHandle(c.sourceHandle);
-  if (source.kind === "classify" && product) {
+  if (source.kind === "roi" && product) {
     return { feature: target.ref, products: [...new Set([...target.products, product])] };
   }
-  return { error: "Start the arrow at Ingest or at one of the product handles of the Classify box." };
+  return { error: "Start the line at Ingest or at a dot of the product Classifier." };
 }
 
 /** What deleting an arrow means: the target ROI loses that product (no product left = whole camera). */
@@ -59,6 +67,7 @@ export function disconnectAction(canvas: ChainCanvas, edge: ChainEdge): ConnectR
   const target = featureOf(canvas, edge.target);
   if (!target?.ref) return { error: "Unknown box." };
   if (edge.locked) return { error: "This arrow is fixed by the ROI's name." };
+  if (edge.source_handle === ALL_HANDLE) return { feature: target.ref, products: [] };
   const product = productOfHandle(edge.source_handle);
   if (!product) return { error: "A feature always hangs from Ingest or from a product." };
   return { feature: target.ref, products: target.products.filter((p) => p !== product) };
@@ -101,12 +110,11 @@ export function describeFlow(kind: string, f: FlowSummary | undefined): string {
 /** Short line under a box's name: what it does to the pictures. */
 export function describeNode(n: ChainNode): string {
   if (n.kind === "ingest") return `${n.frames} picture${n.frames === 1 ? "" : "s"}`;
-  if (n.kind === "classify") return `${n.labeled}/${n.frames} labeled`;
   if (isFlowKind(n.kind)) return describeFlow(n.kind, n.flow);
-  if (n.scope === "classify") return `${n.classes.length} products`;
+  if (n.scope === "classify") return `Product · ${n.labeled}/${n.frames} labeled`;
   const where =
     n.scope === "name" ? n.product ?? "" : n.scope === "products" ? n.products.join(", ") : "whole camera";
-  return `${where} · ${n.labeled}/${n.frames} labeled`;
+  return `Feature · ${where} · ${n.labeled}/${n.frames} labeled`;
 }
 
 export const FLOW_KINDS = ["crop", "detector", "calc", "evaluation"] as const;
@@ -116,7 +124,7 @@ export const isFlowKind = (kind: string | undefined): boolean => !!kind && (FLOW
  * An arrow that involves a Picture edits, detector, Calculate or Evaluation box. `null` when the arrow is not a flow arrow at all
  * (the ROI rules in `connectAction` decide), `{ error }` when it is one that does not fit, else the arrow to store.
  * The types mirror `flow.edge_allowed`: Ingest or a Picture edits box feeds a Picture edits box or a detector, a detector feeds a detector, a Calculate box or (one target) a Picture edits box, Calculate
- * feeds Evaluation, Evaluation feeds a Classify box.
+ * feeds Evaluation. (An Evaluation is picked in a Classifier's panel.)
  */
 export const targetHandle = (target: string) => `t:${target}`;
 export const targetOfHandle = (handle: string | null | undefined): string | null => (handle && handle.startsWith("t:") ? handle.slice(2) : null);
@@ -139,6 +147,12 @@ export function flowConnect(canvas: ChainCanvas, c: Connection): FlowLink {
     if (c.sourceHandle) return { error: "Use the Picture edits box's main dot." };
     return { roiInput: { feature: target.ref, box: source.id } };
   }
+  if (source.kind === "roi" && isFlowKind(target.kind)) {
+    return { error: "A Classifier's dots feed another Classifier. Lines from a class dot to Picture edits or a detector are not made yet." };
+  }
+  if (source.kind === "evaluation" && target.kind === "roi") {
+    return { error: "An Evaluation is not drawn to a Classifier: pick it in the Classifier's panel." };
+  }
   if (!isFlowKind(source.kind) && !isFlowKind(target.kind)) return null;
   const point = targetOfHandle(c.sourceHandle);
   if (point && !(source.kind === "detector" && (target.kind === "calc" || target.kind === "crop"))) {
@@ -150,38 +164,14 @@ export function flowConnect(canvas: ChainCanvas, c: Connection): FlowLink {
   const ok =
     ((source.kind === "ingest" || source.kind === "crop") && (target.kind === "crop" || target.kind === "detector")) ||
     (source.kind === "detector" && (target.kind === "detector" || target.kind === "calc" || target.kind === "crop")) ||
-    (source.kind === "calc" && target.kind === "evaluation") ||
-    (source.kind === "evaluation" && target.kind === "classify" && target.role !== "classify");
+    (source.kind === "calc" && target.kind === "evaluation");
   if (!ok) {
     return {
-      error: `${source.label} cannot feed ${target.label}. Ingest or a Picture edits box feeds a Picture edits box or a detector, a detector (one target) feeds a Picture edits box, a detector feeds a detector or Calculate, Calculate feeds Evaluation, Evaluation feeds a feature's Classify box.`,
+      error: `${source.label} cannot feed ${target.label}. Ingest or a Picture edits box feeds a Picture edits box or a detector, a detector (one target) feeds a Picture edits box, a detector feeds a detector or Calculate, Calculate feeds Evaluation. An Evaluation is picked in a Classifier's panel, not drawn.`,
     };
   }
   if (c.source === c.target) return { error: "A box cannot feed itself." };
   return point ? { source: c.source, target: c.target, point } : { source: c.source, target: c.target };
-}
-
-/** Extra position changes so an ROI box carries its Classify box when it is dragged (the Classify box alone moves alone). */
-export function classifyFollows(
-  boxes: { id: string; kind: string; ref: string | null; position: { x: number; y: number } }[],
-  changes: readonly NodeChange[],
-): { type: "position"; id: string; position: { x: number; y: number }; dragging: true }[] {
-  const moved = new Set(changes.flatMap((c) => (c.type === "position" ? [c.id] : [])));
-  const extra: { type: "position"; id: string; position: { x: number; y: number }; dragging: true }[] = [];
-  for (const c of changes) {
-    if (c.type !== "position" || !c.position) continue;
-    const roi = boxes.find((b) => b.id === c.id);
-    if (roi?.kind !== "roi" || !roi.ref) continue;
-    const partner = boxes.find((b) => b.kind === "classify" && b.ref === roi.ref);
-    if (!partner || moved.has(partner.id)) continue; // both selected and dragged: each already moves
-    extra.push({
-      type: "position",
-      id: partner.id,
-      position: { x: partner.position.x + c.position.x - roi.position.x, y: partner.position.y + c.position.y - roi.position.y },
-      dragging: true,
-    });
-  }
-  return extra;
 }
 
 /** An arrow from a Picture edits box to an ROI box is the ROI's input (stored with the ROI, not in the flow graph). */

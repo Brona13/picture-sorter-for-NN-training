@@ -40,8 +40,8 @@ export const PALETTE: { group: string; items: PaletteItem[] }[] = [
   {
     group: "Sorts pictures into classes",
     items: [
-      { kind: "product", label: "ROI product", box: "roi", hint: "Sorts pictures into products (one per camera)." },
-      { kind: "feature", label: "ROI feature", box: "roi", hint: "A feature to classify OK / NG." },
+      { kind: "product", label: "Product classifier", box: "roi", hint: "Mode Product: sorts pictures into products (one per camera)." },
+      { kind: "feature", label: "Feature classifier", box: "roi", hint: "Mode Feature: labels a feature OK / NG." },
     ],
   },
 ];
