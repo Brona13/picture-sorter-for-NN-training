@@ -18,6 +18,7 @@ const result = {
 };
 const baseState = (over: Record<string, unknown> = {}) => ({
   feature: "seal",
+  source: "seal",
   reason: null,
   backbones: ["resnet18", "resnet50"],
   params,
@@ -396,6 +397,15 @@ test("the batch buttons sit between the map and the grid, grouped, and labelling
   expect(await within(panel).findByText("OK: 1")).toBeInTheDocument();
   expect(within(screen.getByTestId("card-a.png")).getByRole("button", { name: /OK/ })).toHaveAttribute("aria-pressed", "true");
   expect(calls.filter((c) => c.url.endsWith("/dedup/scatter")).length).toBe(1);
+});
+
+test("picture actions of the map go through the feature the state names, not the box id", async () => {
+  state = baseState({ source: "type" }); // the box reads the Classifier "type"; the Classify API knows no box
+  const panel = await selectA();
+  await userEvent.click(within(within(panel).getByTestId("card-a.png")).getByRole("button", { name: /NG/ }));
+  await waitFor(() => expect(calls.find((c) => c.url.endsWith("/classify/label"))?.body).toMatchObject({ feature: "type", frame: "a.png" }));
+  await userEvent.click(within(panel).getByRole("button", { name: "Delete frame" }));
+  await waitFor(() => expect(calls.find((c) => c.url.endsWith("/classify/delete"))?.body).toMatchObject({ feature: "type" }));
 });
 
 test("labelling one card of the selection is reflected in the map's colours", async () => {

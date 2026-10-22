@@ -56,7 +56,7 @@ test("the tiles are grouped by in / out type and each is draggable", async () =>
   for (const g of ["Picture in, picture out", "Picture in, points out", "Points in, number or verdict out", "Sorts pictures into classes"]) {
     expect(screen.getByRole("region", { name: g })).toBeInTheDocument();
   }
-  for (const label of ["Picture edits", "Detector", "Calculate", "Evaluation", "Product classifier", "Feature classifier"]) {
+  for (const label of ["Picture edits", "Detector", "Calculate", "Evaluation", "Classifier"]) {
     expect(screen.getByRole("button", { name: `Add ${label}` })).toHaveAttribute("draggable", "true");
   }
 });
@@ -100,21 +100,13 @@ test("a click adds the box at a free spot, never on top of another box", async (
   expect(calls.some((c) => c.url.endsWith("/flow/edges"))).toBe(false);
 });
 
-test("a feature tile drops one Classifier where it was dropped", async () => {
+test("the Classifier tile drops one Classifier where it was dropped", async () => {
   const canvas = await open();
-  drop(canvas, "feature", 600, 400);
-  await waitFor(() => expect(layout()?.nodes["roi:feature"]).toBeDefined());
-  expect(layout().nodes["roi:feature"]).toMatchObject({ x: 500, y: 358 });
-  expect(layout().nodes["classify:feature"]).toBeUndefined(); // there is no separate Classify box
+  drop(canvas, "classifier", 600, 400);
+  await waitFor(() => expect(layout()?.nodes["roi:classifier"]).toBeDefined());
+  expect(layout().nodes["roi:classifier"]).toMatchObject({ x: 500, y: 358 });
+  expect(layout().nodes["classify:classifier"]).toBeUndefined(); // there is no separate Classify box
   // a new feature Classifier hangs alone: no automatic line from Ingest
-  expect(calls.some((c) => c.method === "PUT" && c.url.endsWith("/chain/feature/detached") && c.body.detached === true)).toBe(true);
+  expect(calls.some((c) => c.method === "PUT" && c.url.endsWith("/chain/classifier/detached") && c.body.detached === true)).toBe(true);
 });
 
-test("the product tile makes the Classifier at once with placeholder products, where it was dropped; names are set in its detail page", async () => {
-  const canvas = await open();
-  drop(canvas, "product", 300, 200);
-  await waitFor(() => expect(layout()?.nodes["roi:product"]).toBeDefined());
-  expect(screen.queryByLabelText(/Product names/)).toBeNull(); // the Chain no longer asks
-  expect(layout().nodes["roi:product"]).toMatchObject({ x: 200, y: 158 });
-  expect(calls.find((c) => c.method === "PUT" && c.url.endsWith("/rois"))!.body.product_names).toEqual(["Product 1", "Product 2"]);
-});

@@ -16,8 +16,8 @@ export const BOX_SIZE: Record<ChainNode["kind"], { w: number; h: number }> = {
   dedup: { w: 200, h: 86 },
 };
 
-/** What the palette can add. `product` and `feature` are the two kinds of ROI box. */
-export type PaletteKind = "product" | "feature" | "crop" | "detector" | "calc" | "evaluation" | "dedup";
+/** What the palette can add. One Classifier tile: its mode (Product or Feature) is chosen in the panel. */
+export type PaletteKind = "classifier" | "crop" | "detector" | "calc" | "evaluation" | "dedup";
 
 export interface PaletteItem {
   kind: PaletteKind;
@@ -47,8 +47,7 @@ export const PALETTE: { group: string; items: PaletteItem[] }[] = [
   {
     group: "Sorts pictures into classes",
     items: [
-      { kind: "product", label: "Product classifier", box: "roi", hint: "Mode Product: sorts pictures into products (one per camera)." },
-      { kind: "feature", label: "Feature classifier", box: "roi", hint: "Mode Feature: labels a feature OK / NG." },
+      { kind: "classifier", label: "Classifier", box: "roi", hint: "Labels pictures into classes. Choose Feature (OK / NG) or Product in its panel." },
     ],
   },
 ];

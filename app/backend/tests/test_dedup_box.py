@@ -50,6 +50,16 @@ class DedupBoxTests(ApiTestCase):
         self.assertEqual(sorted(dedup_box.frames(CAM, self.d1)), sorted(self.frames[:4]))  # no unlabeled picture
         self.assertEqual(sorted(dedup_box.frames(CAM, self.d2)), sorted(self.frames[2:4]))
 
+    def test_picture_actions_go_through_the_feature_the_state_names(self) -> None:
+        flow.update_node(CAM, self.d1, {"source": {"feature": "type", "dot": "all"}})
+        for box, feature in ((self.d1, "type"), (self.d2, "whole-frame")):  # a box with no Classifier acts through the whole-frame feature
+            state = self.client.get(f"{self.base}/dedup/state", params={"feature": box}).json()
+            self.assertEqual(state["source"], feature)
+            r = self.client.post(f"{self.base}/classify/delete-preview", json={"feature": state["source"], "frames": self.frames[:1]})
+            self.assertEqual(r.status_code, 200)
+        r = self.client.post(f"{self.base}/classify/delete-bulk", json={"feature": "whole-frame", "frames": self.frames[4:5], "note": "", "via": "Scatter"})
+        self.assertEqual(r.status_code, 200)
+
     def test_the_grid_endpoint_lists_the_pictures_the_muted_ones_and_the_labels(self) -> None:
         flow.update_node(CAM, self.d1, {"source": {"feature": "type", "dot": "all"}})
         self.mute(self.d1, self.frames[:1])
@@ -131,7 +141,9 @@ class DedupBoxTests(ApiTestCase):
         self.assertIsNone(flow.edge_allowed(graph, crop, self.d1))
         self.assertIn("feeds a Classifier", flow.edge_allowed(graph, self.d1, crop) or "")
         det = flow.create_node(CAM, "detector")
-        self.assertIn("cannot feed a Dedup box", flow.edge_allowed(flow.load_graph(CAM), det, self.d1) or "")
+        self.assertIsNone(flow.edge_allowed(flow.load_graph(CAM), det, self.d1))  # a detector target feeds it (v1.99.0)
+        with self.assertRaises(flow.FlowError):
+            flow.connect(CAM, det, self.d1)  # not the whole detector: one target's dot
 
     def test_a_picture_edits_box_in_front_is_the_input_of_the_embeddings(self) -> None:
         crop = flow.create_node(CAM, "crop")

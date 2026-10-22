@@ -21,7 +21,7 @@ export function freshName(base: string, taken: string[]): string {
 }
 
 /** What an arrow drawn on the canvas means for the target ROI: the products it should apply to (empty = whole camera). */
-export type ConnectResult = { feature: string; products: string[]; detach?: boolean } | { error: string };
+export type ConnectResult = { feature: string; products: string[]; detach?: boolean; attach?: boolean } | { error: string };
 
 export interface Connection {
   source: string;
@@ -42,8 +42,12 @@ export function connectAction(canvas: ChainCanvas, c: Connection): ConnectResult
   const target = featureOf(canvas, c.target);
   const source = featureOf(canvas, c.source);
   if (!target || !source) return { error: "Unknown box." };
-  if (target.kind !== "roi" || target.role === "classify" || !target.ref) {
-    return { error: "A line can only end at a feature Classifier." };
+  if (target.kind === "roi" && target.role === "classify" && target.ref) {
+    // The product Classifier takes only the line from Ingest (it sorts the whole camera).
+    return source.kind === "ingest" ? { feature: target.ref, products: [], attach: true } : { error: "The product Classifier reads the whole camera: its line comes from Ingest." };
+  }
+  if (target.kind !== "roi" || !target.ref) {
+    return { error: "A line can only end at a Classifier." };
   }
   if (target.scope === "name") {
     return { error: `${target.label} belongs to ${target.product} by its name, so its product cannot change.` };
@@ -111,7 +115,11 @@ function describeFlowBox(kind: string, f: FlowSummary | undefined): string {
     const state = f?.status === "fresh" ? `${f.complete ?? 0}/${f.frames ?? 0} complete` : f?.status === "stale" ? "run again" : "not run";
     return `${targets} target${targets === 1 ? "" : "s"} · ${state}`;
   }
-  if (kind === "calc") return f?.a && f?.b ? `${f.op ?? "angle"} ${f.a} → ${f.b}` : "connect a detector";
+  if (kind === "calc") {
+    if (f?.a && f?.b) return `${f.op ?? "angle"} ${f.a} → ${f.b}`;
+    if (f?.a || f?.b) return `1 of 2 points (${f.a ?? f.b}) · needs one more target`; // one detector target gives one point; two are needed
+    return "needs two points · connect a detector with two targets";
+  }
   if (kind === "dedup") {
     const where = f?.source ? `${f.source.feature} · ${f.source.dot}` : "whole camera";
     return `${where} · ${f?.frames ?? 0} pictures · ${f?.muted ?? 0} muted`;
@@ -186,15 +194,15 @@ export function flowConnect(canvas: ChainCanvas, c: Connection): FlowLink {
   }
   if (!isFlowKind(source.kind) && !isFlowKind(target.kind)) return null;
   const point = targetOfHandle(c.sourceHandle);
-  if (point && !(source.kind === "detector" && (target.kind === "calc" || target.kind === "crop"))) {
-    return { error: "A target dot can feed one point of a Calculate box, be followed by a Picture edits box or anchor an ROI; use the detector's main dot for anything else." };
+  if (point && !(source.kind === "detector" && (target.kind === "calc" || target.kind === "crop" || target.kind === "dedup"))) {
+    return { error: "A target dot can feed one point of a Calculate box, be followed by a Picture edits box, be read by a Dedup box or anchor a Classifier; use the detector's main dot for anything else." };
   }
-  if (source.kind === "detector" && target.kind === "crop" && !point) {
-    return { error: "A Picture edits box follows one target of a detector: drag from that target's dot (on the detector's right edge) to the box." };
+  if (source.kind === "detector" && (target.kind === "crop" || target.kind === "dedup") && !point) {
+    return { error: `${target.kind === "crop" ? "A Picture edits box follows" : "A Dedup box reads"} one target of a detector: drag from that target's dot (on the detector's right edge) to the box.` };
   }
   const ok =
     ((source.kind === "ingest" || source.kind === "crop") && (target.kind === "crop" || target.kind === "detector" || target.kind === "dedup")) ||
-    (source.kind === "detector" && (target.kind === "detector" || target.kind === "calc" || target.kind === "crop")) ||
+    (source.kind === "detector" && (target.kind === "detector" || target.kind === "calc" || target.kind === "crop" || target.kind === "dedup")) ||
     (source.kind === "calc" && target.kind === "evaluation");
   if (!ok) {
     return {

@@ -92,6 +92,7 @@ export function OutlierResults({
   onGrid,
   onDeleted,
   onChanged,
+  labelFeature,
 }: {
   o: OutlierState;
   grid: PagerSettings;
@@ -99,8 +100,10 @@ export function OutlierResults({
   onDeleted: (frame: string) => void;
   /** A card was labeled, marked golden or restored here (a delete goes to `onDeleted`). */
   onChanged?: () => void;
+  /** The feature the picture actions go through, when it is not the one the outliers were run for (a Dedup box). */
+  labelFeature?: string;
 }) {
-  const { camera, feature, result, marks, setMarks, gone, setGone, page, setPage } = o;
+  const { camera, feature: ranFor, result, marks, setMarks, gone, setGone, page, setPage } = o;
   if (!result) return null;
 
   const rows = result.scores.filter((s) => !gone.has(s.frame));
@@ -123,7 +126,7 @@ export function OutlierResults({
       </p>
       <PictureGrid
         camera={camera}
-        feature={feature}
+        feature={labelFeature ?? ranFor}
         classes={result.classes}
         frames={rows.map((r) => r.frame)}
         cardOf={cardOf}

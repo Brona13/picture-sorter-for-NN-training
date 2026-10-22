@@ -193,6 +193,7 @@ def state(camera: str, feature: str) -> dict:
     result = _current_result(camera, feature)
     return {
         "feature": feature,
+        "source": dedup_box.label_source(camera, feature),  # the feature the picture actions (label, delete) go through
         "reason": _availability(),
         "backbones": backbones,
         "params": _saved_params(camera, feature, backbones),

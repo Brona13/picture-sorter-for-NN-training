@@ -138,6 +138,8 @@ export default function DedupView({
     api.dedupSaveSettings(camera, feature, next).catch((e: unknown) => setError(msg(e)));
   }
 
+  // Picture actions (label, golden, delete) go through the Classifier the box reads, else the whole-frame feature.
+  const act = st?.source ?? gridData?.source ?? feature;
   const outlierRun = useOutliers({ camera, feature, method: params?.method ?? "", onResult: setOutliers, onError: setError });
 
   const blocked = (message: ReactNode) => <SidePanel panel={null}>{message}</SidePanel>;
@@ -380,7 +382,7 @@ export default function DedupView({
             </p>
             <PictureGrid
               camera={camera}
-              feature={gridData.source}
+              feature={act}
               classes={gridData.classes}
               frames={shownFrames}
               cardOf={cardOf}
@@ -415,7 +417,7 @@ export default function DedupView({
               {colourNote && <p role="note" style={{ fontSize: 12 }}>{colourNote}</p>}
               <ScatterMapView
                 camera={camera}
-                feature={feature}
+                feature={act}
                 map={map}
                 colourBy={shownColour}
                 scores={outliers ? outlierShades(outliers) : undefined}
@@ -438,6 +440,7 @@ export default function DedupView({
       {active === "outliers" && st && params && params.method && (
         <OutlierResults
           o={outlierRun}
+          labelFeature={act}
           grid={st.grid}
           onGrid={(perPage, cols) =>
             api
@@ -482,7 +485,7 @@ export default function DedupView({
           {st && (
             <ClusterBrowser
               camera={camera}
-              feature={feature}
+              feature={act}
               result={result}
               picks={picks}
               marks={marks}

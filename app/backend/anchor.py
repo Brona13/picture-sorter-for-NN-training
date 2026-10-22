@@ -44,7 +44,16 @@ def _key(feature: str) -> str:
 
 
 def get_anchor(camera: str, feature: str, con=None) -> dict | None:
-    """The stored anchor of a ROI, or ``None``. Reads through ``con`` when the caller already holds a connection."""
+    """The stored anchor of a ROI, or ``None``. Reads through ``con`` when the caller already holds a connection.
+
+    A Dedup box fed by a detector target (v1.99.0) has no setting of its own: the line is its anchor, in mode ``box``,
+    so its embeddings are made from the box the detector found."""
+    if flow.kind_of(feature) == "dedup":
+        graph = flow.load_graph(camera)
+        line = next((e for e in graph["edges"] if e["target"] == feature and e.get("point") and flow.kind_of(e["source"]) == "detector"), None)
+        if line is None:
+            return None
+        return {"detector": line["source"], "target": line["point"], "mode": "box", "margin": DEFAULT_MARGIN}
     if con is None:
         raw = db.get_setting(camera, _key(feature))
     else:

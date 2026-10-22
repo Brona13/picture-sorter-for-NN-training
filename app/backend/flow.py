@@ -524,7 +524,7 @@ def edge_allowed(graph: dict, source: str, target: str) -> str | None:
     why = lines.line_error(ks, kt)
     if why:
         return why
-    if (ks, kt) not in {("ingest", "crop"), ("crop", "crop"), ("crop", "detector"), ("ingest", "detector"), ("detector", "detector"), ("detector", "crop"), ("detector", "calc"), ("calc", "evaluation"), ("evaluation", "classify"), ("ingest", "dedup"), ("crop", "dedup")}:
+    if (ks, kt) not in {("ingest", "crop"), ("crop", "crop"), ("crop", "detector"), ("ingest", "detector"), ("detector", "detector"), ("detector", "crop"), ("detector", "calc"), ("calc", "evaluation"), ("evaluation", "classify"), ("ingest", "dedup"), ("crop", "dedup"), ("detector", "dedup")}:
         if ks == "dedup":
             return "A Dedup box feeds a Classifier. Lines from it to Picture edits or a detector are not made yet."
         names = {"ingest": "Ingest", "crop": "Picture edits", "detector": "a detector", "calc": "Calculate", "evaluation": "Evaluation", "classify": "a Classify box", "dedup": "a Dedup box"}
@@ -551,9 +551,11 @@ def connect(camera: str, source: str, target: str, point: str | None = None) -> 
         raise FlowError(reason)
     if kind_of(source) == "detector" and kind_of(target) == "crop" and point is None:
         raise FlowError("A Picture edits box follows one target of a detector: draw the arrow from that target's dot.")
+    if kind_of(source) == "detector" and kind_of(target) == "dedup" and point is None:
+        raise FlowError("A Dedup box reads the box a detector found for one target: draw the arrow from that target's dot.")
     if point is not None:
-        if kind_of(source) != "detector" or kind_of(target) not in ("calc", "crop"):
-            raise FlowError("Only a detector's target can feed one point of a Calculate box or a Picture edits box.")
+        if kind_of(source) != "detector" or kind_of(target) not in ("calc", "crop", "dedup"):
+            raise FlowError("Only a detector's target can feed one point of a Calculate box, a Picture edits box or a Dedup box.")
         if point not in [t["name"] for t in graph["nodes"][source]["targets"]]:
             raise FlowError(f"{source} has no target {point}.")
     edge = {"source": source, "target": target, **({"point": point} if point is not None else {})}

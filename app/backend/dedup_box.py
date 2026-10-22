@@ -14,6 +14,7 @@ one. A box has no labels of its own: marks (label, golden) come from the Classif
 """
 from __future__ import annotations
 
+import config
 import datamodel
 import db
 import flow
@@ -46,10 +47,12 @@ def source_of(camera: str, box: str, graph: dict | None = None) -> dict | None:
 
 
 def label_source(camera: str, feature: str) -> str:
-    """The feature whose labels and goldens mark the pictures of ``feature``: a box reads its Classifier's."""
+    """The feature whose labels and goldens mark the pictures of ``feature``: a box reads its Classifier's.
+    A box that reads no Classifier has no labels of its own: it acts through the whole-frame feature (no classes, so
+    no labelling, but deleting works), because the picture actions of the Classify API need a real feature."""
     if is_box(feature):
         src = source_of(camera, feature)
-        return src["feature"] if src else feature
+        return src["feature"] if src else config.WHOLE_FRAME_FEATURE
     return feature
 
 

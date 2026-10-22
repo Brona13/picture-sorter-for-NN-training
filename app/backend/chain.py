@@ -6,7 +6,7 @@ The map is a *view* of the ROI definitions, not a second copy of them. Every box
 Each class is a dot on the box, and an "all" dot passes every classified picture (see ``lines.py``). Every line
 is derived from the ROI rows:
 
-  * Ingest -> the product Classifier, locked;
+  * Ingest -> the product Classifier (a normal line since v1.99.0: delete it and the Classifier hangs alone);
   * Ingest -> a feature Classifier that applies to the whole camera;
   * a product dot (or the "all" dot) of the product Classifier -> a feature Classifier scoped to that product, either by
     name (``"<product>::<roi>"``, locked) or through the ROI's ``products`` list.
@@ -175,8 +175,8 @@ def _edges(camera: str, rois: list[datamodel.ROI], classify: str | None) -> list
     classes = datamodel.classes_for(camera, classify) if classify else []
     anchored = {r.name for r in rois if anchor.get_anchor(camera, r.name) or roi_input.get_input(camera, r.name) or dedup_box.input_of(camera, r.name)}  # these hang from their detector, Picture edits or Dedup box instead
     detached = {r.name for r in rois if db.get_setting(camera, f"{db.DETACHED_KEY}{r.name}") == "1"}  # drawn without the line from Ingest
-    if classify_id:
-        add(INGEST_ID, classify_id, locked=True)
+    if classify_id and classify not in detached:
+        add(INGEST_ID, classify_id)  # drawn until the user deletes it (the Classifier then hangs alone and still reads the whole camera)
     for roi in rois:
         if roi.role == "classify":
             continue
@@ -214,7 +214,8 @@ def _flow_nodes(camera: str, graph: dict, stored: dict) -> list[dict]:
                 summary["follow"] = {**summary["follow"], "size": spec.get("size")}
         elif kind == "detector":
             summary = {"targets": [t["name"] for t in node["targets"]], "status": flow.status(camera, node_id, graph), **flow.summarize_detector(camera, node_id),
-                       "source": flow.node_source(graph, node_id), "in_scope": len(flow.node_frames(camera, node_id, graph))}
+                       "source": flow.node_source(graph, node_id), "in_scope": len(flow.node_frames(camera, node_id, graph)),
+                       "area": "edited" if flow.input_rects(graph, node_id) else "whole"}  # the picture area the search runs on
         elif kind == "calc":
             a, b = flow.effective_points(graph, node_id)
             summary = {"op": node["op"], "a": a, "b": b}

@@ -7,8 +7,8 @@ test("every box type has one colour and one fixed size", () => {
 });
 
 test("the palette is grouped by in / out type and offers every box the Chain can add", () => {
-  expect(PALETTE.flatMap((g) => g.items.map((i) => i.kind)).sort()).toEqual(["calc", "crop", "dedup", "detector", "evaluation", "feature", "product"]);
-  expect(paletteItem("product").box).toBe("roi");
+  expect(PALETTE.flatMap((g) => g.items.map((i) => i.kind)).sort()).toEqual(["calc", "classifier", "crop", "dedup", "detector", "evaluation"]);
+  expect(paletteItem("classifier").box).toBe("roi");
 });
 
 test("a box dropped at the pointer is centred on it", () => {

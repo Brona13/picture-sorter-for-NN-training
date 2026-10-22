@@ -48,11 +48,15 @@ test("refuses arrows that mean nothing", () => {
     { source: "roi:type", sourceHandle: null, target: "roi:seal" },
     { source: "roi:edge", sourceHandle: "p:OK", target: "roi:seal" }, // a feature Classifier's dots feed nothing yet
     { source: "roi:seal", sourceHandle: null, target: "roi:edge" },
-    { source: "ingest", sourceHandle: null, target: "roi:type" },
+    { source: "roi:seal", sourceHandle: null, target: "roi:type" }, // the product Classifier takes only Ingest
     { source: "ingest", sourceHandle: null, target: "ingest" },
     { source: "roi:type", sourceHandle: "p:A", target: "roi:B::rod" },
   ];
   for (const c of bad) expect(connectAction(canvas, c)).toHaveProperty("error");
+});
+
+test("a line from Ingest onto the product Classifier draws it again", () => {
+  expect(connectAction(canvas, { source: "ingest", sourceHandle: null, target: "roi:type" })).toEqual({ feature: "type", products: [], attach: true });
 });
 
 test("the all dot puts every product on the feature; deleting that line sends it back to the whole camera", () => {
@@ -228,4 +232,19 @@ test("a Classifier dot feeds a detector or a Picture edits box, which then works
   expect(flowConnect(withBoxes, { source: "roi:seal", sourceHandle: null, target: "det:9" })).toHaveProperty("error");
   expect(describeFlow("detector", { targets: ["P"], status: "none", source: { feature: "seal", dot: "OK" }, in_scope: 12 })).toBe("1 target · not run · OK · 12 pictures");
   expect(describeFlow("detector", { targets: ["P"], status: "none" })).toBe("1 target · not run");
+});
+
+test("Calculate says how many points it has and what it needs", () => {
+  expect(describeFlow("calc", { op: "angle", a: null, b: null })).toBe("needs two points · connect a detector with two targets");
+  expect(describeFlow("calc", { op: "angle", a: "Detector 1 · P", b: null })).toBe("1 of 2 points (Detector 1 · P) · needs one more target");
+  expect(describeFlow("calc", { op: "angle", a: "A", b: "B" })).toBe("angle A → B");
+});
+
+test("a detector target dot can be read by a Dedup box, the whole detector cannot", () => {
+  const c: ChainCanvas = {
+    ...flowCanvas,
+    nodes: [...flowCanvas.nodes, node({ id: "dedup:1", kind: "dedup", ref: null, role: null, scope: null, label: "Dedup 1" })],
+  };
+  expect(flowConnect(c, { source: "det:1", sourceHandle: "t:P", target: "dedup:1" })).toEqual({ source: "det:1", target: "dedup:1", point: "P" });
+  expect(flowConnect(c, { source: "det:1", sourceHandle: null, target: "dedup:1" })).toHaveProperty("error");
 });

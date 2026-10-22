@@ -322,3 +322,49 @@ def set_product_names(camera: str, body: ClassNamesUpdate) -> dict:
             r.classes = wanted
     datamodel.save_rois(camera, rois)
     return {"products": datamodel.products(camera)}
+
+
+class ModeUpdate(BaseModel):
+    mode: str  # "product" or "feature"
+    product_names: list[str] = []
+
+
+@router.put("/cameras/{camera}/rois/{feature}/mode")
+def set_mode(camera: str, feature: str, body: ModeUpdate) -> dict:
+    """Switch one Classifier between Feature (OK / NG, labels one feature) and Product (its classes are the product names).
+
+    The labels and goldens of that Classifier are cleared: their classes no longer exist. Both directions are refused while
+    another Classifier depends on the product list (a camera has one Product Classifier)."""
+    roi = _require_roi(camera, feature)
+    if body.mode not in ("product", "feature"):
+        raise HTTPException(status_code=422, detail="The mode is product or feature.")
+    owner, _ = datamodel.split_feature(feature)
+    if owner is not None:
+        raise HTTPException(status_code=422, detail="A Classifier that belongs to a product by its name cannot change mode.")
+    cleared = len(labels.current_labels(camera, feature))
+    rois = datamodel.load_rois(camera)
+    target = next(r for r in rois if r.name == feature)
+    if body.mode == "product":
+        if roi.role == "classify":
+            raise HTTPException(status_code=422, detail="It is the Product Classifier already.")
+        other = datamodel.classify_feature(camera)
+        if other is not None:
+            raise HTTPException(status_code=422, detail=f"{other} is the Product Classifier of this camera; a camera has one.")
+        names = [n.strip() for n in body.product_names if n.strip()]
+        if len(names) < 2 or len(set(names)) != len(names):
+            raise HTTPException(status_code=422, detail="Give at least two different product names.")
+        if any(datamodel.FEATURE_SEP in n for n in names):
+            raise HTTPException(status_code=422, detail=f"`{datamodel.FEATURE_SEP}` is reserved — please pick names without it.")
+        target.role, target.classes, target.products = "classify", names, None
+        anchor.clear_anchor(camera, feature)  # the Product Classifier always reads the whole picture
+        roi_input.clear_input(camera, feature)
+    else:
+        if roi.role != "classify":
+            raise HTTPException(status_code=422, detail="It is a Feature Classifier already.")
+        dependents = [r.name for r in rois if r.name != feature and (datamodel.split_feature(r.name)[0] is not None or r.products)]
+        if dependents:
+            raise HTTPException(status_code=422, detail=f"{', '.join(dependents)} depend on the products. Delete those lines or Classifiers first.")
+        target.role, target.classes = "quality", None
+    labels.clear_labels_bulk(camera, feature, list(labels.current_labels(camera, feature)))
+    datamodel.save_rois(camera, rois)
+    return {**_describe(camera, target, len(datamodel.list_unsorted(camera))), "cleared": cleared}

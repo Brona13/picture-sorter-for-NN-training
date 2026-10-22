@@ -147,20 +147,14 @@ test("Ingest has no Delete button", async () => {
   expect(screen.getByRole("button", { name: "Ingest" })).toBeInTheDocument();
 });
 
-test("the ROI feature tile creates a real ROI with a free name", async () => {
+test("the Classifier tile creates a real ROI with a free name", async () => {
   const user = userEvent.setup();
   renderView();
   await screen.findByTestId("chain-node-ingest");
-  await user.click(screen.getByRole("button", { name: "Add Feature classifier" }));
+  await user.click(screen.getByRole("button", { name: "Add Classifier" }));
   await waitFor(() => expect(calls.some((c) => c.method === "PUT" && c.url.endsWith("/rois"))).toBe(true));
   const put = calls.find((c) => c.method === "PUT" && c.url.endsWith("/rois"))!;
-  expect(put.body.name).toBe("feature");
-});
-
-test("the ROI product tile is disabled once the camera has its product-sorting ROI", async () => {
-  renderView();
-  await screen.findByTestId("chain-node-ingest");
-  expect(screen.getByRole("button", { name: "Add Product classifier" })).toBeDisabled();
+  expect(put.body.name).toBe("classifier");
 });
 
 test("renaming a box saves the layout, not the ROI", async () => {

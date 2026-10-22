@@ -5,15 +5,7 @@ import { BOX_SIZE, HUE, PALETTE, type PaletteItem, type PaletteKind } from "./pa
 export const PALETTE_DRAG = "application/x-chain-box";
 
 const ICONS: Record<PaletteKind, ReactElement> = {
-  product: (
-    <>
-      <rect x="3" y="3" width="18" height="18" rx="3" />
-      <rect x="6.5" y="7" width="4" height="4" rx="1" />
-      <rect x="13.5" y="7" width="4" height="4" rx="1" />
-      <rect x="6.5" y="14" width="11" height="3" rx="1" />
-    </>
-  ),
-  feature: (
+  classifier: (
     <>
       <path d="M3 8V4h4M17 4h4v4M21 16v4h-4M7 20H3v-4" />
       <path d="M8 12.5l3 3 5-6" />

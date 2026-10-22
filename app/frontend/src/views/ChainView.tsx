@@ -17,6 +17,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, ChainCanvas, ChainDeletePreview, ChainEdge, ChainNode, ChainViewport, FlowDeletePreview } from "../api";
 import { ALL_HANDLE, INGEST_ID, targetHandle, targetOfHandle, connectAction, describeNode, disconnectAction, flowConnect, freshName, isAnchorEdge, isDedupInputEdge, isDedupSourceEdge, isRoiInputEdge, isFlowKind, layoutOf, productHandle } from "../chain/chainModel";
+import ClassifierMode from "../chain/ClassifierMode";
 import LineConfirm from "../chain/LineConfirm";
 import Palette, { PALETTE_DRAG } from "../chain/Palette";
 import { BOX_SIZE, HUE, dropPosition, freeSpot, paletteItem, type PaletteKind } from "../chain/palette";
@@ -54,6 +55,22 @@ function Box({ data, selected }: NodeProps<BoxNode>) {
           <span title="Muted by this box">🔇 {node.flow?.muted ?? 0}</span>
           <span title="In the bin (deleted)">🗑 {node.flow?.deleted ?? 0}</span>
         </div>
+      ) : node.kind === "detector" ? (
+        <>
+        <div className="chain-node-sub chain-node-line" title={describeNode(node)}>{describeNode(node)}</div>
+        <div className="chain-node-counters" aria-label="Counters" title={describeNode(node)}>
+          <span title={node.flow?.area === "edited" ? "Searches the picture a Picture edits box cut" : "Searches the whole picture"}>{node.flow?.area === "edited" ? "▭" : "🖼"}</span>
+          <span title="Pictures it works on">▦ {node.flow?.in_scope ?? 0}</span>
+          <span title="Pictures where every target was found">✓ {node.flow?.complete ?? 0}</span>
+          <span title="Pictures to look at: a target has no box">⚠ {node.flow?.review ?? 0}</span>
+        </div>
+        </>
+      ) : node.kind === "evaluation" ? (
+        <div className="chain-node-counters" aria-label="Counters" title={describeNode(node)}>
+          <span title="Pass">✔ {node.flow?.counts?.pass ?? 0}</span>
+          <span title="Fail">✖ {node.flow?.counts?.fail ?? 0}</span>
+          <span title="No value to judge">? {node.flow?.counts?.undetermined ?? 0}</span>
+        </div>
       ) : isEdits ? <StepIcons steps={node.flow?.steps} /> : <div className="chain-node-sub chain-node-line" title={describeNode(node)}>{describeNode(node)}</div>}
       {isClassifier && (
         <>
@@ -79,7 +96,7 @@ function Box({ data, selected }: NodeProps<BoxNode>) {
       )}
       {node.kind === "detector" &&
         (node.flow?.targets ?? []).map((target) => (
-          <div className="chain-node-product chain-node-target" key={target} title={`Drag this dot onto an ROI feature: the ROI becomes the box found for ${target}`}>
+          <div className="chain-node-product chain-node-target" key={target} title={`Drag this dot onto a Classifier (it reads the box found for ${target}), a Dedup box, a Picture edits box or Calculate (a point)`}>
             {target}
             <Handle type="source" position={Position.Right} id={targetHandle(target)} />
           </div>
@@ -190,6 +207,7 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
       setError(null);
       try {
         if (result.detach) await api.setChainDetached(camera, result.feature, true);
+        else if (result.attach) await api.setChainDetached(camera, result.feature, false);
         else await api.setRoiProducts(camera, result.feature, result.products);
       } catch (e) {
         fail(e);
@@ -356,25 +374,10 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
     const taken = canvas?.nodes.filter((n) => n.ref).map((n) => n.ref!.split("::").pop()!) ?? [];
     const spot = at ?? clickSpot("roi");
     try {
-      const made = await api.saveRoi(camera, { name: freshName("feature", taken), x: 0.25, y: 0.25, w: 0.5, h: 0.5 });
+      const made = await api.saveRoi(camera, { name: freshName("classifier", taken), x: 0.25, y: 0.25, w: 0.5, h: 0.5 });
       await api.setChainDetached(camera, made.feature, true); // a new Classifier hangs alone until a line is drawn to it
       setError(null);
       await placeBoxes({ [`roi:${made.feature}`]: spot });
-      return;
-    } catch (e) {
-      fail(e);
-    }
-    await reload();
-  };
-
-  /** The product Classifier is made at once with two placeholder products; the detail page is where they get their names. */
-  const addProduct = async (at?: { x: number; y: number }) => {
-    const spot = at ?? clickSpot("roi");
-    try {
-      const made = await api.saveRoi(camera, { name: "product", x: 0.05, y: 0.05, w: 0.9, h: 0.9, make_classifier: true, product_names: ["Product 1", "Product 2"] });
-      setError(null);
-      await placeBoxes({ [`roi:${made.feature}`]: spot });
-      openPage({ id: `roi:${made.feature}`, ref: made.feature, kind: "roi" } as ChainNode, "roi"); // name the products there
       return;
     } catch (e) {
       fail(e);
@@ -386,8 +389,7 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
   const addFromPalette = (kind: PaletteKind, pointer?: { x: number; y: number }) => {
     const box = paletteItem(kind).box;
     const at = pointer ? dropPosition(pointer, box) : undefined;
-    if (kind === "product") void addProduct(at);
-    else if (kind === "feature") void addFeature(at);
+    if (kind === "classifier") void addFeature(at);
     else void addFlowBox(kind, at);
   };
 
@@ -425,7 +427,7 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
       <h3>Add</h3>
       <Palette
         disabled={!canvas}
-        taken={canvas?.classify ? { product: "The camera already has its product-sorting ROI." } : {}}
+        taken={{}}
         onAdd={(kind) => addFromPalette(kind)}
       />
       <h3>Selected box</h3>
@@ -445,6 +447,15 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
           </label>
           <p className="muted">{describeNode(selectedLive)}</p>
           {selectedLive.ref && <p className="muted">ROI: {selectedLive.ref}</p>}
+          {selectedLive.kind === "roi" && selectedLive.ref && (
+            <ClassifierMode
+              camera={camera}
+              node={selectedLive}
+              productTaken={!!canvas?.nodes.some((n) => n.kind === "roi" && n.role === "classify" && n.id !== selectedLive.id)}
+              onChanged={() => { setError(null); void reload(); }}
+              onError={setError}
+            />
+          )}
           {isFlowKind(selectedLive.kind) && (
             <>
               <button

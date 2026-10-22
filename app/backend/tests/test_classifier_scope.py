@@ -63,3 +63,51 @@ class ClassifierScopeTests(ApiTestCase):
         flow.update_node(CAM, self.det, {"source": {"feature": "type", "dot": "A"}})
         db.rename_products(CAM, "type", {"A": "Alpha"})
         self.assertEqual(flow.node_source(flow.load_graph(CAM), self.det), {"feature": "type", "dot": "Alpha"})
+
+
+class DetectorToDedupTests(ApiTestCase):
+    """A detector target's dot feeds a Dedup box: the box is anchored to the box the detector found (v1.99.0)."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        write_frames(CAM + "2", 3)
+        self.cam = CAM + "2"
+        self.det = flow.create_node(self.cam, "detector")
+        self.box = flow.create_node(self.cam, "dedup")
+
+    def test_a_target_dot_feeds_the_box_and_the_line_is_its_anchor(self) -> None:
+        import anchor
+        flow.add_target(self.cam, self.det, "T")
+        flow.connect(self.cam, self.det, self.box, point="T")
+        spec = anchor.get_anchor(self.cam, self.box)
+        self.assertEqual((spec["detector"], spec["target"], spec["mode"]), (self.det, "T", "box"))
+
+    def test_without_a_target_dot_the_line_is_refused(self) -> None:
+        with self.assertRaises(flow.FlowError):
+            flow.connect(self.cam, self.det, self.box)
+
+    def test_a_box_with_no_detector_line_has_no_anchor(self) -> None:
+        import anchor
+        self.assertIsNone(anchor.get_anchor(self.cam, self.box))
+
+
+class ProductClassifierLineTests(ApiTestCase):
+    """The product Classifier has no automatic line from Ingest after it is deleted (v1.99.0)."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        write_frames(CAM + "3", 3)
+        self.cam = CAM + "3"
+        datamodel.save_rois(self.cam, [ROI("type", 0, 0, 1, 1, role="classify", classes=["A", "B"])])
+        self.base = f"/api/cameras/{self.cam}"
+
+    def ingest_edges(self) -> list:
+        return [e for e in self.client.get(f"{self.base}/chain").json()["edges"] if e["source"] == "ingest"]
+
+    def test_the_line_can_be_deleted_and_drawn_again(self) -> None:
+        self.assertEqual(len(self.ingest_edges()), 1)
+        self.assertFalse(self.ingest_edges()[0]["locked"])
+        self.assertEqual(self.client.put(f"{self.base}/chain/type/detached", json={"detached": True}).status_code, 200)
+        self.assertEqual(self.ingest_edges(), [])
+        self.assertEqual(self.client.put(f"{self.base}/chain/type/detached", json={"detached": False}).status_code, 200)
+        self.assertEqual(len(self.ingest_edges()), 1)

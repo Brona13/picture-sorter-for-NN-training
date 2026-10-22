@@ -377,6 +377,8 @@ export interface FlowSummary {
   source?: { feature: string; dot: string } | null;
   /** A detector fed by a Classifier dot: how many pictures that dot gives it. */
   in_scope?: number;
+  /** A detector: the search runs on the whole picture, or on the picture a Picture edits box cut (`edited`). */
+  area?: "whole" | "edited";
   muted?: number;
   deleted?: number;
   feeds?: string[];
@@ -857,6 +859,8 @@ export interface DedupResult {
 
 export interface DedupState {
   feature: string;
+  /** The feature the picture actions go through: the Classifier the box reads, else the whole-frame feature. */
+  source: string;
   reason: "no_embeddings" | "no_sklearn" | "methods_off" | null;
   backbones: string[];
   params: DedupParams;
@@ -1212,6 +1216,12 @@ export const api = {
   /** Draw a feature Classifier without its line from Ingest (it still reads the whole camera), or draw the line again. */
   setChainDetached: (camera: string, feature: string, detached: boolean) =>
     request<ChainCanvas>(`/cameras/${encodeURIComponent(camera)}/chain/${encodeURIComponent(feature)}/detached`, send("PUT", { detached })),
+  /** Switch a Classifier between Feature (OK / NG) and Product (its classes are the product names); its labels are cleared. */
+  setRoiMode: (camera: string, feature: string, mode: "product" | "feature", product_names: string[] = []) =>
+    request<RoiInfo & { cleared: number }>(
+      `/cameras/${encodeURIComponent(camera)}/rois/${encodeURIComponent(feature)}/mode`,
+      send("PUT", { mode, product_names }),
+    ),
   setRoiProducts: (camera: string, feature: string, products: string[]) =>
     request<RoiInfo>(
       `/cameras/${encodeURIComponent(camera)}/rois/${encodeURIComponent(feature)}/products`,
