@@ -9,9 +9,11 @@ export interface ViewDef {
   tracked: boolean;
   /** Tools of one purpose sit together under a small group label in the tool bar. */
   group?: string;
+  /** Opened from a Chain box instead of the tool bar: still a route, still part of its section, but not listed. */
+  hidden?: boolean;
 }
 
-const view = (path: string, label: string, icon: IconId, tracked = false, group?: string): ViewDef => ({ path, label, icon, tracked, group });
+const view = (path: string, label: string, icon: IconId, tracked = false, group?: string, hidden = false): ViewDef => ({ path, label, icon, tracked, group, hidden });
 
 /**
  * The top-level navigation: four sections, each holding the pages (tools) that belong to it. A section with more than
@@ -24,13 +26,14 @@ export const SECTIONS: { id: string; label: string; pages: ViewDef[] }[] = [
     id: "manipulation",
     label: "Manipulation",
     pages: [
-      view("dedup/scatter", "Scatter", "scatter", true, "Duplicates"),
-      view("dedup/clusters", "Clusters", "clusters", true, "Duplicates"),
-      view("dedup/outliers", "Outliers", "outliers", true, "Duplicates"),
-      view("roi", "ROI editor", "roi", true),
+      // The Classifier's pages and the Dedup box's pages are opened from their boxes on the Chain (v1.97.0).
+      view("dedup/scatter", "Scatter", "scatter", true, "Duplicates", true),
+      view("dedup/clusters", "Clusters", "clusters", true, "Duplicates", true),
+      view("dedup/outliers", "Outliers", "outliers", true, "Duplicates", true),
+      view("roi", "ROI editor", "roi", true, undefined, true),
       view("detector", "Detector", "detector", true),
       view("edge-angle", "Edge angle", "edge-angle", true),
-      view("classify", "Classify", "classify", true),
+      view("classify", "Classify", "classify", true, undefined, true),
       view("insights", "Insights", "insights", true),
       view("verdict", "Verdict", "verdict", true),
       view("augmentation", "Augmentation", "augmentation", true),

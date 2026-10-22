@@ -89,8 +89,8 @@ The application provides these views:
 - **Overview** — start page: every camera with its reference frame (ROI boxes drawn on it) and a card per ROI (cutout, products, labeled/golden counts, active version). Click a camera or ROI to make that camera the active one in the left menu; hovering an ROI card highlights its box. Each card also shows its pipeline stages (see *Pipeline stages and the step bar*).
 - **Status** — label, golden, version, and ROI-definition summaries
 - **Ingest** — add frames and maintain the duplicate index
-- **Dedup** — cluster near-duplicate frames and mute the redundant ones (right after Ingest, before Classify; muted frames are hidden there)
-- **ROI editor** — create, edit, scope, or delete ROIs (zoom with the wheel, pan with the middle button or Space + drag; deleted frames are not offered)
+- **Dedup** — cluster near-duplicate frames and mute the redundant ones (opened from a Dedup box on the Chain; muted frames are hidden there)
+- **ROI editor** — (opened from a Classifier box on the Chain) create, edit, scope, or delete ROIs (zoom with the wheel, pan with the middle button or Space + drag; deleted frames are not offered)
 - **Edge angle** — a rule-based check of one edge's angle and direction (see *Edge angle rule* below)
 - **Classify** — label frames and compare scoring opinions
 - **Configuration** (⚙️, bottom of the menu) — tick which scoring methods (CPU, ResNet18, ResNet50) take part in the flow; see *Choosing the scoring methods*
@@ -528,8 +528,8 @@ by leaning, margin or novelty against the goldens.
 
 ### The Dedup page
 
-Dedup is three tools in the **Manipulation** bar, under the label **Duplicates**: **Scatter**, **Clusters**
-and **Outliers**. Pick one at the top; the centre shows its results and the **options panel** on the right
+Dedup is a Dedup box on the Chain with the tools **Grid**, **Scatter**, **Clusters** and **Outliers**
+(since v1.97.0 they are not in the Manipulation bar; open the box). Pick one at the top; the centre shows its results and the **options panel** on the right
 shows its controls (the `»` button hides the panel; the choice is remembered). When the panel is long it
 scrolls on its own, independently of the centre. At its top a card shows how many frames are in scope.
 

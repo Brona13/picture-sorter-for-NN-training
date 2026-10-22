@@ -287,11 +287,11 @@ export default function App() {
             </NavLink>
           </div>
         </nav>
-        {section && section.pages.length > 1 && (
+        {section && section.pages.filter((v) => !v.hidden).length > 1 && (
           <nav aria-label={`${section.label} tools`} className="toolbar">
-            {section.pages.map((v, i) => (
+            {section.pages.filter((v) => !v.hidden).map((v, i, listed) => (
               <Fragment key={v.path}>
-                {v.group && section.pages[i - 1]?.group !== v.group && <span className="toolbar-group">{v.group}</span>}
+                {v.group && listed[i - 1]?.group !== v.group && <span className="toolbar-group">{v.group}</span>}
                 <NavLink
                   to={`/${v.path}`}
                   title={v.tracked ? `${v.label} — ${toolsUsed?.[v.path] ? "used on this camera" : "not used on this camera yet"}` : v.label}
