@@ -148,6 +148,15 @@ export interface IngestedFrame {
   created: number;
 }
 
+/** A picture as the Ingest table sees it: its size (0 × 0 = unreadable), when it came in, and whether it was removed at Ingest. */
+export interface IngestOverviewFrame {
+  frame: string;
+  created: number;
+  width: number | null;
+  height: number | null;
+  removed: boolean;
+}
+
 export interface FramesResponse {
   frames: string[];
   showing_all: boolean;
@@ -1145,6 +1154,14 @@ export const api = {
       { method: "POST", body: form },
     );
   },
+  ingestOverview: (camera: string) =>
+    request<{ frames: IngestOverviewFrame[] }>(`/cameras/${encodeURIComponent(camera)}/ingest/overview`),
+  ingestRemove: (camera: string, frames: string[]) =>
+    request<{ removed: number }>(`/cameras/${encodeURIComponent(camera)}/ingest/remove`, send("POST", { frames })),
+  ingestKeepOnly: (camera: string, frames: string[]) =>
+    request<{ removed: number }>(`/cameras/${encodeURIComponent(camera)}/ingest/keep-only`, send("POST", { frames })),
+  ingestBringBack: (camera: string, frames: string[]) =>
+    request<{ restored: number }>(`/cameras/${encodeURIComponent(camera)}/ingest/bring-back`, send("POST", { frames })),
   ingestedFrames: (camera: string) =>
     request<{ frames: IngestedFrame[] }>(`/cameras/${encodeURIComponent(camera)}/ingest/frames`),
   importFolder: (camera: string, path: string) =>

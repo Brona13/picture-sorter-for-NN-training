@@ -1,6 +1,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { api, IngestedFrame, IngestResult } from "../api";
 import { daysOf, inPeriod, Period, timeOf } from "../ingestDays";
+import IngestTable from "./IngestTable";
 import ValueGrid from "./ValueGrid";
 import { useJob } from "../useJob";
 
@@ -33,6 +34,7 @@ export default function IngestView({ camera, onBack }: Props) {
   const [pictures, setPictures] = useState<IngestedFrame[] | null>(null);
   const [period, setPeriod] = useState<Period>("all");
   const [newestFirst, setNewestFirst] = useState(true);
+  const [tableRevision, setTableRevision] = useState(0);
   const job = useJob<IngestResult & { tracked?: number }>(jobId);
   const running = jobId !== null && (job === null || job.status === "queued" || job.status === "running");
 
@@ -58,7 +60,10 @@ export default function IngestView({ camera, onBack }: Props) {
   }, [camera, refreshCount]);
 
   useEffect(() => {
-    if (job?.status === "done") refreshCount();
+    if (job?.status === "done") {
+      refreshCount();
+      setTableRevision((r) => r + 1);
+    }
   }, [job?.status, refreshCount]);
 
   async function start(kind: "ingest" | "rebuild", launch: () => Promise<{ id: string }>) {
@@ -190,7 +195,14 @@ export default function IngestView({ camera, onBack }: Props) {
         </div>
       )}
 
-      <h3>2 · Ingested pictures</h3>
+      <h3>2 · Sizes and days: keep or remove</h3>
+      <p className="muted">
+        Pictures by size (rows) and by the day they came in (columns). Pick what you want to work on and keep only that, or remove what you do not.
+        A removed picture is hidden in every module; its file, labels and goldens stay and you can bring it back here.
+      </p>
+      <IngestTable camera={camera} revision={tableRevision} onChanged={refreshCount} />
+
+      <h3>3 · Ingested pictures</h3>
       {pictures === null ? (
         <p className="muted">Loading…</p>
       ) : pictures.length === 0 ? (

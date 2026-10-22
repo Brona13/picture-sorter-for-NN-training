@@ -52,7 +52,7 @@ def rebuild_index(camera: str) -> dict[str, str]:
     """Scan the immutable inbox and replace its SQLite frame catalog."""
     by_hash: dict[str, tuple[str, str, float]] = {}
     known = {r["frame"]: (r["name"], r["created"]) for r in db.frame_rows(camera)}  # keep when each was ingested
-    for p in datamodel.list_unsorted(camera):
+    for p in datamodel.list_unsorted(camera, include_removed=True):
         try:
             h = content_hash_file(p)
         except OSError:
@@ -66,9 +66,26 @@ def rebuild_index(camera: str) -> dict[str, str]:
     return {filename: h for h, (filename, _original, _created) in by_hash.items()}
 
 
+def measure_sizes(camera: str) -> None:
+    """Read the width and height of the pictures that have none yet (from the file header; nothing is decoded)."""
+    from PIL import Image  # noqa: PLC0415
+
+    todo = [r["frame"] for r in db.frame_rows(camera) if r["width"] is None]
+    sizes: dict[str, tuple[int, int]] = {}
+    root = datamodel.unsorted_dir(camera)
+    for name in todo:
+        try:
+            with Image.open(root / name) as img:
+                sizes[name] = (int(img.width), int(img.height))
+        except (OSError, ValueError):
+            sizes[name] = (0, 0)  # unreadable: shown as "unknown size", not measured again
+    if sizes:
+        db.set_frame_sizes(camera, sizes)
+
+
 def ensure_index(camera: str) -> None:
     """Build the catalog once for camera folders populated outside this app."""
-    if db.frame_index_count(camera) == 0 and datamodel.list_unsorted(camera):
+    if db.frame_index_count(camera) == 0 and datamodel.list_unsorted(camera, include_removed=True):
         rebuild_index(camera)
 
 

@@ -68,7 +68,7 @@ def _invalidate_snapshot(camera: str, categories: set[str]) -> None:
 def invalidate_frames(camera: str) -> None:
     """Invalidate frame and product-scope snapshots after ingest."""
     _invalidate_snapshot(
-        camera, {"unsorted", "product_membership", "product_frames", "feature_frames"}
+        camera, {"unsorted", "unsorted_files", "product_membership", "product_frames", "feature_frames"}
     )
 
 
@@ -158,13 +158,22 @@ def _list_images(directory: Path) -> list[Path]:
     )
 
 
-def list_unsorted(camera: str) -> list[Path]:
+def list_unsorted(camera: str, *, include_removed: bool = False) -> list[Path]:
+    """The camera's pictures. Pictures removed at Ingest are left out everywhere unless ``include_removed``."""
+
     def load():
         perf.count("filesystem.unsorted_scans")
         with perf.span("filesystem.list_unsorted"):
             return _list_images(unsorted_dir(camera))
 
-    return _snapshot_value(("unsorted", camera), load)
+    def load_in_use():
+        removed = db.removed_frames_of(camera)
+        files = _snapshot_value(("unsorted_files", camera), load)
+        return [p for p in files if p.name not in removed] if removed else files
+
+    if include_removed:
+        return _snapshot_value(("unsorted_files", camera), load)
+    return _snapshot_value(("unsorted", camera), load_in_use)
 
 
 # --- ROIs / features ---------------------------------------------------------

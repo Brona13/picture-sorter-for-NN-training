@@ -159,6 +159,7 @@ Authoritative or indexed state:
 - `labels`: current labels (`via` records the page or tool that set it: Classify..., Find similar, Scatter, Clusters, Outliers, Insights; the Scatter selection used to write "Dedup", which still counts as Scatter)
 - `verdict_decisions`: the user's verdict for a picture (`class` OK/NG) with `inputs_sig`, a signature of which ROI said which class when it was decided; a decision whose signature no longer matches the current labels is stale. Automatic verdicts are never stored
 - `goldens`: current golden marks
+- `frames.removed` (epoch seconds, NULL = in use; v1.96.0): a picture taken out at Ingest. It is hidden from every module, the bin included: `datamodel.list_unsorted` leaves it out (`include_removed=True` for the catalog itself), and the label and golden readers in `labels.py` and `verdicts.py` skip its rows. Its file, labels and goldens are untouched, so bringing it back restores everything; the same content cannot be ingested again while it exists. `frames.width` / `height` are measured from the file header on first use (0 × 0 = unreadable).
 - `deleted_frames`: current camera-wide soft deletions (`source` is `user` for Classify, or the tool the delete was made from: Scatter, Clusters, Outliers, Insights)
 - `dedup_mute`: current feature mute set
 - `detections`: per-frame object boxes for a feature (see Detector below)

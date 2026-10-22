@@ -189,8 +189,9 @@ def current_labels(camera: str, feature: str) -> dict[str, str]:
     con = db.connect()
     try:
         rows = con.execute(
-            "SELECT frame,class FROM labels WHERE camera=? AND feature=? ORDER BY frame",
-            (camera, feature),
+            "SELECT frame,class FROM labels WHERE camera=? AND feature=? "
+            "AND frame NOT IN (SELECT filename FROM frames WHERE camera=? AND removed IS NOT NULL) ORDER BY frame",
+            (camera, feature, camera),
         ).fetchall()
     finally:
         con.close()
@@ -259,8 +260,9 @@ def current_goldens(camera: str, feature: str) -> dict[str, list[str]]:
     try:
         rows = con.execute(
             "SELECT frame,class FROM goldens WHERE camera=? AND feature=? "
+            "AND frame NOT IN (SELECT filename FROM frames WHERE camera=? AND removed IS NOT NULL) "
             "ORDER BY class,frame",
-            (camera, feature),
+            (camera, feature, camera),
         ).fetchall()
     finally:
         con.close()
@@ -276,7 +278,8 @@ def quality_golden_frames(camera: str) -> set[str]:
     con = db.connect()
     try:
         rows = con.execute(
-            "SELECT DISTINCT frame FROM goldens WHERE camera=? AND class IN ('OK','NG')", (camera,)
+            "SELECT DISTINCT frame FROM goldens WHERE camera=? AND class IN ('OK','NG') "
+            "AND frame NOT IN (SELECT filename FROM frames WHERE camera=? AND removed IS NOT NULL)", (camera, camera)
         ).fetchall()
     finally:
         con.close()
@@ -311,13 +314,15 @@ def current_states_for_features(
     try:
         label_rows = con.execute(
             "SELECT feature,frame,class FROM labels WHERE camera=? "
-            f"AND feature IN ({placeholders}) ORDER BY feature,frame",
-            (camera, *unique),
+            f"AND feature IN ({placeholders}) AND frame NOT IN (SELECT filename FROM frames WHERE camera=? AND removed IS NOT NULL) "
+            "ORDER BY feature,frame",
+            (camera, *unique, camera),
         ).fetchall()
         golden_rows = con.execute(
             "SELECT feature,frame,class FROM goldens WHERE camera=? "
-            f"AND feature IN ({placeholders}) ORDER BY feature,class,frame",
-            (camera, *unique),
+            f"AND feature IN ({placeholders}) AND frame NOT IN (SELECT filename FROM frames WHERE camera=? AND removed IS NOT NULL) "
+            "ORDER BY feature,class,frame",
+            (camera, *unique, camera),
         ).fetchall()
     finally:
         con.close()

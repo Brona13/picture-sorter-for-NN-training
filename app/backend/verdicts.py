@@ -56,8 +56,9 @@ def _inputs(camera: str) -> dict[str, list[dict]]:
     try:
         rows = con.execute(
             "SELECT feature, frame, class, source, via, updated FROM labels "
-            "WHERE camera=? AND class IN ('OK','NG') ORDER BY feature, frame",
-            (camera,),
+            "WHERE camera=? AND class IN ('OK','NG') "
+            "AND frame NOT IN (SELECT filename FROM frames WHERE camera=? AND removed IS NOT NULL) ORDER BY feature, frame",
+            (camera, camera),
         ).fetchall()
     finally:
         con.close()

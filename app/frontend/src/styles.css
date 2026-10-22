@@ -360,3 +360,10 @@ button[aria-pressed="true"] { background: var(--info-bg); color: var(--info-fg);
 .chain-node-all { font-weight: 600; }
 .chain-node-counters { display: flex; justify-content: space-between; gap: 6px; margin-top: 6px; padding-top: 4px; border-top: 1px dashed var(--border); font-size: 12px; font-variant-numeric: tabular-nums; }
 .chain-evaluation { display: block; margin-top: 8px; }
+
+/* Ingest table: sizes by days (v1.96.0). */
+.ingest-table table { border-collapse: collapse; }
+.ingest-table th, .ingest-table td { border: 1px solid var(--border); padding: 2px 4px; text-align: center; }
+.ingest-table th[scope="row"] { text-align: left; }
+.ingest-table button { width: 100%; }
+.ingest-cell.picked { background: color-mix(in srgb, var(--accent, #1a73e8) 25%, var(--panel)); border-color: var(--accent, #1a73e8); }

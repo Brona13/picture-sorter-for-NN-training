@@ -19,7 +19,7 @@ import config
 import perf
 
 
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 
 
 class DatabaseResetRequired(RuntimeError):
@@ -33,6 +33,9 @@ CREATE TABLE IF NOT EXISTS frames (
     hash      TEXT NOT NULL,
     orig_name TEXT NOT NULL,
     created   REAL NOT NULL,
+    removed   REAL,
+    width     INTEGER,
+    height    INTEGER,
     PRIMARY KEY (camera, filename),
     UNIQUE (camera, hash)
 );
@@ -517,6 +520,23 @@ def _migrate_v8_to_v9(con: sqlite3.Connection) -> None:
         raise
 
 
+def _migrate_v9_to_v10(con: sqlite3.Connection) -> None:
+    """Pictures can be removed at Ingest (v1.96.0): frames gain ``removed`` (epoch seconds, NULL = in use) and their size."""
+    con.execute("BEGIN IMMEDIATE")
+    try:
+        present = {row[0] for row in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        if "frames" in present:
+            have = {row[1] for row in con.execute("PRAGMA table_info(frames)")}
+            for column, kind in (("removed", "REAL"), ("width", "INTEGER"), ("height", "INTEGER")):
+                if column not in have:
+                    con.execute(f"ALTER TABLE frames ADD COLUMN {column} {kind}")
+        con.execute("PRAGMA user_version = 10")
+        con.execute("COMMIT")
+    except Exception:
+        con.execute("ROLLBACK")
+        raise
+
+
 _MIGRATIONS = {
     2: _migrate_v2_to_v3,
     3: _migrate_v3_to_v4,
@@ -525,6 +545,7 @@ _MIGRATIONS = {
     6: _migrate_v6_to_v7,
     7: _migrate_v7_to_v8,
     8: _migrate_v8_to_v9,
+    9: _migrate_v9_to_v10,
 }
 
 
@@ -851,13 +872,64 @@ def frame_hash_map(camera: str) -> dict[str, str]:
 
 
 def frame_rows(camera: str) -> list[dict]:
-    """Every catalogued frame with its original name and the time it was ingested (epoch seconds), newest first."""
+    """Every catalogued frame with its original name and the time it was ingested (epoch seconds), newest first.
+    ``removed`` is the time it was removed at Ingest, or ``None``; ``width`` and ``height`` are ``None`` until measured."""
     con = connect()
     try:
         rows = con.execute(
-            "SELECT filename,orig_name,created FROM frames WHERE camera=? ORDER BY created DESC, filename", (camera,)
+            "SELECT filename,orig_name,created,removed,width,height FROM frames WHERE camera=? ORDER BY created DESC, filename",
+            (camera,),
         ).fetchall()
-        return [{"frame": r["filename"], "name": r["orig_name"], "created": r["created"]} for r in rows]
+        return [
+            {"frame": r["filename"], "name": r["orig_name"], "created": r["created"], "removed": r["removed"],
+             "width": r["width"], "height": r["height"]}
+            for r in rows
+        ]
+    finally:
+        con.close()
+
+
+def removed_frames_of(camera: str) -> set[str]:
+    """Pictures taken out at Ingest: hidden from every module, even the bin."""
+    con = connect()
+    try:
+        rows = con.execute("SELECT filename FROM frames WHERE camera=? AND removed IS NOT NULL", (camera,)).fetchall()
+    finally:
+        con.close()
+    return {row["filename"] for row in rows}
+
+
+def set_frames_removed(camera: str, frames: list[str], removed: bool) -> int:
+    """Take pictures out at Ingest (or bring them back). Returns how many changed."""
+    if not frames:
+        return 0
+    con = connect()
+    try:
+        count = 0
+        for i in range(0, len(frames), 500):
+            chunk = frames[i : i + 500]
+            marks = ",".join("?" for _ in chunk)
+            if removed:
+                sql = f"UPDATE frames SET removed=? WHERE camera=? AND filename IN ({marks}) AND removed IS NULL"
+                args: tuple = (time.time(), camera, *chunk)
+            else:
+                sql = f"UPDATE frames SET removed=NULL WHERE camera=? AND filename IN ({marks}) AND removed IS NOT NULL"
+                args = (camera, *chunk)
+            count += con.execute(sql, args).rowcount
+        con.commit()
+        return count
+    finally:
+        con.close()
+
+
+def set_frame_sizes(camera: str, sizes: dict[str, tuple[int, int]]) -> None:
+    con = connect()
+    try:
+        con.executemany(
+            "UPDATE frames SET width=?, height=? WHERE camera=? AND filename=?",
+            [(w, h, camera, f) for f, (w, h) in sizes.items()],
+        )
+        con.commit()
     finally:
         con.close()
 
@@ -898,10 +970,14 @@ def replace_frame_index(camera: str, records: list[tuple[str, str, str, float]])
     con = connect()
     try:
         con.execute("BEGIN IMMEDIATE")
+        # what is known about a picture besides its name survives a rebuild: when it was removed, and its size
+        kept = {r["filename"]: (r["removed"], r["width"], r["height"]) for r in con.execute(
+            "SELECT filename,removed,width,height FROM frames WHERE camera=?", (camera,))}
         con.execute("DELETE FROM frames WHERE camera=?", (camera,))
         con.executemany(
-            "INSERT INTO frames(camera,hash,filename,orig_name,created) VALUES(?,?,?,?,?)",
-            [(camera, h, filename, original, created) for h, filename, original, created in records],
+            "INSERT INTO frames(camera,hash,filename,orig_name,created,removed,width,height) VALUES(?,?,?,?,?,?,?,?)",
+            [(camera, h, filename, original, created, *kept.get(filename, (None, None, None)))
+             for h, filename, original, created in records],
         )
         con.commit()
     except Exception:

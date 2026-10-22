@@ -69,7 +69,71 @@ def ingested_frames(camera: str) -> dict:
     require_camera(camera)
     ingest.ensure_index(camera)
     deleted = db.deleted_frames_of(camera)
-    return {"frames": [r for r in db.frame_rows(camera) if r["frame"] not in deleted]}
+    return {"frames": [r for r in db.frame_rows(camera) if r["frame"] not in deleted and r["removed"] is None]}
+
+
+@router.get("/cameras/{camera}/ingest/overview")
+def overview(camera: str) -> dict:
+    """Every picture of the camera with its size and ingest time, and whether it was removed at Ingest (for the table of
+    sizes and days). Pictures in the bin are left out: they are not the Ingest's business."""
+    require_camera(camera)
+    ingest.ensure_index(camera)
+    ingest.measure_sizes(camera)
+    deleted = db.deleted_frames_of(camera)
+    return {"frames": [
+        {"frame": r["frame"], "created": r["created"], "width": r["width"], "height": r["height"], "removed": r["removed"] is not None}
+        for r in db.frame_rows(camera) if r["frame"] not in deleted
+    ]}
+
+
+class FramesBody(BaseModel):
+    frames: list[str]
+
+
+def _known(camera: str, frames: list[str]) -> list[str]:
+    known = {r["frame"] for r in db.frame_rows(camera)}
+    unknown = [f for f in frames if f not in known]
+    if unknown:
+        raise HTTPException(status_code=404, detail=f"Unknown picture: {unknown[0]}")
+    return frames
+
+
+def _changed(camera: str, gone: list[str] | None = None) -> None:
+    datamodel.invalidate_frames(camera)
+    if gone:
+        from api import dedup_api  # noqa: PLC0415  (a held clustering drops the pictures that left)
+
+        dedup_api.drop_deleted(camera, gone)
+
+
+@router.post("/cameras/{camera}/ingest/remove")
+def remove(camera: str, body: FramesBody) -> dict:
+    """Take pictures out of the camera: every module stops seeing them (the files, labels and goldens stay; Bring back undoes it)."""
+    require_camera(camera)
+    frames = _known(camera, body.frames)
+    n = db.set_frames_removed(camera, frames, True)
+    _changed(camera, frames)
+    return {"removed": n}
+
+
+@router.post("/cameras/{camera}/ingest/keep-only")
+def keep_only(camera: str, body: FramesBody) -> dict:
+    """Keep only these pictures: every other picture in use is removed."""
+    require_camera(camera)
+    keep = set(_known(camera, body.frames))
+    deleted = db.deleted_frames_of(camera)
+    rest = [r["frame"] for r in db.frame_rows(camera) if r["removed"] is None and r["frame"] not in keep and r["frame"] not in deleted]
+    n = db.set_frames_removed(camera, rest, True)
+    _changed(camera, rest)
+    return {"removed": n}
+
+
+@router.post("/cameras/{camera}/ingest/bring-back")
+def bring_back(camera: str, body: FramesBody) -> dict:
+    require_camera(camera)
+    n = db.set_frames_removed(camera, _known(camera, body.frames), False)
+    _changed(camera)
+    return {"restored": n}
 
 
 @router.post("/cameras/{camera}/ingest/upload", status_code=202)
