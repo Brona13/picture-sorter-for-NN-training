@@ -5,6 +5,7 @@ import anchor
 import roi_input
 import config
 import datamodel
+import db
 import engine
 import flow
 import labels
@@ -197,6 +198,7 @@ def set_applies_to(camera: str, feature: str, body: ProductsUpdate) -> dict:
             r.products = list(body.products) or None
             roi = r
     datamodel.save_rois(camera, rois)
+    db.delete_setting(camera, f"{db.DETACHED_KEY}{feature}")  # a line from Ingest or a product dot is drawn again
     return _describe(camera, roi, len(datamodel.list_unsorted(camera)))
 
 

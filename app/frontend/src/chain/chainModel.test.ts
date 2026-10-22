@@ -67,11 +67,11 @@ test("deleting a product arrow drops that product; the last one means the whole 
   expect(disconnectAction(two, edge)).toEqual({ feature: "seal", products: ["B"] });
 });
 
-test("locked and Ingest arrows cannot be deleted", () => {
+test("a locked arrow cannot be deleted; the line from Ingest can (the box then hangs alone)", () => {
   expect(disconnectAction(canvas, { id: "l", source: "roi:type", source_handle: "p:B", target: "roi:B::rod", locked: true }))
     .toHaveProperty("error");
   expect(disconnectAction(canvas, { id: "i", source: "ingest", source_handle: null, target: "roi:edge", locked: false }))
-    .toHaveProperty("error");
+    .toEqual({ feature: "edge", products: [], detach: true });
 });
 
 test("freshName picks the first free name, ignoring case", () => {

@@ -9,7 +9,7 @@ export const BOX_SIZE: Record<ChainNode["kind"], { w: number; h: number }> = {
   ingest: { w: 170, h: 64 },
   roi: { w: 200, h: 84 },
   classify: { w: 200, h: 84 },
-  crop: { w: 200, h: 86 },
+  crop: { w: 200, h: 66 },
   detector: { w: 200, h: 86 },
   calc: { w: 200, h: 86 },
   evaluation: { w: 200, h: 86 },

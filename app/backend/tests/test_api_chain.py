@@ -73,6 +73,17 @@ class ChainApiTests(ApiTestCase):
         self.assertIn(("roi:type", "all", "roi:seal"), edges)
         self.assertNotIn(("roi:type", "p:A", "roi:seal"), edges)
 
+    def test_a_detached_feature_hangs_alone_until_a_line_is_drawn(self) -> None:
+        datamodel.save_rois(CAM, [ROI("seal", 0, 0, 0.5, 0.5)])
+        self.assertEqual(self.edges(), {("ingest", None, "roi:seal")})
+        r = self.client.put(f"{self.base}/seal/detached", json={"detached": True})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(self.edges(), set())  # no line, and the Classifier still reads the whole camera
+        self.assertEqual(self.node("roi:seal")["frames"], 4)
+        self.client.patch(f"/api/cameras/{CAM}/rois/seal/products", json={"products": []})  # drawing a line from Ingest
+        self.assertEqual(self.edges(), {("ingest", None, "roi:seal")})
+        self.assertEqual(self.client.put(f"{self.base}/nope/detached", json={"detached": True}).status_code, 404)
+
     def test_without_classify_roi_features_hang_from_ingest(self) -> None:
         datamodel.save_rois(CAM, [ROI("seal", 0, 0, 1, 1)])
         self.assertEqual(self.edges(), {("ingest", None, "roi:seal")})

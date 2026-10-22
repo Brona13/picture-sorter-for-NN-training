@@ -211,6 +211,8 @@ test("behind a step that follows a target, a picture without the target says so 
   const detail = followDetail({ steps: [crop(null, "s1"), { id: "s2", op: "filter", name: "gaussian", params: { sigma: 1.5 } }] });
   followFetch(detail);
   setup(detail);
+  await screen.findByAltText("a.png"); // the last step (a filter) is open, so the big picture shows its result
+  fireEvent.click(screen.getByRole("button", { name: "pick s1" }));
   await screen.findByAltText("Frame to draw on"); // the following step itself: its canvas is where another picture is picked
   fireEvent.click(screen.getByRole("button", { name: "pick s2" }));
   await screen.findByAltText("a.png");

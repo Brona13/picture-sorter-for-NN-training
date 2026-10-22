@@ -106,17 +106,15 @@ test("a feature tile drops one Classifier where it was dropped", async () => {
   await waitFor(() => expect(layout()?.nodes["roi:feature"]).toBeDefined());
   expect(layout().nodes["roi:feature"]).toMatchObject({ x: 500, y: 358 });
   expect(layout().nodes["classify:feature"]).toBeUndefined(); // there is no separate Classify box
+  // a new feature Classifier hangs alone: no automatic line from Ingest
+  expect(calls.some((c) => c.method === "PUT" && c.url.endsWith("/chain/feature/detached") && c.body.detached === true)).toBe(true);
 });
 
-test("the product tile asks for the names first, then drops the box where it was dropped", async () => {
-  const user = userEvent.setup();
+test("the product tile makes the Classifier at once with placeholder products, where it was dropped; names are set in its detail page", async () => {
   const canvas = await open();
   drop(canvas, "product", 300, 200);
-  const names = await screen.findByLabelText(/Product names/);
-  expect(calls.some((c) => c.method === "PUT" && c.url.endsWith("/rois"))).toBe(false); // nothing made yet
-  await user.type(names, "A, B");
-  await user.click(screen.getByRole("button", { name: "Create" }));
   await waitFor(() => expect(layout()?.nodes["roi:product"]).toBeDefined());
+  expect(screen.queryByLabelText(/Product names/)).toBeNull(); // the Chain no longer asks
   expect(layout().nodes["roi:product"]).toMatchObject({ x: 200, y: 158 });
-  expect(calls.find((c) => c.method === "PUT" && c.url.endsWith("/rois"))!.body.product_names).toEqual(["A", "B"]);
+  expect(calls.find((c) => c.method === "PUT" && c.url.endsWith("/rois"))!.body.product_names).toEqual(["Product 1", "Product 2"]);
 });

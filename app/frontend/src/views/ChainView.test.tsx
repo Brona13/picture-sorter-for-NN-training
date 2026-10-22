@@ -166,10 +166,10 @@ test("the ROI product tile is disabled once the camera has its product-sorting R
 test("renaming a box saves the layout, not the ROI", async () => {
   renderView();
   const seal = await screen.findByTestId("chain-node-roi:seal");
-  fireEvent.doubleClick(seal.querySelector(".chain-node-title")!);
-  const input = screen.getByLabelText("Box name");
+  fireEvent.click(seal);
+  const input = await screen.findByLabelText("Box name");
   fireEvent.change(input, { target: { value: "My seal" } });
-  fireEvent.keyDown(input, { key: "Enter" });
+  fireEvent.blur(input);
   await waitFor(() => expect(calls.some((c) => c.url.endsWith("/chain/layout"))).toBe(true));
   const save = calls.find((c) => c.url.endsWith("/chain/layout"))!;
   expect(save.method).toBe("PUT");
@@ -260,4 +260,13 @@ test("a Dedup box shows icon counters (pictures, muted, bin) instead of a text l
   expect(box).toHaveTextContent("🔇 5");
   expect(box).toHaveTextContent("🗑 2");
   expect(box).not.toHaveTextContent("whole camera");
+});
+
+test("double-clicking a box opens its page: a feature Classifier on Classify, the product Classifier on its editor, Ingest on Ingest", async () => {
+  const onOpenRoi = vi.fn();
+  renderView(onOpenRoi);
+  fireEvent.doubleClick(await screen.findByTestId("chain-node-roi:seal"));
+  expect(onOpenRoi).toHaveBeenCalledWith("seal", "classify");
+  fireEvent.doubleClick(screen.getByTestId("chain-node-roi:type"));
+  expect(onOpenRoi).toHaveBeenCalledWith("type", "roi");
 });

@@ -85,9 +85,9 @@ export function usePictureEdits(
     void flush(); // what was changed last on the box before this one is kept (the draft knows its own box)
     setSelected(null);
   }, [nodeId]); // eslint-disable-line react-hooks/exhaustive-deps
-  // A step is always selected when there is one: the first, until the user picks another.
+  // A step is always selected when there is one: the last, so the big picture shows the result, until the user picks another.
   useEffect(() => {
-    setSelected((cur) => (cur && steps.some((s) => s.id === cur) ? cur : steps[0]?.id ?? null));
+    setSelected((cur) => (cur && steps.some((s) => s.id === cur) ? cur : steps[steps.length - 1]?.id ?? null));
   }, [steps]);
 
   const flush = useCallback(async () => {

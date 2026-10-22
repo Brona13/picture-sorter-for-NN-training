@@ -42,11 +42,11 @@ test("deleting an ROI's picture input or anchor says it is reset or static", () 
   expect(deleteNote(c2, c2.edges[0])!.lines[0]).toContain("static");
 });
 
-test("a line the ROI's name fixes cannot be deleted and says why", () => {
+test("the line from Ingest can be deleted: the Classifier then hangs alone and reads the whole camera", () => {
   const nodes = [n({ id: "ingest", kind: "ingest" }), n({ id: "roi:f", kind: "roi", ref: "f", label: "seal", scope: "camera" })];
   const c = canvas(nodes, [e("a", "ingest", "roi:f")]);
-  expect(disconnectError(c, c.edges[0])).toContain("hangs from Ingest or from a product");
-  expect(deleteNote(c, c.edges[0])).toBeNull();
+  expect(disconnectError(c, c.edges[0])).toBeNull();
+  expect(deleteNote(c, c.edges[0])?.lines.join(" ")).toContain("hangs alone and still reads the whole camera");
 });
 
 test("a second line from the same output never asks: outputs feed any number of boxes", () => {

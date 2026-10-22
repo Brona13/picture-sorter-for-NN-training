@@ -174,6 +174,7 @@ def _edges(camera: str, rois: list[datamodel.ROI], classify: str | None) -> list
     classify_id = roi_node_id(classify) if classify else None
     classes = datamodel.classes_for(camera, classify) if classify else []
     anchored = {r.name for r in rois if anchor.get_anchor(camera, r.name) or roi_input.get_input(camera, r.name) or dedup_box.input_of(camera, r.name)}  # these hang from their detector, Picture edits or Dedup box instead
+    detached = {r.name for r in rois if db.get_setting(camera, f"{db.DETACHED_KEY}{r.name}") == "1"}  # drawn without the line from Ingest
     if classify_id:
         add(INGEST_ID, classify_id, locked=True)
     for roi in rois:
@@ -189,7 +190,7 @@ def _edges(camera: str, rois: list[datamodel.ROI], classify: str | None) -> list
             else:
                 for product in roi.products:
                     add(classify_id, target, product_handle(product))
-        elif roi.name not in anchored:
+        elif roi.name not in anchored and roi.name not in detached:
             add(INGEST_ID, target)
     return edges
 

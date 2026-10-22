@@ -60,43 +60,43 @@ test("describeEdit: one line per step", () => {
   expect(describeEdit(crop("s1"), FILTERS, true)).toBe("follows the target");
 });
 
-test("lists the steps in order; only the first is open, the others are one line", async () => {
-  await setup(base([gauss("s1", 2), crop("s2", [0, 0, 0.5, 0.5])]));
+test("lists the steps in order; only the last is open, the others are one line", async () => {
+  await setup(base([crop("s1", [0, 0, 0.5, 0.5]), gauss("s2", 2)]));
   const items = screen.getAllByRole("listitem");
   expect(items).toHaveLength(2);
-  expect(within(items[0]).getByLabelText("sigma")).toHaveValue("2");
-  expect(within(items[0]).getByRole("combobox", { name: "Filter" })).toHaveValue("gaussian");
-  expect(within(items[1]).queryByRole("combobox")).not.toBeInTheDocument(); // the operation is in the open part
-  expect(within(items[1]).getByText("Crop")).toBeInTheDocument();
-  expect(items[1]).toHaveTextContent(/^\s*⠿\s*2\s*Crop\s*▸\s*$/); // grip, name, arrow (the switch has no text)
-  fireEvent.click(within(items[1]).getByRole("button", { name: "Open step 2" }));
-  expect(await within(screen.getAllByRole("listitem")[1]).findByRole("button", { name: "Clear crop" })).toBeInTheDocument();
-  expect(within(screen.getAllByRole("listitem")[0]).queryByLabelText("sigma")).not.toBeInTheDocument(); // opening one closes the other
-  expect(screen.getAllByRole("listitem")[0]).not.toHaveAttribute("aria-current");
+  expect(within(items[1]).getByLabelText("sigma")).toHaveValue("2");
+  expect(within(items[1]).getByRole("combobox", { name: "Filter" })).toHaveValue("gaussian");
+  expect(within(items[0]).queryByRole("combobox")).not.toBeInTheDocument(); // the operation is in the open part
+  expect(within(items[0]).getByText("Crop")).toBeInTheDocument();
+  expect(items[0]).toHaveTextContent(/^\s*⠿\s*1\s*Crop\s*▸\s*$/); // grip, name, arrow (the switch has no text)
+  fireEvent.click(within(items[0]).getByRole("button", { name: "Open step 1" }));
+  expect(await within(screen.getAllByRole("listitem")[0]).findByRole("button", { name: "Clear crop" })).toBeInTheDocument();
+  expect(within(screen.getAllByRole("listitem")[1]).queryByLabelText("sigma")).not.toBeInTheDocument(); // opening one closes the other
+  expect(screen.getAllByRole("listitem")[1]).not.toHaveAttribute("aria-current");
 });
 
 test("a collapsed step is one line: grip, name, arrow and the on/off switch, and a click on the line opens it", async () => {
   await setup(base([gauss("s1"), gauss("s2", 3)]));
-  const second = screen.getAllByRole("listitem")[1];
-  expect(within(second).getByLabelText("Drag step 2")).toBeInTheDocument();
-  expect(within(second).getByRole("switch", { name: "Step 2 on" })).toBeChecked();
-  expect(within(second).getByRole("button", { name: "Open step 2" })).toHaveAttribute("aria-expanded", "false");
-  expect(second.querySelectorAll("select, input[type=range], button")).toHaveLength(1); // only the arrow
-  fireEvent.click(within(second).getByText("Gaussian blur"));
-  expect(within(screen.getAllByRole("listitem")[1]).getByLabelText("sigma")).toHaveValue("3");
+  const first = screen.getAllByRole("listitem")[0];
+  expect(within(first).getByLabelText("Drag step 1")).toBeInTheDocument();
+  expect(within(first).getByRole("switch", { name: "Step 1 on" })).toBeChecked();
+  expect(within(first).getByRole("button", { name: "Open step 1" })).toHaveAttribute("aria-expanded", "false");
+  expect(first.querySelectorAll("select, input[type=range], button")).toHaveLength(1); // only the arrow
+  fireEvent.click(within(first).getByText("Gaussian blur"));
+  expect(within(screen.getAllByRole("listitem")[0]).getByLabelText("sigma")).toHaveValue("1.5");
 });
 
 test("the switch skips a step without removing it; it is stored only while off", async () => {
-  await setup(base([gauss("s1"), crop("s2")]));
-  fireEvent.click(screen.getByRole("switch", { name: "Step 1 on" }));
+  await setup(base([crop("s1"), gauss("s2")]));
+  fireEvent.click(screen.getByRole("switch", { name: "Step 2 on" }));
   await waitFor(() => expect(puts()).toHaveLength(1));
-  expect(puts()[0].body.steps).toEqual([{ ...gauss("s1"), enabled: false }, crop("s2")]); // same place, same parameters
-  expect(screen.getByRole("switch", { name: "Step 1 on" })).not.toBeChecked();
+  expect(puts()[0].body.steps).toEqual([crop("s1"), { ...gauss("s2"), enabled: false }]); // same place, same parameters
+  expect(screen.getByRole("switch", { name: "Step 2 on" })).not.toBeChecked();
   expect(screen.getByText(/This step is off/)).toBeInTheDocument();
   expect(screen.getByLabelText("sigma")).toBeInTheDocument(); // an off step can still be opened and changed
-  fireEvent.click(screen.getByRole("switch", { name: "Step 1 on" }));
+  fireEvent.click(screen.getByRole("switch", { name: "Step 2 on" }));
   await waitFor(() => expect(puts()).toHaveLength(2));
-  expect(puts()[1].body.steps[0]).toEqual(gauss("s1")); // on again: no flag at all
+  expect(puts()[1].body.steps[1]).toEqual(gauss("s2")); // on again: no flag at all
   expect(screen.queryByText(/This step is off/)).not.toBeInTheDocument();
 });
 
@@ -120,13 +120,13 @@ test("a step is added from the drop-down; a filter gets the catalogue's defaults
 
 test("the arrow buttons of the open step change the order and keep the ids", async () => {
   await setup(base([gauss("s1"), crop("s2"), gauss("s3", 4)]));
-  expect(screen.getByRole("button", { name: "Move step 1 up" })).toBeDisabled(); // step 1 is the open one
-  expect(screen.queryByRole("button", { name: "Move step 3 up" })).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Open step 3" }));
-  expect(screen.getByRole("button", { name: "Move step 3 down" })).toBeDisabled();
-  fireEvent.click(screen.getByRole("button", { name: "Move step 3 up" }));
+  expect(screen.getByRole("button", { name: "Move step 3 down" })).toBeDisabled(); // step 3 is the open one
+  expect(screen.queryByRole("button", { name: "Move step 1 up" })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Open step 1" }));
+  expect(screen.getByRole("button", { name: "Move step 1 up" })).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", { name: "Move step 1 down" }));
   await waitFor(() => expect(puts()).toHaveLength(1));
-  expect(ids(puts()[0].body.steps)).toEqual(["s1", "s3", "s2"]);
+  expect(ids(puts()[0].body.steps)).toEqual(["s2", "s1", "s3"]);
 });
 
 test("dragging a step by its grip onto another moves it there", async () => {
@@ -153,14 +153,13 @@ test("dropping a step on itself, or a drop that did not start from a grip, chang
 
 test("a step is removed, and the operation or the filter can be changed", async () => {
   await setup(base([gauss("s1"), crop("s2")]));
-  fireEvent.change(screen.getByRole("combobox", { name: "Filter" }), { target: { value: "median" } });
+  fireEvent.change(screen.getByRole("combobox", { name: "Step 2 operation" }), { target: { value: "filter" } }); // step 2 is the open one
   await waitFor(() => expect(puts()).toHaveLength(1));
-  expect(puts()[0].body.steps[0]).toEqual({ id: "s1", op: "filter", name: "median", params: { size: 3 } });
-  fireEvent.click(screen.getByRole("button", { name: "Open step 2" }));
-  fireEvent.change(screen.getByRole("combobox", { name: "Step 2 operation" }), { target: { value: "filter" } });
-  await waitFor(() => expect(puts()).toHaveLength(2));
-  expect(puts()[1].body.steps[1]).toEqual({ id: "s2", op: "filter", name: "gaussian", params: { sigma: 1.5 } });
+  expect(puts()[0].body.steps[1]).toEqual({ id: "s2", op: "filter", name: "gaussian", params: { sigma: 1.5 } });
   fireEvent.click(screen.getByRole("button", { name: "Open step 1" }));
+  fireEvent.change(screen.getByRole("combobox", { name: "Filter" }), { target: { value: "median" } });
+  await waitFor(() => expect(puts()).toHaveLength(2));
+  expect(puts()[1].body.steps[0]).toEqual({ id: "s1", op: "filter", name: "median", params: { size: 3 } });
   fireEvent.click(screen.getByRole("button", { name: "Remove step 1" }));
   await waitFor(() => expect(puts()).toHaveLength(3));
   expect(ids(puts()[2].body.steps)).toEqual(["s2"]);
@@ -198,9 +197,10 @@ test("a Picture edits box fed by a target: its crop step cannot be removed, and 
     ],
   };
   await setup(base([gauss("s1"), crop("s2")], { follow, follow_step: "s2", input_box: "det:1" }));
-  expect(screen.getByRole("button", { name: "Remove step 1" })).toBeEnabled(); // step 1 is open
+  expect(screen.getByRole("button", { name: "Remove step 2" })).toBeDisabled(); // step 2 is the open one
+  fireEvent.click(screen.getByRole("button", { name: "Open step 1" }));
+  expect(screen.getByRole("button", { name: "Remove step 1" })).toBeEnabled();
   fireEvent.click(screen.getByRole("button", { name: "Open step 2" }));
-  expect(screen.getByRole("button", { name: "Remove step 2" })).toBeDisabled();
   expect(await screen.findByText(/det:1 offers from hole: position, angle/)).toBeInTheDocument();
   expect(screen.getByRole("option", { name: "Position only" })).toBeEnabled();
   expect(screen.getByRole("option", { name: /Straighten.*tick Angle/ })).toBeDisabled();

@@ -64,6 +64,7 @@ export function deleteNote(canvas: ChainCanvas, edge: ChainEdge): LineNote | nul
   }
   const result = disconnectAction(canvas, edge);
   if ("error" in result) return null;
+  if (result.detach) return { title, lines: ["Only the line goes. Labels and goldens stay.", `${roi?.label ?? target} hangs alone and still reads the whole camera.`] };
   const left = result.products;
   const product = productOfHandle(edge.source_handle) ?? (edge.source_handle === ALL_HANDLE ? "the classified pictures" : null);
   return {

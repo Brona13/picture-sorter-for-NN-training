@@ -21,7 +21,7 @@ export function freshName(base: string, taken: string[]): string {
 }
 
 /** What an arrow drawn on the canvas means for the target ROI: the products it should apply to (empty = whole camera). */
-export type ConnectResult = { feature: string; products: string[] } | { error: string };
+export type ConnectResult = { feature: string; products: string[]; detach?: boolean } | { error: string };
 
 export interface Connection {
   source: string;
@@ -67,6 +67,7 @@ export function disconnectAction(canvas: ChainCanvas, edge: ChainEdge): ConnectR
   const target = featureOf(canvas, edge.target);
   if (!target?.ref) return { error: "Unknown box." };
   if (edge.locked) return { error: "This arrow is fixed by the ROI's name." };
+  if (edge.source === INGEST_ID) return { feature: target.ref, products: [], detach: true }; // the box hangs alone; it still reads the whole camera
   if (edge.source_handle === ALL_HANDLE) return { feature: target.ref, products: [] };
   const product = productOfHandle(edge.source_handle);
   if (!product) return { error: "A feature always hangs from Ingest or from a product." };

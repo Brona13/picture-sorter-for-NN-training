@@ -5,6 +5,8 @@ Boxes are created, connected and deleted through the ROI endpoints; this router 
 from __future__ import annotations
 
 import chain
+import datamodel
+import db
 import dedup_box
 import flow
 from api.cameras import require_camera
@@ -16,6 +18,10 @@ router = APIRouter()
 
 class EvaluationBody(BaseModel):
     box: str | None = None
+
+
+class DetachedBody(BaseModel):
+    detached: bool = True
 
 
 class LayoutBody(BaseModel):
@@ -57,6 +63,19 @@ def put_evaluation(camera: str, feature: str, body: EvaluationBody) -> dict:
         flow.set_feature_evaluation(camera, feature, body.box)
     except flow.FlowError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return chain.get_canvas(camera)
+
+
+@router.put("/cameras/{camera}/chain/{feature:path}/detached")
+def put_detached(camera: str, feature: str, body: DetachedBody) -> dict:
+    """Draw a feature Classifier without its line from Ingest (it still reads the whole camera), or draw the line again."""
+    require_camera(camera)
+    if datamodel.get_roi(camera, feature) is None or datamodel.get_roi(camera, feature).role == "classify":
+        raise HTTPException(status_code=404, detail="Unknown feature Classifier")
+    if body.detached:
+        db.set_setting(camera, f"{db.DETACHED_KEY}{feature}", "1")
+    else:
+        db.delete_setting(camera, f"{db.DETACHED_KEY}{feature}")
     return chain.get_canvas(camera)
 
 

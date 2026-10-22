@@ -33,17 +33,9 @@ type BoxNode = Node<BoxData, "box">;
 
 const hueOf = (n: ChainNode) => HUE[n.kind];
 
-/** A box of the chain: a rounded two-tone rectangle with an inline-renamable title. */
+/** A box of the chain: a rounded two-tone rectangle. Double-click opens its page; it is renamed in the right panel. */
 function Box({ data, selected }: NodeProps<BoxNode>) {
-  const { node, onRename } = data;
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(node.label);
-  const commit = () => {
-    setEditing(false);
-    const label = draft.trim();
-    if (label && label !== node.label) onRename(node.id, label);
-    else setDraft(node.label);
-  };
+  const { node } = data;
   const isClassifier = node.kind === "roi";
   const productMode = node.role === "classify";
   const isEdits = node.kind === "crop"; // a Picture edits box has one fixed size and shows icons, not its step list
@@ -55,25 +47,7 @@ function Box({ data, selected }: NodeProps<BoxNode>) {
       data-testid={`chain-node-${node.id}`}
     >
       {node.kind !== "ingest" && <Handle type="target" position={Position.Left} />}
-      <div className="chain-node-title" onDoubleClick={() => { setDraft(node.label); setEditing(true); }}>
-        {editing ? (
-          <input
-            className="nodrag"
-            autoFocus
-            value={draft}
-            maxLength={60}
-            aria-label="Box name"
-            onChange={(e) => setDraft(e.target.value)}
-            onBlur={commit}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") commit();
-              if (e.key === "Escape") { setDraft(node.label); setEditing(false); }
-            }}
-          />
-        ) : (
-          node.label
-        )}
-      </div>
+      <div className="chain-node-title">{node.label}</div>
       {node.kind === "dedup" ? (
         <div className="chain-node-counters" aria-label="Counters" title={describeNode(node)}>
           <span title="Pictures it sees">▦ {node.flow?.frames ?? 0}</span>
@@ -150,8 +124,6 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
-  const [adding, setAdding] = useState<"product" | null>(null);
-  const [productNames, setProductNames] = useState("");
   const [preview, setPreview] = useState<ChainDeletePreview | null>(null);
   const [flowPreview, setFlowPreview] = useState<FlowDeletePreview | null>(null);
   // A line change waiting for Enter (do it) or Esc (leave everything as it is).
@@ -159,7 +131,6 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
   const flowView = useReactFlow();
   const pane = useRef<HTMLDivElement | null>(null);
   // Where the product-sorting ROI goes once its names are typed (the tile was dropped or clicked before the form).
-  const [productAt, setProductAt] = useState<{ x: number; y: number } | null>(null);
   const viewport = useRef<ChainViewport | null>(null);
   const nodesRef = useRef<BoxNode[]>([]);
   nodesRef.current = nodes;
@@ -218,7 +189,8 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
     } else {
       setError(null);
       try {
-        await api.setRoiProducts(camera, result.feature, result.products);
+        if (result.detach) await api.setChainDetached(camera, result.feature, true);
+        else await api.setRoiProducts(camera, result.feature, result.products);
       } catch (e) {
         fail(e);
       }
@@ -385,6 +357,7 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
     const spot = at ?? clickSpot("roi");
     try {
       const made = await api.saveRoi(camera, { name: freshName("feature", taken), x: 0.25, y: 0.25, w: 0.5, h: 0.5 });
+      await api.setChainDetached(camera, made.feature, true); // a new Classifier hangs alone until a line is drawn to it
       setError(null);
       await placeBoxes({ [`roi:${made.feature}`]: spot });
       return;
@@ -394,16 +367,14 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
     await reload();
   };
 
-  const addProduct = async () => {
-    const names = productNames.split(",").map((p) => p.trim()).filter(Boolean);
-    const spot = productAt ?? clickSpot("roi");
+  /** The product Classifier is made at once with two placeholder products; the detail page is where they get their names. */
+  const addProduct = async (at?: { x: number; y: number }) => {
+    const spot = at ?? clickSpot("roi");
     try {
-      const made = await api.saveRoi(camera, { name: "product", x: 0.05, y: 0.05, w: 0.9, h: 0.9, make_classifier: true, product_names: names });
+      const made = await api.saveRoi(camera, { name: "product", x: 0.05, y: 0.05, w: 0.9, h: 0.9, make_classifier: true, product_names: ["Product 1", "Product 2"] });
       setError(null);
-      setAdding(null);
-      setProductNames("");
-      setProductAt(null);
       await placeBoxes({ [`roi:${made.feature}`]: spot });
+      openPage({ id: `roi:${made.feature}`, ref: made.feature, kind: "roi" } as ChainNode, "roi"); // name the products there
       return;
     } catch (e) {
       fail(e);
@@ -415,10 +386,8 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
   const addFromPalette = (kind: PaletteKind, pointer?: { x: number; y: number }) => {
     const box = paletteItem(kind).box;
     const at = pointer ? dropPosition(pointer, box) : undefined;
-    if (kind === "product") {
-      setProductAt(at ?? clickSpot("roi")); // the names are asked first
-      setAdding("product");
-    } else if (kind === "feature") void addFeature(at);
+    if (kind === "product") void addProduct(at);
+    else if (kind === "feature") void addFeature(at);
     else void addFlowBox(kind, at);
   };
 
@@ -444,6 +413,13 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
     }
   };
 
+  /** Opens the page of a box: Ingest, the Classifier (the product one for its names, a feature one on Classify), a Dedup box, or the flow page. */
+  const openNode = (n: ChainNode) => {
+    if (n.kind === "dedup") navigate(`/dedup/grid?box=${encodeURIComponent(n.id)}`); // the Dedup pages work on one box
+    else if (isFlowKind(n.kind)) onOpenFlow ? onOpenFlow(n.id) : navigate(`/flow?focus=${encodeURIComponent(n.id)}`);
+    else openPage(n, n.role === "classify" ? "roi" : "classify");
+  };
+
   const panel = (
     <div className="chain-panel">
       <h3>Add</h3>
@@ -452,24 +428,21 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
         taken={canvas?.classify ? { product: "The camera already has its product-sorting ROI." } : {}}
         onAdd={(kind) => addFromPalette(kind)}
       />
-      {adding === "product" && (
-        <form
-          className="chain-form"
-          onSubmit={(e) => { e.preventDefault(); void addProduct(); }}
-        >
-          <label>
-            Product names, separated by commas
-            <input value={productNames} onChange={(e) => setProductNames(e.target.value)} placeholder="4x4, 4x4RS, 2x4" autoFocus />
-          </label>
-          <button type="submit">Create</button>
-          <button type="button" onClick={() => { setAdding(null); setProductAt(null); }}>Cancel</button>
-        </form>
-      )}
       <h3>Selected box</h3>
-      {!selectedLive && <p className="muted">Click a box. Double-click its name to rename it. Drag from a handle to draw an arrow; click an arrow and press Delete to remove it (Enter confirms, Esc cancels).</p>}
+      {!selectedLive && <p className="muted">Click a box, double-click it to open its page. Drag from a handle to draw an arrow; click an arrow and press Delete to remove it (Enter confirms, Esc cancels).</p>}
       {selectedLive && (
         <div className="chain-selected">
-          <p><strong>{selectedLive.label}</strong></p>
+          <label>
+            Name
+            <input
+              key={`${selectedLive.id}:${selectedLive.label}`}
+              aria-label="Box name"
+              maxLength={60}
+              defaultValue={selectedLive.label}
+              onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== selectedLive.label) rename(selectedLive.id, v); }}
+              onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+            />
+          </label>
           <p className="muted">{describeNode(selectedLive)}</p>
           {selectedLive.ref && <p className="muted">ROI: {selectedLive.ref}</p>}
           {isFlowKind(selectedLive.kind) && (
@@ -604,6 +577,7 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
             onConnect={onConnect}
             isValidConnection={isValidConnection}
             onNodeClick={(_, n) => { setSelectedId(n.id); setSelectedEdgeId(null); }}
+            onNodeDoubleClick={(_, n) => { const live = canvas?.nodes.find((x) => x.id === n.id); if (live) openNode(live); }}
             onEdgeClick={(_, e) => { setSelectedEdgeId(e.id); setSelectedId(null); }}
             onPaneClick={() => { setSelectedId(null); setSelectedEdgeId(null); }}
             connectionRadius={CONNECT_RADIUS}

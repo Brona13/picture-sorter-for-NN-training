@@ -1226,6 +1226,7 @@ def clear_dedup_mutes(camera: str, feature: str) -> int:
         con.close()
 
 
+DETACHED_KEY = "roi.detached."  # setting roi.detached.<feature> = "1": a feature Classifier hangs alone, with no line from Ingest
 DEDUP_INPUT_KEY = "roi.dedup."  # setting roi.dedup.<feature> = the Dedup box a Classifier reads through
 
 

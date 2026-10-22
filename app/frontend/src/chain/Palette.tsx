@@ -114,7 +114,7 @@ export default function Palette({
                   onDragStart={start(item)}
                   onClick={() => onAdd(item.kind)}
                 >
-                  <svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <svg viewBox="0 0 24 24" width="21" height="21" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                     {ICONS[item.kind]}
                   </svg>
                   <span>{item.label}</span>
