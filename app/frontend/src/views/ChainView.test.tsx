@@ -151,20 +151,20 @@ test("Ingest has no Delete button", async () => {
   expect(screen.getByRole("button", { name: "Ingest" })).toBeInTheDocument();
 });
 
-test("+ ROI feature creates a real ROI with a free name", async () => {
+test("the ROI feature tile creates a real ROI with a free name", async () => {
   const user = userEvent.setup();
   renderView();
   await screen.findByTestId("chain-node-ingest");
-  await user.click(screen.getByRole("button", { name: "+ ROI feature" }));
+  await user.click(screen.getByRole("button", { name: "Add ROI feature" }));
   await waitFor(() => expect(calls.some((c) => c.method === "PUT" && c.url.endsWith("/rois"))).toBe(true));
   const put = calls.find((c) => c.method === "PUT" && c.url.endsWith("/rois"))!;
   expect(put.body.name).toBe("feature");
 });
 
-test("+ ROI product is disabled once the camera has its product-sorting ROI", async () => {
+test("the ROI product tile is disabled once the camera has its product-sorting ROI", async () => {
   renderView();
   await screen.findByTestId("chain-node-ingest");
-  expect(screen.getByRole("button", { name: "+ ROI product" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Add ROI product" })).toBeDisabled();
 });
 
 test("renaming a box saves the layout, not the ROI", async () => {
@@ -189,11 +189,11 @@ test("a feature ROI box has an output handle, so its fixed arrow to its Classify
   expect(classifyBox.querySelectorAll(".source")).toHaveLength(0);
 });
 
-test("+ Detector creates a detector box through the flow API", async () => {
+test("the Detector tile creates a detector box through the flow API", async () => {
   const user = userEvent.setup();
   renderView();
   await screen.findByTestId("chain-node-ingest");
-  await user.click(screen.getByRole("button", { name: "+ Detector" }));
+  await user.click(screen.getByRole("button", { name: "Add Detector" }));
   await waitFor(() => expect(calls.some((c) => c.method === "POST" && c.url.endsWith("/flow/nodes") && c.body.kind === "detector")).toBe(true));
 });
 
@@ -259,5 +259,5 @@ test("a Picture edits box has one fixed size and shows icons with a badge, not i
   expect(screen.getByTestId("step-icon-crop")).not.toHaveTextContent(/\d/);
   expect(screen.getByTestId("step-icon-filter")).toHaveTextContent("2");
   expect(box).not.toHaveTextContent("Gaussian blur");
-  expect(screen.getByTestId("chain-node-roi:seal")).not.toHaveClass("chain-node-fixed"); // other boxes keep their size until the palette step
+  expect(screen.getByTestId("chain-node-roi:seal")).toHaveClass("chain-node-roi"); // every box carries its type: its size and colour come from it
 });

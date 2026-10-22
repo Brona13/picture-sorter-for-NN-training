@@ -7,6 +7,7 @@ import {
   Position,
   ReactFlow,
   ReactFlowProvider,
+  useReactFlow,
   type Connection,
   type Edge,
   type Node,
@@ -17,6 +18,8 @@ import { useNavigate } from "react-router-dom";
 import { api, ChainCanvas, ChainDeletePreview, ChainEdge, ChainNode, ChainViewport, FlowDeletePreview } from "../api";
 import { INGEST_ID, classifyFollows, targetHandle, targetOfHandle, connectAction, describeNode, disconnectAction, flowConnect, freshName, isAnchorEdge, isRoiInputEdge, isFlowKind, layoutOf, productHandle } from "../chain/chainModel";
 import LineConfirm from "../chain/LineConfirm";
+import Palette, { PALETTE_DRAG } from "../chain/Palette";
+import { BOX_SIZE, HUE, dropPosition, freeSpot, paletteItem, type PaletteKind } from "../chain/palette";
 import StepIcons from "../chain/StepIcons";
 import { deleteNote, disconnectError, replaceNote, scopeNote, type LineNote } from "../chain/lineEffects";
 import { useSharedFeature } from "../SharedFeature";
@@ -28,7 +31,6 @@ type BoxData = {
 };
 type BoxNode = Node<BoxData, "box">;
 
-const HUE = { ingest: 160, roi: 30, classify: 145, crop: 100, detector: 265, calc: 200, evaluation: 340 } as const;
 const hueOf = (n: ChainNode) => HUE[n.kind];
 
 /** A box of the chain: a rounded two-tone rectangle with an inline-renamable title. */
@@ -46,7 +48,7 @@ function Box({ data, selected }: NodeProps<BoxNode>) {
   const isEdits = node.kind === "crop"; // a Picture edits box has one fixed size and shows icons, not its step list
   return (
     <div
-      className={`chain-node${isEdits ? " chain-node-fixed" : ""}${selected ? " selected" : ""}`}
+      className={`chain-node chain-node-${node.kind}${isEdits ? " chain-node-fixed" : ""}${selected ? " selected" : ""}`}
       title={isEdits ? describeNode(node) : undefined}
       style={{ ["--hue" as string]: hueOf(node) }}
       data-testid={`chain-node-${node.id}`}
@@ -71,7 +73,7 @@ function Box({ data, selected }: NodeProps<BoxNode>) {
           node.label
         )}
       </div>
-      {isEdits ? <StepIcons steps={node.flow?.steps} /> : <div className="chain-node-sub">{describeNode(node)}</div>}
+      {isEdits ? <StepIcons steps={node.flow?.steps} /> : <div className="chain-node-sub chain-node-line" title={describeNode(node)}>{describeNode(node)}</div>}
       {isClassify &&
         node.classes.map((product) => (
           <div className="chain-node-product" key={product}>
@@ -129,6 +131,10 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
   const [flowPreview, setFlowPreview] = useState<FlowDeletePreview | null>(null);
   // A line change waiting for Enter (do it) or Esc (leave everything as it is).
   const [lineDialog, setLineDialog] = useState<{ notes: LineNote[]; confirmLabel: string; run: () => void } | null>(null);
+  const flowView = useReactFlow();
+  const pane = useRef<HTMLDivElement | null>(null);
+  // Where the product-sorting ROI goes once its names are typed (the tile was dropped or clicked before the form).
+  const [productAt, setProductAt] = useState<{ x: number; y: number } | null>(null);
   const viewport = useRef<ChainViewport | null>(null);
   const nodesRef = useRef<BoxNode[]>([]);
   nodesRef.current = nodes;
@@ -315,18 +321,39 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
     await applyFlow(() => api.flowDelete(camera, id));
   };
 
-  const addFlowBox = async (kind: "crop" | "detector" | "calc" | "evaluation") => {
+  /** Stores where boxes are (top-left corners) and draws them there. A box is never connected by this. */
+  const placeBoxes = async (where: Record<string, { x: number; y: number }>) => {
+    const c = await api.chain(camera);
+    const moved = c.nodes.map((n) => (where[n.id] ? { ...n, ...where[n.id] } : n));
+    show({ ...c, nodes: moved });
+    await api.saveChainLayout(camera, layoutOf(moved.map((n) => ({ id: n.id, x: n.x, y: n.y, label: n.label })), c.viewport));
+  };
+
+  /** Where a clicked tile puts its box: the middle of what is on screen, or the first free spot below it. */
+  const clickSpot = (box: ChainNode["kind"]) => {
+    const r = pane.current?.getBoundingClientRect();
+    const middle = r ? flowView.screenToFlowPosition({ x: r.left + r.width / 2, y: r.top + r.height / 2 }) : { x: 0, y: 0 };
+    const taken = nodesRef.current.map((n) => ({ x: n.position.x, y: n.position.y, kind: n.data.node.kind }));
+    return freeSpot(taken, dropPosition(middle, box), box);
+  };
+
+  const addFlowBox = async (kind: "crop" | "detector" | "calc" | "evaluation", at?: { x: number; y: number }) => {
     await applyFlow(async () => {
       const made = await api.flowCreate(camera, kind);
       setSelectedId(made.id);
+      await placeBoxes({ [made.id]: at ?? clickSpot(kind) });
     });
   };
 
-  const addFeature = async () => {
+  const addFeature = async (at?: { x: number; y: number }) => {
     const taken = canvas?.nodes.filter((n) => n.ref).map((n) => n.ref!.split("::").pop()!) ?? [];
+    const spot = at ?? clickSpot("roi");
     try {
-      await api.saveRoi(camera, { name: freshName("feature", taken), x: 0.25, y: 0.25, w: 0.5, h: 0.5 });
+      const made = await api.saveRoi(camera, { name: freshName("feature", taken), x: 0.25, y: 0.25, w: 0.5, h: 0.5 });
       setError(null);
+      // The ROI comes with its Classify box and their line; the two are placed side by side.
+      await placeBoxes({ [`roi:${made.feature}`]: spot, [`classify:${made.feature}`]: { x: spot.x + 280, y: spot.y } });
+      return;
     } catch (e) {
       fail(e);
     }
@@ -335,15 +362,38 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
 
   const addProduct = async () => {
     const names = productNames.split(",").map((p) => p.trim()).filter(Boolean);
+    const spot = productAt ?? clickSpot("roi");
     try {
-      await api.saveRoi(camera, { name: "product", x: 0.05, y: 0.05, w: 0.9, h: 0.9, make_classifier: true, product_names: names });
+      const made = await api.saveRoi(camera, { name: "product", x: 0.05, y: 0.05, w: 0.9, h: 0.9, make_classifier: true, product_names: names });
       setError(null);
       setAdding(null);
       setProductNames("");
+      setProductAt(null);
+      await placeBoxes({ [`roi:${made.feature}`]: spot, [`classify:${made.feature}`]: { x: spot.x + 280, y: spot.y } });
+      return;
     } catch (e) {
       fail(e);
     }
     await reload();
+  };
+
+  /** A palette tile was clicked (no position) or dropped on the canvas (the box is centred on the pointer). */
+  const addFromPalette = (kind: PaletteKind, pointer?: { x: number; y: number }) => {
+    const box = paletteItem(kind).box;
+    const at = pointer ? dropPosition(pointer, box) : undefined;
+    if (kind === "product") {
+      setProductAt(at ?? clickSpot("roi")); // the names are asked first
+      setAdding("product");
+    } else if (kind === "feature") void addFeature(at);
+    else void addFlowBox(kind, at);
+  };
+
+  const onPaletteDrop = (e: React.DragEvent) => {
+    const kind = e.dataTransfer.getData(PALETTE_DRAG) as PaletteKind;
+    if (!kind || !canvas) return;
+    e.preventDefault();
+    const at = flowView.screenToFlowPosition({ x: e.clientX, y: e.clientY });
+    addFromPalette(kind, Number.isFinite(at.x) && Number.isFinite(at.y) ? at : undefined); // no usable pointer position: a free spot
   };
 
   // Opens the page for a box: Ingest, or the ROI editor / Classify on the box's ROI.
@@ -363,27 +413,11 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
   const panel = (
     <div className="chain-panel">
       <h3>Add</h3>
-      <div className="chain-palette">
-        <button type="button" disabled={!canvas || !!canvas.classify} onClick={() => setAdding("product")}>
-          + ROI product
-        </button>
-        <button type="button" disabled={!canvas} onClick={() => void addFeature()}>
-          + ROI feature
-        </button>
-        <button type="button" disabled={!canvas} onClick={() => void addFlowBox("crop")}>
-          + Picture edits
-        </button>
-        <button type="button" disabled={!canvas} onClick={() => void addFlowBox("detector")}>
-          + Detector
-        </button>
-        <button type="button" disabled={!canvas} onClick={() => void addFlowBox("calc")}>
-          + Calculate
-        </button>
-        <button type="button" disabled={!canvas} onClick={() => void addFlowBox("evaluation")}>
-          + Evaluation
-        </button>
-      </div>
-      {canvas?.classify && <p className="muted">The camera already has its product-sorting ROI.</p>}
+      <Palette
+        disabled={!canvas}
+        taken={canvas?.classify ? { product: "The camera already has its product-sorting ROI." } : {}}
+        onAdd={(kind) => addFromPalette(kind)}
+      />
       {adding === "product" && (
         <form
           className="chain-form"
@@ -394,7 +428,7 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
             <input value={productNames} onChange={(e) => setProductNames(e.target.value)} placeholder="4x4, 4x4RS, 2x4" autoFocus />
           </label>
           <button type="submit">Create</button>
-          <button type="button" onClick={() => setAdding(null)}>Cancel</button>
+          <button type="button" onClick={() => { setAdding(null); setProductAt(null); }}>Cancel</button>
         </form>
       )}
       <h3>Selected box</h3>
@@ -492,7 +526,13 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
       )}
       {!canvas && !error && <p className="muted">Loading…</p>}
       {canvas && (
-        <div className="chain-canvas" data-testid="chain-canvas">
+        <div
+          className="chain-canvas"
+          data-testid="chain-canvas"
+          ref={pane}
+          onDragOver={(e) => { if (e.dataTransfer.types.includes(PALETTE_DRAG)) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; } }}
+          onDrop={onPaletteDrop}
+        >
           <ReactFlow
             key={camera}
             nodes={shownNodes}
