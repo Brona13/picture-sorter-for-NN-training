@@ -40,6 +40,13 @@ const ICONS: Record<PaletteKind, ReactElement> = {
       <path d="M11 17a5 5 0 0 0-1.4-3.4" />
     </>
   ),
+  dedup: (
+    <>
+      <rect x="3" y="6" width="12" height="12" rx="2" />
+      <path d="M9 3h10a2 2 0 0 1 2 2v10" strokeDasharray="2 2" />
+      <path d="M6.5 12.5l2 2 3.5-4" />
+    </>
+  ),
   evaluation: (
     <>
       <path d="M3 17h18" />

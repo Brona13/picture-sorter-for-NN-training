@@ -161,6 +161,23 @@ class ProductRenameTests(ApiTestCase):
         self.assertIn(("roi:type", "p:Alpha", "roi:Alpha::rod"), edges)
         self.assertIn(("roi:type", "all", "roi:seal"), edges)  # seal covers every product: one line from the all dot
 
+    def test_a_dedup_source_and_an_evaluation_pick_follow(self) -> None:
+        import dedup_box
+        import flow
+
+        box = flow.create_node(CAM, "dedup")
+        flow.update_node(CAM, box, {"source": {"feature": "type", "dot": "A"}})
+        other = flow.create_node(CAM, "dedup")
+        flow.update_node(CAM, other, {"source": {"feature": "A::rod", "dot": "OK"}})
+        ev = flow.create_node(CAM, "evaluation")
+        flow.set_feature_evaluation(CAM, "A::rod", ev)
+        dedup_box.set_input(CAM, "A::rod", box)
+        self.assertEqual(self.rename({"A": "Alpha"}).status_code, 200)
+        self.assertEqual(dedup_box.source_of(CAM, box), {"feature": "type", "dot": "Alpha"})
+        self.assertEqual(dedup_box.source_of(CAM, other), {"feature": "Alpha::rod", "dot": "OK"})
+        self.assertEqual(flow.feature_evaluation(CAM, "Alpha::rod"), ev)
+        self.assertEqual(dedup_box.input_of(CAM, "Alpha::rod"), box)
+
     def test_several_products_at_once(self) -> None:
         r = self.rename({"A": "Alpha", "B": "Beta"})
         self.assertEqual(r.status_code, 200, r.text)

@@ -1,5 +1,4 @@
 import { ReactNode, useCallback, useEffect, useState } from "react";
-import { usePublishFeature, useSharedFeature } from "../SharedFeature";
 import { api, DedupParams, DedupResult, DedupState, OutlierResult } from "../api";
 import ClusterBrowser, { Marks } from "../classify/ClusterBrowser";
 import { OutlierControls, OutlierResults, useOutliers } from "../classify/OutlierPanel";
@@ -25,7 +24,7 @@ const CLUSTERS_INFO = (
   <>
     Groups near-identical pictures: DBSCAN on the ResNet embeddings. <strong>Epsilon</strong> is how close two pictures must be to count as neighbours and{" "}
     <strong>Min points</strong> how many neighbours make a cluster. The chosen representative of each cluster stays visible in Classify; every other member of the
-    cluster is muted when you press <strong>Apply mute</strong>. Nothing is deleted, and labeled or golden frames are never muted.
+    cluster is muted when you press <strong>Apply mute</strong>. Nothing is deleted. The mutes belong to this Dedup box; a golden is never muted.
   </>
 );
 /** The three duplicate tools; the top bar picks one, and its controls fill the options panel and its results the centre. */
@@ -40,17 +39,18 @@ export function outlierShades(r: OutlierResult): Record<string, number> {
 
 export default function DedupView({
   camera,
-  product,
+  box,
   tool = "scatter",
 }: {
   camera: string;
-  product?: string;
+  /** The Dedup box to open (from the Chain); else the first one. */
+  box?: string;
   tool?: DedupTool;
 }) {
+  // The pages work on one Dedup box of the Chain (its id is the "feature" of the API).
   const [features, setFeatures] = useState<{ feature: string; label: string }[]>([]);
   const [feature, setFeature] = useState("");
-  const shared = useSharedFeature();
-  usePublishFeature(feature, shared.publish);
+  const [boxesLoaded, setBoxesLoaded] = useState(false);
   const [st, setSt] = useState<DedupState | null>(null);
   const [params, setParams] = useState<DedupParams | null>(null);
   const [result, setResult] = useState<DedupResult | null>(null);
@@ -74,13 +74,14 @@ export default function DedupView({
     if (!camera) return;
     setFeature("");
     api
-      .versionFeatures(camera, product)
+      .dedupBoxes(camera)
       .then((f) => {
         setFeatures(f);
-        setFeature(shared.pick(f));
+        setBoxesLoaded(true);
+        setFeature(f.some((b) => b.feature === box) ? box! : (f[0]?.feature ?? ""));
       })
       .catch((e: unknown) => setError(msg(e)));
-  }, [camera, product]);
+  }, [camera, box]);
 
   const load = useCallback(async () => {
     if (!camera || !feature) return;
@@ -175,7 +176,7 @@ export default function DedupView({
             </label>
           )}
           <label>
-            Feature (ROI)
+            Dedup box
             <select value={feature} onChange={(e) => setFeature(e.target.value)}>
               {features.map((f) => (
                 <option key={f.feature} value={f.feature}>
@@ -322,11 +323,12 @@ export default function DedupView({
       {error && <p role="alert">{error}</p>}
       {notice && <p role="status">{notice}</p>}
 
-      {st && st.frames === 0 && <p>This feature has no frames yet — ingest some first.</p>}
+      {boxesLoaded && features.length === 0 && <p>There is no Dedup box yet. Add one on the Chain (the Dedup tile) and connect it.</p>}
+      {st && st.frames === 0 && <p>This Dedup box has no pictures yet: ingest some, or label some for the Classifier it reads.</p>}
 
       {active === "scatter" && (
         <div data-testid="scatter-view">
-          {!scatter && !projecting && <p>Press <strong>Compute projection</strong> in the options panel to map this feature's frames in 2D.</p>}
+          {!scatter && !projecting && <p>Press <strong>Compute projection</strong> in the options panel to map this box's pictures in 2D.</p>}
           {scatter && (
             <>
               {colourNote && <p role="note" style={{ fontSize: 12 }}>{colourNote}</p>}
@@ -447,7 +449,7 @@ export default function DedupView({
               <button onClick={() => setConfirmClear(false)}>Cancel</button>
             </>
           ) : (
-            <button onClick={() => setConfirmClear(true)}>♻️ Unmute all for this feature</button>
+            <button onClick={() => setConfirmClear(true)}>♻️ Unmute all of this box</button>
           )}
         </div>
       )}

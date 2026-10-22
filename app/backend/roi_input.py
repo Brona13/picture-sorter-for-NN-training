@@ -29,7 +29,13 @@ def _key(feature: str) -> str:
 
 
 def get_input(camera: str, feature: str, con=None) -> dict | None:
-    """The stored input of a ROI (``{"box": id}``), or ``None``. Reads through ``con`` when the caller holds one."""
+    """The stored input of a ROI (``{"box": id}``), or ``None``. Reads through ``con`` when the caller holds one.
+
+    A Dedup box (``dedup:N``) has no setting of its own: the Picture edits box a line comes from is its input."""
+    if flow.kind_of(feature) == "dedup":
+        graph = flow.load_graph(camera)
+        parent = flow.parent_of(graph, feature) if feature in graph["nodes"] else None
+        return {"box": parent} if parent and flow.kind_of(parent) == "crop" else None
     if con is None:
         raw = db.get_setting(camera, _key(feature))
     else:

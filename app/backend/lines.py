@@ -30,6 +30,7 @@ GIVES = {
     "detector": {PICTURE, POINT},
     "calc": {VALUE},
     "evaluation": {VERDICT},
+    "dedup": {FRAMES, PICTURE},  # the pictures it sees, minus the ones it muted
 }
 TAKES = {
     "roi": {FRAMES, PICTURE},
@@ -38,10 +39,11 @@ TAKES = {
     "detector": {FRAMES, PICTURE},
     "calc": {POINT},
     "evaluation": {VALUE},
+    "dedup": {FRAMES, PICTURE},
 }
 NAMES = {
     "ingest": "Ingest", "roi": "a Classifier", "classify": "a Classify box", "crop": "Picture edits",
-    "detector": "a detector", "calc": "Calculate", "evaluation": "Evaluation",
+    "detector": "a detector", "calc": "Calculate", "evaluation": "Evaluation", "dedup": "a Dedup box",
 }
 TYPE_NAMES = {FRAMES: "frames", PICTURE: "a picture", POINT: "a target point", VALUE: "a number", VERDICT: "a verdict"}
 

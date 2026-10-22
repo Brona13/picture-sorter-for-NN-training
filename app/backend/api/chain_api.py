@@ -5,6 +5,7 @@ Boxes are created, connected and deleted through the ROI endpoints; this router 
 from __future__ import annotations
 
 import chain
+import dedup_box
 import flow
 from api.cameras import require_camera
 from fastapi import APIRouter, HTTPException
@@ -55,5 +56,20 @@ def put_evaluation(camera: str, feature: str, body: EvaluationBody) -> dict:
     try:
         flow.set_feature_evaluation(camera, feature, body.box)
     except flow.FlowError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return chain.get_canvas(camera)
+
+
+class DedupInputBody(BaseModel):
+    box: str | None = None
+
+
+@router.put("/cameras/{camera}/chain/{feature:path}/dedup")
+def put_dedup_input(camera: str, feature: str, body: DedupInputBody) -> dict:
+    """Make a Dedup box the one a Classifier reads through (``box`` null removes it)."""
+    require_camera(camera)
+    try:
+        dedup_box.set_input(camera, feature, body.box)
+    except dedup_box.DedupBoxError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return chain.get_canvas(camera)

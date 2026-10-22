@@ -9,6 +9,7 @@ import numpy as np
 import datamodel
 import db
 import dedup
+import flow
 import embedding
 import labels
 import scatter
@@ -17,6 +18,7 @@ from roi import ROI
 from tests.api_helpers import ApiTestCase, wait_for_job, write_frames
 
 CAM, FEAT, OTHER = "camA", "seal", "rod"
+BOX, BOX2 = "dedup:1", "dedup:2"  # the Dedup boxes (the ROIs above are Classifiers)
 
 
 class DeletedFramesTests(ApiTestCase):
@@ -24,6 +26,8 @@ class DeletedFramesTests(ApiTestCase):
         super().setUp()
         self.frames = write_frames(CAM, 6)
         datamodel.save_rois(CAM, [ROI(name=FEAT, x=0, y=0, w=1, h=1), ROI(name=OTHER, x=0, y=0, w=1, h=1)])
+        flow.create_node(CAM, "dedup")
+        flow.create_node(CAM, "dedup")
         dedup_api._results.clear()
         vecs = {0: [1, 0, 0], 1: [1, 0.001, 0], 2: [1, 0, 0.001], 3: [0, 1, 0], 4: [0, 1, 0.001], 5: [0, 0, 1]}
 
@@ -41,7 +45,7 @@ class DeletedFramesTests(ApiTestCase):
             p.start()
         self.cls = f"/api/cameras/{CAM}/classify"
         self.dd = f"/api/cameras/{CAM}/dedup"
-        self.params = {"feature": FEAT, "method": "resnet50", "epsilon": 0.05, "min_points": 2}
+        self.params = {"feature": BOX, "method": "resnet50", "epsilon": 0.05, "min_points": 2}
 
     def tearDown(self) -> None:
         for p in self.patches:
@@ -124,7 +128,7 @@ class DeletedFramesTests(ApiTestCase):
     def test_deleting_after_clustering_reclusters_the_held_result(self) -> None:
         self.assertEqual(self.cluster()["summary"], {"clusters": 2, "covered": 5, "unique": 1, "total": 6})
         self.delete_bulk([self.frames[3], self.frames[4]])
-        st = self.client.get(f"{self.dd}/state", params={"feature": FEAT}).json()
+        st = self.client.get(f"{self.dd}/state", params={"feature": BOX}).json()
         self.assertEqual(st["result"]["summary"], {"clusters": 1, "covered": 3, "unique": 1, "total": 4})
         gone = {self.frames[3], self.frames[4]}
         members = {f for c in st["result"]["clusters"] for f in c["members"]} | set(st["result"]["noise_frames"])
@@ -149,34 +153,34 @@ class DeletedFramesTests(ApiTestCase):
     def test_cluster_ids_survive_a_delete(self) -> None:
         self.cluster()
         self.delete_bulk([self.frames[0], self.frames[1]])  # cluster 0 shrinks to one frame, i.e. noise
-        st = self.client.get(f"{self.dd}/state", params={"feature": FEAT}).json()
+        st = self.client.get(f"{self.dd}/state", params={"feature": BOX}).json()
         self.assertEqual([c["id"] for c in st["result"]["clusters"]], [1])
         self.assertEqual(st["result"]["clusters"][0]["members"], [self.frames[3], self.frames[4]])
 
     def test_result_carries_classes_and_the_marks_of_labeled_frames(self) -> None:
+        for f in self.frames:
+            labels.set_label(CAM, FEAT, f, "OK")
         labels.set_label(CAM, FEAT, self.frames[2], "NG")
-        labels.set_label(CAM, FEAT, self.frames[3], "OK")
         labels.mark_golden(CAM, FEAT, self.frames[3], "OK")
+        flow.update_node(CAM, BOX, {"source": {"feature": FEAT, "dot": "all"}})  # the box reads the Classifier, so it shows its marks
         res = self.cluster()
         self.assertEqual(res["classes"], ["OK", "NG"])
-        self.assertEqual(res["marks"], {
-            self.frames[2]: {"label": "NG", "golden": None},
-            self.frames[3]: {"label": "OK", "golden": "OK"},
-        })
+        self.assertEqual(res["marks"][self.frames[2]], {"label": "NG", "golden": None})
+        self.assertEqual(res["marks"][self.frames[3]], {"label": "OK", "golden": "OK"})
 
     def test_grid_settings_are_per_feature_validated_and_separate_from_classify(self) -> None:
-        st = self.client.get(f"{self.dd}/state", params={"feature": FEAT}).json()
+        st = self.client.get(f"{self.dd}/state", params={"feature": BOX}).json()
         self.assertEqual((st["grid"]["per_page"], st["grid"]["cols"]), (24, 4))
-        r = self.client.put(f"{self.dd}/grid-settings", json={"feature": FEAT, "per_page": 48, "cols": 6})
+        r = self.client.put(f"{self.dd}/grid-settings", json={"feature": BOX, "per_page": 48, "cols": 6})
         self.assertEqual((r.json()["per_page"], r.json()["cols"]), (48, 6))
-        again = self.client.get(f"{self.dd}/state", params={"feature": FEAT}).json()["grid"]
+        again = self.client.get(f"{self.dd}/state", params={"feature": BOX}).json()["grid"]
         self.assertEqual((again["per_page"], again["cols"]), (48, 6))
-        other = self.client.get(f"{self.dd}/state", params={"feature": OTHER}).json()["grid"]
+        other = self.client.get(f"{self.dd}/state", params={"feature": BOX2}).json()["grid"]
         self.assertEqual((other["per_page"], other["cols"]), (24, 4))
         cls_grid = self.client.get(f"{self.cls}/state", params={"feature": FEAT}).json()["settings"]
         self.assertEqual((cls_grid["per_page"], cls_grid["cols"]), (24, 4))
         for bad in ({"per_page": 7, "cols": 4}, {"per_page": 24, "cols": 2}):
-            self.assertEqual(self.client.put(f"{self.dd}/grid-settings", json={"feature": FEAT, **bad}).status_code, 422)
+            self.assertEqual(self.client.put(f"{self.dd}/grid-settings", json={"feature": BOX, **bad}).status_code, 422)
 
 
 class DeletedNoteMigrationTests(ApiTestCase):

@@ -2,12 +2,12 @@
 from __future__ import annotations
 
 import datamodel
+import dedup_box
 import embedding
 import methods_config
 import outliers
 from api import jobs
-from api.cameras import require_feature
-from api.dedup_api import marks_for
+from api.dedup_api import marks_for, require_box
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -22,7 +22,7 @@ class OutlierBody(BaseModel):
 
 @router.post("/cameras/{camera}/dedup/outliers", status_code=202)
 def run_outliers(camera: str, body: OutlierBody) -> dict:
-    require_feature(camera, body.feature)
+    require_box(camera, body.feature)
     if not embedding.backbones():
         raise HTTPException(status_code=409, detail="Outlier scoring unavailable: no_embeddings")
     if body.method not in methods_config.active_backbones():
@@ -42,7 +42,7 @@ def run_outliers(camera: str, body: OutlierBody) -> dict:
             "scores": [{"frame": f, "score": s} for f, s in ranked],
             "summary": summ,
             "marks": marks_for(camera, body.feature, frames),
-            "classes": datamodel.classes_for(camera, body.feature),
+            "classes": datamodel.classes_for(camera, dedup_box.label_source(camera, body.feature)),
         }
 
     return jobs.registry.submit("dedup_outliers", camera, work, feature=body.feature).to_dict()

@@ -12,13 +12,15 @@ import threading
 import datamodel
 import db
 import dedup
+import dedup_box
+import flow
 import embedding
 import methods_config
 import labels
 import scatter
 import vision_settings
 from api import jobs
-from api.cameras import require_feature
+from api.cameras import require_camera
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -30,6 +32,24 @@ DEFAULT_EPSILON = 0.02
 DEFAULT_MIN_POINTS = 2
 PER_PAGE_OPTIONS = [12, 24, 48, 96]
 COLS_OPTIONS = [3, 4, 5, 6, 8]
+
+def require_box(camera: str, feature: str) -> str:
+    """Dedup works on Dedup boxes of the Chain (``dedup:N``), not on ROIs."""
+    require_camera(camera)
+    if not dedup_box.exists(camera, feature):
+        raise HTTPException(status_code=404, detail=f"Unknown Dedup box: {feature}")
+    return feature
+
+
+@router.get("/cameras/{camera}/dedup/boxes")
+def list_boxes(camera: str) -> list[dict]:
+    """The Dedup boxes of the Chain, for the page's box picker."""
+    require_camera(camera)
+    import chain  # noqa: PLC0415
+
+    stored = chain.load_layout(camera)["nodes"]
+    return [{"feature": b, "label": stored.get(b, {}).get("label") or f"Dedup {b.split(':')[1]}"} for b in dedup_box.boxes(camera)]
+
 
 _lock = threading.Lock()
 _results: dict[tuple[str, str], dedup.ClusterResult] = {}
@@ -108,8 +128,9 @@ def _require_available() -> None:
 
 def marks_for(camera: str, feature: str, frames: list[str]) -> dict[str, dict]:
     """Label and golden marks of the labeled/golden frames among ``frames``."""
-    lab = labels.current_labels(camera, feature)
-    gold = labels.current_goldens(camera, feature)
+    source = dedup_box.label_source(camera, feature)  # a Dedup box shows the labels of the Classifier it reads
+    lab = labels.current_labels(camera, source)
+    gold = labels.current_goldens(camera, source)
     golden_of = {f: cls for cls, frames_ in gold.items() for f in frames_}
     return {f: {"label": lab.get(f), "golden": golden_of.get(f)} for f in frames if f in lab or f in golden_of}
 
@@ -125,7 +146,7 @@ def _describe(camera: str, feature: str, result: dedup.ClusterResult) -> dict:
             for cid in result.clusters
         ],
         "noise_frames": result.noise_frames,
-        "classes": datamodel.classes_for(camera, feature),
+        "classes": datamodel.classes_for(camera, dedup_box.label_source(camera, feature)),
         "marks": marks,
     }
 
@@ -154,7 +175,7 @@ class Params(BaseModel):
 
 
 def _validate(camera: str, p: Params) -> None:
-    require_feature(camera, p.feature)
+    require_box(camera, p.feature)
     if p.method not in methods_config.active_backbones():
         raise HTTPException(status_code=422, detail=f"Embedding not available (switched off in Configuration?): {p.method}")
     if not EPSILON_RANGE[0] <= p.epsilon <= EPSILON_RANGE[1]:
@@ -165,7 +186,7 @@ def _validate(camera: str, p: Params) -> None:
 
 @router.get("/cameras/{camera}/dedup/state")
 def state(camera: str, feature: str) -> dict:
-    require_feature(camera, feature)
+    require_box(camera, feature)
     scatter.prewarm()  # UMAP's first use imports and compiles for ~20 s: do it while the user is on this page
     backbones = methods_config.active_backbones()
     result = _current_result(camera, feature)
@@ -175,7 +196,7 @@ def state(camera: str, feature: str) -> dict:
         "backbones": backbones,
         "params": _saved_params(camera, feature, backbones),
         "ranges": {"epsilon": EPSILON_RANGE, "min_points": MIN_POINTS_RANGE},
-        "frames": len(datamodel.frames_for_feature(camera, feature)),
+        "frames": len(dedup.live_frames(camera, feature)),
         "device": embedding.active_device(),
         "device_label": embedding.device_label(),
         "muted_count": len(db.muted_frames(camera, feature)),
@@ -202,7 +223,7 @@ class GridSettings(BaseModel):
 @router.put("/cameras/{camera}/dedup/grid-settings")
 def save_grid_settings(camera: str, body: GridSettings) -> dict:
     """Per-ROI grid size of the cluster browser (kept apart from Classify's)."""
-    require_feature(camera, body.feature)
+    require_box(camera, body.feature)
     if body.per_page not in PER_PAGE_OPTIONS or body.cols not in COLS_OPTIONS:
         raise HTTPException(status_code=422, detail="Unsupported per_page or cols value.")
     db.set_setting(camera, f"dedup.grid.perpage.{body.feature}", str(body.per_page))
@@ -214,8 +235,8 @@ def save_grid_settings(camera: str, body: GridSettings) -> dict:
 def run_cluster(camera: str, body: Params) -> dict:
     _require_available()
     _validate(camera, body)
-    if not datamodel.frames_for_feature(camera, body.feature):
-        raise HTTPException(status_code=409, detail="This feature has no frames yet — ingest some first.")
+    if not dedup.live_frames(camera, body.feature):
+        raise HTTPException(status_code=409, detail="This Dedup box has no pictures yet: ingest some, or label some for the Classifier it reads.")
 
     def work(report):
         epoch = vision_settings.epoch()  # taken before computing: a change mid-run marks it stale
@@ -242,7 +263,7 @@ class ApplyBody(BaseModel):
 
 @router.post("/cameras/{camera}/dedup/apply")
 def apply(camera: str, body: ApplyBody) -> dict:
-    require_feature(camera, body.feature)
+    require_box(camera, body.feature)
     result = _current_result(camera, body.feature)
     if result is None:
         raise HTTPException(status_code=409, detail="Run Cluster first.")
@@ -257,7 +278,7 @@ def apply(camera: str, body: ApplyBody) -> dict:
 
 @router.delete("/cameras/{camera}/dedup/mutes")
 def clear_mutes(camera: str, feature: str) -> dict:
-    require_feature(camera, feature)
+    require_box(camera, feature)
     return {"unmuted": db.clear_dedup_mutes(camera, feature)}
 
 
@@ -271,7 +292,7 @@ class ScatterBody(BaseModel):
 @router.get("/cameras/{camera}/dedup/scatter/cached")
 def scatter_cached(camera: str, feature: str, projection: str, method: str) -> dict:
     """Whether the 2D map for this embedding and projection can be shown at once (nothing to compute)."""
-    require_feature(camera, feature)
+    require_box(camera, feature)
     if projection not in scatter.SUPPORTED_METHODS:
         raise HTTPException(status_code=422, detail=f"Unknown projection: {projection}")
     return {"cached": scatter.is_cached(camera, feature, projection, method, dedup.live_frames(camera, feature))}
@@ -284,7 +305,7 @@ def run_scatter(camera: str, body: ScatterBody) -> dict:
     Points carry the current label and golden, and the cluster of the held clustering when there is
     one for the same embedding, so the page can colour by any of them.
     """
-    require_feature(camera, body.feature)
+    require_box(camera, body.feature)
     if body.projection not in scatter.SUPPORTED_METHODS:
         raise HTTPException(status_code=422, detail=f"Unknown projection: {body.projection}")
     held = _current_result(camera, body.feature)
@@ -318,9 +339,10 @@ def run_scatter(camera: str, body: ScatterBody) -> dict:
                 "umap-learn (or scikit-learn for t-SNE) isn't installed — "
                 "pip install -r requirements-embedding.txt enables the scatter."
             ) from exc
-        gold = labels.current_goldens(camera, body.feature)
+        source = dedup_box.label_source(camera, body.feature)
+        gold = labels.current_goldens(camera, source)
         golden_of = {f: cls for cls, frames in gold.items() for f in frames}
-        label_of = labels.current_labels(camera, body.feature)
+        label_of = labels.current_labels(camera, source)
         reps = set(result.representatives.values()) if result else set()
         coords = proj.coords
         points = [
@@ -336,6 +358,6 @@ def run_scatter(camera: str, body: ScatterBody) -> dict:
             for f in proj.frames
         ]
         return {"projection": body.projection, "method": method, "from_cache": proj.from_cache, "points": points,
-                "classes": datamodel.classes_for(camera, body.feature)}
+                "classes": datamodel.classes_for(camera, dedup_box.label_source(camera, body.feature))}
 
     return jobs.registry.submit("dedup_scatter", camera, work, feature=body.feature).to_dict()

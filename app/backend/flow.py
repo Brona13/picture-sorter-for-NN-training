@@ -35,8 +35,8 @@ import rotsearch
 GRAPH_KEY = "flow.graph"
 RESULTS_PREFIX = "flow.det."
 INGEST_ID = "ingest"
-KINDS = ("crop", "detector", "calc", "evaluation")
-PREFIX = {"crop": "crop", "detector": "det", "calc": "calc", "evaluation": "eval"}
+KINDS = ("crop", "detector", "calc", "evaluation", "dedup")
+PREFIX = {"crop": "crop", "detector": "det", "calc": "calc", "evaluation": "eval", "dedup": "dedup"}
 KIND_OF = {v: k for k, v in PREFIX.items()}
 PICTURE_KINDS = ("crop", "detector")  # boxes that read a picture (a box with no line reads the whole picture)
 ALGORITHM = 1  # bump when detection changes, so stored boxes are recomputed
@@ -478,6 +478,8 @@ def _default_config(kind: str) -> dict:
         return {"targets": [], "angle_range": None, "rotate": True, "pad": DEFAULT_PAD}
     if kind == "calc":
         return {"op": "angle", "a": None, "b": None, "clockwise": False}
+    if kind == "dedup":
+        return {"source": None}  # None: the whole camera (or the box a line comes from); else {"feature", "dot"} of a Classifier
     return {"nominal": None, "tolerance": 3.0}
 
 
@@ -522,8 +524,10 @@ def edge_allowed(graph: dict, source: str, target: str) -> str | None:
     why = lines.line_error(ks, kt)
     if why:
         return why
-    if (ks, kt) not in {("ingest", "crop"), ("crop", "crop"), ("crop", "detector"), ("ingest", "detector"), ("detector", "detector"), ("detector", "crop"), ("detector", "calc"), ("calc", "evaluation"), ("evaluation", "classify")}:
-        names = {"ingest": "Ingest", "crop": "Picture edits", "detector": "a detector", "calc": "Calculate", "evaluation": "Evaluation", "classify": "a Classify box"}
+    if (ks, kt) not in {("ingest", "crop"), ("crop", "crop"), ("crop", "detector"), ("ingest", "detector"), ("detector", "detector"), ("detector", "crop"), ("detector", "calc"), ("calc", "evaluation"), ("evaluation", "classify"), ("ingest", "dedup"), ("crop", "dedup")}:
+        if ks == "dedup":
+            return "A Dedup box feeds a Classifier. Lines from it to Picture edits or a detector are not made yet."
+        names = {"ingest": "Ingest", "crop": "Picture edits", "detector": "a detector", "calc": "Calculate", "evaluation": "Evaluation", "classify": "a Classify box", "dedup": "a Dedup box"}
         return f"{names.get(ks, ks)} cannot feed {names.get(kt, kt)}."
     if is_flow_id(source) and source not in graph["nodes"]:
         return f"Unknown box: {source}"
@@ -561,11 +565,13 @@ def connect(camera: str, source: str, target: str, point: str | None = None) -> 
         after = calc_points(graph, target)
         if len(before) >= 2 and len(after) > len(before):
             raise FlowError("Calculate takes two points. Delete a line into it first.")
-    elif kind_of(target) in ("evaluation", "crop", "detector"):
+    elif kind_of(target) in ("evaluation", "crop", "detector", "dedup"):
         # One input per box: a new arrow replaces the old one.
         before_follow = follow_of(graph, target) if kind_of(target) == "crop" else None
         graph["edges"] = [e for e in graph["edges"] if e["target"] != target]
         graph["edges"].append(edge)
+        if kind_of(target) == "dedup":
+            graph["nodes"][target]["source"] = None  # one input: a line from Ingest or Picture edits replaces a Classifier dot
         if kind_of(target) == "crop" and follow_of(graph, target) != before_follow:
             graph["nodes"][target]["follow"] = None  # the rectangle was drawn for another target
         if kind_of(target) == "crop" and follow_of(graph, target) is not None:
@@ -600,6 +606,7 @@ def delete_preview(camera: str, node_id: str) -> dict:
         "kind": kind_of(node_id),
         "detections": len(stored["frames"]),
         "arrows": sum(1 for e in graph["edges"] if node_id in (e["source"], e["target"])),
+        **({"mutes": len(db.muted_frames(camera, node_id))} if kind_of(node_id) == "dedup" else {}),
     }
 
 
@@ -741,6 +748,11 @@ def update_node(camera: str, node_id: str, raw: dict) -> dict:
                 node[key] = None if raw[key] in (None, "") else str(raw[key])
         if "clockwise" in raw:
             node["clockwise"] = bool(raw["clockwise"])
+    elif kind == "dedup":
+        if "source" in raw:
+            node["source"] = _dedup_source(camera, node_id, raw["source"])
+            if node["source"]:
+                graph["edges"] = [e for e in graph["edges"] if e["target"] != node_id]  # one input: the Classifier dot replaces the line
     else:
         if "nominal" in raw:
             node["nominal"] = None if raw["nominal"] is None else _finite(raw["nominal"], "Nominal")
@@ -751,6 +763,23 @@ def update_node(camera: str, node_id: str, raw: dict) -> dict:
             node["tolerance"] = tolerance
     save_graph(camera, graph)
     return node
+
+
+def _dedup_source(camera: str, node_id: str, raw: object) -> dict | None:
+    """The Classifier dot a Dedup box reads: ``None`` (the whole camera) or ``{"feature", "dot"}``."""
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise FlowError("The source of a Dedup box is a Classifier and one of its dots.")
+    feature, dot = str(raw.get("feature") or ""), str(raw.get("dot") or "")
+    roi = datamodel.get_roi(camera, feature)
+    if roi is None:
+        raise FlowError(f"Unknown ROI: {feature}")
+    if dot != lines.ALL_DOT and dot not in datamodel.classes_for(camera, feature):
+        raise FlowError(f"{feature} has no class {dot}.")
+    if db.get_setting(camera, f"{db.DEDUP_INPUT_KEY}{feature}") == node_id:
+        raise FlowError(f"{node_id} feeds {feature}, so it cannot read it.")
+    return {"feature": feature, "dot": dot}
 
 
 def parent_target_names(graph: dict, node_id: str) -> list[str]:
@@ -1571,6 +1600,9 @@ def node_detail(camera: str, node_id: str, graph: dict | None = None) -> dict:
             "input": parent,  # the one detector both points come from (None when they come from two), and the crops above it
             "crops": input_rects(graph, parent) if parent else [],
         })
+    elif kind == "dedup":
+        parent = next((e["source"] for e in graph["edges"] if e["target"] == node_id), None)
+        detail.update({"input_box": parent, "source": node.get("source")})
     elif kind == "evaluation":
         calc_id = evaluation_source(graph, node_id)
         state = evaluation_state(camera, node_id)

@@ -44,7 +44,7 @@ beforeEach(() => {
       const method = init?.method ?? "GET";
       calls.push({ url, method, body: init?.body ? JSON.parse(init.body as string) : undefined });
       const ok = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status });
-      if (url.includes("/versions/features")) return ok([{ feature: "seal", label: "seal" }]);
+      if (url.includes("/dedup/boxes")) return ok([{ feature: "seal", label: "seal" }]);
       if (url.includes("/dedup/state")) return ok(state);
       if (url.includes("/dedup/settings")) return ok({ params });
       if (url.endsWith("/dedup/cluster")) return ok({ id: "c1", status: "queued", progress: {} }, 202);
@@ -261,7 +261,7 @@ test("a new selection drops an open delete confirmation", async () => {
 test("unmute needs a second confirming click", async () => {
   state = baseState({ muted_count: 3 });
   render(<DedupView camera="camA" />);
-  await userEvent.click(await screen.findByRole("button", { name: /Unmute all for this feature/ }));
+  await userEvent.click(await screen.findByRole("button", { name: /Unmute all of this box/ }));
   expect(calls.some((c) => c.method === "DELETE")).toBe(false);
   await userEvent.click(screen.getByRole("button", { name: "Yes — unmute all" }));
   await waitFor(() => expect(calls.some((c) => c.method === "DELETE")).toBe(true));
@@ -272,10 +272,10 @@ test("the Embedding and Feature controls and the selected tool's controls are in
   render(<DedupView camera="camA" tool="outliers" />);
   const panel = await screen.findByRole("complementary", { name: "Options" });
   await within(panel).findByLabelText("Embedding");
-  expect(within(panel).getByLabelText("Feature (ROI)")).toBeInTheDocument();
+  expect(within(panel).getByLabelText("Dedup box")).toBeInTheDocument();
   const labels = within(panel).getAllByRole("combobox").map((s) => s.closest("label")?.textContent ?? "");
   expect(labels[0]).toMatch(/Embedding/);
-  expect(labels[1]).toMatch(/Feature/);
+  expect(labels[1]).toMatch(/Dedup box/);
   const controls = within(panel).getByTestId("outliers-controls");
   expect(within(controls).getByRole("button", { name: "Score outliers" })).toBeInTheDocument();
   expect(within(controls).getByLabelText("k neighbours")).toBeInTheDocument();
@@ -440,9 +440,9 @@ test("each tool explains itself in a hover tip next to its title, and the page c
   expect(screen.queryByText(/will be muted on Apply mute/)).toBeNull();
 });
 
-test("the options panel has no product picker: the product is chosen in the top bar", async () => {
-  render(<DedupView camera="camA" product="P1" />);
+test("the options panel picks a Dedup box and has no product picker", async () => {
+  render(<DedupView camera="camA" box="seal" />);
   const panel = await screen.findByRole("complementary", { name: "Options" });
-  expect(within(panel).getByLabelText("Feature (ROI)")).toBeInTheDocument();
+  expect(within(panel).getByLabelText("Dedup box")).toBeInTheDocument();
   expect(within(panel).queryByLabelText("Product")).toBeNull();
 });

@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
+import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { lastSession } from "./lastSession";
 import { api, ApiError, DATA_CHANGED, DeviceInfo, MethodInfo, PipelineStage, PRODUCTS_RENAMED, RoiInfo } from "./api";
 import HardwareBadge from "./HardwareBadge";
@@ -372,7 +372,7 @@ export default function App() {
           />
           <Route path="/dedup" element={<Navigate to="/dedup/scatter" replace />} />
           {/* one route for the three tools, so the page (and the results it holds) survives switching between them */}
-          <Route path="/dedup/:tool" element={<DedupRoute camera={camera} product={product || undefined} />} />
+          <Route path="/dedup/:tool" element={<DedupRoute camera={camera} />} />
           <Route path="/config" element={<ConfigurationView />} />
           <Route path="*" element={<Navigate to="/overview" replace />} />
         </Routes>
@@ -386,10 +386,11 @@ export default function App() {
 
 const DEDUP_TOOLS = new Set<string>(["scatter", "clusters", "outliers"]);
 
-function DedupRoute({ camera, product }: { camera: string; product?: string }) {
+function DedupRoute({ camera }: { camera: string }) {
   const { tool = "" } = useParams();
+  const [search] = useSearchParams();
   if (!DEDUP_TOOLS.has(tool)) return <Navigate to="/dedup/scatter" replace />;
-  return <DedupView camera={camera} product={product} tool={tool as DedupTool} />;
+  return <DedupView camera={camera} box={search.get("box") ?? undefined} tool={tool as DedupTool} />;
 }
 
 function describe(e: unknown): string {

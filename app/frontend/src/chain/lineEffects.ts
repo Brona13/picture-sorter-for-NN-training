@@ -1,5 +1,5 @@
 import type { ChainCanvas, ChainEdge, ChainNode } from "../api";
-import { ALL_HANDLE, disconnectAction, isAnchorEdge, isFlowKind, isRoiInputEdge, productOfHandle, targetOfHandle } from "./chainModel";
+import { ALL_HANDLE, disconnectAction, isAnchorEdge, isDedupInputEdge, isDedupSourceEdge, isFlowKind, isRoiInputEdge, productOfHandle, targetOfHandle } from "./chainModel";
 import type { Connection, FlowLink } from "./chainModel";
 
 /** What the confirmation overlay says: a title and one line per effect. */
@@ -32,6 +32,8 @@ function loses(canvas: ChainCanvas, edge: Pick<ChainEdge, "source" | "source_han
       return [`${t} loses ${from(canvas, edge.source, edge.source_handle)} as an input. It needs two points to give a value.`];
     case "evaluation":
       return [`${t} has no value to judge. Its counts become undetermined.`];
+    case "dedup":
+      return [`${t} sees the whole camera instead of the output of ${name(canvas, edge.source)}.`, "What it muted stays muted; run its clustering again."];
     case "classify":
       return [`The cards of ${target.ref ?? t} lose the measured value, the verdict and the Show → Measurement filters.`];
     default:
@@ -51,6 +53,12 @@ export function deleteNote(canvas: ChainCanvas, edge: ChainEdge): LineNote | nul
   if (isAnchorEdge(canvas, edge)) {
     return { title, lines: [`${roi?.label ?? target} becomes static: its rectangle stays in one place on every picture instead of following ${source}.`, "Scores and thumbnails of this ROI are computed again."] };
   }
+  if (isDedupSourceEdge(canvas, edge)) {
+    return { title, lines: [`Only the line goes. ${target} reads the whole camera again instead of ${source}.`, "What it muted stays muted. Its clusters are for the pictures it read; run the clustering again."] };
+  }
+  if (isDedupInputEdge(canvas, edge)) {
+    return { title, lines: [`Only the line goes. ${target} no longer reads through ${source}: the pictures ${source} muted come back to ${target}.`, `${source} keeps its mutes.`] };
+  }
   if (isFlowKind(canvas.nodes.find((n) => n.id === edge.source)?.kind) || isFlowKind(roi?.kind)) {
     return { title, lines: ["Only the line goes. Nothing is deleted from either box.", ...loses(canvas, edge)] };
   }
@@ -69,7 +77,7 @@ export function deleteNote(canvas: ChainCanvas, edge: ChainEdge): LineNote | nul
 
 /** Why a line cannot be deleted at all, or null. */
 export function disconnectError(canvas: ChainCanvas, edge: ChainEdge): string | null {
-  if (isRoiInputEdge(canvas, edge) || isAnchorEdge(canvas, edge)) return null;
+  if (isRoiInputEdge(canvas, edge) || isAnchorEdge(canvas, edge) || isDedupSourceEdge(canvas, edge) || isDedupInputEdge(canvas, edge)) return null;
   if (isFlowKind(node(canvas, edge.source)?.kind) || isFlowKind(node(canvas, edge.target)?.kind)) return null;
   const result = disconnectAction(canvas, edge);
   return "error" in result ? result.error : null;
@@ -109,8 +117,24 @@ export function replaceNote(canvas: ChainCanvas, c: Connection, link: Exclude<Fl
       lines: [`${t} is fed by ${old} now. The new line replaces it.`, `${t} follows ${newSource} instead of ${old}.`, "Scores and thumbnails of this ROI are computed again."],
     };
   }
+  if ("dedupSource" in link) {
+    const taken = canvas.edges.find((e) => e.target === c.target && !(e.source === c.source && (e.source_handle ?? null) === (c.sourceHandle ?? null)));
+    if (!taken) return null;
+    return {
+      title: `Replace the input of ${t}?`,
+      lines: [`${t} is fed by ${from(canvas, taken.source, taken.source_handle)} now. The new line replaces it.`, `${t} reads ${newSource} instead.`, ...loses(canvas, taken).slice(1)],
+    };
+  }
+  if ("dedupInput" in link) {
+    const taken = canvas.edges.find((e) => e.target === c.target && node(canvas, e.source)?.kind === "dedup" && e.source !== c.source);
+    if (!taken) return null;
+    return {
+      title: `Replace the Dedup box of ${t}?`,
+      lines: [`${t} reads through ${name(canvas, taken.source)} now. The new line replaces it.`, `${t} then hides what ${name(canvas, c.source)} muted instead, and shows what ${name(canvas, taken.source)} muted.`],
+    };
+  }
   if ("source" in link) {
-    if (!["crop", "detector", "evaluation"].includes(target.kind)) return null; // Calculate and Classify take several lines
+    if (!["crop", "detector", "evaluation", "dedup"].includes(target.kind)) return null; // Calculate and Classify take several lines
     const existing = canvas.edges.filter((e) => e.target === c.target && e.source !== c.target);
     const taken = existing.find((e) => !(e.source === c.source && (e.source_handle ?? null) === (c.sourceHandle ?? null)));
     const same = existing.some((e) => e.source === c.source && (e.source_handle ?? null) === (c.sourceHandle ?? null));

@@ -9,20 +9,22 @@ import datamodel
 import db
 import dedup
 import embedding
+import flow
 import labels
 import scatter
 from api import dedup_api
 from roi import ROI
 from tests.api_helpers import ApiTestCase, wait_for_job, write_frames
 
-CAM, FEAT = "camA", "seal"
+CAM, ROI_NAME, FEAT = "camA", "seal", "dedup:1"  # FEAT is the Dedup box; the ROI is the Classifier it may read
 
 
 class DedupApiTests(ApiTestCase):
     def setUp(self) -> None:
         super().setUp()
         self.frames = write_frames(CAM, 6)
-        datamodel.save_rois(CAM, [ROI(name=FEAT, x=0, y=0, w=1, h=1)])
+        datamodel.save_rois(CAM, [ROI(name=ROI_NAME, x=0, y=0, w=1, h=1)])
+        self.assertEqual(flow.create_node(CAM, "dedup"), FEAT)
         dedup_api._results.clear()
         # Fake embeddings: frames 0-2 are near-identical, 3-4 near-identical, 5 is unique.
         vecs = {0: [1, 0, 0], 1: [1, 0.001, 0], 2: [1, 0, 0.001], 3: [0, 1, 0], 4: [0, 1, 0.001], 5: [0, 0, 1]}
@@ -104,14 +106,30 @@ class DedupApiTests(ApiTestCase):
         snap = dedup.load_snapshot(CAM, FEAT)
         self.assertTrue(snap[keep][1])  # representative flag recorded for Classify's chips
 
-    def test_apply_never_mutes_labeled_or_golden_frames(self) -> None:
+    def read_classifier(self) -> None:
+        """Label every picture on the ROI and make the box read its "all" dot."""
+        for f in self.frames:
+            labels.set_label(CAM, ROI_NAME, f, "OK")
+        flow.update_node(CAM, FEAT, {"source": {"feature": ROI_NAME, "dot": "all"}})
+
+    def test_a_standalone_box_has_no_labels_to_protect(self) -> None:
+        labels.set_label(CAM, ROI_NAME, self.frames[0], "OK")  # a label of some ROI does not concern a box that reads the camera
+        self.cluster()
+        r = self.client.post(f"{self.base}/apply", json={"feature": FEAT}).json()
+        self.assertEqual((r["skipped_labeled"], r["muted"]), (0, 3))
+
+    def test_behind_a_classifier_labeled_frames_may_be_muted_but_a_golden_never(self) -> None:
+        self.read_classifier()
+        big_members = self.frames[:3]
+        labels.mark_golden(CAM, ROI_NAME, big_members[1], "OK")
         res = self.cluster()["result"]
         big = next(c for c in res["clusters"] if len(c["members"]) == 3)
-        victim = next(f for f in big["members"] if f != big["representative"])
-        labels.set_label(CAM, FEAT, victim, "OK")
-        r = self.client.post(f"{self.base}/apply", json={"feature": FEAT}).json()
-        self.assertEqual(r["skipped_labeled"], 1)
-        self.assertNotIn(victim, db.muted_frames(CAM, FEAT))
+        r = self.client.post(f"{self.base}/apply", json={"feature": FEAT, "picks": {big["id"]: big_members[0]}}).json()
+        self.assertEqual(r["skipped_golden"], 1)
+        muted = db.muted_frames(CAM, FEAT)
+        self.assertNotIn(big_members[1], muted)  # the golden stays
+        self.assertIn(big_members[2], muted)  # labeled, muted all the same
+        self.assertEqual(labels.current_labels(CAM, ROI_NAME)[big_members[2]], "OK")  # the label stays
 
     def test_apply_rejects_foreign_representative(self) -> None:
         res = self.cluster()["result"]
@@ -138,7 +156,8 @@ class DedupApiTests(ApiTestCase):
         url = f"{self.base}/scatter"
         self.assertEqual(self.client.post(url, json={"feature": FEAT}).status_code, 422)  # no clustering, no embedding named
         self.assertEqual(self.client.post(url, json={"feature": FEAT, "method": "vgg"}).status_code, 422)
-        labels.set_label(CAM, FEAT, self.frames[0], "OK")
+        self.read_classifier()
+        labels.set_label(CAM, ROI_NAME, self.frames[1], "NG")
         with mock.patch.object(scatter, "project", side_effect=self._fake_project):
             r = self.client.post(url, json={"feature": FEAT, "method": "resnet50"})
             self.assertEqual(r.status_code, 202, r.text)
@@ -149,8 +168,8 @@ class DedupApiTests(ApiTestCase):
         pts = {p["frame"]: p for p in res["points"]}
         self.assertEqual(len(pts), 6)
         self.assertTrue(all(p["cluster"] is None and not p["representative"] for p in pts.values()))
-        self.assertEqual(pts[self.frames[0]]["label"], "OK")
-        self.assertIsNone(pts[self.frames[1]]["label"])
+        self.assertEqual(pts[self.frames[0]]["label"], "OK")  # the labels are the Classifier's
+        self.assertEqual(pts[self.frames[1]]["label"], "NG")
 
     def test_scatter_of_another_embedding_than_the_clustering_has_no_cluster_ids(self) -> None:
         self.cluster()  # resnet50
@@ -161,9 +180,10 @@ class DedupApiTests(ApiTestCase):
         self.assertTrue(all(p["cluster"] is None for p in job["result"]["points"]))
 
     def test_scatter_returns_annotated_points_with_the_clusters_of_the_held_clustering(self) -> None:
+        self.read_classifier()
         self.cluster()
-        labels.set_label(CAM, FEAT, self.frames[5], "NG")
-        labels.mark_golden(CAM, FEAT, self.frames[5], "NG")
+        labels.set_label(CAM, ROI_NAME, self.frames[5], "NG")
+        labels.mark_golden(CAM, ROI_NAME, self.frames[5], "NG")
 
         fake_project = self._fake_project
         with mock.patch.object(scatter, "project", side_effect=fake_project):
@@ -217,7 +237,7 @@ class DedupApiTests(ApiTestCase):
         self.assertIn("umap-learn", job["error"])
 
     def test_cluster_with_no_frames(self) -> None:
-        datamodel.save_rois(CAM, [ROI(name=FEAT, x=0, y=0, w=1, h=1), ROI(name="p", x=0, y=0, w=1, h=1, role="classify", classes=["A", "B"])])
+        datamodel.save_rois(CAM, [ROI(name=ROI_NAME, x=0, y=0, w=1, h=1), ROI(name="p", x=0, y=0, w=1, h=1, role="classify", classes=["A", "B"])])
         r = self.client.post(f"/api/cameras/{CAM}/dedup/cluster", json={**self.params, "feature": "A::rod"})
         self.assertEqual(r.status_code, 404)  # unknown feature
 
@@ -226,7 +246,7 @@ class DedupApiTests(ApiTestCase):
         self.cluster()
         self.assertIsNotNone(self.client.get(f"{self.base}/state", params={"feature": FEAT}).json()["result"])
         r = self.client.put(
-            f"/api/cameras/{CAM}/vision/{FEAT}",
+            f"/api/cameras/{CAM}/vision/{ROI_NAME}",
             json={"mask": {"enabled": True, "shape": {"shape": "rect", "x": 0, "y": 0, "w": 0.5, "h": 0.5}}},
         )
         self.assertEqual(r.status_code, 200, r.text)

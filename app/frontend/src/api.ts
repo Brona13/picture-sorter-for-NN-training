@@ -298,7 +298,7 @@ export interface CameraDeletePreview {
 /** One box of the chain canvas: Ingest, a Classifier (one ROI with its labeling) or a measurement box (see `chain.py`). */
 export interface ChainNode {
   id: string;
-  kind: "ingest" | "roi" | "classify" | "crop" | "detector" | "calc" | "evaluation";
+  kind: "ingest" | "roi" | "classify" | "crop" | "detector" | "calc" | "evaluation" | "dedup";
   /** The ROI's feature name (null for Ingest). */
   ref: string | null;
   label: string;
@@ -364,6 +364,10 @@ export interface FlowSummary {
   tolerance?: number;
   unit?: string;
   counts?: { pass: number; fail: number; undetermined: number };
+  /** A Dedup box: the Classifier dot it reads (null: the camera or the box a line comes from), the pictures it sees, its mutes, the Classifiers it feeds. */
+  source?: { feature: string; dot: string } | null;
+  muted?: number;
+  feeds?: string[];
 }
 
 export interface FlowExample {
@@ -483,6 +487,8 @@ export interface FlowValues {
 export interface FlowDeletePreview {
   node: string;
   kind: string;
+  /** A Dedup box: pictures it muted that come back when it is deleted. */
+  mutes?: number;
   detections: number;
   arrows: number;
 }
@@ -1172,6 +1178,11 @@ export const api = {
       `/cameras/${encodeURIComponent(camera)}/rois/${encodeURIComponent(feature)}/geometry`,
       send("PATCH", box),
     ),
+  /** The Dedup boxes of the Chain, for the Dedup pages' box picker. */
+  dedupBoxes: (camera: string) => request<{ feature: string; label: string }[]>(`/cameras/${encodeURIComponent(camera)}/dedup/boxes`),
+  /** Make a Dedup box the one a Classifier reads through (null removes it). */
+  setChainDedup: (camera: string, feature: string, box: string | null) =>
+    request<ChainCanvas>(`/cameras/${encodeURIComponent(camera)}/chain/${encodeURIComponent(feature)}/dedup`, send("PUT", { box })),
   setChainEvaluation: (camera: string, feature: string, box: string | null) =>
     request<ChainCanvas>(`/cameras/${encodeURIComponent(camera)}/chain/${encodeURIComponent(feature)}/evaluation`, send("PUT", { box })),
   setRoiProducts: (camera: string, feature: string, products: string[]) =>
@@ -1187,7 +1198,7 @@ export const api = {
   chain: (camera: string) => request<ChainCanvas>(`/cameras/${encodeURIComponent(camera)}/chain`),
   saveChainLayout: (camera: string, layout: ChainLayout) =>
     request<ChainCanvas>(`/cameras/${encodeURIComponent(camera)}/chain/layout`, send("PUT", layout)),
-  flowCreate: (camera: string, kind: "crop" | "detector" | "calc" | "evaluation") =>
+  flowCreate: (camera: string, kind: "crop" | "detector" | "calc" | "evaluation" | "dedup") =>
     request<{ id: string }>(`/cameras/${encodeURIComponent(camera)}/flow/nodes`, send("POST", { kind })),
   flowNode: (camera: string, id: string) =>
     request<FlowNodeDetail>(`/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}`),

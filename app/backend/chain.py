@@ -26,6 +26,7 @@ import anchor
 import roi_input
 import datamodel
 import db
+import dedup_box
 import flow
 import labels
 import lines
@@ -172,7 +173,7 @@ def _edges(camera: str, rois: list[datamodel.ROI], classify: str | None) -> list
 
     classify_id = roi_node_id(classify) if classify else None
     classes = datamodel.classes_for(camera, classify) if classify else []
-    anchored = {r.name for r in rois if anchor.get_anchor(camera, r.name) or roi_input.get_input(camera, r.name)}  # these hang from their detector or Picture edits box instead
+    anchored = {r.name for r in rois if anchor.get_anchor(camera, r.name) or roi_input.get_input(camera, r.name) or dedup_box.input_of(camera, r.name)}  # these hang from their detector, Picture edits or Dedup box instead
     if classify_id:
         add(INGEST_ID, classify_id, locked=True)
     for roi in rois:
@@ -215,10 +216,17 @@ def _flow_nodes(camera: str, graph: dict, stored: dict) -> list[dict]:
         elif kind == "calc":
             a, b = flow.effective_points(graph, node_id)
             summary = {"op": node["op"], "a": a, "b": b}
+        elif kind == "dedup":
+            summary = {
+                "source": dedup_box.source_of(camera, node_id, graph),
+                "frames": len(dedup_box.frames(camera, node_id)),
+                "muted": len(db.muted_frames(camera, node_id)),
+                "feeds": dedup_box.fed_by(camera).get(node_id, []),
+            }
         else:
             state = flow.evaluation_state(camera, node_id)
             summary = {"nominal": node["nominal"], "tolerance": node["tolerance"], "unit": state["unit"], "counts": state["counts"]}
-        default = {"crop": "Picture edits", "detector": "Detector", "calc": "Calculate", "evaluation": "Evaluation"}[kind]
+        default = {"crop": "Picture edits", "detector": "Detector", "calc": "Calculate", "evaluation": "Evaluation", "dedup": "Dedup"}[kind]
         entry = stored.get(node_id, {})
         nodes.append({
             "id": node_id, "kind": kind, "ref": None, "label": entry.get("label") or f"{default} {node_id.split(':')[1]}",
@@ -235,7 +243,7 @@ def overview_flow(camera: str, picture_frame: str | None) -> dict | None:
     if not graph["nodes"]:
         return None
     stored = load_layout(camera)["nodes"]
-    order = {"crop": 0, "detector": 1, "calc": 2, "evaluation": 3}
+    order = {"crop": 0, "detector": 1, "calc": 2, "evaluation": 3, "dedup": 4}
     nodes = sorted(_flow_nodes(camera, graph, stored), key=lambda n: (order[n["kind"]], n["id"]))
     boxes: list[dict] = []
     size = None
@@ -275,7 +283,7 @@ def _column(node: dict) -> int:
     """The chain level of a box: 0 Ingest, 1 product Classifier, 3 feature Classifiers (measurement boxes sit between)."""
     if node["kind"] == "ingest":
         return 0
-    if node["kind"] in ("crop", "detector"):
+    if node["kind"] in ("crop", "detector", "dedup"):
         return 1
     if node["kind"] == "calc":
         return 2
@@ -342,6 +350,15 @@ def get_canvas(camera: str) -> dict:
         spec = anchor.get_anchor(camera, roi.name)
         if spec and spec["detector"] in known:
             edges.append({"id": f"{spec['detector']}->{roi_node_id(roi.name)}", "source": spec["detector"], "source_handle": f"t:{spec['target']}", "target": roi_node_id(roi.name), "locked": False})
+    for box in dedup_box.boxes(camera):  # a Dedup box reading one dot of a Classifier hangs from that dot
+        src = dedup_box.source_of(camera, box, graph)
+        if src and roi_node_id(src["feature"]) in known and box in known:
+            handle = ALL_HANDLE if src["dot"] == ALL_HANDLE else product_handle(src["dot"])
+            edges.append({"id": f"{roi_node_id(src['feature'])}#{handle}->{box}", "source": roi_node_id(src["feature"]), "source_handle": handle, "target": box, "locked": False})
+    for roi in rois:  # a Classifier read through a Dedup box hangs from it
+        box = dedup_box.input_of(camera, roi.name)
+        if box and box in known:
+            edges.append({"id": f"{box}->{roi_node_id(roi.name)}", "source": box, "source_handle": None, "target": roi_node_id(roi.name), "locked": False})
     for roi in rois:  # a ROI fed by a Picture edits box hangs from it
         spec = roi_input.get_input(camera, roi.name)
         if spec and spec["box"] in known:

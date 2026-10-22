@@ -5,7 +5,7 @@ set. Frames grouped into a cluster share one representative (the one closest to
 the cluster centroid, unless the user overrides it); the rest can be
 soft-muted so the Classify view hides them.
 
-Muting never touches source frames on disk and never mutes a labeled or golden
+Muting never touches source frames on disk and never mutes a golden (a Dedup box may mute a labeled frame)
 frame. It's fully reversible via :func:`db.clear_dedup_mutes`.
 
 See ``plans/curation-loop-enhancements.md`` (Phase 1) for the surrounding
@@ -120,6 +120,10 @@ def fetch_embeddings(
 
 def live_frames(camera: str, feature: str) -> list[str]:
     """The feature's frames minus soft-deleted ones: what clustering and outlier scoring see."""
+    import dedup_box  # noqa: PLC0415  (dedup_box reads the flow graph; it imports nothing from here)
+
+    if dedup_box.is_box(feature):
+        return dedup_box.frames(camera, feature)  # a Dedup box sees the whole camera or one dot of a Classifier
     deleted = db.deleted_frames_of(camera)
     return [f for f in datamodel.frames_for_feature(camera, feature) if f not in deleted]
 
@@ -263,11 +267,16 @@ def apply(
     the frames the user sees in the Dedup UI as clustered non-reps become
     exactly the muted set, regardless of what past runs left behind.
 
-    Labeled or golden frames are always kept visible; this guards the domain
-    invariant that a golden is a labeled frame the user trusts.
+    Golden frames are always kept visible, and so are labeled ones outside a Dedup box; this guards the domain
+    invariant that a golden is a labeled frame the user trusts. A Dedup box behind a Classifier may mute labeled frames.
     """
-    lab = labels.current_labels(camera, feature)
-    gold_map = labels.current_goldens(camera, feature)
+    import dedup_box  # noqa: PLC0415
+
+    # A Dedup box reads its Classifier's labels and goldens. Behind a Classifier every picture is labeled, so a box
+    # may mute labeled pictures; a golden is never muted.
+    marks_from = dedup_box.label_source(camera, feature)
+    lab = {} if dedup_box.is_box(feature) else labels.current_labels(camera, marks_from)
+    gold_map = labels.current_goldens(camera, marks_from)
     golden_frames = {f for frames in gold_map.values() for f in frames}
 
     hmap = labels.hash_map(camera)
@@ -337,6 +346,9 @@ def load_snapshot(camera: str, feature: str) -> dict[str, tuple[int, bool]] | No
     wasn't part of that clustering (e.g. ingested since apply).
     """
     raw = db.load_cluster_snapshot(camera, feature)
+    for box in db.feeding_boxes(camera, feature):  # a Classifier fed by a Dedup box shows that box's clusters
+        if raw is None:
+            raw = db.load_cluster_snapshot(camera, box)
     if raw is None:
         return None
     try:

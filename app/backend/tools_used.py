@@ -13,6 +13,7 @@ import chain
 import datamodel
 import db
 import dedup
+import dedup_box
 import edge_angle
 import motion
 import pipeline
@@ -81,7 +82,7 @@ def used(camera: str) -> dict[str, bool]:
     return {
         "dedup/scatter": acted(VIA_SCATTER, _LEGACY_SCATTER),
         "dedup/clusters": acted(VIA_CLUSTERS)
-        or any(db.muted_frames(camera, f) or dedup.load_snapshot(camera, f) is not None for f in features),
+        or any(db.muted_frames(camera, f) or dedup.load_snapshot(camera, f) is not None for f in [*features, *dedup_box.boxes(camera)]),
         "dedup/outliers": acted(VIA_OUTLIERS),
         "roi": bool(features),
         "chain": bool(db.get_setting(camera, chain.SETTING_KEY)),

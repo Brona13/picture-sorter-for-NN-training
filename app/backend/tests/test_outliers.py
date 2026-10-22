@@ -7,13 +7,14 @@ import numpy as np
 import datamodel
 import db
 import dedup
+import flow
 import embedding
 import labels
 import outliers
 from roi import ROI
 from tests.api_helpers import ApiTestCase, wait_for_job, write_frames
 
-CAM, FEAT = "camA", "seal"
+CAM, ROI_NAME, FEAT = "camA", "seal", "dedup:1"  # the Dedup box and the Classifier it reads
 
 
 class KnnScoreTests(ApiTestCase):
@@ -49,7 +50,8 @@ class OutlierApiTests(ApiTestCase):
     def setUp(self) -> None:
         super().setUp()
         self.frames = write_frames(CAM, 6)
-        datamodel.save_rois(CAM, [ROI(name=FEAT, x=0, y=0, w=1, h=1)])
+        datamodel.save_rois(CAM, [ROI(name=ROI_NAME, x=0, y=0, w=1, h=1)])
+        flow.create_node(CAM, "dedup")
         vecs = {0: [1, 0, 0], 1: [1, 0.001, 0], 2: [1, 0, 0.001], 3: [1, 0.002, 0], 4: [1, 0, 0.002], 5: [0, 0, 1]}
 
         def fake_fetch(camera, feature, frames, backbone, progress_cb=None):
@@ -91,7 +93,10 @@ class OutlierApiTests(ApiTestCase):
         self.assertEqual((res["method"], res["k"]), ("resnet50", 3))
 
     def test_marks_and_deleted_frames(self) -> None:
-        labels.set_label(CAM, FEAT, self.frames[5], "NG")
+        for f in self.frames:
+            labels.set_label(CAM, ROI_NAME, f, "OK")
+        labels.set_label(CAM, ROI_NAME, self.frames[5], "NG")
+        flow.update_node(CAM, FEAT, {"source": {"feature": ROI_NAME, "dot": "all"}})
         db.mark_frames_deleted(CAM, [(self.frames[0], labels.hash_map(CAM)[self.frames[0]])])
         res = self.run_job()
         self.assertEqual(res["marks"][self.frames[5]]["label"], "NG")

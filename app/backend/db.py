@@ -19,7 +19,7 @@ import config
 import perf
 
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 
 class DatabaseResetRequired(RuntimeError):
@@ -499,6 +499,24 @@ def _migrate_v7_to_v8(con: sqlite3.Connection) -> None:
         raise
 
 
+def _migrate_v8_to_v9(con: sqlite3.Connection) -> None:
+    """Mutes belong to Dedup boxes now (v1.93.0): the per-ROI mute sets, cluster snapshots, scatter maps and the saved
+    Dedup settings of the ROIs are removed (test data; the pictures, labels and goldens are not touched)."""
+    con.execute("BEGIN IMMEDIATE")
+    try:
+        present = {row[0] for row in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        for table in ("dedup_mute", "cluster_snapshot", "scatter_cache"):
+            if table in present:
+                con.execute(f"DELETE FROM {table}")
+        if "settings" in present:
+            con.execute("DELETE FROM settings WHERE key LIKE 'dedup.%'")
+        con.execute("PRAGMA user_version = 9")
+        con.execute("COMMIT")
+    except Exception:
+        con.execute("ROLLBACK")
+        raise
+
+
 _MIGRATIONS = {
     2: _migrate_v2_to_v3,
     3: _migrate_v3_to_v4,
@@ -506,6 +524,7 @@ _MIGRATIONS = {
     5: _migrate_v5_to_v6,
     6: _migrate_v6_to_v7,
     7: _migrate_v7_to_v8,
+    8: _migrate_v8_to_v9,
 }
 
 
@@ -760,6 +779,18 @@ def rename_products(camera: str, classify_feature: str, renames: dict[str, str])
                     value = json.dumps(_remap_json(json.loads(value), node_map), sort_keys=True)
                 except ValueError:
                     pass
+            if key == "flow.graph" and value:
+                try:
+                    graph = _remap_json(json.loads(value), node_map)  # the arrows into a renamed ROI's Evaluation pick
+                    for node in (graph.get("nodes") or {}).values():  # a Dedup box reads a dot (a product) of a Classifier
+                        src = node.get("source") if isinstance(node, dict) else None
+                        if isinstance(src, dict):
+                            if src.get("feature") == classify_feature and src.get("dot") in renames:
+                                src["dot"] = renames[src["dot"]]
+                            src["feature"] = feat_map.get(src.get("feature"), src.get("feature"))
+                    value = json.dumps(graph, sort_keys=True)
+                except (ValueError, AttributeError):
+                    pass
             if new_key != key or value != row["value"]:
                 con.execute("UPDATE settings SET key=?, value=? WHERE camera=? AND key=?", (new_key, value, camera, key))
         moved["features"] = len(feat_map)
@@ -901,6 +932,15 @@ def set_setting(camera: str, key: str, value: str) -> None:
             "ON CONFLICT(camera,key) DO UPDATE SET value=excluded.value",
             (camera, key, value),
         )
+        con.commit()
+    finally:
+        con.close()
+
+
+def delete_setting(camera: str, key: str) -> None:
+    con = connect()
+    try:
+        con.execute("DELETE FROM settings WHERE camera=? AND key=?", (camera, key))
         con.commit()
     finally:
         con.close()
@@ -1186,15 +1226,31 @@ def clear_dedup_mutes(camera: str, feature: str) -> int:
         con.close()
 
 
+DEDUP_INPUT_KEY = "roi.dedup."  # setting roi.dedup.<feature> = the Dedup box a Classifier reads through
+
+
+def feeding_boxes(camera: str, feature: str) -> list[str]:
+    """The Dedup boxes whose mutes hide frames of ``feature`` (a Classifier fed by a Dedup box)."""
+    box = get_setting(camera, f"{DEDUP_INPUT_KEY}{feature}")
+    return [box] if box else []
+
+
 def muted_frames(camera: str, feature: str) -> set[str]:
+    """Frames hidden from ``feature``: its own mutes (a Dedup box) and those of the Dedup box that feeds it."""
     perf.count("db.muted_state.reads")
+    owners = [feature, *feeding_boxes(camera, feature)]
     con = connect()
     try:
         rows = con.execute(
-            "SELECT frame FROM dedup_mute WHERE camera=? AND feature=? ORDER BY frame",
-            (camera, feature),
+            f"SELECT frame FROM dedup_mute WHERE camera=? AND feature IN ({','.join('?' for _ in owners)}) ORDER BY frame",
+            (camera, *owners),
         ).fetchall()
     finally:
         con.close()
     perf.count("db.mute_current.rows", len(rows))
     return {row["frame"] for row in rows}
+
+
+def unmute_frames(camera: str, feature: str, frames: list[str]) -> int:
+    """Show ``frames`` again in ``feature``: removed from its own mutes and from those of the Dedup box feeding it."""
+    return sum(add_dedup_unmutes(camera, owner, frames) for owner in [feature, *feeding_boxes(camera, feature)])

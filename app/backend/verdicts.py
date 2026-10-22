@@ -20,6 +20,7 @@ import time
 
 import datamodel
 import db
+import dedup_box
 import labels
 
 CLASSES = ("OK", "NG")
@@ -98,9 +99,10 @@ def _muted(camera: str) -> dict[str, list[str]]:
         rows = con.execute("SELECT frame, feature FROM dedup_mute WHERE camera=? ORDER BY frame", (camera,)).fetchall()
     finally:
         con.close()
+    fed = dedup_box.fed_by(camera)
     out: dict[str, list[str]] = {}
-    for r in rows:
-        out.setdefault(r["frame"], []).append(r["feature"])
+    for r in rows:  # a Dedup box's mutes show under the Classifiers it feeds (the box itself when it feeds none)
+        out.setdefault(r["frame"], []).extend(fed.get(r["feature"]) or [r["feature"]])
     return out
 
 

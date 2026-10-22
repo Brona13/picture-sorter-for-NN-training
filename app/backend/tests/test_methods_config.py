@@ -8,6 +8,7 @@ import numpy as np
 import classify
 import config
 import datamodel
+import flow
 import db
 import methods_config
 from roi import ROI
@@ -49,6 +50,7 @@ class MethodsConfigTests(ApiTestCase):
             p.start()
         self.blue, self.red = write_two_groups(CAM)
         datamodel.save_rois(CAM, [ROI(name=FEAT, x=0, y=0, w=1, h=1)])
+        flow.create_node(CAM, "dedup")
         self.base = f"/api/cameras/{CAM}/classify"
 
     def tearDown(self) -> None:
@@ -161,16 +163,16 @@ class MethodsConfigTests(ApiTestCase):
     # --- other users of the embeddings ---
     def test_dedup_outliers_and_similar_only_offer_active_embeddings(self) -> None:
         self.put(["cpu", "resnet50"])
-        dedup = self.client.get(f"/api/cameras/{CAM}/dedup/state", params={"feature": FEAT}).json()
+        dedup = self.client.get(f"/api/cameras/{CAM}/dedup/state", params={"feature": "dedup:1"}).json()
         self.assertEqual(dedup["backbones"], ["resnet50"])
         self.assertEqual(dedup["params"]["method"], "resnet50")
         bad = self.client.put(
             f"/api/cameras/{CAM}/dedup/settings",
-            json={"feature": FEAT, "method": "resnet18", "epsilon": 0.05, "min_points": 2},
+            json={"feature": "dedup:1", "method": "resnet18", "epsilon": 0.05, "min_points": 2},
         )
         self.assertEqual(bad.status_code, 422)
         self.assertEqual(
-            self.client.post(f"/api/cameras/{CAM}/dedup/outliers", json={"feature": FEAT, "method": "resnet18"}).status_code, 422
+            self.client.post(f"/api/cameras/{CAM}/dedup/outliers", json={"feature": "dedup:1", "method": "resnet18"}).status_code, 422
         )
         self.assertEqual(
             self.client.post(
@@ -181,6 +183,6 @@ class MethodsConfigTests(ApiTestCase):
 
     def test_dedup_says_so_when_no_embedding_is_switched_on(self) -> None:
         self.put(["cpu"])
-        dedup = self.client.get(f"/api/cameras/{CAM}/dedup/state", params={"feature": FEAT}).json()
+        dedup = self.client.get(f"/api/cameras/{CAM}/dedup/state", params={"feature": "dedup:1"}).json()
         self.assertEqual(dedup["reason"], "methods_off")
         self.assertEqual(dedup["backbones"], [])

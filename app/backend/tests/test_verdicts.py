@@ -156,7 +156,7 @@ class SchemaV8MigrationTests(ApiTestCase):
         try:
             cols = {r[1] for r in con.execute("PRAGMA table_info(labels)")}
             self.assertIn("via", cols)
-            self.assertEqual(con.execute("PRAGMA user_version").fetchone()[0], 8)
+            self.assertEqual(con.execute("PRAGMA user_version").fetchone()[0], db.SCHEMA_VERSION)
             self.assertEqual(con.execute("SELECT class, via FROM labels").fetchone()[:], ("OK", ""))
             con.execute("SELECT * FROM verdict_decisions").fetchall()
         finally:

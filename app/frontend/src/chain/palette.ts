@@ -1,7 +1,7 @@
 import type { ChainNode } from "../api";
 
 /** One colour per box type (the hue of its border, fill and palette tile). */
-export const HUE = { ingest: 160, roi: 30, classify: 145, crop: 100, detector: 265, calc: 200, evaluation: 340 } as const;
+export const HUE = { ingest: 160, roi: 30, classify: 145, crop: 100, detector: 265, calc: 200, evaluation: 340, dedup: 55 } as const;
 
 /** One fixed size per box type, in canvas pixels. A box never changes size with what it holds; only the rows that are
  *  classes (Classify box) or targets (detector) make a box taller, because each row carries its own dot. */
@@ -13,10 +13,11 @@ export const BOX_SIZE: Record<ChainNode["kind"], { w: number; h: number }> = {
   detector: { w: 200, h: 86 },
   calc: { w: 200, h: 86 },
   evaluation: { w: 200, h: 86 },
+  dedup: { w: 200, h: 86 },
 };
 
 /** What the palette can add. `product` and `feature` are the two kinds of ROI box. */
-export type PaletteKind = "product" | "feature" | "crop" | "detector" | "calc" | "evaluation";
+export type PaletteKind = "product" | "feature" | "crop" | "detector" | "calc" | "evaluation" | "dedup";
 
 export interface PaletteItem {
   kind: PaletteKind;
@@ -28,7 +29,13 @@ export interface PaletteItem {
 
 /** Grouped by what goes in and what comes out. */
 export const PALETTE: { group: string; items: PaletteItem[] }[] = [
-  { group: "Picture in, picture out", items: [{ kind: "crop", label: "Picture edits", box: "crop", hint: "Crop and filter steps on every picture." }] },
+  {
+    group: "Picture in, picture out",
+    items: [
+      { kind: "crop", label: "Picture edits", box: "crop", hint: "Crop and filter steps on every picture." },
+      { kind: "dedup", label: "Dedup", box: "dedup", hint: "Finds near-duplicates and mutes the extra ones; it passes on the rest." },
+    ],
+  },
   { group: "Picture in, points out", items: [{ kind: "detector", label: "Detector", box: "detector", hint: "Finds named targets on the picture." }] },
   {
     group: "Points in, number or verdict out",

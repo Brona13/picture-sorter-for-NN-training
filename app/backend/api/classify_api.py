@@ -545,7 +545,7 @@ def unmute_frame(camera: str, body: UnmuteBody) -> dict:
     """Bring a picture hidden by the duplicate step (a dedup mute) back into this ROI's grid. Nothing happens if it was not muted."""
     require_feature(camera, body.feature)
     frame_path(camera, body.frame)
-    db.add_dedup_unmutes(camera, body.feature, [body.frame])
+    db.unmute_frames(camera, body.feature, [body.frame])
     return {"frame": body.frame, "muted": False, "muted_count": len(db.muted_frames(camera, body.feature))}
 
 

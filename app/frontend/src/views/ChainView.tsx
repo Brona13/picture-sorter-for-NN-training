@@ -16,7 +16,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, ChainCanvas, ChainDeletePreview, ChainEdge, ChainNode, ChainViewport, FlowDeletePreview } from "../api";
-import { ALL_HANDLE, INGEST_ID, targetHandle, targetOfHandle, connectAction, describeNode, disconnectAction, flowConnect, freshName, isAnchorEdge, isRoiInputEdge, isFlowKind, layoutOf, productHandle } from "../chain/chainModel";
+import { ALL_HANDLE, INGEST_ID, targetHandle, targetOfHandle, connectAction, describeNode, disconnectAction, flowConnect, freshName, isAnchorEdge, isDedupInputEdge, isDedupSourceEdge, isRoiInputEdge, isFlowKind, layoutOf, productHandle } from "../chain/chainModel";
 import LineConfirm from "../chain/LineConfirm";
 import Palette, { PALETTE_DRAG } from "../chain/Palette";
 import { BOX_SIZE, HUE, dropPosition, freeSpot, paletteItem, type PaletteKind } from "../chain/palette";
@@ -82,13 +82,13 @@ function Box({ data, selected }: NodeProps<BoxNode>) {
             <div className="chain-node-product" key={cls} title={`${cls}: ${node.product_counts[cls] ?? 0} pictures`}>
               <span className="chain-node-class">{cls}</span>
               <span className="chain-node-count">{node.product_counts[cls] ?? 0}</span>
-              <Handle type="source" position={Position.Right} id={productHandle(cls)} isConnectable={productMode} />
+              <Handle type="source" position={Position.Right} id={productHandle(cls)} isConnectable />
             </div>
           ))}
           <div className="chain-node-product chain-node-all" title="All classified pictures (no unlabeled one)">
             <span className="chain-node-class">all</span>
             <span className="chain-node-count">{node.labeled}</span>
-            <Handle type="source" position={Position.Right} id={ALL_HANDLE} isConnectable={productMode} />
+            <Handle type="source" position={Position.Right} id={ALL_HANDLE} isConnectable />
           </div>
           <div className="chain-node-counters" aria-label="Counters">
             <span title="Labeled pictures">● {node.labeled}</span>
@@ -112,7 +112,7 @@ function Box({ data, selected }: NodeProps<BoxNode>) {
 const nodeTypes = { box: Box };
 /** How far (px) from an anchor point a dragged arrow still snaps to it. */
 const CONNECT_RADIUS = 40;
-const FLOW_PAGE = { crop: "Picture edits", detector: "Detector", calc: "Calculate", evaluation: "Evaluation" } as const;
+const FLOW_PAGE = { crop: "Picture edits", detector: "Detector", calc: "Calculate", evaluation: "Evaluation", dedup: "Dedup" } as const;
 
 function toFlowNode(n: ChainNode, onRename: BoxData["onRename"], selected: boolean): BoxNode {
   return { id: n.id, type: "box", position: { x: n.x, y: n.y }, data: { node: n, onRename }, selected, deletable: n.kind === "roi" || isFlowKind(n.kind) };
@@ -129,6 +129,10 @@ export function toFlowEdge(e: ChainCanvas["edges"][number]): Edge {
     className: e.locked ? "chain-edge-locked" : undefined,
   };
 }
+
+/** The Dedup box that has a line into this Classifier, if any. */
+const dedupInputOf = (canvas: ChainCanvas | null, id: string): string | null =>
+  canvas?.edges.find((e) => e.target === id && canvas.nodes.find((n) => n.id === e.source)?.kind === "dedup")?.source ?? null;
 
 type OpenRoi = (feature: string, view: "roi" | "classify") => void;
 
@@ -239,6 +243,14 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
     } else if ("error" in flowArrow) {
       setError(flowArrow.error);
       return;
+    } else if ("dedupSource" in flowArrow) {
+      const a = flowArrow.dedupSource; // a Classifier dot dropped on a Dedup box: the box reads only the pictures on that dot
+      run = () => void applyFlow(() => api.flowUpdate(camera, a.box, { source: { feature: a.feature, dot: a.dot } }));
+      note = replaceNote(canvas, link, flowArrow);
+    } else if ("dedupInput" in flowArrow) {
+      const a = flowArrow.dedupInput; // a Dedup box dropped on a Classifier: the Classifier hides what the box muted
+      run = () => void applyFlow(() => api.setChainDedup(camera, a.feature, a.box));
+      note = replaceNote(canvas, link, flowArrow);
     } else if ("roiInput" in flowArrow) {
       const a = flowArrow.roiInput; // a Picture edits box dropped on an ROI: the ROI is cut from that box's picture
       // An ROI is anchored or reads a box, never both: a taken input is cleared first, after the confirmation.
@@ -268,7 +280,9 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
     if (!canvas) return;
     const targetNode = canvas.nodes.find((n) => n.id === edge.target);
     const ends = [edge.source, edge.target].map((id) => canvas.nodes.find((n) => n.id === id)?.kind);
-    if (isRoiInputEdge(canvas, edge)) void api.clearRoiInput(camera, targetNode!.ref!).then(() => reload()).catch(fail);
+    if (isDedupSourceEdge(canvas, edge)) void applyFlow(() => api.flowUpdate(camera, edge.target, { source: null }));
+    else if (isDedupInputEdge(canvas, edge)) void applyFlow(() => api.setChainDedup(camera, targetNode!.ref!, null));
+    else if (isRoiInputEdge(canvas, edge)) void api.clearRoiInput(camera, targetNode!.ref!).then(() => reload()).catch(fail);
     else if (isAnchorEdge(canvas, edge)) void api.clearRoiAnchor(camera, targetNode!.ref!).then(() => reload()).catch(fail);
     else if (ends.some((k) => isFlowKind(k))) void applyFlow(() => api.flowDisconnect(camera, edge.source, edge.target, targetOfHandle(edge.source_handle) ?? undefined));
     else void apply(disconnectAction(canvas, edge));
@@ -352,7 +366,7 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
     return freeSpot(taken, dropPosition(middle, box), box);
   };
 
-  const addFlowBox = async (kind: "crop" | "detector" | "calc" | "evaluation", at?: { x: number; y: number }) => {
+  const addFlowBox = async (kind: "crop" | "detector" | "calc" | "evaluation" | "dedup", at?: { x: number; y: number }) => {
     await applyFlow(async () => {
       const made = await api.flowCreate(camera, kind);
       setSelectedId(made.id);
@@ -454,7 +468,14 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
           {selectedLive.ref && <p className="muted">ROI: {selectedLive.ref}</p>}
           {isFlowKind(selectedLive.kind) && (
             <>
-              <button type="button" onClick={() => (onOpenFlow ? onOpenFlow(selectedLive.id) : navigate(`/flow?focus=${encodeURIComponent(selectedLive.id)}`))}>
+              <button
+                type="button"
+                onClick={() =>
+                  selectedLive.kind === "dedup"
+                    ? navigate(`/dedup/scatter?box=${encodeURIComponent(selectedLive.id)}`) // the Dedup pages work on one box
+                    : onOpenFlow ? onOpenFlow(selectedLive.id) : navigate(`/flow?focus=${encodeURIComponent(selectedLive.id)}`)
+                }
+              >
                 {FLOW_PAGE[selectedLive.kind as keyof typeof FLOW_PAGE]}
               </button>
               <button type="button" className="danger" onClick={() => requestDelete(selectedLive.id)}>
@@ -476,6 +497,19 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
             <button type="button" onClick={() => openPage(selectedLive, "classify")}>
               Classify
             </button>
+          )}
+          {selectedLive.kind === "roi" && selectedLive.ref && (
+            <label className="chain-evaluation">
+              Reads through Dedup box
+              <select
+                aria-label="Dedup box"
+                value={dedupInputOf(canvas, selectedLive.id) ?? ""}
+                onChange={(e) => void applyFlow(() => api.setChainDedup(camera, selectedLive.ref!, e.target.value || null))}
+              >
+                <option value="">None</option>
+                {(canvas?.nodes ?? []).filter((n) => n.kind === "dedup").map((n) => <option key={n.id} value={n.id}>{n.label}</option>)}
+              </select>
+            </label>
           )}
           {selectedLive.kind === "roi" && selectedLive.ref && (
             <label className="chain-evaluation">
@@ -503,6 +537,7 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
           <ul>
             <li>{flowPreview.arrows} arrows</li>
             {flowPreview.kind === "detector" && <li>{flowPreview.detections} pictures with stored boxes</li>}
+            {flowPreview.kind === "dedup" && <li>{flowPreview.mutes ?? 0} muted pictures come back; its clusters and map are forgotten</li>}
           </ul>
           <button type="button" className="danger" onClick={() => void confirmFlowDelete()}>Delete box</button>
           <button type="button" onClick={() => setFlowPreview(null)}>Keep it</button>
