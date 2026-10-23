@@ -229,7 +229,8 @@ def _flow_nodes(camera: str, graph: dict, stored: dict) -> list[dict]:
             }
         else:
             state = flow.evaluation_state(camera, node_id)
-            summary = {"nominal": node["nominal"], "tolerance": node["tolerance"], "unit": state["unit"], "counts": state["counts"]}
+            summary = {"nominal": node["nominal"], "tolerance": node["tolerance"], "unit": state["unit"], "counts": state["counts"],
+                       "mode": state["mode"], "zone": state["zone"]}
         default = {"crop": "Picture edits", "detector": "Detector", "calc": "Calculate", "evaluation": "Evaluation", "dedup": "Dedup"}[kind]
         entry = stored.get(node_id, {})
         nodes.append({

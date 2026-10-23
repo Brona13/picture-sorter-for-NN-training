@@ -26,6 +26,9 @@ export function calcShapes(op: string, a: Pt, b: Pt, names: [string, string], cl
   if (op === "distance") {
     g.segments.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y, strong: true });
     g.labels.push({ x: mid.x, y: mid.y - 1.5 * u, text, anchor: "middle" });
+  } else if (op === "offset") {
+    g.segments.push({ x1: a.x, y1: a.y, x2: b.x, y2: a.y, strong: true }, { x1: b.x, y1: a.y, x2: b.x, y2: b.y, strong: true }, { x1: a.x, y1: a.y, x2: b.x, y2: b.y, dashed: true });
+    g.labels.push({ x: mid.x, y: mid.y - 1.5 * u, text: `dx ${r1(dx)}, dy ${r1(dy)} px`, anchor: "middle" });
   } else if (op === "dx") {
     g.segments.push({ x1: a.x, y1: a.y, x2: b.x, y2: a.y, strong: true }, { x1: b.x, y1: a.y, x2: b.x, y2: b.y, dashed: true });
     g.labels.push({ x: (a.x + b.x) / 2, y: a.y - 1.5 * u, text: `dx ${text}`, anchor: "middle" });

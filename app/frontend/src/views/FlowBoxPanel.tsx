@@ -467,8 +467,14 @@ function EvaluationOptions({ detail, onUpdate }: { detail: FlowEvaluation; onUpd
       </PanelSection>
     );
   }
-  return (
-    <>
+  const zone = detail.zone;
+  const num = (v: string) => Number(v);
+  const centre = (i: 0 | 1, v: string): [number, number] => {
+    const c: [number, number] = [...(zone.center ?? [0, 0])] as [number, number];
+    c[i] = num(v);
+    return c;
+  };
+  const tolerancePanel = (
       <PanelSection title="Nominal and tolerance">
         <label>
           Nominal {detail.unit && `(${detail.unit})`}
@@ -486,6 +492,47 @@ function EvaluationOptions({ detail, onUpdate }: { detail: FlowEvaluation; onUpd
         </label>
         <p className="muted">Type it, click a bar of the histogram, drag the band on it (middle = nominal, edges = tolerance), or use “Use as nominal” on a picture in the list.{detail.wrap ? " 359° and 1° are 2° apart." : ""}</p>
       </PanelSection>
+  );
+  const zonePanel = (
+    <PanelSection title="Zone">
+      <label>
+        Shape
+        <select value={zone.shape} onChange={(e) => onUpdate({ zone: { shape: e.target.value } })}>
+          <option value="circle">Circle</option>
+          <option value="rect">Rectangle</option>
+        </select>
+      </label>
+      <label>
+        Centre dx (px, to the right of A)
+        <input type="number" step="any" key={`cx${zone.center?.[0]}`} defaultValue={zone.center?.[0] ?? ""} onBlur={(e) => e.target.value !== "" && onUpdate({ zone: { center: centre(0, e.target.value) } })} />
+      </label>
+      <label>
+        Centre dy (px, below A)
+        <input type="number" step="any" key={`cy${zone.center?.[1]}`} defaultValue={zone.center?.[1] ?? ""} onBlur={(e) => e.target.value !== "" && onUpdate({ zone: { center: centre(1, e.target.value) } })} />
+      </label>
+      {zone.shape === "circle" ? (
+        <label>
+          Radius (px)
+          <input type="number" step="any" min={0} key={`r${zone.radius}`} defaultValue={zone.radius} onBlur={(e) => onUpdate({ zone: { radius: num(e.target.value) } })} />
+        </label>
+      ) : (
+        <>
+          <label>
+            Half width (px)
+            <input type="number" step="any" min={0} key={`hw${zone.half[0]}`} defaultValue={zone.half[0]} onBlur={(e) => onUpdate({ zone: { half: [num(e.target.value), zone.half[1]] } })} />
+          </label>
+          <label>
+            Half height (px)
+            <input type="number" step="any" min={0} key={`hh${zone.half[1]}`} defaultValue={zone.half[1]} onBlur={(e) => onUpdate({ zone: { half: [zone.half[0], num(e.target.value)] } })} />
+          </label>
+        </>
+      )}
+      <p className="muted">A picture passes when B lies inside the zone, measured from A (the edge counts as inside). Type the numbers, drag the zone on the chart, or click a dot or “Use as centre” on an OK picture to put the centre there.</p>
+    </PanelSection>
+  );
+  return (
+    <>
+      {detail.mode === "zone" ? zonePanel : tolerancePanel}
       <PanelSection title="Result">
         <p role="status">
           <strong>{detail.counts.pass}</strong> pass · <strong>{detail.counts.fail}</strong> fail · <strong>{detail.counts.undetermined}</strong> undetermined

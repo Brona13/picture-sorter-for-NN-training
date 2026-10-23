@@ -126,7 +126,7 @@ def _measure_state(camera: str, feature: str) -> dict:
         for frame, v in b["verdicts"].items():
             if frame not in verdicts or rank[v] > rank[verdicts[frame]]:
                 verdicts[frame] = v
-            values.setdefault(frame, []).append({"value": b["values"].get(frame), "unit": b["unit"], "nominal": b["nominal"], "tolerance": b["tolerance"], "verdict": v})
+            values.setdefault(frame, []).append({"value": b["values"].get(frame), "unit": b["unit"], "nominal": b["nominal"], "tolerance": b["tolerance"], "mode": b["mode"], "zone": b["zone"], "point": b["points"].get(frame), "verdict": v})
     return {"verdicts": verdicts, "values": values}
 
 

@@ -26,7 +26,13 @@ function rulesSummary(stats: VersionInfo["stats"]): string {
     parts.push(e ? `edge ${e.angle.toFixed(1)}°±${e.tolerance} ${e.polarity}` : "edge (measure only)");
   }
   for (const m of stats.rules?.measurement ?? []) {
-    parts.push(m.nominal === null ? "measurement (no nominal)" : `measurement ${m.nominal}±${m.tolerance}: ${m.counts.pass} pass, ${m.counts.fail} fail`);
+    if (m.zone) {
+      const z = m.zone;
+      const size = z.shape === "circle" ? `circle r ${z.radius}` : `rectangle ${2 * z.half[0]} × ${2 * z.half[1]}`;
+      parts.push(z.center ? `offset zone ${size} at ${z.center[0]}, ${z.center[1]}: ${m.counts.pass} pass, ${m.counts.fail} fail` : "offset (no zone centre)");
+      continue;
+    }
+    parts.push(m.nominal == null ? "measurement (no nominal)" : `measurement ${m.nominal}±${m.tolerance}: ${m.counts.pass} pass, ${m.counts.fail} fail`);
   }
   const aug = stats.augmentation;
   if (aug) {

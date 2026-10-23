@@ -10,6 +10,8 @@ import { useBrowse } from "../classify/useBrowse";
 export interface ValueRow {
   frame: string;
   value: number | null;
+  /** An Offset: (dx, dy) of B from A, which "Use as centre" takes for the zone. */
+  point?: [number, number] | null;
   verdict?: "pass" | "fail" | "undetermined";
   /** Pages whose pictures carry more than a value (Ingest: the name it came in under and when) put it here for `info`. */
   name?: string;
@@ -32,7 +34,7 @@ const show = (r: ValueRow, unit: string) => (r.value === null ? "not measured" :
 /** What a card (and the viewer) says under the file name instead of the value: a page whose pictures have no value (Ingest) gives its own line. */
 type Info = (row: ValueRow) => ReactNode;
 
-function Card({ camera, row, unit, onOpen, onNominal, info }: { camera: string; row: ValueRow; unit: string; onOpen: () => void; onNominal?: () => void; info?: Info }) {
+function Card({ camera, row, unit, onOpen, onNominal, onCentre, info }: { camera: string; row: ValueRow; unit: string; onOpen: () => void; onNominal?: () => void; onCentre?: () => void; info?: Info }) {
   return (
     <article data-testid={`value-card-${row.frame}`} style={{ border: "1px solid var(--border)", borderRadius: "var(--radius)", background: "var(--panel)", padding: 8, minWidth: 0, boxSizing: "border-box" }}>
       <button
@@ -53,6 +55,11 @@ function Card({ camera, row, unit, onOpen, onNominal, info }: { camera: string; 
           Use as nominal
         </button>
       )}
+      {onCentre && (
+        <button type="button" disabled={!row.point} title="Take this picture's offset as the centre of the zone" onClick={onCentre}>
+          Use as centre
+        </button>
+      )}
     </article>
   );
 }
@@ -65,7 +72,7 @@ export interface ViewerExtras {
   note?: (row: ValueRow) => ReactNode;
 }
 
-function Viewer({ camera, rows, start, unit, onClose, onNominal, info, extras }: { camera: string; rows: ValueRow[]; start: string; unit: string; onClose: () => void; onNominal?: (value: number) => void; info?: Info; extras?: ViewerExtras }) {
+function Viewer({ camera, rows, start, unit, onClose, onNominal, onCentre, info, extras }: { camera: string; rows: ValueRow[]; start: string; unit: string; onClose: () => void; onNominal?: (value: number) => void; onCentre?: (row: ValueRow) => void; info?: Info; extras?: ViewerExtras }) {
   const frames = rows.map((r) => r.frame);
   const { frame, index, go } = useBrowse(frames, start, onClose);
   const row = rows.find((r) => r.frame === frame);
@@ -84,6 +91,7 @@ function Viewer({ camera, rows, start, unit, onClose, onNominal, info, extras }:
         <span data-testid="viewer-value" style={{ fontSize: 13 }}>
           {info ? info(row) : <><strong>{show(row, unit)}</strong> {row.verdict && <span className={`flow-verdict ${row.verdict}`}>{row.verdict}</span>}</>}{" "}
           {onNominal && row.value !== null && <button type="button" onClick={() => onNominal(row.value!)}>Use as nominal</button>}
+          {onCentre && row.point && <button type="button" onClick={() => onCentre(row)}>Use as centre</button>}
           {extras?.note && <span className="muted"> · {extras.note(row)}</span>}
         </span>
       }
@@ -99,7 +107,7 @@ function Viewer({ camera, rows, start, unit, onClose, onNominal, info, extras }:
  * "Use as nominal". Nothing is labeled here: the page judges a measurement. Ingest uses the same grid with its own line
  * under each picture (`info`).
  */
-export default function ValueGrid({ camera, rows, unit = "", onNominal, info, viewer }: { camera: string; rows: ValueRow[]; unit?: string; onNominal?: (value: number) => void; info?: Info; viewer?: ViewerExtras }) {
+export default function ValueGrid({ camera, rows, unit = "", onNominal, onCentre, info, viewer }: { camera: string; rows: ValueRow[]; unit?: string; onNominal?: (value: number) => void; onCentre?: (row: ValueRow) => void; info?: Info; viewer?: ViewerExtras }) {
   const [grid, setGrid] = useState(stored);
   const [page, setPage] = useState(1);
   const [viewing, setViewing] = useState<string | null>(null);
@@ -124,10 +132,10 @@ export default function ValueGrid({ camera, rows, unit = "", onNominal, info, vi
         container="div"
         onGridChange={() => setViewing(null)}
         renderCard={(r) => (
-          <Card camera={camera} row={r} unit={unit} info={info} onOpen={() => setViewing(r.frame)} onNominal={onNominal && r.value !== null ? () => onNominal(r.value!) : undefined} />
+          <Card camera={camera} row={r} unit={unit} info={info} onOpen={() => setViewing(r.frame)} onNominal={onNominal && r.value !== null ? () => onNominal(r.value!) : undefined} onCentre={onCentre ? () => onCentre(r) : undefined} />
         )}
       />
-      {viewing && <Viewer camera={camera} rows={rows} start={viewing} unit={unit} info={info} extras={viewer} onClose={() => setViewing(null)} onNominal={onNominal} />}
+      {viewing && <Viewer camera={camera} rows={rows} start={viewing} unit={unit} info={info} extras={viewer} onClose={() => setViewing(null)} onNominal={onNominal} onCentre={onCentre} />}
     </>
   );
 }

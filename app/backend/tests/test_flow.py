@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+import math
 
 import cv2
 import numpy as np
@@ -393,6 +394,47 @@ class FlowTests(ApiTestCase):
         self.assertEqual([state["verdicts"][n] for n in self.names], ["pass", "pass", "fail", "pass"])
         self.assertEqual(state["counts"], {"pass": 3, "fail": 1, "undetermined": 0})
         self.assertEqual(len(state["histogram"]["bins"]), flow.HISTOGRAM_BINS)
+
+    def test_zone_is_judged_inside_or_outside(self) -> None:
+        circle = flow.clean_zone({"shape": "circle", "center": [100.0, 0.0], "radius": 5.0})
+        self.assertEqual(flow.judge_zone((103.0, 4.0), circle), "pass")  # 5.0 away: the edge is inside
+        self.assertEqual(flow.judge_zone((103.0, 5.0), circle), "fail")
+        self.assertEqual(flow.judge_zone(None, circle), "undetermined")
+        self.assertEqual(flow.judge_zone((1.0, 1.0), flow.clean_zone(None)), "undetermined")  # no centre yet
+        box = flow.clean_zone({"shape": "rect", "center": [0.0, 0.0], "half": [10.0, 2.0]})
+        self.assertEqual(flow.judge_zone((-10.0, 2.0), box), "pass")
+        self.assertEqual(flow.judge_zone((0.0, 2.5), box), "fail")  # inside the circle of the long side, outside the rectangle
+        self.assertAlmostEqual(flow.zone_distance((3.0, 4.0), box), 5.0)
+        with self.assertRaises(flow.FlowError):
+            flow.clean_zone({"radius": 0})
+        with self.assertRaises(flow.FlowError):
+            flow.clean_zone({"shape": "star"})
+        with self.assertRaises(flow.FlowError):
+            flow.clean_zone({"center": [1.0]})
+        self.assertEqual(flow.clean_zone({"radius": 7.0}, circle)["center"], [100.0, 100.0 - 100.0])  # a partial change keeps the rest
+
+    def test_offset_is_judged_by_a_zone(self) -> None:
+        _, _, calc, ev = self.chain()
+        self.put(f"/nodes/{calc}", {"op": "offset"})
+        self.run_all()
+        state = self.client.get(f"{self.base}/nodes/{ev}/values").json()
+        self.assertEqual(state["mode"], "zone")
+        self.assertEqual(state["counts"]["undetermined"], len(ANGLES))  # no centre yet
+        first = state["points"][self.names[0]]
+        self.assertAlmostEqual(first[0], 100.0, delta=2.0)  # right hole is 100 px to the right of the left one
+        self.assertAlmostEqual(first[1], 0.0, delta=2.0)
+        detail = self.put(f"/nodes/{ev}", {"zone": {"shape": "circle", "center": first, "radius": 6.0}})
+        self.assertEqual(detail["mode"], "zone")
+        state = self.client.get(f"{self.base}/nodes/{ev}/values").json()
+        self.assertEqual(state["verdicts"][self.names[0]], "pass")
+        self.assertAlmostEqual(state["values"][self.names[0]], 0.0, delta=1e-6)
+        self.assertEqual(state["verdicts"][self.names[2]], "fail")  # turned by 30 degrees: B moved far from where it was
+        self.put(f"/nodes/{ev}", {"zone": {"shape": "rect", "half": [200.0, 200.0]}})
+        state = self.client.get(f"{self.base}/nodes/{ev}/values").json()
+        self.assertEqual(state["counts"], {"pass": len(ANGLES), "fail": 0, "undetermined": 0})
+        # Offset as a plain number is its length, so the Calculate page still has a value per picture.
+        values = self.client.get(f"{self.base}/nodes/{calc}/values").json()["values"]
+        self.assertAlmostEqual(values[self.names[0]], math.hypot(*first), delta=1e-6)
 
     def test_no_nominal_means_undetermined(self) -> None:
         _, _, _, tol = self.chain()

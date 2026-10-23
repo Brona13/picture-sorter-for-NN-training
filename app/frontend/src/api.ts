@@ -89,7 +89,7 @@ export interface VersionInfo {
     vision?: VisionSnapshot;
     rules?: {
       edge_angle?: { settings: EdgeAngleSettings; results: string; summary: EdgeSummary | null };
-      measurement?: { box: string; nominal: number | null; tolerance: number; counts: { pass: number; fail: number; undetermined: number } }[];
+      measurement?: { box: string; nominal?: number | null; tolerance?: number; zone?: FlowZone; counts: { pass: number; fail: number; undetermined: number } }[];
     };
     augmentation?: { ranges: MotionRanges; coverage: number; results: string; reference: string | null; unit: string };
   };
@@ -371,6 +371,8 @@ export interface FlowSummary {
   b?: string | null;
   nominal?: number | null;
   tolerance?: number;
+  mode?: "tolerance" | "zone";
+  zone?: FlowZone | null;
   unit?: string;
   counts?: { pass: number; fail: number; undetermined: number };
   /** A Dedup box: the Classifier dot it reads (null: the camera or the box a line comes from), the pictures it sees, its mutes, the Classifiers it feeds. */
@@ -465,8 +467,18 @@ export interface FlowCalc {
   input?: string | null;
   crops?: FlowStep[];
 }
+/** The zone of an Evaluation behind an Offset: pixels from point A (see `zoneGeometry.ts`). */
+export interface FlowZone {
+  shape: "circle" | "rect";
+  center: [number, number] | null;
+  radius: number;
+  half: [number, number];
+}
 export interface FlowEvaluation {
   kind: "evaluation";
+  /** "zone" when the Calculate box measures an Offset (dx, dy), else "tolerance" (nominal ± tolerance). */
+  mode: "tolerance" | "zone";
+  zone: FlowZone;
   nominal: number | null;
   tolerance: number;
   calc: string | null;
@@ -497,6 +509,10 @@ export interface FlowValues {
   histogram?: { low: number; high: number; bins: number[] } | null;
   wrap?: boolean;
   unit?: string;
+  mode?: "tolerance" | "zone";
+  zone?: FlowZone | null;
+  /** Zone mode: (dx, dy) of B from A by frame, null where a point is missing. */
+  points?: Record<string, [number, number] | null>;
 }
 export interface FlowDeletePreview {
   node: string;
@@ -736,7 +752,7 @@ export interface CardData {
   cluster: { id: number; is_rep: boolean } | null;
   /** Edge-angle rule result for this frame, when the rule has been run on the current settings. */
   /** One entry per Evaluation box arrowed into this feature's Classify box (see `flow.py`). */
-  measure?: { value: number | null; unit: string; nominal: number | null; tolerance: number; verdict: "pass" | "fail" | "undetermined" }[] | null;
+  measure?: { value: number | null; unit: string; nominal: number | null; tolerance: number; mode?: "tolerance" | "zone"; zone?: FlowZone | null; point?: [number, number] | null; verdict: "pass" | "fail" | "undetermined" }[] | null;
   edge?: { verdict: "pass" | "fail" | "undetermined" | null; status: "ok" | "none"; angle: number | null; polarity: "+" | "-" | null } | null;
   /** Search results only: the picture is outside this ROI's scope (another product, or none yet). */
   outside?: boolean;

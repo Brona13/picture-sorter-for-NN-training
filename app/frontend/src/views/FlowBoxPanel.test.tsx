@@ -31,7 +31,7 @@ test("rectOf is the same for any drag direction", () => {
 test("histogram: clicking a bar proposes its value as the nominal; bars inside the band are marked", async () => {
   const onPick = vi.fn();
   const tol: FlowEvaluation = {
-    kind: "evaluation", nominal: 5, tolerance: 10, calc: "calc:1", wrap: true, unit: "deg",
+    kind: "evaluation", mode: "tolerance", zone: { shape: "circle", center: null, radius: 10, half: [10, 10] }, nominal: 5, tolerance: 10, calc: "calc:1", wrap: true, unit: "deg",
     counts: { pass: 1, fail: 0, undetermined: 0 }, histogram: { low: 0, high: 360, bins: [3, 0, 0, 1, ...Array(32).fill(0)] }, features: [],
   };
   render(<EvaluationHistogram detail={tol} onPick={onPick} />);
@@ -55,7 +55,7 @@ test("Calculate panel offers the operations and the direction toggle, and sends 
 
 test("Evaluation panel sends the typed nominal and shows the counts", async () => {
   detail = {
-    kind: "evaluation", nominal: null, tolerance: 3, calc: "calc:1", wrap: true, unit: "deg",
+    kind: "evaluation", mode: "tolerance", zone: { shape: "circle", center: null, radius: 10, half: [10, 10] }, nominal: null, tolerance: 3, calc: "calc:1", wrap: true, unit: "deg",
     counts: { pass: 0, fail: 0, undetermined: 4 }, histogram: null, features: ["part"],
   };
   render(<FlowBoxPanel camera="camA" nodeId="eval:1" detail={detail as FlowNodeDetail} onDetail={() => {}} onChanged={() => {}} />);
@@ -135,7 +135,7 @@ test("Detector page without a target still shows the picture and asks to drag a 
 
 test("Evaluation page: lists the pictures by value and takes a picture's value as the nominal", async () => {
   const tol = {
-    kind: "evaluation", nominal: null, tolerance: 3, calc: "calc:1", wrap: true, unit: "deg",
+    kind: "evaluation", mode: "tolerance", zone: { shape: "circle", center: null, radius: 10, half: [10, 10] }, nominal: null, tolerance: 3, calc: "calc:1", wrap: true, unit: "deg",
     counts: { pass: 0, fail: 0, undetermined: 2 }, histogram: null, features: [],
   };
   routes(tol, (url) => (url.includes("/values")
@@ -293,7 +293,7 @@ test("dragBand: the middle moves the nominal, an edge sets the tolerance from th
 test("histogram: dragging the band's edge saves the new tolerance on release", () => {
   const onBand = vi.fn();
   const tol: FlowEvaluation = {
-    kind: "evaluation", nominal: 180, tolerance: 10, calc: "calc:1", wrap: true, unit: "deg",
+    kind: "evaluation", mode: "tolerance", zone: { shape: "circle", center: null, radius: 10, half: [10, 10] }, nominal: 180, tolerance: 10, calc: "calc:1", wrap: true, unit: "deg",
     counts: { pass: 1, fail: 0, undetermined: 0 }, histogram: { low: 0, high: 360, bins: Array(36).fill(1) }, features: [],
   };
   render(<EvaluationHistogram detail={tol} onPick={() => {}} onBand={onBand} />);
@@ -306,7 +306,7 @@ test("histogram: dragging the band's edge saves the new tolerance on release", (
 });
 
 const wrapped = (over: object = {}): FlowEvaluation => ({
-  kind: "evaluation", nominal: null, tolerance: 3, calc: "calc:1", wrap: true, unit: "deg",
+  kind: "evaluation", mode: "tolerance", zone: { shape: "circle", center: null, radius: 10, half: [10, 10] }, nominal: null, tolerance: 3, calc: "calc:1", wrap: true, unit: "deg",
   counts: { pass: 0, fail: 0, undetermined: 0 }, histogram: { low: 0, high: 360, bins: Array(36).fill(0) }, features: [], ...over,
 } as FlowEvaluation);
 

@@ -45,7 +45,10 @@ OPERATIONS = {
     "distance": "Distance A to B",
     "dx": "dx (B minus A, to the right)",
     "dy": "dy (B minus A, downwards)",
+    "offset": "Offset of B from A (dx, dy; judged by a zone)",
 }
+ZONE_SHAPES = ("circle", "rect")
+DEFAULT_ZONE = {"shape": "circle", "center": None, "radius": 10.0, "half": [10.0, 10.0]}
 MAX_TARGETS = 8
 MAX_STEPS = 16  # picture edits (crop / filter) one box holds
 STEP_OPS = ("crop", "filter")
@@ -480,7 +483,49 @@ def _default_config(kind: str) -> dict:
         return {"op": "angle", "a": None, "b": None, "clockwise": False}
     if kind == "dedup":
         return {"source": None}  # None: the whole camera (or the box a line comes from); else {"feature", "dot"} of a Classifier
-    return {"nominal": None, "tolerance": 3.0}
+    return {"nominal": None, "tolerance": 3.0, "zone": clean_zone(None)}
+
+
+def clean_zone(raw: object, base: dict | None = None) -> dict:
+    """The zone of an Evaluation box (pixels, relative to point A): a circle (centre, radius) or an upright rectangle
+    (centre, half width and half height). ``raw`` may change only some fields; ``base`` is what it changes."""
+    zone = {**DEFAULT_ZONE, **(base or {})}
+    zone["half"] = list(zone["half"])
+    if raw is None:
+        return zone
+    if not isinstance(raw, dict):
+        raise FlowError("The zone must be an object.")
+    if "shape" in raw:
+        if raw["shape"] not in ZONE_SHAPES:
+            raise FlowError("The zone is a circle or a rectangle.")
+        zone["shape"] = raw["shape"]
+    if "center" in raw:
+        c = raw["center"]
+        if c is None:
+            zone["center"] = None
+        elif isinstance(c, (list, tuple)) and len(c) == 2:
+            zone["center"] = [_finite(c[0], "Zone centre"), _finite(c[1], "Zone centre")]
+        else:
+            raise FlowError("The zone centre is a pair of numbers (dx, dy).")
+    if "radius" in raw:
+        radius = _finite(raw["radius"], "Radius")
+        if radius <= 0:
+            raise FlowError("The radius must be greater than zero.")
+        zone["radius"] = radius
+    if "half" in raw:
+        h = raw["half"]
+        if not (isinstance(h, (list, tuple)) and len(h) == 2):
+            raise FlowError("The rectangle size is a pair of half width and half height.")
+        half = [_finite(h[0], "Half width"), _finite(h[1], "Half height")]
+        if half[0] <= 0 or half[1] <= 0:
+            raise FlowError("The half width and half height must be greater than zero.")
+        zone["half"] = half
+    return zone
+
+
+def zone_of(node: dict) -> dict:
+    """An Evaluation box's zone; boxes saved before the zone existed get the default."""
+    return clean_zone(None, node.get("zone"))
 
 
 def create_node(camera: str, kind: str) -> str:
@@ -769,6 +814,8 @@ def update_node(camera: str, node_id: str, raw: dict) -> dict:
             if tolerance <= 0:
                 raise FlowError("The tolerance must be greater than zero.")
             node["tolerance"] = tolerance
+        if "zone" in raw:
+            node["zone"] = clean_zone(raw["zone"], node.get("zone"))
     save_graph(camera, graph)
     return node
 
@@ -1380,7 +1427,7 @@ def compute(op: str, a: tuple[float, float], b: tuple[float, float], clockwise: 
         return dx
     if op == "dy":
         return dy
-    if op == "distance":
+    if op in ("distance", "offset"):  # an offset is a pair (dx, dy); as one number it is its length
         return math.hypot(dx, dy)
     if op == "angle":
         value = math.degrees(math.atan2(dy if clockwise else -dy, dx))
@@ -1388,11 +1435,9 @@ def compute(op: str, a: tuple[float, float], b: tuple[float, float], clockwise: 
     raise FlowError(f"Unknown operation: {op}")
 
 
-def calc_values(camera: str, calc_id: str, graph: dict | None = None) -> dict[str, float | None]:
-    """The measured number by frame hash (None when a point is missing). The two points may come from different
-    detectors; each is moved by the offset of the crops above its detector, so the number is measured on the whole picture."""
-    graph = graph or load_graph(camera)
-    node = _node(graph, calc_id)
+def _calc_pairs(camera: str, calc_id: str, graph: dict) -> dict[str, tuple[tuple[float, float], tuple[float, float]] | None]:
+    """Points A and B by frame hash on the whole picture (None when a point is missing). The two points may come from
+    different detectors; each is moved by the offset of the crops above its detector."""
     keys = point_keys(graph, calc_id)
     a, b = effective_points(graph, calc_id)
     if a is None or b is None:
@@ -1408,25 +1453,38 @@ def calc_values(camera: str, calc_id: str, graph: dict | None = None) -> dict[st
     def _found(rects: list, key: str):
         return finder.for_frame(key) if has_follow(rects) else None
 
-    values: dict[str, float | None] = {}
+    pairs: dict[str, tuple[tuple[float, float], tuple[float, float]] | None] = {}
     for key in dict.fromkeys([*stored_a, *stored_b]):
         box_a, box_b = stored_a.get(key, {}).get(name_a), stored_b.get(key, {}).get(name_b)
         if not box_a or not box_b:
-            values[key] = None
+            pairs[key] = None
             continue
         pa, pb = (box_a["x"], box_a["y"]), (box_b["x"], box_b["y"])
         if rects_a != rects_b or turned:
             if key not in sizes:
-                values[key] = None
+                pairs[key] = None
                 continue
             try:
                 map_a, map_b = (rect_map(r, *sizes[key], found=_found(r, key)) for r in (rects_a, rects_b))
             except NoCrop:
-                values[key] = None
+                pairs[key] = None
                 continue
             pa, pb = map_a.point(*pa), map_b.point(*pb)
-        values[key] = compute(node["op"], pa, pb, node["clockwise"])
-    return values
+        pairs[key] = (pa, pb)
+    return pairs
+
+
+def calc_values(camera: str, calc_id: str, graph: dict | None = None) -> dict[str, float | None]:
+    """The measured number by frame hash (None when a point is missing), measured on the whole picture."""
+    graph = graph or load_graph(camera)
+    node = _node(graph, calc_id)
+    return {k: (None if p is None else compute(node["op"], p[0], p[1], node["clockwise"])) for k, p in _calc_pairs(camera, calc_id, graph).items()}
+
+
+def calc_offsets(camera: str, calc_id: str, graph: dict | None = None) -> dict[str, tuple[float, float] | None]:
+    """(dx, dy) of B from A in pixels by frame hash (None when a point is missing); picture axes, y points down."""
+    graph = graph or load_graph(camera)
+    return {k: (None if p is None else (p[1][0] - p[0][0], p[1][1] - p[0][1])) for k, p in _calc_pairs(camera, calc_id, graph).items()}
 
 
 # --- evaluation --------------------------------------------------------------------
@@ -1456,15 +1514,60 @@ def judge(value: float | None, node: dict, wrap: bool) -> str:
     return "pass" if abs(deviation(value, node["nominal"], wrap)) <= node["tolerance"] + 1e-9 else "fail"
 
 
+def zone_distance(offset: tuple[float, float] | None, zone: dict) -> float | None:
+    """How far an offset lies from the zone's centre (pixels); None when there is no offset or no centre yet."""
+    if offset is None or zone["center"] is None:
+        return None
+    return math.hypot(offset[0] - zone["center"][0], offset[1] - zone["center"][1])
+
+
+def judge_zone(offset: tuple[float, float] | None, zone: dict) -> str:
+    """Inside the zone (edge included) is pass, outside fail; no offset or no centre is undetermined."""
+    if offset is None or zone["center"] is None:
+        return "undetermined"
+    dx, dy = offset[0] - zone["center"][0], offset[1] - zone["center"][1]
+    if zone["shape"] == "circle":
+        inside = math.hypot(dx, dy) <= zone["radius"] + 1e-9
+    else:
+        inside = abs(dx) <= zone["half"][0] + 1e-9 and abs(dy) <= zone["half"][1] + 1e-9
+    return "pass" if inside else "fail"
+
+
+def _zone_state(camera: str, node: dict, calc_id: str, graph: dict) -> dict:
+    """Evaluation of an Offset: each picture's (dx, dy) judged by the zone; ``values`` is the distance from its centre."""
+    zone = zone_of(node)
+    by_key = calc_offsets(camera, calc_id, graph)
+    hmap = labels.hash_map(camera)
+    values: dict[str, float | None] = {}
+    points: dict[str, list[float] | None] = {}
+    verdicts: dict[str, str] = {}
+    for frame in _live_frames(camera):
+        key = hmap.get(frame)
+        if key not in by_key:
+            continue
+        off = by_key[key]
+        points[frame] = None if off is None else [off[0], off[1]]
+        values[frame] = zone_distance(off, zone)
+        verdicts[frame] = judge_zone(off, zone)
+    counts = {"pass": 0, "fail": 0, "undetermined": 0}
+    for v in verdicts.values():
+        counts[v] += 1
+    return {"mode": "zone", "zone": zone, "points": points, "values": values, "verdicts": verdicts, "counts": counts,
+            "histogram": None, "wrap": False, "unit": "px"}
+
+
 def evaluation_state(camera: str, eval_id: str) -> dict:
-    """Per-frame value and verdict of an Evaluation box, with counts and a histogram of the values."""
+    """Per-frame value and verdict of an Evaluation box, with counts and a histogram of the values. Behind an Offset
+    the box judges (dx, dy) by its zone instead (``mode`` "zone", ``points``)."""
     graph = load_graph(camera)
     node = _node(graph, eval_id)
     calc_id = evaluation_source(graph, eval_id)
-    empty = {"values": {}, "verdicts": {}, "counts": {"pass": 0, "fail": 0, "undetermined": 0}, "histogram": None, "wrap": False, "unit": ""}
+    empty = {"mode": "tolerance", "zone": None, "points": {}, "values": {}, "verdicts": {}, "counts": {"pass": 0, "fail": 0, "undetermined": 0}, "histogram": None, "wrap": False, "unit": ""}
     if not calc_id:
         return empty
     calc = graph["nodes"][calc_id]
+    if calc["op"] == "offset":
+        return _zone_state(camera, node, calc_id, graph)
     wrap = calc["op"] == "angle"
     by_key = calc_values(camera, calc_id, graph)
     hmap = labels.hash_map(camera)
@@ -1490,6 +1593,9 @@ def evaluation_state(camera: str, eval_id: str) -> dict:
             bins[min(HISTOGRAM_BINS - 1, int((v - lo) / (hi - lo) * HISTOGRAM_BINS))] += 1
         histogram = {"low": lo, "high": hi, "bins": bins}
     return {
+        "mode": "tolerance",
+        "zone": None,
+        "points": {},
         "values": values,
         "verdicts": verdicts,
         "counts": counts,
@@ -1508,7 +1614,7 @@ def feature_opinions(camera: str, feature: str) -> dict:
         if e["target"] == target and kind_of(e["source"]) == "evaluation" and e["source"] in graph["nodes"]:
             state = evaluation_state(camera, e["source"])
             node = graph["nodes"][e["source"]]
-            boxes.append({"box": e["source"], "nominal": node["nominal"], "tolerance": node["tolerance"], "unit": state["unit"], "values": state["values"], "verdicts": state["verdicts"], "counts": state["counts"]})
+            boxes.append({"box": e["source"], "mode": state["mode"], "zone": state["zone"], "points": state["points"], "nominal": node["nominal"], "tolerance": node["tolerance"], "unit": state["unit"], "values": state["values"], "verdicts": state["verdicts"], "counts": state["counts"]})
     return {"feature": feature, "boxes": boxes}
 
 
@@ -1539,7 +1645,7 @@ def set_feature_evaluation(camera: str, feature: str, box: str | None) -> None:
 
 def freeze_record(camera: str, feature: str) -> list[dict]:
     """What a freeze records about these rules (settings and counts, never pictures)."""
-    return [{"box": b["box"], "nominal": b["nominal"], "tolerance": b["tolerance"], "counts": b["counts"]} for b in feature_opinions(camera, feature)["boxes"]]
+    return [{"box": b["box"], **({"zone": b["zone"]} if b["mode"] == "zone" else {"nominal": b["nominal"], "tolerance": b["tolerance"]}), "counts": b["counts"]} for b in feature_opinions(camera, feature)["boxes"]]
 
 
 # --- the box as the UI shows it ------------------------------------------------------
@@ -1636,6 +1742,7 @@ def node_detail(camera: str, node_id: str, graph: dict | None = None) -> dict:
         state = evaluation_state(camera, node_id)
         detail.update({
             "nominal": node["nominal"], "tolerance": node["tolerance"], "calc": calc_id,
+            "mode": state["mode"], "zone": state["zone"] or zone_of(node),
             "wrap": state["wrap"], "unit": state["unit"], "counts": state["counts"], "histogram": state["histogram"],
             "features": [e["target"].split(":", 1)[1] for e in graph["edges"] if e["source"] == node_id],
         })

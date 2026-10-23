@@ -10,6 +10,8 @@ import DetectorGrid from "./DetectorGrid";
 import ZoomPane from "../ZoomPane";
 import { FIT_VIEW, fitSize, View } from "../zoomGeometry";
 import FlowBoxPanel, { EvaluationHistogram } from "./FlowBoxPanel";
+import ZoneScatter from "./ZoneScatter";
+import { Zone } from "../zoneGeometry";
 import CalcGeometry from "./CalcGeometry";
 import ValueGrid, { ViewerExtras } from "./ValueGrid";
 
@@ -651,6 +653,7 @@ function ValuesWork(p: {
   const [data, setData] = useState<FlowValues | null>(null);
   const [show, setShow] = useState<"all" | "pass" | "fail" | "undetermined">("all");
   const tolerance = detail.kind === "evaluation" ? detail : null;
+  const zoneMode = tolerance?.mode === "zone";
   const stamp = JSON.stringify(detail);
 
   useEffect(() => {
@@ -702,7 +705,7 @@ function ValuesWork(p: {
   const rows = useMemo(() => {
     if (!data) return [];
     return Object.entries(data.values)
-      .map(([frame, value]) => ({ frame, value, verdict: data.verdicts?.[frame] }))
+      .map(([frame, value]) => ({ frame, value, verdict: data.verdicts?.[frame], point: data.points?.[frame] ?? null }))
       .filter((r) => show === "all" || r.verdict === show)
       .filter((r) => !range || (r.value !== null && r.value >= range[0] && r.value <= range[1]))
       .sort((a, b) => (a.value ?? Infinity) - (b.value ?? Infinity) || a.frame.localeCompare(b.frame));
@@ -711,6 +714,13 @@ function ValuesWork(p: {
   const useAsNominal = async (value: number) => {
     try {
       p.setDetail(await api.flowUpdate(camera, nodeId, { nominal: Number(value.toFixed(2)) }));
+      p.onError(null);
+    } catch (e) { p.onError(msg(e)); }
+  };
+
+  const setZone = async (zone: Partial<Zone>) => {
+    try {
+      p.setDetail(await api.flowUpdate(camera, nodeId, { zone }));
       p.onError(null);
     } catch (e) { p.onError(msg(e)); }
   };
@@ -731,7 +741,15 @@ function ValuesWork(p: {
   const unit = data?.unit ?? "";
   return (
     <div className="flow-work">
-      {tolerance && showChart && (
+      {tolerance && zoneMode && showChart && (
+        <ZoneScatter
+          points={data?.points ?? {}}
+          zone={tolerance.zone}
+          onZone={(z) => void setZone(z)}
+          onCentre={(at) => void setZone({ center: at })}
+        />
+      )}
+      {tolerance && !zoneMode && showChart && (
         <EvaluationHistogram
           detail={tolerance}
           values={numbers}
@@ -744,7 +762,7 @@ function ValuesWork(p: {
       <div className="flow-nav">
         {tolerance && (
           <label>
-            <input type="checkbox" checked={showChart} onChange={(e) => chooseChart(e.target.checked)} /> Histogram
+            <input type="checkbox" checked={showChart} onChange={(e) => chooseChart(e.target.checked)} /> {zoneMode ? "Chart" : "Histogram"}
           </label>
         )}
         {tolerance && (
@@ -765,7 +783,17 @@ function ValuesWork(p: {
         )}
         <span className="muted">{rows.length} picture{rows.length === 1 ? "" : "s"}, sorted by value</span>
       </div>
-      <ValueGrid camera={camera} rows={rows} unit={unit} viewer={viewer} onNominal={tolerance ? (v) => void useAsNominal(v) : undefined} />
+      <ValueGrid
+        camera={camera}
+        rows={rows}
+        unit={unit}
+        viewer={viewer}
+        onNominal={tolerance && !zoneMode ? (v) => void useAsNominal(v) : undefined}
+        onCentre={zoneMode ? (r) => { if (r.point) void setZone({ center: [Math.round(r.point[0] * 10) / 10, Math.round(r.point[1] * 10) / 10] }); } : undefined}
+        info={zoneMode ? (r) => (
+          <><strong>{r.point ? `dx ${r.point[0].toFixed(1)}, dy ${r.point[1].toFixed(1)} px` : "not measured"}</strong> {r.verdict && <span className={`flow-verdict ${r.verdict}`}>{r.verdict}</span>}</>
+        ) : undefined}
+      />
     </div>
   );
 }

@@ -305,6 +305,7 @@ button[aria-pressed="true"] { background: var(--info-bg); color: var(--info-fg);
 
 .flow-band { position: absolute; top: 0; bottom: 0; display: flex; border-left: 2px solid var(--accent, #2a7); border-right: 2px solid var(--accent, #2a7); background: rgba(40, 160, 110, 0.12); pointer-events: none; }
 .flow-band-mid { flex: 1; cursor: ew-resize; pointer-events: auto; touch-action: none; }
+.flow-zone { max-width: 520px; margin-bottom: 8px; }
 .flow-band-edge { width: 8px; margin: 0 -5px; cursor: col-resize; pointer-events: auto; touch-action: none; }
 .flow-zoom-sel { position: absolute; top: 0; bottom: 0; background: rgba(60, 120, 220, 0.18); border-left: 1px solid #3c78dc; border-right: 1px solid #3c78dc; pointer-events: none; }
 .flow-histogram { user-select: none; }
