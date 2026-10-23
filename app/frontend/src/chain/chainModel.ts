@@ -127,10 +127,10 @@ function describeFlowBox(kind: string, f: FlowSummary | undefined): string {
   if (f?.mode === "zone") {
     const z = f.zone;
     const c = f.counts;
-    if (!z?.center) return "set the zone";
+    if (!z?.center) return "set the nominal and zone";
     const n = (v: number) => Math.round(v * 10) / 10;
     const size = z.shape === "circle" ? `circle r ${n(z.radius)}` : `rectangle ${n(2 * z.half[0])} × ${n(2 * z.half[1])}`;
-    return `${size} at ${n(z.center[0])}, ${n(z.center[1])} px${c ? ` · ${c.pass} pass, ${c.fail} fail` : ""}`;
+    return `${size} around nominal ${n(z.center[0])}, ${n(z.center[1])} px${c ? ` · ${c.pass} pass, ${c.fail} fail` : ""}`;
   }
   if (f?.nominal == null) return "set the nominal";
   const c = f.counts;

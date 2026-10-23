@@ -428,6 +428,11 @@ class FlowTests(ApiTestCase):
         state = self.client.get(f"{self.base}/nodes/{ev}/values").json()
         self.assertEqual(state["verdicts"][self.names[0]], "pass")
         self.assertAlmostEqual(state["values"][self.names[0]], 0.0, delta=1e-6)
+        dev = state["deviations"][self.names[2]]  # distance of B from its nominal, not from A
+        raw = state["points"][self.names[2]]
+        self.assertAlmostEqual(dev[0], raw[0] - first[0], delta=1e-6)
+        self.assertAlmostEqual(dev[1], raw[1] - first[1], delta=1e-6)
+        self.assertEqual(state["deviations"][self.names[0]], [0.0, 0.0])
         self.assertEqual(state["verdicts"][self.names[2]], "fail")  # turned by 30 degrees: B moved far from where it was
         self.put(f"/nodes/{ev}", {"zone": {"shape": "rect", "half": [200.0, 200.0]}})
         state = self.client.get(f"{self.base}/nodes/{ev}/values").json()

@@ -246,7 +246,7 @@ export default function Card({ camera, feature, classes, methods, card, busy, on
             style={badge(m.verdict === "pass" ? "#1a7f37" : m.verdict === "fail" ? "#c62828" : "#777")}
           >
             {m.mode === "zone"
-              ? (m.point ? `dx ${m.point[0].toFixed(1)}, dy ${m.point[1].toFixed(1)} px` : "not measured")
+              ? (m.point ? `dx ${m.point[0].toFixed(1)}, dy ${m.point[1].toFixed(1)} px${m.relative ? " from nominal" : ""}` : "not measured")
               : (m.value === null ? "not measured" : `${m.value.toFixed(1)}${m.unit ? ` ${m.unit}` : ""}`)} · {m.verdict}
           </span>
         </div>

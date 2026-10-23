@@ -705,7 +705,7 @@ function ValuesWork(p: {
   const rows = useMemo(() => {
     if (!data) return [];
     return Object.entries(data.values)
-      .map(([frame, value]) => ({ frame, value, verdict: data.verdicts?.[frame], point: data.points?.[frame] ?? null }))
+      .map(([frame, value]) => ({ frame, value, verdict: data.verdicts?.[frame], point: data.points?.[frame] ?? null, deviation: data.deviations?.[frame] ?? null }))
       .filter((r) => show === "all" || r.verdict === show)
       .filter((r) => !range || (r.value !== null && r.value >= range[0] && r.value <= range[1]))
       .sort((a, b) => (a.value ?? Infinity) - (b.value ?? Infinity) || a.frame.localeCompare(b.frame));
@@ -791,7 +791,7 @@ function ValuesWork(p: {
         onNominal={tolerance && !zoneMode ? (v) => void useAsNominal(v) : undefined}
         onCentre={zoneMode ? (r) => { if (r.point) void setZone({ center: [Math.round(r.point[0] * 10) / 10, Math.round(r.point[1] * 10) / 10] }); } : undefined}
         info={zoneMode ? (r) => (
-          <><strong>{r.point ? `dx ${r.point[0].toFixed(1)}, dy ${r.point[1].toFixed(1)} px` : "not measured"}</strong> {r.verdict && <span className={`flow-verdict ${r.verdict}`}>{r.verdict}</span>}</>
+          <><strong>{(r.deviation ?? r.point) ? `dx ${(r.deviation ?? r.point)![0].toFixed(1)}, dy ${(r.deviation ?? r.point)![1].toFixed(1)} px${r.deviation ? " from nominal" : ""}` : "not measured"}</strong> {r.verdict && <span className={`flow-verdict ${r.verdict}`}>{r.verdict}</span>}</>
         ) : undefined}
       />
     </div>

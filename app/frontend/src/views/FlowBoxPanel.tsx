@@ -494,7 +494,7 @@ function EvaluationOptions({ detail, onUpdate }: { detail: FlowEvaluation; onUpd
       </PanelSection>
   );
   const zonePanel = (
-    <PanelSection title="Zone">
+    <PanelSection title="Nominal and zone">
       <label>
         Shape
         <select value={zone.shape} onChange={(e) => onUpdate({ zone: { shape: e.target.value } })}>
@@ -503,11 +503,11 @@ function EvaluationOptions({ detail, onUpdate }: { detail: FlowEvaluation; onUpd
         </select>
       </label>
       <label>
-        Centre dx (px, to the right of A)
+        Nominal dx (B from A, px, to the right)
         <input type="number" step="any" key={`cx${zone.center?.[0]}`} defaultValue={zone.center?.[0] ?? ""} onBlur={(e) => e.target.value !== "" && onUpdate({ zone: { center: centre(0, e.target.value) } })} />
       </label>
       <label>
-        Centre dy (px, below A)
+        Nominal dy (B from A, px, downwards)
         <input type="number" step="any" key={`cy${zone.center?.[1]}`} defaultValue={zone.center?.[1] ?? ""} onBlur={(e) => e.target.value !== "" && onUpdate({ zone: { center: centre(1, e.target.value) } })} />
       </label>
       {zone.shape === "circle" ? (
@@ -527,7 +527,7 @@ function EvaluationOptions({ detail, onUpdate }: { detail: FlowEvaluation; onUpd
           </label>
         </>
       )}
-      <p className="muted">A picture passes when B lies inside the zone, measured from A (the edge counts as inside). Type the numbers, drag the zone on the chart, or click a dot or “Use as centre” on an OK picture to put the centre there.</p>
+      <p className="muted">The nominal is where B should lie relative to A. A picture passes when B is inside the zone around the nominal (the edge counts as inside), and the chart and cards show how far B is from the nominal. Type the numbers, click a dot, or use “Use as nominal” on an OK picture; drag the square on the chart to resize the zone.</p>
     </PanelSection>
   );
   return (

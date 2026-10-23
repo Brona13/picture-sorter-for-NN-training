@@ -47,16 +47,16 @@ test("dragging the edge handle saves the new radius on release", () => {
   fireEvent(window, new Event("pointerup"));
   expect(onZone).toHaveBeenCalledTimes(1);
   const saved: Zone = onZone.mock.calls[0][0];
-  expect(saved.center).toEqual([100, 0]);
+  expect(saved.center).toEqual([100, 0]); // the real nominal, not the origin the chart is centred on
   expect(saved.radius).toBeGreaterThan(5); // the pointer is at the right edge of the view, far from the centre
 });
 
-test("dragging the centre dot moves the zone", () => {
-  const { onZone } = mount(zone);
-  fireEvent.pointerDown(screen.getByTestId("zone-centre"), { pointerId: 1 });
-  fireEvent(window, Object.assign(new Event("pointermove"), { clientX: 0, clientY: 0 }));
-  fireEvent(window, new Event("pointerup"));
-  const saved: Zone = onZone.mock.calls[0][0];
-  expect(saved.center![0]).toBeLessThan(100);
-  expect(saved.radius).toBe(5);
+test("with a nominal the chart is centred on it: dots are distances from the nominal", () => {
+  mount(zone);
+  const dots = screen.getAllByTestId("zone-dot");
+  expect(dots[0].getAttribute("cx")).toBe("0"); // (100, 1) from a nominal at (100, 0)
+  expect(dots[0].getAttribute("cy")).toBe("1");
+  expect(dots[1].getAttribute("cx")).toBe("30");
+  expect(screen.getByTestId("zone-shape").getAttribute("cx")).toBe("0");
+  expect(screen.queryByTestId("zone-centre")).toBeNull(); // the nominal is set by clicking, typing or a card, not dragged
 });

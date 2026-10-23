@@ -29,7 +29,7 @@ function rulesSummary(stats: VersionInfo["stats"]): string {
     if (m.zone) {
       const z = m.zone;
       const size = z.shape === "circle" ? `circle r ${z.radius}` : `rectangle ${2 * z.half[0]} × ${2 * z.half[1]}`;
-      parts.push(z.center ? `offset zone ${size} at ${z.center[0]}, ${z.center[1]}: ${m.counts.pass} pass, ${m.counts.fail} fail` : "offset (no zone centre)");
+      parts.push(z.center ? `offset zone ${size} around nominal ${z.center[0]}, ${z.center[1]}: ${m.counts.pass} pass, ${m.counts.fail} fail` : "offset (no nominal)");
       continue;
     }
     parts.push(m.nominal == null ? "measurement (no nominal)" : `measurement ${m.nominal}±${m.tolerance}: ${m.counts.pass} pass, ${m.counts.fail} fail`);

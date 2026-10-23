@@ -1540,19 +1540,22 @@ def _zone_state(camera: str, node: dict, calc_id: str, graph: dict) -> dict:
     hmap = labels.hash_map(camera)
     values: dict[str, float | None] = {}
     points: dict[str, list[float] | None] = {}
+    deviations: dict[str, list[float] | None] = {}
     verdicts: dict[str, str] = {}
+    centre = zone["center"]
     for frame in _live_frames(camera):
         key = hmap.get(frame)
         if key not in by_key:
             continue
         off = by_key[key]
         points[frame] = None if off is None else [off[0], off[1]]
+        deviations[frame] = None if off is None or centre is None else [off[0] - centre[0], off[1] - centre[1]]
         values[frame] = zone_distance(off, zone)
         verdicts[frame] = judge_zone(off, zone)
     counts = {"pass": 0, "fail": 0, "undetermined": 0}
     for v in verdicts.values():
         counts[v] += 1
-    return {"mode": "zone", "zone": zone, "points": points, "values": values, "verdicts": verdicts, "counts": counts,
+    return {"mode": "zone", "zone": zone, "points": points, "deviations": deviations, "values": values, "verdicts": verdicts, "counts": counts,
             "histogram": None, "wrap": False, "unit": "px"}
 
 
@@ -1562,7 +1565,7 @@ def evaluation_state(camera: str, eval_id: str) -> dict:
     graph = load_graph(camera)
     node = _node(graph, eval_id)
     calc_id = evaluation_source(graph, eval_id)
-    empty = {"mode": "tolerance", "zone": None, "points": {}, "values": {}, "verdicts": {}, "counts": {"pass": 0, "fail": 0, "undetermined": 0}, "histogram": None, "wrap": False, "unit": ""}
+    empty = {"mode": "tolerance", "zone": None, "points": {}, "deviations": {}, "values": {}, "verdicts": {}, "counts": {"pass": 0, "fail": 0, "undetermined": 0}, "histogram": None, "wrap": False, "unit": ""}
     if not calc_id:
         return empty
     calc = graph["nodes"][calc_id]
@@ -1596,6 +1599,7 @@ def evaluation_state(camera: str, eval_id: str) -> dict:
         "mode": "tolerance",
         "zone": None,
         "points": {},
+        "deviations": {},
         "values": values,
         "verdicts": verdicts,
         "counts": counts,
@@ -1614,7 +1618,7 @@ def feature_opinions(camera: str, feature: str) -> dict:
         if e["target"] == target and kind_of(e["source"]) == "evaluation" and e["source"] in graph["nodes"]:
             state = evaluation_state(camera, e["source"])
             node = graph["nodes"][e["source"]]
-            boxes.append({"box": e["source"], "mode": state["mode"], "zone": state["zone"], "points": state["points"], "nominal": node["nominal"], "tolerance": node["tolerance"], "unit": state["unit"], "values": state["values"], "verdicts": state["verdicts"], "counts": state["counts"]})
+            boxes.append({"box": e["source"], "mode": state["mode"], "zone": state["zone"], "points": state["points"], "deviations": state["deviations"], "nominal": node["nominal"], "tolerance": node["tolerance"], "unit": state["unit"], "values": state["values"], "verdicts": state["verdicts"], "counts": state["counts"]})
     return {"feature": feature, "boxes": boxes}
 
 

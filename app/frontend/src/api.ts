@@ -513,6 +513,8 @@ export interface FlowValues {
   zone?: FlowZone | null;
   /** Zone mode: (dx, dy) of B from A by frame, null where a point is missing. */
   points?: Record<string, [number, number] | null>;
+  /** Zone mode: (dx, dy) of B from the zone centre (B's nominal position), null until a centre is set. */
+  deviations?: Record<string, [number, number] | null>;
 }
 export interface FlowDeletePreview {
   node: string;
@@ -752,7 +754,7 @@ export interface CardData {
   cluster: { id: number; is_rep: boolean } | null;
   /** Edge-angle rule result for this frame, when the rule has been run on the current settings. */
   /** One entry per Evaluation box arrowed into this feature's Classify box (see `flow.py`). */
-  measure?: { value: number | null; unit: string; nominal: number | null; tolerance: number; mode?: "tolerance" | "zone"; zone?: FlowZone | null; point?: [number, number] | null; verdict: "pass" | "fail" | "undetermined" }[] | null;
+  measure?: { value: number | null; unit: string; nominal: number | null; tolerance: number; mode?: "tolerance" | "zone"; zone?: FlowZone | null; point?: [number, number] | null; relative?: boolean; verdict: "pass" | "fail" | "undetermined" }[] | null;
   edge?: { verdict: "pass" | "fail" | "undetermined" | null; status: "ok" | "none"; angle: number | null; polarity: "+" | "-" | null } | null;
   /** Search results only: the picture is outside this ROI's scope (another product, or none yet). */
   outside?: boolean;

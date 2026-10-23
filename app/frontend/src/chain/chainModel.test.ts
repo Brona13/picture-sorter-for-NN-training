@@ -252,7 +252,7 @@ test("a detector target dot can be read by a Dedup box, the whole detector canno
 test("describeNode: an Evaluation behind an Offset says its zone", () => {
   const f = (flow: object) => node({ kind: "evaluation", flow: { mode: "zone", ...flow } });
   const counts = { pass: 5, fail: 2, undetermined: 0 };
-  expect(describeNode(f({ zone: { shape: "circle", center: null, radius: 10, half: [10, 10] } }))).toBe("set the zone");
-  expect(describeNode(f({ zone: { shape: "circle", center: [100, 0.04], radius: 6, half: [10, 10] }, counts }))).toBe("circle r 6 at 100, 0 px · 5 pass, 2 fail");
-  expect(describeNode(f({ zone: { shape: "rect", center: [1, 2], radius: 6, half: [10, 4] } }))).toBe("rectangle 20 × 8 at 1, 2 px");
+  expect(describeNode(f({ zone: { shape: "circle", center: null, radius: 10, half: [10, 10] } }))).toBe("set the nominal and zone");
+  expect(describeNode(f({ zone: { shape: "circle", center: [100, 0.04], radius: 6, half: [10, 10] }, counts }))).toBe("circle r 6 around nominal 100, 0 px · 5 pass, 2 fail");
+  expect(describeNode(f({ zone: { shape: "rect", center: [1, 2], radius: 6, half: [10, 4] } }))).toBe("rectangle 20 × 8 around nominal 1, 2 px");
 });

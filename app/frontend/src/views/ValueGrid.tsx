@@ -10,8 +10,10 @@ import { useBrowse } from "../classify/useBrowse";
 export interface ValueRow {
   frame: string;
   value: number | null;
-  /** An Offset: (dx, dy) of B from A, which "Use as centre" takes for the zone. */
+  /** An Offset: (dx, dy) of B from A, which "Use as nominal" takes as B's nominal. */
   point?: [number, number] | null;
+  /** (dx, dy) of B from its nominal (the zone centre), once the nominal is set. */
+  deviation?: [number, number] | null;
   verdict?: "pass" | "fail" | "undetermined";
   /** Pages whose pictures carry more than a value (Ingest: the name it came in under and when) put it here for `info`. */
   name?: string;
@@ -56,8 +58,8 @@ function Card({ camera, row, unit, onOpen, onNominal, onCentre, info }: { camera
         </button>
       )}
       {onCentre && (
-        <button type="button" disabled={!row.point} title="Take this picture's offset as the centre of the zone" onClick={onCentre}>
-          Use as centre
+        <button type="button" disabled={!row.point} title="Take this picture's offset as the nominal of B" onClick={onCentre}>
+          Use as nominal
         </button>
       )}
     </article>
@@ -91,7 +93,7 @@ function Viewer({ camera, rows, start, unit, onClose, onNominal, onCentre, info,
         <span data-testid="viewer-value" style={{ fontSize: 13 }}>
           {info ? info(row) : <><strong>{show(row, unit)}</strong> {row.verdict && <span className={`flow-verdict ${row.verdict}`}>{row.verdict}</span>}</>}{" "}
           {onNominal && row.value !== null && <button type="button" onClick={() => onNominal(row.value!)}>Use as nominal</button>}
-          {onCentre && row.point && <button type="button" onClick={() => onCentre(row)}>Use as centre</button>}
+          {onCentre && row.point && <button type="button" onClick={() => onCentre(row)}>Use as nominal</button>}
           {extras?.note && <span className="muted"> · {extras.note(row)}</span>}
         </span>
       }
