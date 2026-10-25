@@ -87,7 +87,7 @@ def _record_dict(record: logging.LogRecord) -> dict[str, Any]:
         "source": source,
         "logger": record.name.removeprefix(f"{ROOT}."),
         "message": record.getMessage(),
-        "request_id": data.pop("request_id", None) or request_id.get(),
+        "request_id": data.pop("request_id") if "request_id" in data else request_id.get(),  # an explicit None (a frontend report with no id) must not inherit the POST's
         "camera": data.pop("camera", None) or camera.get(),
         "job_id": job_id.get(),
         "duration_ms": duration,

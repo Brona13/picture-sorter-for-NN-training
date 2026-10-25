@@ -23,7 +23,7 @@ from fastapi.responses import FileResponse, JSONResponse  # noqa: E402
 import applog  # noqa: E402
 import appinfo  # noqa: E402
 import db  # noqa: E402
-from api import cameras, chain_api, classify_api, config_api, dedup_api, flow_api, frames_api, ingest_api, insights_api, jobs, motion_api, outliers_api, overview_api, roi_api, rules_api, similar_api, status, verdicts_api, versions_api, vision_api  # noqa: E402
+from api import cameras, chain_api, classify_api, config_api, dedup_api, flow_api, frames_api, ingest_api, insights_api, jobs, logs_api, motion_api, outliers_api, overview_api, roi_api, rules_api, similar_api, status, verdicts_api, versions_api, vision_api  # noqa: E402
 
 
 def frontend_dist() -> Path:
@@ -88,7 +88,7 @@ def create_app() -> FastAPI:
         finally:
             ms = round((time.perf_counter() - started) * 1000, 1)
             level = 40 if status >= 500 else 30 if status >= 400 or ms >= SLOW_REQUEST_MS else 20 if request.method != "GET" else 10
-            if request.url.path.startswith("/api"):
+            if request.url.path.startswith("/api") and request.url.path != "/api/logs":  # a report is not itself worth a line
                 _log.log(level, "%s %s -> %s", request.method, request.url.path, status,
                          extra=applog.fields(method=request.method, path=request.url.path, status=status, duration_ms=ms))
             applog.request_id.reset(tokens[0])
@@ -124,6 +124,7 @@ def create_app() -> FastAPI:
     app.include_router(versions_api.router, prefix="/api")
     app.include_router(ingest_api.router, prefix="/api")
     app.include_router(jobs.router, prefix="/api")
+    app.include_router(logs_api.router, prefix="/api")
     app.include_router(frames_api.router, prefix="/api")
     app.include_router(roi_api.router, prefix="/api")
     app.include_router(chain_api.router, prefix="/api")

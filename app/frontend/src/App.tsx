@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { setLogCamera } from "./clientLog";
 import { lastSession } from "./lastSession";
 import { api, ApiError, DATA_CHANGED, DeviceInfo, MethodInfo, PipelineStage, PRODUCTS_RENAMED, RoiInfo } from "./api";
 import HardwareBadge from "./HardwareBadge";
@@ -194,6 +195,7 @@ export default function App() {
 
   useEffect(() => {
     if (camera) lastSession.setCamera(camera);
+    setLogCamera(camera || null);
   }, [camera]);
 
   useEffect(() => {

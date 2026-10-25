@@ -1,5 +1,6 @@
 import { Box } from "./roiGeometry";
 import { MaskShape } from "./shapeGeometry";
+import { breadcrumb, report } from "./clientLog";
 
 export class ApiError extends Error {
   constructor(
@@ -16,8 +17,21 @@ export const DATA_CHANGED = "picturesorter:changed";
 /** Fired when products were renamed (detail: old name -> new name), so a page that remembers one can follow. */
 export const PRODUCTS_RENAMED = "picturesorter:products-renamed";
 
+const newRequestId = (): string => Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-6);
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`/api${path}`, init);
+  // The id travels to the backend (X-Request-ID) so a failure here and its server-side traceback share one id.
+  const rid = newRequestId();
+  const method = init?.method ?? "GET";
+  const withId: RequestInit = { ...init, headers: { ...(init?.headers as Record<string, string> | undefined), "X-Request-ID": rid } };
+  if (method !== "GET") breadcrumb(`${method} ${path.split("?")[0]}`);
+  let res: Response;
+  try {
+    res = await fetch(`/api${path}`, withId);
+  } catch (e) {
+    report("error", `Network error: ${method} /api${path.split("?")[0]}: ${e instanceof Error ? e.message : String(e)}`, { request_id: rid });
+    throw e;
+  }
   if (!res.ok) {
     let code: string | null = null;
     let detail = res.statusText || `HTTP ${res.status}`;
@@ -28,6 +42,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       /* non-JSON error body */
     }
+    if (res.status >= 500) report("error", `${method} /api${path.split("?")[0]} -> ${res.status}: ${detail}`, { request_id: res.headers?.get?.("X-Request-ID") ?? rid });
     throw new ApiError(res.status, code, String(detail));
   }
   // Anything that changed data (a label, a delete, a mute ...) tells the parts of the page that show

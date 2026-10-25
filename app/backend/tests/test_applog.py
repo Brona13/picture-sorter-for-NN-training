@@ -129,3 +129,30 @@ class LogTests(ApiTestCase):
         c.commit()
         self.assertEqual(c.execute("SELECT COUNT(*) FROM logs").fetchone()[0], 0)
         c.close()
+
+
+class ClientReportTests(ApiTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        self.dir = applog.setup(config.DATA_DIR / "logs")
+
+    def tearDown(self) -> None:
+        applog.shutdown()
+        super().tearDown()
+
+    def test_frontend_errors_are_stored_with_their_request_id_and_can_be_read_back(self) -> None:
+        r = self.client.post("/api/logs", json={"records": [
+            {"level": "error", "message": "TypeError: x is undefined", "request_id": "r1", "camera": "camF",
+             "stack": "at Foo", "breadcrumbs": ["click Save", "POST /x"], "extra": {"page": "/chain"}},
+            {"level": "warn", "message": "slow"},
+        ]})
+        self.assertEqual(r.json(), {"stored": 2})
+        rows = self.client.get("/api/logs", params={"source": "frontend", "request_id": "r1"}).json()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual((rows[0]["camera"], rows[0]["level"]), ("camF", "ERROR"))
+        self.assertIn("click Save", rows[0]["extra"])
+        self.assertEqual(len(self.client.get("/api/logs", params={"level": "WARNING"}).json()), 2)
+
+    def test_a_batch_is_capped(self) -> None:
+        r = self.client.post("/api/logs", json={"records": [{"message": "m"}] * 80})
+        self.assertEqual(r.json(), {"stored": 50})
