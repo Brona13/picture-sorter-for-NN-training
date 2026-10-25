@@ -4,6 +4,8 @@ document_type: handover
 status: draft-for-later-session
 created: 2026-10-20
 related: current-project.md, data-model.md, methodology.md
+description: Distant-goal vision for Picture Sorter, to check that changes fit the direction - not a work order
+last_updated: 2026-10-20
 ---
 
 # Picture Sorter: North-Star Direction (Handover)

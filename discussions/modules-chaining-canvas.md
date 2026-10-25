@@ -1,3 +1,11 @@
+---
+name: modules-chaining-canvas
+description: Next steps for the Chain canvas from real-world scenarios - documenting the detector box, cascading, unifying inputs and outputs
+status: current
+document_type: handover
+last_updated: 2026-10-19
+---
+
 # Handover: Chain canvas next steps (real-world scenarios)
 
 Date: 2026-10-19

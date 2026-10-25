@@ -1,7 +1,7 @@
 ---
 name: 2026-10-21-picture-edits-session
 description: Session notes 2026-10-21 - the Picture edits box (v1.82.0), filters, ROI reading a box, Classify viewer switch, scoring speed-up (v1.87.0)
-status: historical
+status: current
 document_type: session-notes
 last_updated: 2026-10-21
 ---

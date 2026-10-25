@@ -5,6 +5,7 @@ status: draft-for-next-session
 document_type: handover
 created: 2026-10-22
 related: current-project.md, north-star-handover.md, session-handover-2026-10-21.md
+last_updated: 2026-10-22
 ---
 
 # Handover: Chain redesign (discussion 2026-10-22)

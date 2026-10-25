@@ -4,6 +4,8 @@ document_type: handover
 status: draft-for-next-session
 created: 2026-10-20
 related: current-project.md, session-handover-2026-10-20.md, north-star-handover.md, plans/crop-follows-detector.md
+description: Detector outputs (position, angle, size) and module types, handed over for the next session
+last_updated: 2026-10-20
 ---
 
 # Handover: detector reliability, detector outputs, module types

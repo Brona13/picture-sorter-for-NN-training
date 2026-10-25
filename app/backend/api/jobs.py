@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import threading
 import time
-import traceback
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -18,8 +17,11 @@ from typing import Any, Callable
 
 from fastapi import APIRouter, HTTPException
 
+import applog
+
 QUEUED, RUNNING, DONE, ERROR = "queued", "running", "done", "error"
 _MAX_KEPT = 100
+_log = applog.get("jobs")
 
 
 @dataclass
@@ -34,6 +36,7 @@ class Job:
     error: str | None = None
     created: float = field(default_factory=time.time)
     updated: float = field(default_factory=time.time)
+    request_id: str | None = None  # the request that queued it, so the log can tie the job to its click
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -65,7 +68,7 @@ class JobRegistry:
     ) -> Job:
         """Queue ``fn(report)``; ``report(dict)`` replaces the job's progress snapshot.
         ``fn``'s return value (JSON-serialisable) becomes the job result."""
-        job = Job(id=uuid.uuid4().hex, kind=kind, camera=camera, feature=feature)
+        job = Job(id=uuid.uuid4().hex, kind=kind, camera=camera, feature=feature, request_id=applog.request_id.get())
         with self._lock:
             self._jobs[job.id] = job
             self._prune()
@@ -74,6 +77,12 @@ class JobRegistry:
 
     def _run(self, job: Job, fn: Callable[[Callable[[dict[str, Any]], None]], Any]) -> None:
         self._set(job, status=RUNNING)
+        applog.request_id.set(job.request_id)
+        applog.camera.set(job.camera)
+        applog.job_id.set(job.id)
+        started = time.perf_counter()
+        info = applog.fields(kind=job.kind, feature=job.feature)
+        _log.info("job %s started", job.kind, extra=info)
 
         def report(progress: dict[str, Any]) -> None:
             self._set(job, progress=progress)
@@ -81,9 +90,10 @@ class JobRegistry:
         try:
             result = fn(report)
         except Exception as exc:  # noqa: BLE001 - surface any failure to the poller
-            traceback.print_exc()
+            _log.exception("job %s failed", job.kind, extra=applog.fields(kind=job.kind, feature=job.feature, duration_ms=round((time.perf_counter() - started) * 1000, 1)))
             self._set(job, status=ERROR, error=f"{type(exc).__name__}: {exc}")
         else:
+            _log.info("job %s done", job.kind, extra=applog.fields(kind=job.kind, feature=job.feature, duration_ms=round((time.perf_counter() - started) * 1000, 1)))
             self._set(job, status=DONE, result=result)
 
     def _set(self, job: Job, **changes: Any) -> None:

@@ -8,6 +8,9 @@ from __future__ import annotations
 
 import os
 import sys
+import time
+import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 _BACKEND_DIR = Path(__file__).resolve().parents[1]
@@ -17,6 +20,7 @@ if str(_BACKEND_DIR) not in sys.path:
 from fastapi import FastAPI, HTTPException, Request  # noqa: E402
 from fastapi.responses import FileResponse, JSONResponse  # noqa: E402
 
+import applog  # noqa: E402
 import appinfo  # noqa: E402
 import db  # noqa: E402
 from api import cameras, chain_api, classify_api, config_api, dedup_api, flow_api, frames_api, ingest_api, insights_api, jobs, motion_api, outliers_api, overview_api, roi_api, rules_api, similar_api, status, verdicts_api, versions_api, vision_api  # noqa: E402
@@ -44,8 +48,53 @@ def _mount_frontend(app: FastAPI) -> None:
         return FileResponse(dist / "index.html")
 
 
+SLOW_REQUEST_MS = 1000
+_log = applog.get("http")
+
+
+@asynccontextmanager
+async def _lifespan(_: FastAPI):
+    """Logging starts with the server, not at import, so tests never write into the real data directory."""
+    directory = applog.setup()
+    _log.info("started", extra=applog.audit(version=appinfo.VERSION, schema=db.SCHEMA_VERSION, log_dir=str(directory)))
+    try:
+        yield
+    finally:
+        _log.info("stopped", extra=applog.audit())
+        applog.shutdown()
+
+
+def _camera_of(path: str) -> str | None:
+    parts = path.split("/")
+    return parts[3] if len(parts) > 3 and parts[:3] == ["", "api", "cameras"] else None
+
+
 def create_app() -> FastAPI:
-    app = FastAPI(title="Picture Sorter API")
+    app = FastAPI(title="Picture Sorter API", lifespan=_lifespan)
+
+    @app.middleware("http")
+    async def _request_log(request: Request, call_next):
+        """Give each request an id (echoed as ``X-Request-ID``) and log it; an unexpected error becomes a logged 500."""
+        rid = request.headers.get("x-request-id") or uuid.uuid4().hex[:12]
+        tokens = (applog.request_id.set(rid), applog.camera.set(_camera_of(request.url.path)))
+        started = time.perf_counter()
+        status = 500
+        try:
+            response = await call_next(request)
+            status = response.status_code
+        except Exception as exc:  # noqa: BLE001 - last line of defence: log it and answer with a request id
+            _log.exception("unhandled error in %s %s", request.method, request.url.path, extra=applog.fields(method=request.method, path=request.url.path))
+            response = JSONResponse(status_code=500, content={"error": "internal_error", "detail": f"{type(exc).__name__}: {exc}", "request_id": rid})
+        finally:
+            ms = round((time.perf_counter() - started) * 1000, 1)
+            level = 40 if status >= 500 else 30 if status >= 400 or ms >= SLOW_REQUEST_MS else 20 if request.method != "GET" else 10
+            if request.url.path.startswith("/api"):
+                _log.log(level, "%s %s -> %s", request.method, request.url.path, status,
+                         extra=applog.fields(method=request.method, path=request.url.path, status=status, duration_ms=ms))
+            applog.request_id.reset(tokens[0])
+            applog.camera.reset(tokens[1])
+        response.headers["X-Request-ID"] = rid
+        return response
 
     @app.exception_handler(db.DatabaseResetRequired)
     async def _db_reset(_: Request, exc: db.DatabaseResetRequired) -> JSONResponse:

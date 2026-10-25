@@ -1,3 +1,11 @@
+---
+name: handover-training-and-docs-cleanup
+description: Using a trained model, hardware, the golden rename and docs cleanup - conceptual discussion, nothing to code unless stated
+status: draft-for-next-session
+document_type: handover
+last_updated: 2026-10-21
+---
+
 # Handover: trained models, hardware, "golden" rename, docs cleanup
 
 Created: 2026-10-21. Conceptual discussion, nothing here is to be coded now unless stated.

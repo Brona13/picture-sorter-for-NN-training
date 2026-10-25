@@ -1,0 +1,278 @@
+"""Application logging: one JSON record per event, a rotating file and a queryable SQLite sink.
+
+Use ``log = applog.get("flow")`` in a module, then ``log.info(...)``/``log.exception(...)``.
+``log.info("frozen", extra=applog.audit(version=3))`` marks an audit event that is kept in the
+log database even though it is below WARNING.
+
+Nothing is written until ``setup()`` runs (the server calls it at startup), so importing the
+app in tests never touches the real ``data/``. Records carry ``request_id``/``camera``/``job_id``
+from context variables, so a frontend error, its API call and the backend traceback share one id.
+The log database (``logs.db``) is separate from ``picture_sorter.db`` on purpose: log writes
+never contend with label writes and a database reset does not erase the evidence.
+"""
+from __future__ import annotations
+
+import contextvars
+import json
+import logging
+import logging.handlers
+import queue
+import sqlite3
+import threading
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+import config
+
+ROOT = "picturesorter"
+RETENTION_DAYS = 14
+RETENTION_ROWS = 50_000
+_DB_LEVEL = logging.WARNING  # records below this reach logs.db only when marked as audit
+_PRUNE_EVERY = 500  # writes between retention passes
+
+request_id: contextvars.ContextVar[str | None] = contextvars.ContextVar("request_id", default=None)
+camera: contextvars.ContextVar[str | None] = contextvars.ContextVar("camera", default=None)
+job_id: contextvars.ContextVar[str | None] = contextvars.ContextVar("job_id", default=None)
+
+_SCHEMA = """
+CREATE TABLE IF NOT EXISTS logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts REAL NOT NULL,
+    level TEXT NOT NULL,
+    source TEXT NOT NULL,
+    logger TEXT NOT NULL,
+    message TEXT NOT NULL,
+    request_id TEXT,
+    camera TEXT,
+    job_id TEXT,
+    duration_ms REAL,
+    exc TEXT,
+    extra TEXT,
+    audit INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS logs_ts ON logs (ts);
+CREATE INDEX IF NOT EXISTS logs_request ON logs (request_id);
+"""
+_COLUMNS = ("ts", "level", "source", "logger", "message", "request_id", "camera", "job_id", "duration_ms", "exc", "extra", "audit")
+
+
+def get(name: str) -> logging.Logger:
+    """The logger of one module/area, e.g. ``applog.get("jobs")``."""
+    return logging.getLogger(f"{ROOT}.{name}")
+
+
+def audit(**fields: Any) -> dict[str, Any]:
+    """``extra=`` for an event worth keeping in the log database: ``log.info("frozen", extra=applog.audit(version=3))``."""
+    return {"audit": True, "fields": fields}
+
+
+def fields(**values: Any) -> dict[str, Any]:
+    """``extra=`` carrying structured fields (including ``duration_ms``) without the audit mark."""
+    return {"fields": values}
+
+
+def _record_dict(record: logging.LogRecord) -> dict[str, Any]:
+    """The stored shape of a record; shared by the file formatter and the database sink."""
+    data = dict(getattr(record, "fields", None) or {})
+    source = data.pop("source", "backend")
+    duration = data.pop("duration_ms", None)
+    exc = None
+    if record.exc_info:
+        exc = logging.Formatter().formatException(record.exc_info)
+    return {
+        "ts": record.created,
+        "level": record.levelname,
+        "source": source,
+        "logger": record.name.removeprefix(f"{ROOT}."),
+        "message": record.getMessage(),
+        "request_id": data.pop("request_id", None) or request_id.get(),
+        "camera": data.pop("camera", None) or camera.get(),
+        "job_id": job_id.get(),
+        "duration_ms": duration,
+        "exc": exc,
+        "extra": json.dumps(data, default=str) if data else None,
+        "audit": 1 if getattr(record, "audit", False) else 0,
+    }
+
+
+class JsonFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        row = _record_dict(record)
+        row["time"] = datetime.fromtimestamp(row.pop("ts"), timezone.utc).isoformat(timespec="milliseconds")
+        row.pop("audit")
+        if row["extra"]:
+            row["extra"] = json.loads(row["extra"])
+        return json.dumps({k: v for k, v in row.items() if v is not None}, default=str)
+
+
+class SqliteHandler(logging.Handler):
+    """Queues records and writes them in batches from a background thread; never raises into the caller."""
+
+    def __init__(self, path: Path) -> None:
+        super().__init__(level=logging.DEBUG)
+        self.path = path
+        self._queue: queue.Queue[dict[str, Any] | None] = queue.Queue(maxsize=10_000)
+        self._writes = 0
+        self._thread = threading.Thread(target=self._work, name="log-writer", daemon=True)
+        self._thread.start()
+
+    def emit(self, record: logging.LogRecord) -> None:
+        if record.levelno < _DB_LEVEL and not getattr(record, "audit", False):
+            return
+        try:
+            self._queue.put_nowait(_record_dict(record))
+        except Exception:  # noqa: BLE001 - a full queue or bad record must never break the caller
+            pass
+
+    def _work(self) -> None:
+        while True:
+            item = self._queue.get()
+            batch = [item]
+            try:
+                while len(batch) < 200:
+                    batch.append(self._queue.get(timeout=0.2))
+            except queue.Empty:
+                pass
+            stop = None in batch
+            self._write([b for b in batch if b is not None])
+            for _ in batch:
+                self._queue.task_done()
+            if stop:
+                return
+
+    def _write(self, rows: list[dict[str, Any]]) -> None:
+        if not rows:
+            return
+        try:
+            with _open(self.path) as conn:
+                conn.executemany(
+                    f"INSERT INTO logs ({', '.join(_COLUMNS)}) VALUES ({', '.join('?' * len(_COLUMNS))})",
+                    [tuple(r[c] for c in _COLUMNS) for r in rows],
+                )
+                self._writes += len(rows)
+                if self._writes >= _PRUNE_EVERY:
+                    self._writes = 0
+                    _prune(conn)
+        except Exception:  # noqa: BLE001, S110 - logging must never take the app down
+            pass
+
+    def flush(self) -> None:
+        self._queue.join()
+
+    def close(self) -> None:
+        try:
+            self._queue.put(None, timeout=1)
+            self._thread.join(timeout=3)
+        except Exception:  # noqa: BLE001, S110
+            pass
+        super().close()
+
+
+def _open(path: Path) -> sqlite3.Connection:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(path, timeout=10)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.executescript(_SCHEMA)
+    return _Commit(conn)
+
+
+class _Commit:
+    """Context manager that commits and closes (sqlite3's own only commits)."""
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self.conn = conn
+
+    def __enter__(self) -> sqlite3.Connection:
+        return self.conn
+
+    def __exit__(self, *exc: object) -> None:
+        try:
+            if exc[0] is None:
+                self.conn.commit()
+        finally:
+            self.conn.close()
+
+
+def _prune(conn: sqlite3.Connection) -> None:
+    conn.execute("DELETE FROM logs WHERE ts < ?", (time.time() - RETENTION_DAYS * 86400,))
+    conn.execute("DELETE FROM logs WHERE id <= (SELECT MAX(id) FROM logs) - ?", (RETENTION_ROWS,))
+
+
+_state: dict[str, Any] = {"dir": None, "db": None, "file": None}
+
+
+def log_dir() -> Path:
+    return config.DATA_DIR / "logs"
+
+
+def setup(directory: Path | None = None, level: int | str | None = None) -> Path:
+    """Attach the file and database sinks (idempotent; a second call re-points them). Returns the log directory.
+
+    ``level`` defaults to ``CURATION_LOG_LEVEL`` (INFO); ``CURATION_LOG_DIR`` overrides the directory."""
+    import os  # noqa: PLC0415
+
+    shutdown()
+    directory = Path(directory or os.environ.get("CURATION_LOG_DIR") or log_dir())
+    directory.mkdir(parents=True, exist_ok=True)
+    root = logging.getLogger(ROOT)
+    root.setLevel(level or os.environ.get("CURATION_LOG_LEVEL", "INFO").upper())
+    root.propagate = False
+    file_handler = logging.handlers.RotatingFileHandler(directory / "app.jsonl", maxBytes=10_000_000, backupCount=4, encoding="utf-8")
+    file_handler.setFormatter(JsonFormatter())
+    file_handler.setLevel(logging.INFO)
+    db_handler = SqliteHandler(directory / "logs.db")
+    root.addHandler(file_handler)
+    root.addHandler(db_handler)
+    _state.update(dir=directory, db=db_handler, file=file_handler)
+    return directory
+
+
+def shutdown() -> None:
+    """Drain and detach the sinks (tests, re-setup, process exit)."""
+    root = logging.getLogger(ROOT)
+    for key in ("db", "file"):
+        handler = _state.get(key)
+        if handler is not None:
+            root.removeHandler(handler)
+            handler.close()
+        _state[key] = None
+    _state["dir"] = None
+
+
+def flush() -> None:
+    if _state["db"] is not None:
+        _state["db"].flush()
+
+
+def record_external(level: str, message: str, source: str, **values: Any) -> None:
+    """A record that did not originate in this process' code (the frontend reporter)."""
+    levelno = logging.getLevelName(level.upper())
+    if not isinstance(levelno, int):
+        levelno = logging.ERROR
+    get(source).log(levelno, message, extra={"fields": {"source": source, **values}})
+
+
+def query(directory: Path | None = None, *, level: str | None = None, source: str | None = None, camera_name: str | None = None,
+          request: str | None = None, since: float | None = None, limit: int = 200) -> list[dict[str, Any]]:
+    """Newest first. ``level`` is a minimum (``WARNING`` gives WARNING and ERROR)."""
+    path = Path(directory or _state["dir"] or log_dir()) / "logs.db"
+    if not path.exists():
+        return []
+    order = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+    where, args = [], []
+    if level and level.upper() in order:
+        where.append(f"level IN ({', '.join('?' * len(order[order.index(level.upper()):]))})")
+        args += order[order.index(level.upper()):]
+    for column, value in (("source", source), ("camera", camera_name), ("request_id", request)):
+        if value:
+            where.append(f"{column} = ?")
+            args.append(value)
+    if since is not None:
+        where.append("ts >= ?")
+        args.append(since)
+    sql = "SELECT * FROM logs" + (" WHERE " + " AND ".join(where) if where else "") + " ORDER BY id DESC LIMIT ?"
+    with _open(path) as conn:
+        return [dict(r) for r in conn.execute(sql, (*args, max(1, min(int(limit), 1000))))]

@@ -1,3 +1,11 @@
+---
+name: chain-canvas-handover
+description: Idea and UX notes for a visual chain canvas per camera where tools are chained freely
+status: current
+document_type: handover
+last_updated: 2026-10-18
+---
+
 # Chain canvas: handover
 
 ## Idea

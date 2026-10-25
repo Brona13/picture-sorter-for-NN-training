@@ -1,3 +1,11 @@
+---
+name: picture-sorter-ui-navigation-handover
+description: UI navigation decisions - app frame, four top-level items (Overview, Management, Manipulation, Export)
+status: current
+document_type: handover
+last_updated: 2026-10-17
+---
+
 # Picture Sorter: UI navigation handover
 
 ## 1. App frame
