@@ -51,6 +51,31 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
+/** One stored log record (`GET /api/logs`). */
+export interface LogRecord {
+  id: number;
+  ts: number;
+  level: string;
+  source: string;
+  logger: string;
+  message: string;
+  request_id: string | null;
+  camera: string | null;
+  job_id: string | null;
+  duration_ms: number | null;
+  exc: string | null;
+  extra: string | null;
+  audit: number;
+}
+
+export interface LogQuery {
+  level?: string;
+  source?: string;
+  camera?: string;
+  request_id?: string;
+  limit?: number;
+}
+
 export interface FeatureStatus {
   feature: string;
   short_name: string;
@@ -1115,6 +1140,11 @@ export const api = {
     return res.blob();
   },
   health: () => request<{ status: string }>("/health"),
+  logs: (q: LogQuery = {}) => {
+    const params = new URLSearchParams();
+    for (const [k, v] of Object.entries(q)) if (v !== undefined && v !== "") params.set(k, String(v));
+    return request<LogRecord[]>(`/logs?${params}`);
+  },
   version: () => request<{ version: string; released: string }>("/version"),
   device: () => request<DeviceInfo>("/device"),
   configMethods: () => request<MethodsConfig>("/config/methods"),

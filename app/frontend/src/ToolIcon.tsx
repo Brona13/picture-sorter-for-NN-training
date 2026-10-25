@@ -5,12 +5,12 @@
  */
 export type IconId =
   | "overview" | "status" | "ingest" | "scatter" | "clusters" | "outliers" | "roi" | "detector"
-  | "edge-angle" | "classify" | "insights" | "verdict" | "augmentation" | "versions" | "chain";
+  | "edge-angle" | "classify" | "insights" | "verdict" | "augmentation" | "versions" | "chain" | "log";
 
 /** Hue of the colourful state, so every tool is recognisable by colour too. */
 const HUE: Record<IconId, number> = {
   overview: 215, status: 200, ingest: 160, scatter: 265, clusters: 285, outliers: 330, roi: 30,
-  detector: 355, "edge-angle": 45, classify: 145, insights: 190, verdict: 120, augmentation: 12, versions: 235, chain: 75,
+  detector: 355, "edge-angle": 45, classify: 145, insights: 190, verdict: 120, augmentation: 12, versions: 235, chain: 75, log: 25,
 };
 
 const A = "var(--ti-a)";
@@ -21,6 +21,8 @@ function Shapes({ id }: { id: IconId }) {
   switch (id) {
     case "overview":
       return (<><path d="M3 11l9-7 9 7" {...stroke} /><path d="M6 10v9h12v-9" {...stroke} /><rect x="10" y="13" width="4" height="6" fill={B} /></>);
+    case "log":
+      return (<><rect x="5" y="3.5" width="14" height="17" rx="1.5" {...stroke} /><path d="M8.5 8h7M8.5 12h7" {...stroke} /><circle cx="9" cy="16.5" r="1.4" fill={B} /><path d="M12 16.5h3.5" {...stroke} /></>);
     case "status":
       return (<><rect x="4" y="12" width="3.5" height="7" fill={A} /><rect x="10.2" y="7" width="3.5" height="12" fill={B} /><rect x="16.5" y="4" width="3.5" height="15" fill={A} /></>);
     case "ingest":

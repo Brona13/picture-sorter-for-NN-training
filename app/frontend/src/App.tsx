@@ -24,6 +24,7 @@ import InsightsView from "./views/InsightsView";
 import IngestView from "./views/IngestView";
 import RoiEditorView from "./views/RoiEditorView";
 import OverviewView from "./views/OverviewView";
+import LogView from "./views/LogView";
 import StatusView from "./views/StatusView";
 import VerdictView from "./views/VerdictView";
 import VersionsView from "./views/VersionsView";
@@ -345,6 +346,7 @@ export default function App() {
             }
           />
           <Route path="/status" element={<StatusView camera={camera} />} />
+          <Route path="/log" element={<LogView camera={camera} />} />
           <Route
             path="/versions"
             element={<VersionsView camera={camera} product={product || undefined} />}

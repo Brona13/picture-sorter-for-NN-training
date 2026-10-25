@@ -20,7 +20,7 @@ const view = (path: string, label: string, icon: IconId, tracked = false, group?
  * one page gets a second-level bar of them under the top bar. The names and grouping are working labels, not final.
  */
 export const SECTIONS: { id: string; label: string; pages: ViewDef[] }[] = [
-  { id: "overview", label: "Overview", pages: [view("overview", "Overview", "overview"), view("chain", "Chain", "chain", true), view("status", "Status", "status")] },
+  { id: "overview", label: "Overview", pages: [view("overview", "Overview", "overview"), view("chain", "Chain", "chain", true), view("status", "Status", "status"), view("log", "Log", "log")] },
   { id: "management", label: "Management", pages: [view("ingest", "Ingest", "ingest")] },
   {
     id: "manipulation",

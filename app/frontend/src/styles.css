@@ -368,3 +368,7 @@ button[aria-pressed="true"] { background: var(--info-bg); color: var(--info-fg);
 .ingest-table th[scope="row"] { text-align: left; }
 .ingest-table button { width: 100%; }
 .ingest-cell.picked { background: color-mix(in srgb, var(--accent, #1a73e8) 25%, var(--panel)); border-color: var(--accent, #1a73e8); }
+
+/* Log page: a button that reads as text */
+.log-table button.link { background: none; border: none; padding: 2px 0; color: inherit; cursor: pointer; text-decoration: underline dotted; font: inherit; }
+.log-table button.link:hover { text-decoration: underline; }
