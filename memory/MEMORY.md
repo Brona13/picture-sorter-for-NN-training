@@ -3,13 +3,14 @@ name: MEMORY
 description: Portable index of project memory files
 status: current
 document_type: index
-last_updated: 2026-10-20
+last_updated: 2026-10-25
 ---
 
 # Project Memory Index
 
 Portable memory for the *Picture Sorter for NN Training* project. Kept inside the project (not `~/.claude/`) so it travels if the folder is moved to another machine.
 
+- [Session 2026-10-25: Logging, 1.101.0-1.104.1](2026-10-25-logging-session.md) — structured logs (file + separate log database), request ids, frontend error reporter, Log page, swallowed-error sweep; decisions, how to read a log, mistakes (log DB committed once), open items.
 - [User working style](user-working-style.md) — methodology-first, Python-comfortable, new to vision curation.
 - [Project goal & Path 1](project-goal-and-path1.md) — curate a small diverse dataset; start with OpenCV stats, escalate to embeddings only if needed.
 - [Data model: camera → ROI → cutout](data-model-camera-roi-cutout.md) — how frames, ROIs/features, and cutouts relate; the "don't duplicate frames" rule.

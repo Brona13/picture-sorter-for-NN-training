@@ -44,6 +44,8 @@ Files in `memory/` and `plans/` may describe earlier workflows. Treat `docs/curr
 Keep domain logic out of API routers and React components when practical.
 Domain modules use flat imports (`import labels`) with `app/backend` on `sys.path`.
 
+Logging: use `applog.get("area")` (`app/backend/applog.py`); never `print`. Logs live in `data/logs/` (not in Git) and are read on the Log page; tests must not call `applog.setup()` without a temp directory.
+
 Run backend tests with `.venv/bin/python -m pytest`; frontend with `cd app/frontend && npm test && npx tsc --noEmit`.
 Launch with `./run.sh` (see README). History: `plans/streamlit-to-react-fastapi-migration.md`.
 

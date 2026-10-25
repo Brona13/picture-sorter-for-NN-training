@@ -724,6 +724,7 @@ cameras/
 
 data/
   picture_sorter.db
+  logs/             app.jsonl + logs.db, written by the running app (not in Git)
 
 docs/
   current-project.md
@@ -798,6 +799,25 @@ CURATION_DATA_DIR=<temporary data directory> \
 Unset or replace these values before launching the application against real data.
 
 ## Troubleshooting
+
+### Logs
+
+The app writes a structured log (v1.101.0 and later). Open **Overview → Log** in the app: it lists
+warnings and errors from the backend and from the browser, newest first. Filter by level, source,
+camera or request id; click a request id to see everything that belongs to one action; **Copy N
+for Claude** copies the shown records as text for a debugging session.
+
+- Files: `data/logs/app.jsonl` (INFO and up, rotating, 5 x 10 MB) and `data/logs/logs.db`
+  (WARNING and up plus audit events; 14 days or 50,000 rows). They are per machine and not in Git;
+  the app creates them at the first start.
+- Settings: `CURATION_LOG_LEVEL` (default `INFO`; `DEBUG` also records every fast GET) and
+  `CURATION_LOG_DIR` (another folder).
+- Every API call carries an `X-Request-ID`; an unexpected server error answers `500` with
+  `{error: "internal_error", detail, request_id}` and a full traceback in the log.
+- After an app update, hard-refresh the browser: an old page left open can call endpoints that no
+  longer exist and shows up as 404 in the log.
+- In code: `log = applog.get("area")`; `applog.warn_once(log, key, msg)` for failures inside loops.
+  Details: `docs/current-project.md` (Logging entries).
 
 ### Performance diagnostics
 
