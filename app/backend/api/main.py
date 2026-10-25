@@ -18,7 +18,9 @@ if str(_BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(_BACKEND_DIR))
 
 from fastapi import FastAPI, HTTPException, Request  # noqa: E402
+from fastapi.exception_handlers import http_exception_handler  # noqa: E402
 from fastapi.responses import FileResponse, JSONResponse  # noqa: E402
+from starlette.exceptions import HTTPException as StarletteHTTPException  # noqa: E402
 
 import applog  # noqa: E402
 import appinfo  # noqa: E402
@@ -72,11 +74,19 @@ def _camera_of(path: str) -> str | None:
 def create_app() -> FastAPI:
     app = FastAPI(title="Picture Sorter API", lifespan=_lifespan)
 
+    @app.exception_handler(StarletteHTTPException)
+    async def _http_error(request: Request, exc: StarletteHTTPException):
+        info = applog.request_info.get()
+        if info is not None:
+            info["detail"] = str(exc.detail)  # the answer is unchanged; the request log line gets the reason
+        return await http_exception_handler(request, exc)
+
     @app.middleware("http")
     async def _request_log(request: Request, call_next):
         """Give each request an id (echoed as ``X-Request-ID``) and log it; an unexpected error becomes a logged 500."""
         rid = request.headers.get("x-request-id") or uuid.uuid4().hex[:12]
-        tokens = (applog.request_id.set(rid), applog.camera.set(_camera_of(request.url.path)))
+        info: dict = {}
+        tokens = (applog.request_id.set(rid), applog.camera.set(_camera_of(request.url.path)), applog.request_info.set(info))
         started = time.perf_counter()
         status = 500
         try:
@@ -90,9 +100,10 @@ def create_app() -> FastAPI:
             level = 40 if status >= 500 else 30 if status >= 400 or ms >= SLOW_REQUEST_MS else 20 if request.method != "GET" else 10
             if request.url.path.startswith("/api") and request.url.path != "/api/logs":  # a report is not itself worth a line
                 _log.log(level, "%s %s -> %s", request.method, request.url.path, status,
-                         extra=applog.fields(method=request.method, path=request.url.path, status=status, duration_ms=ms))
+                         extra=applog.fields(method=request.method, path=request.url.path, query=request.url.query or None, status=status, duration_ms=ms, detail=info.get("detail")))
             applog.request_id.reset(tokens[0])
             applog.camera.reset(tokens[1])
+            applog.request_info.reset(tokens[2])
         response.headers["X-Request-ID"] = rid
         return response
 

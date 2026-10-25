@@ -35,6 +35,8 @@ _PRUNE_EVERY = 500  # writes between retention passes
 request_id: contextvars.ContextVar[str | None] = contextvars.ContextVar("request_id", default=None)
 camera: contextvars.ContextVar[str | None] = contextvars.ContextVar("camera", default=None)
 job_id: contextvars.ContextVar[str | None] = contextvars.ContextVar("job_id", default=None)
+# Filled by the HTTP error handler so the request log line can say why a request failed.
+request_info: contextvars.ContextVar[dict | None] = contextvars.ContextVar("request_info", default=None)
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS logs (

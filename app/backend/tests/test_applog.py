@@ -186,3 +186,17 @@ class SwallowedErrorTests(ApiTestCase):
         applog.flush()
         rows = applog.query(self.dir, level="WARNING")
         self.assertTrue(any("cannot read the size" in r["message"] and names[0] in r["message"] for r in rows))
+
+
+class RequestLineDetailTests(ApiTestCase):
+    def test_a_404_line_says_why_and_keeps_the_query(self) -> None:
+        directory = applog.setup(config.DATA_DIR / "logs")
+        try:
+            self.client.get("/api/cameras/nocam/dedup/state", params={"feature": "roi:old"})
+            applog.flush()
+            row = applog.query(directory, level="WARNING")[0]
+            extra = json.loads(row["extra"])
+            self.assertEqual(extra["query"], "feature=roi%3Aold")
+            self.assertIn("Unknown", extra["detail"])
+        finally:
+            applog.shutdown()
