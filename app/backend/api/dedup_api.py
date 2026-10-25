@@ -24,6 +24,9 @@ from api import jobs
 from api.cameras import require_camera
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+import applog
+
+_log = applog.get("dedup_api")
 
 router = APIRouter()
 
@@ -79,6 +82,7 @@ def drop_deleted(camera: str, frames: list[str]) -> None:
             try:
                 _results[key] = dedup.recluster_without(_results[key], removed)
             except Exception:  # noqa: BLE001 - worst case the user clusters again
+                _log.warning("could not update the held clustering %s, it is dropped", key, exc_info=True)
                 _results.pop(key, None)
 
 
@@ -86,6 +90,7 @@ def _sklearn_available() -> bool:
     try:
         from sklearn.cluster import DBSCAN  # noqa: F401, PLC0415
     except Exception:  # noqa: BLE001
+        _log.info("scikit-learn is not available", exc_info=True)
         return False
     return True
 

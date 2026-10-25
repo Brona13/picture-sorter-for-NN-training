@@ -22,6 +22,9 @@ from api.cameras import require_feature
 from api.frames_api import frame_path
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+import applog
+
+_log = applog.get("classify_api")
 
 router = APIRouter()
 PER_PAGE_OPTIONS = grid_sizes.all_per_page()  # alone (no column count): any size that is valid for some column count
@@ -89,6 +92,7 @@ def load_scored(camera: str, feature: str) -> tuple[list | None, str | None, str
     try:
         results = classify.deserialise_results(row["payload"], methods)
     except Exception:  # noqa: BLE001 - a malformed row must not wedge the view
+        applog.warn_once(_log, f"score-cache-{camera}-{feature}", "unreadable score cache for %s/%s, it is recomputed", camera, feature)
         return None, None, None
     _deserialised[(camera, feature)] = (digest, results)
     return results, row["golden_sig"], row["frames_sig"]

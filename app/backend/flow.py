@@ -31,6 +31,9 @@ import labels
 import lines
 import preprocess
 import rotsearch
+import applog
+
+_log = applog.get("flow")
 
 GRAPH_KEY = "flow.graph"
 RESULTS_PREFIX = "flow.det."
@@ -1259,6 +1262,7 @@ def run_detector(camera: str, node_id: str, report=None, frames: list[str] | Non
             try:
                 picture = apply_rects(curation.load_image(datamodel.unsorted_dir(camera) / frame), rects, finder.for_frame(key) if has_follow(rects) else None)[0]
             except Exception:  # noqa: BLE001 - an unreadable frame, or one a following Crop has no rectangle on, has no boxes
+                applog.warn_once(_log, f"flow-picture-{camera}-{frame}", "no picture for %s/%s (unreadable, or no rectangle to follow)", camera, frame)
                 picture = None
             if picture is not None:
                 searched = cv2.resize(picture, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA) if scale < 1.0 else picture
@@ -1414,6 +1418,7 @@ def _frame_sizes(camera: str) -> dict[str, tuple[int, int]]:
                 with Image.open(datamodel.unsorted_dir(camera) / name) as im:
                     sizes[key] = im.size
             except Exception:  # noqa: BLE001 - an unreadable frame has no size, so no value
+                applog.warn_once(_log, f"flow-size-{camera}-{name}", "cannot read the size of %s/%s", camera, name)
                 continue
     return sizes
 

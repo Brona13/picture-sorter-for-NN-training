@@ -31,6 +31,9 @@ import flow
 import labels
 import lines
 import preprocess
+import applog
+
+_log = applog.get("chain")
 
 SETTING_KEY = "chain.canvas"
 INGEST_ID = "ingest"
@@ -260,6 +263,7 @@ def overview_flow(camera: str, picture_frame: str | None) -> dict | None:
             with Image.open(datamodel.unsorted_dir(camera) / picture_frame) as im:
                 size = im.size
         except Exception:  # noqa: BLE001 - no readable picture, so nothing to draw on
+            applog.warn_once(_log, f"chain-size-{camera}", "no readable picture to size the chain overlay for %s", camera)
             size = None
     if size:
         for node in nodes:

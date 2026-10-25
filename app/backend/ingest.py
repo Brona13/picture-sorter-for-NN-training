@@ -25,6 +25,9 @@ import config
 import datamodel
 import db
 import perf
+import applog
+
+_log = applog.get("ingest")
 
 STREAM_CHUNK_SIZE = 1024 * 1024
 PROGRESS_UPDATE_BYTES = 8 * STREAM_CHUNK_SIZE
@@ -355,6 +358,7 @@ def ingest_files(
                     con.commit()
                 unsaved_additions = 0
         except Exception as e:  # noqa: BLE001 - keep going, report per-file
+            _log.warning("ingest failed for one file in %s", camera, exc_info=True)
             if moved_path is not None and moved_path.exists():
                 try:
                     moved_path.unlink()
@@ -384,6 +388,7 @@ def ingest_files(
         with perf.span("ingest.index_save"):
             con.commit()
     except Exception as e:  # noqa: BLE001 - successful files remain valid
+        _log.error("ingest could not save the frame catalog of %s", camera, exc_info=True)
         con.rollback()
         index_saved = False
         result.errors.append(f"frame catalog: {e}")

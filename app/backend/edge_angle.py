@@ -30,6 +30,9 @@ import numpy as np
 import db
 import preprocess
 import vision_settings
+import applog
+
+_log = applog.get("edge_angle")
 
 ALGORITHM = 1  # bump when the measurement changes, so stored results are recomputed
 POINTS_RANGE = (3, 40)
@@ -347,6 +350,7 @@ def run(camera: str, feature: str, report=None) -> dict:
             crop = filtered_crop(camera, feature, datamodel.unsorted_dir(camera) / frame, flt)
             m = measure(crop, settings)
         except Exception:  # noqa: BLE001 - an unreadable frame is "none", not a failed run
+            applog.warn_once(_log, f"edge-{camera}-{frame}", "edge angle not measured for %s/%s", camera, frame)
             m = dict(NONE_RESULT)
         h = hmap.get(frame)
         if h:

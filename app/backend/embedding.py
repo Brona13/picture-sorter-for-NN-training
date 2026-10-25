@@ -26,6 +26,9 @@ from PIL import Image
 
 import config
 import perf
+import applog
+
+_log = applog.get("embedding")
 
 # --- lazy torch import -------------------------------------------------------
 _lock = threading.Lock()
@@ -52,6 +55,7 @@ def _ensure_torch() -> bool:
             _torch = torch
         except Exception:  # noqa: BLE001 - any failure -> feature just unavailable
             _import_failed = True
+            _log.warning("torch/torchvision could not be imported; embeddings are unavailable", exc_info=True)
     return _torch is not None
 
 
@@ -127,6 +131,7 @@ def device_info() -> dict:
             name = str(_torch.cuda.get_device_name(0))
         except Exception:  # noqa: BLE001 - the name is cosmetic
             name = ""
+            _log.debug("no GPU name", exc_info=True)
         if backend == "rocm":
             return {"kind": "amd", "label": "AMD GPU", "name": name, "api": "ROCm", "hint": ""}
         return {"kind": "nvidia", "label": "NVIDIA GPU", "name": name, "api": "CUDA", "hint": ""}
@@ -176,7 +181,7 @@ def _load(backbone: str, device: str):
             model.to(memory_format=_torch.channels_last)
             _torch.backends.cudnn.benchmark = True
         except Exception:  # noqa: BLE001 - an optimisation only
-            pass
+            _log.debug("channels_last/cudnn.benchmark not applied", exc_info=True)
     return model, weights.transforms()  # transforms() = resize/crop/normalize for these weights
 
 
@@ -225,7 +230,7 @@ def _infer_batch(model, preprocess, images: list[np.ndarray], backbone: str, dev
                 try:
                     batch = batch.contiguous(memory_format=_torch.channels_last)
                 except Exception:  # noqa: BLE001
-                    pass
+                    _log.debug("channels_last batch not applied", exc_info=True)
             batch = batch.to(device)
             inference_context = getattr(_torch, "inference_mode", _torch.no_grad)
             with inference_context():

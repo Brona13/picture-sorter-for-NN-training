@@ -19,6 +19,9 @@ from dataclasses import dataclass
 import numpy as np
 
 import db
+import applog
+
+_log = applog.get("scatter")
 
 
 #: Called with the share done (0 to 1) while the layout is being optimised.
@@ -46,7 +49,7 @@ class _ProgressSink:
                 if m:
                     self.progress(min(1.0, int(m.group(1)) / TSNE_ITERATIONS))
         except Exception:  # noqa: BLE001  (progress is a courtesy; it never breaks the projection)
-            pass
+            _log.debug("progress report failed", exc_info=True)
         return len(text)
 
     def flush(self) -> None:
@@ -208,7 +211,7 @@ def prewarm() -> None:
             rng = np.random.default_rng(0)
             _umap(rng.normal(size=(120, 128)).astype(np.float32))
         except Exception:  # noqa: BLE001 - optional dependency missing: the real call reports it
-            pass
+            _log.debug("UMAP prewarm failed", exc_info=True)
 
     threading.Thread(target=work, name="scatter-prewarm", daemon=True).start()
 
@@ -308,6 +311,7 @@ def _load_cached(
     try:
         data = json.loads(row["payload"].decode("utf-8"))
     except Exception:  # noqa: BLE001
+        applog.warn_once(_log, "scatter-cache-payload", "unreadable scatter cache row, it is recomputed")
         return None
     xy = np.asarray(data.get("xy", []), dtype=np.float32)
     if xy.ndim != 2 or xy.shape[1] != 2:
@@ -327,6 +331,7 @@ def _load_subset(
         old_frames = list(data.get("frames", []))
         xy = np.asarray(data.get("xy", []), dtype=np.float32)
     except Exception:  # noqa: BLE001
+        applog.warn_once(_log, "scatter-cache-previous", "unreadable previous scatter layout, starting fresh")
         return None
     if xy.ndim != 2 or xy.shape[1] != 2 or len(old_frames) != len(xy):
         return None
@@ -346,4 +351,4 @@ def _save_cached(
     try:
         db.save_scatter(camera, feature, method, backbone, fsig, payload)
     except Exception:  # noqa: BLE001 - never let a cache miss break the view
-        pass
+        _log.warning("could not save the scatter cache for %s/%s", camera, feature, exc_info=True)

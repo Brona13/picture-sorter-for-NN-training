@@ -63,6 +63,19 @@ def get(name: str) -> logging.Logger:
     return logging.getLogger(f"{ROOT}.{name}")
 
 
+_seen: set[str] = set()
+
+
+def warn_once(logger: logging.Logger, key: str, message: str, *args: Any, exc: bool = True) -> None:
+    """Warn the first time ``key`` fails in this process; a loop over many pictures must not flood the log.
+
+    ``key`` names the kind of failure (and what failed, e.g. the frame), not the exception text."""
+    if key in _seen or len(_seen) > 500:
+        return
+    _seen.add(key)
+    logger.warning(message, *args, exc_info=exc)
+
+
 def audit(**fields: Any) -> dict[str, Any]:
     """``extra=`` for an event worth keeping in the log database: ``log.info("frozen", extra=applog.audit(version=3))``."""
     return {"audit": True, "fields": fields}

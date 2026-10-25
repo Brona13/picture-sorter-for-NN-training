@@ -24,6 +24,9 @@ import db
 import embedding
 import engine
 import labels
+import applog
+
+_log = applog.get("dedup")
 
 
 DEFAULT_BACKBONE = "resnet50"
@@ -354,6 +357,7 @@ def load_snapshot(camera: str, feature: str) -> dict[str, tuple[int, bool]] | No
     try:
         data = json.loads(raw.decode("utf-8"))
     except Exception:  # noqa: BLE001 — malformed snapshot shouldn't wedge callers
+        applog.warn_once(_log, "cluster-snapshot", "unreadable cluster snapshot, ignored")
         return None
     frames = data.get("frames") or {}
     return {f: (int(cid), bool(is_rep)) for f, (cid, is_rep) in frames.items()}

@@ -26,6 +26,9 @@ import numpy as np
 import db
 import detections
 import vision_settings
+import applog
+
+_log = applog.get("motion")
 
 ALGORITHM = 1  # bump when a measurement changes, so stored results are recomputed
 SOURCES = ("auto", "detector", "template")
@@ -319,6 +322,7 @@ def run(camera: str, feature: str, report=None) -> dict:
                     crop, ref_work, box=box, ref_centre=ref_centre, source=settings["source"], rotation=settings["rotation"],
                 )
             except Exception:  # noqa: BLE001 - an unreadable frame is "not measured", not a failed run
+                applog.warn_once(_log, f"motion-{camera}-{h}", "motion not measured for one picture of %s", camera)
                 dx = dy = rot = used = None
             out[h] = [None if v is None else round(v, 3) for v in (dx, dy, rot)] + [_SRC_CODE.get(used or "", 0)]
         if report:

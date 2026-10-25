@@ -156,3 +156,33 @@ class ClientReportTests(ApiTestCase):
     def test_a_batch_is_capped(self) -> None:
         r = self.client.post("/api/logs", json={"records": [{"message": "m"}] * 80})
         self.assertEqual(r.json(), {"stored": 50})
+
+
+class SwallowedErrorTests(ApiTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        self.dir = applog.setup(config.DATA_DIR / "logs")
+        applog._seen.clear()
+
+    def tearDown(self) -> None:
+        applog.shutdown()
+        super().tearDown()
+
+    def test_warn_once_logs_the_first_failure_of_a_kind_only(self) -> None:
+        log = applog.get("t")
+        for _ in range(5):
+            applog.warn_once(log, "same-kind", "failed %s", "x", exc=False)
+        applog.warn_once(log, "other-kind", "failed %s", "y", exc=False)
+        applog.flush()
+        self.assertEqual(sorted(r["message"] for r in applog.query(self.dir, level="WARNING")), ["failed x", "failed y"])
+
+    def test_an_unreadable_picture_is_logged_where_it_used_to_vanish(self) -> None:
+        import datamodel
+        import flow
+        from tests.api_helpers import write_frames
+        names = write_frames("camL", 2)
+        (datamodel.unsorted_dir("camL") / names[0]).write_bytes(b"not a picture")
+        flow._frame_sizes("camL")
+        applog.flush()
+        rows = applog.query(self.dir, level="WARNING")
+        self.assertTrue(any("cannot read the size" in r["message"] and names[0] in r["message"] for r in rows))
