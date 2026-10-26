@@ -356,8 +356,6 @@ def set_mode(camera: str, feature: str, body: ModeUpdate) -> dict:
         if any(datamodel.FEATURE_SEP in n for n in names):
             raise HTTPException(status_code=422, detail=f"`{datamodel.FEATURE_SEP}` is reserved — please pick names without it.")
         target.role, target.classes, target.products = "classify", names, None
-        anchor.clear_anchor(camera, feature)  # the Product Classifier always reads the whole picture
-        roi_input.clear_input(camera, feature)
     else:
         if roi.role != "classify":
             raise HTTPException(status_code=422, detail="It is a Feature Classifier already.")

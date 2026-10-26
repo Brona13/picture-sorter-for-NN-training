@@ -117,6 +117,24 @@ class RoiInputTests(ApiTestCase):
         edges = self.client.get(f"/api/cameras/{CAM}/chain").json()["edges"]
         self.assertTrue(any(e["target"] == "roi:seal" for e in edges))  # back on Ingest
 
+    def test_product_classifier_reads_a_box_and_keeps_its_input_when_the_mode_changes(self) -> None:
+        self.feed()
+        r = self.client.put(f"{self.roi}/seal/mode", json={"mode": "product", "product_names": ["A", "B"]})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(roi_input.get_input(CAM, "seal"), {"box": self.box})
+        edges = [e["id"] for e in self.client.get(f"/api/cameras/{CAM}/chain").json()["edges"]]
+        self.assertIn(f"{self.box}->roi:seal", edges)
+        self.assertNotIn("ingest->roi:seal", edges)
+        self.feed("seal")  # and a line can be drawn onto the Product Classifier directly
+
+    def test_product_classifier_keeps_its_detector_anchor_when_the_mode_changes(self) -> None:
+        det = self.client.post(f"{self.flow}/nodes", json={"kind": "detector"}).json()["id"]
+        self.client.post(f"{self.flow}/nodes/{det}/targets", json={"name": "t"})
+        self.assertEqual(self.client.put(f"{self.roi}/seal/anchor", json={"detector": det, "target": "t", "mode": "box"}).status_code, 200)
+        self.assertEqual(self.client.put(f"{self.roi}/seal/mode", json={"mode": "product", "product_names": ["A", "B"]}).status_code, 200)
+        edges = [e["id"] for e in self.client.get(f"/api/cameras/{CAM}/chain").json()["edges"]]
+        self.assertIn(f"{det}->roi:seal", edges)
+
     def test_remove_input_and_roi_delete(self) -> None:
         self.feed()
         self.assertEqual(self.client.delete(f"{self.roi}/seal/input").status_code, 200)

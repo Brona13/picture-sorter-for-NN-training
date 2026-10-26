@@ -178,8 +178,8 @@ def _edges(camera: str, rois: list[datamodel.ROI], classify: str | None) -> list
     classes = datamodel.classes_for(camera, classify) if classify else []
     anchored = {r.name for r in rois if anchor.get_anchor(camera, r.name) or roi_input.get_input(camera, r.name) or dedup_box.input_of(camera, r.name)}  # these hang from their detector, Picture edits or Dedup box instead
     detached = {r.name for r in rois if db.get_setting(camera, f"{db.DETACHED_KEY}{r.name}") == "1"}  # drawn without the line from Ingest
-    if classify_id and classify not in detached:
-        add(INGEST_ID, classify_id)  # drawn until the user deletes it (the Classifier then hangs alone and still reads the whole camera)
+    if classify_id and classify not in detached and classify not in anchored:
+        add(INGEST_ID, classify_id)  # drawn until the user deletes it or feeds the Classifier from a detector / Picture edits box (it then reads that picture)
     for roi in rois:
         if roi.role == "classify":
             continue

@@ -90,8 +90,6 @@ def set_input(camera: str, feature: str, box: str) -> dict:
     roi = datamodel.get_roi(camera, feature)
     if roi is None:
         raise RoiInputError(f"Unknown ROI: {feature}")
-    if roi.role == "classify":
-        raise RoiInputError("The product-sorting ROI always reads the whole picture.")
     import anchor  # noqa: PLC0415
 
     if anchor.get_anchor(camera, feature):

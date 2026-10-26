@@ -186,8 +186,20 @@ class DedupBoxTests(ApiTestCase):
         boxes = self.client.get(f"{self.base}/dedup/boxes").json()
         self.assertEqual(boxes, [{"feature": self.d1, "label": "Dedup 1"}, {"feature": self.d2, "label": "Whole set"}])
 
-    def test_dedup_pages_only_know_boxes(self) -> None:
-        self.assertEqual(self.client.get(f"{self.base}/dedup/state", params={"feature": "seal"}).status_code, 404)
+    def test_a_feature_classifier_offers_only_the_pictures_of_its_products_as_drawing_background(self) -> None:
+        datamodel.save_rois(CAM, datamodel.load_rois(CAM) + [ROI("edge", 0, 0, 1, 1, products=["B"])])
+        r = self.client.get(f"{self.base}/frames", params={"feature": "edge"}).json()
+        self.assertEqual(sorted(r["frames"]), sorted(self.frames[2:4]))  # the two pictures sorted as B
+        self.assertFalse(r["showing_all"])
+        self.assertEqual(len(self.client.get(f"{self.base}/frames", params={"feature": "seal"}).json()["frames"]), 6)  # no products: all
+        self.assertEqual(self.client.get(f"{self.base}/frames", params={"feature": "nope"}).status_code, 404)
+
+    def test_dedup_pages_know_boxes_and_the_classify_page_names_its_classifier(self) -> None:
+        self.assertEqual(self.client.get(f"{self.base}/dedup/state", params={"feature": "nothing"}).status_code, 404)
+        self.assertEqual(self.client.get(f"{self.base}/dedup/state", params={"feature": "dedup:99"}).status_code, 404)
+        state = self.client.get(f"{self.base}/dedup/state", params={"feature": "type"})  # Classify's Scatter / Outliers views
+        self.assertEqual(state.status_code, 200)
+        self.assertEqual(state.json()["source"], "type")
         self.assertEqual(self.client.get(f"{self.base}/dedup/state", params={"feature": self.d1}).status_code, 200)
 
     def test_the_old_per_roi_dedup_data_is_wiped_by_the_migration(self) -> None:

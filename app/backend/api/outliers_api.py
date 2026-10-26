@@ -7,7 +7,7 @@ import embedding
 import methods_config
 import outliers
 from api import jobs
-from api.dedup_api import marks_for, require_box
+from api.dedup_api import marks_for, require_embeddable
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -22,7 +22,7 @@ class OutlierBody(BaseModel):
 
 @router.post("/cameras/{camera}/dedup/outliers", status_code=202)
 def run_outliers(camera: str, body: OutlierBody) -> dict:
-    require_box(camera, body.feature)
+    require_embeddable(camera, body.feature)
     if not embedding.backbones():
         raise HTTPException(status_code=409, detail="Outlier scoring unavailable: no_embeddings")
     if body.method not in methods_config.active_backbones():

@@ -43,7 +43,7 @@ export default function RoiEditorView({ camera, product, focus }: { camera: stri
   const reload = useCallback(async () => {
     if (!camera) return;
     try {
-      const [f, r] = await Promise.all([api.frames(camera, product), api.rois(camera, product)]);
+      const [f, r] = await Promise.all([api.frames(camera, product, focus?.feature), api.rois(camera, product)]);
       setFrames(f);
       setData(r);
       setFrame((cur) =>
@@ -53,7 +53,7 @@ export default function RoiEditorView({ camera, product, focus }: { camera: stri
     } catch (e) {
       setError(msg(e));
     }
-  }, [camera, product]);
+  }, [camera, product, focus?.feature]);
 
   useEffect(() => {
     setFrame("");
@@ -155,10 +155,11 @@ export default function RoiEditorView({ camera, product, focus }: { camera: stri
       </p>
     );
 
+  const frameAt = frames ? frames.frames.indexOf(frame) : -1;
   const classifyFeat = data?.classify_feature ?? null;
   const allProducts = data?.products ?? [];
 
-  const anchorPanel = roiNode && roiNode.role !== "classify" ? (
+  const anchorPanel = roiNode ? (
       <AnchorSection
         key={`${roiNode.id}:${roiNode.anchor?.detector ?? ""}:${roiNode.anchor?.target ?? ""}:${roiNode.anchor?.mode ?? ""}`}
         camera={camera}
@@ -212,9 +213,18 @@ export default function RoiEditorView({ camera, product, focus }: { camera: stri
             ))}
           </select>
         </label>{" "}
+        <button type="button" disabled={anchorFrame !== null || frameAt <= 0} onClick={() => setFrame(frames!.frames[frameAt - 1])}>‹ Previous</button>{" "}
+        <button type="button" disabled={anchorFrame !== null || frameAt < 0 || frameAt >= (frames?.frames.length ?? 0) - 1} onClick={() => setFrame(frames!.frames[frameAt + 1])}>Next ›</button>{" "}
         <button type="button" disabled={!frame} onClick={() => run(async () => { await api.setReferenceFrame(camera, frame); return `Pinned ${frame} as reference.`; })}>
           📌 Pin as reference
         </button>
+        {focus && !product && roiNode?.products?.length ? (
+          <p>
+            {frames?.showing_all
+              ? `No frames are classified as ${roiNode.products.join(", ")} yet, so all ${frames.total} frames are offered.`
+              : `Showing the ${frames?.frames.length} frames classified as ${roiNode.products.join(", ")} — draw this ROI on a picture of the product it applies to.`}
+          </p>
+        ) : null}
         {product && frames && (
           <p>
             {frames.showing_all

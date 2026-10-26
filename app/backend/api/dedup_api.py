@@ -38,10 +38,18 @@ PER_PAGE_OPTIONS = grid_sizes.all_per_page()  # alone (no column count): any siz
 COLS_OPTIONS = list(grid_sizes.COLS)
 
 def require_box(camera: str, feature: str) -> str:
-    """Dedup works on Dedup boxes of the Chain (``dedup:N``), not on ROIs."""
+    """Dedup works on Dedup boxes of the Chain (``dedup:N``)."""
     require_camera(camera)
     if not dedup_box.exists(camera, feature):
         raise HTTPException(status_code=404, detail=f"Unknown Dedup box: {feature}")
+    return feature
+
+
+def require_embeddable(camera: str, feature: str) -> str:
+    """A Dedup box, or a Classifier (ROI) by name: the Classify page's Scatter and Outliers views work on the Classifier itself."""
+    require_camera(camera)
+    if not dedup_box.exists(camera, feature) and (dedup_box.is_box(feature) or datamodel.get_roi(camera, feature) is None):
+        raise HTTPException(status_code=404, detail=f"Unknown Dedup box or Classifier: {feature}")
     return feature
 
 
@@ -181,7 +189,7 @@ class Params(BaseModel):
 
 
 def _validate(camera: str, p: Params) -> None:
-    require_box(camera, p.feature)
+    require_embeddable(camera, p.feature)
     if p.method not in methods_config.active_backbones():
         raise HTTPException(status_code=422, detail=f"Embedding not available (switched off in Configuration?): {p.method}")
     if not EPSILON_RANGE[0] <= p.epsilon <= EPSILON_RANGE[1]:
@@ -192,7 +200,7 @@ def _validate(camera: str, p: Params) -> None:
 
 @router.get("/cameras/{camera}/dedup/state")
 def state(camera: str, feature: str) -> dict:
-    require_box(camera, feature)
+    require_embeddable(camera, feature)
     scatter.prewarm()  # UMAP's first use imports and compiles for ~20 s: do it while the user is on this page
     backbones = methods_config.active_backbones()
     result = _current_result(camera, feature)
@@ -314,7 +322,7 @@ class ScatterBody(BaseModel):
 @router.get("/cameras/{camera}/dedup/scatter/cached")
 def scatter_cached(camera: str, feature: str, projection: str, method: str) -> dict:
     """Whether the 2D map for this embedding and projection can be shown at once (nothing to compute)."""
-    require_box(camera, feature)
+    require_embeddable(camera, feature)
     if projection not in scatter.SUPPORTED_METHODS:
         raise HTTPException(status_code=422, detail=f"Unknown projection: {projection}")
     return {"cached": scatter.is_cached(camera, feature, projection, method, dedup.live_frames(camera, feature))}
@@ -327,7 +335,7 @@ def run_scatter(camera: str, body: ScatterBody) -> dict:
     Points carry the current label and golden, and the cluster of the held clustering when there is
     one for the same embedding, so the page can colour by any of them.
     """
-    require_box(camera, body.feature)
+    require_embeddable(camera, body.feature)
     if body.projection not in scatter.SUPPORTED_METHODS:
         raise HTTPException(status_code=422, detail=f"Unknown projection: {body.projection}")
     held = _current_result(camera, body.feature)

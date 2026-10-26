@@ -165,7 +165,7 @@ export function flowConnect(canvas: ChainCanvas, c: Connection): FlowLink {
   const source = featureOf(canvas, c.source);
   const target = featureOf(canvas, c.target);
   if (!source || !target) return { error: "Unknown box." };
-  if (source.kind === "detector" && target.kind === "roi" && target.role !== "classify" && target.ref) {
+  if (source.kind === "detector" && target.kind === "roi" && target.ref) {
     // A detector target's dot dropped on an ROI feature anchors the ROI to that target's box.
     const name = targetOfHandle(c.sourceHandle);
     if (!name) return { error: "Drag from one of the detector's target dots (on its right edge) to the ROI." };
@@ -173,7 +173,7 @@ export function flowConnect(canvas: ChainCanvas, c: Connection): FlowLink {
   }
   if (source.kind === "crop" && target.kind === "roi") {
     // A Picture edits box dropped on an ROI feature: the ROI is cut from the box's (filtered) picture.
-    if (target.role === "classify" || !target.ref) return { error: "The product-sorting ROI always reads the whole picture." };
+    if (!target.ref) return { error: "Unknown box." };
     if (c.sourceHandle) return { error: "Use the Picture edits box's main dot." };
     return { roiInput: { feature: target.ref, box: source.id } };
   }

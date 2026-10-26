@@ -65,14 +65,19 @@ def _cached(request: Request, etag: str, content: bytes, media_type: str) -> Res
 
 
 @router.get("/cameras/{camera}/frames")
-def list_frames(camera: str, product: str | None = None) -> dict:
-    """Frames offered as drawing backgrounds (deleted ones excluded); falls back to all frames when a product has none."""
+def list_frames(camera: str, product: str | None = None, feature: str | None = None) -> dict:
+    """Frames offered as drawing backgrounds (deleted ones excluded); falls back to all frames when a product has none.
+
+    ``feature`` narrows to the pictures that Classifier applies to (its products), so its ROI is drawn on a right picture."""
     require_camera(camera)
+    if feature is not None and datamodel.get_roi(camera, feature) is None:
+        raise HTTPException(status_code=404, detail=f"Unknown ROI: {feature}")
     if product is not None and product not in datamodel.products(camera):
         raise HTTPException(status_code=404, detail=f"Unknown product: {product}")
     deleted = db.deleted_frames_of(camera)  # deleted frames are never offered as a drawing background
     all_names = [p.name for p in datamodel.list_unsorted(camera) if p.name not in deleted]
-    names = [n for n in datamodel.frames_of_product(camera, product) if n not in deleted]
+    scoped = datamodel.frames_for_feature(camera, feature) if feature else datamodel.frames_of_product(camera, product)
+    names = [n for n in scoped if n not in deleted]
     showing_all = not names
     return {
         "frames": all_names if showing_all else names,

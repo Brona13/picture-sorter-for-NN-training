@@ -131,10 +131,10 @@ test("flowConnect refuses arrows whose types do not fit, and leaves ROI arrows t
   expect(flowConnect(flowCanvas, link("ingest", "roi:seal"))).toBeNull();
 });
 
-test("a Picture edits box dropped on an ROI becomes the ROI's input; the product-sorting ROI refuses", () => {
+test("a Picture edits box dropped on an ROI becomes the ROI's input, also the Product Classifier's", () => {
   const withBox: ChainCanvas = { ...flowCanvas, nodes: [...flowCanvas.nodes, node({ id: "crop:1", kind: "crop", ref: null, role: null, scope: null, label: "Picture edits 1" })] };
   expect(flowConnect(withBox, link("crop:1", "roi:seal"))).toEqual({ roiInput: { feature: "seal", box: "crop:1" } });
-  expect(flowConnect(withBox, link("crop:1", "roi:type"))).toHaveProperty("error");
+  expect(flowConnect(withBox, link("crop:1", "roi:type"))).toEqual({ roiInput: { feature: "type", box: "crop:1" } });
   expect(flowConnect(withBox, { source: "crop:1", sourceHandle: "t:x", target: "roi:seal" })).toHaveProperty("error");
 });
 
@@ -152,7 +152,7 @@ test("a detector target's dot dropped on an ROI feature anchors it; the main han
     anchor: { feature: "seal", detector: "det:1", target: "left hole" },
   });
   expect(flowConnect(flowCanvas, link("det:1", "roi:seal"))).toEqual({ error: expect.stringContaining("target dots") });
-  expect(flowConnect(flowCanvas, { source: "det:1", sourceHandle: targetHandle("x"), target: "roi:type" })).toHaveProperty("error"); // the product-sorting ROI
+  expect(flowConnect(flowCanvas, { source: "det:1", sourceHandle: targetHandle("x"), target: "roi:type" })).toEqual({ anchor: { feature: "type", detector: "det:1", target: "x" } }); // the Product Classifier too
   expect(isAnchorEdge(flowCanvas, { id: "e", source: "det:1", source_handle: "t:left hole", target: "roi:seal", locked: false })).toBe(true);
   expect(isAnchorEdge(flowCanvas, { id: "e", source: "ingest", source_handle: null, target: "roi:seal", locked: false })).toBe(false);
 });

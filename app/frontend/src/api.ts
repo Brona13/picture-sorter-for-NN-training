@@ -1243,10 +1243,10 @@ export const api = {
       `/cameras/${encodeURIComponent(camera)}/ingest/rebuild`,
       post(),
     ),
-  frames: (camera: string, product?: string) =>
+  frames: (camera: string, product?: string, feature?: string) =>
     request<FramesResponse>(
       `/cameras/${encodeURIComponent(camera)}/frames` +
-        (product ? `?product=${encodeURIComponent(product)}` : ""),
+        (feature ? `?feature=${encodeURIComponent(feature)}` : product ? `?product=${encodeURIComponent(product)}` : ""),
     ),
   setReferenceFrame: (camera: string, frame: string) =>
     request<{ reference_frame: string }>(
