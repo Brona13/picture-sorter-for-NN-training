@@ -127,6 +127,7 @@ export function OutlierResults({
       <PictureGrid
         camera={camera}
         feature={labelFeature ?? ranFor}
+        pictureFeature={ranFor}
         classes={result.classes}
         frames={rows.map((r) => r.frame)}
         cardOf={cardOf}

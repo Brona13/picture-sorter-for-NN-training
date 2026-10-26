@@ -32,12 +32,13 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-function Harness(props: { viewer?: boolean; restorable?: boolean; deleted?: boolean }) {
+function Harness(props: { viewer?: boolean; restorable?: boolean; deleted?: boolean; pictureFeature?: string }) {
   const [page, setPage] = useState(1);
   return (
     <PictureGrid
       camera="camA"
       feature="seal"
+      pictureFeature={props.pictureFeature}
       classes={["OK", "NG"]}
       frames={frames}
       cardOf={(f) => ({ ...cardOf(f), deleted: !!props.deleted && f === "a.png" })}
@@ -126,4 +127,13 @@ test("a deleted card can be restored only when the tool keeps deleted frames on 
   await userEvent.click(within(screen.getByTestId("card-a.png")).getByRole("button", { name: /Restore/ }));
   await waitFor(() => expect(calls.some((c) => c.url.endsWith("/classify/restore"))).toBe(true));
   expect(onChanged).toHaveBeenCalledWith("a.png", expect.objectContaining({ deleted: false }));
+});
+
+test("the cards show the cutout of pictureFeature while labels go to the feature", async () => {
+  const { container } = render(<Harness pictureFeature="dedup:2" />);
+  const srcs = Array.from(container.querySelectorAll("img")).map((i) => i.getAttribute("src") ?? "");
+  expect(srcs.length).toBeGreaterThan(0);
+  expect(srcs.every((u) => u.includes("feature=dedup%3A2"))).toBe(true);
+  await userEvent.click(screen.getAllByRole("button", { name: "OK" })[0]);
+  await waitFor(() => expect(calls.some((c) => c.url.endsWith("/classify/label") && c.body.feature === "seal")).toBe(true));
 });

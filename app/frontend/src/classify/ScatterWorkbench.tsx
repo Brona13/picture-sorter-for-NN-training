@@ -116,6 +116,7 @@ export function effectiveColour(colourBy: ColourBy, scatter: ScatterResult | nul
 export function ScatterMapView({
   camera,
   feature,
+  pictureFeature,
   map,
   colourBy,
   scores,
@@ -127,6 +128,8 @@ export function ScatterMapView({
 }: {
   camera: string;
   feature: string;
+  /** The feature whose cutout the cards show, when it differs from the one the picture actions go through (a Dedup box). */
+  pictureFeature?: string;
   map: ScatterMap;
   colourBy: ColourBy;
   scores?: Record<string, number>;
@@ -146,6 +149,7 @@ export function ScatterMapView({
         <ScatterSelection
           camera={camera}
           feature={feature}
+          pictureFeature={pictureFeature}
           points={selected}
           classes={scatter.classes}
           grid={grid}
@@ -199,6 +203,7 @@ export function ScatterMapView({
 export function ScatterSelection({
   camera,
   feature,
+  pictureFeature,
   points,
   classes,
   grid,
@@ -212,6 +217,7 @@ export function ScatterSelection({
 }: {
   camera: string;
   feature: string;
+  pictureFeature?: string;
   points: ScatterPoint[];
   classes: string[];
   grid: PagerSettings;
@@ -337,6 +343,7 @@ export function ScatterSelection({
           <PictureGrid
             camera={camera}
             feature={feature}
+            pictureFeature={pictureFeature}
             classes={classes}
             frames={frames}
             cardOf={cardOf}

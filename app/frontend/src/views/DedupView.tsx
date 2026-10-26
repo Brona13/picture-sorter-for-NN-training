@@ -419,6 +419,7 @@ export default function DedupView({
               <ScatterMapView
                 camera={camera}
                 feature={act}
+                pictureFeature={feature}
                 map={map}
                 colourBy={shownColour}
                 scores={outliers ? outlierShades(outliers) : undefined}
@@ -487,6 +488,7 @@ export default function DedupView({
             <ClusterBrowser
               camera={camera}
               feature={act}
+              pictureFeature={feature}
               result={result}
               picks={picks}
               marks={marks}

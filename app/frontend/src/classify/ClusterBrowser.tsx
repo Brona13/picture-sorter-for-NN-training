@@ -16,6 +16,7 @@ const UNIQUE = "unique";
 export default function ClusterBrowser({
   camera,
   feature,
+  pictureFeature,
   result,
   picks,
   marks,
@@ -28,6 +29,8 @@ export default function ClusterBrowser({
 }: {
   camera: string;
   feature: string;
+  /** The feature whose cutout the cards show, when it differs from the one the picture actions go through (a Dedup box). */
+  pictureFeature?: string;
   result: DedupResult;
   picks: Record<number, string>;
   marks: Marks;
@@ -108,6 +111,7 @@ export default function ClusterBrowser({
         <PictureGrid
           camera={camera}
           feature={feature}
+          pictureFeature={pictureFeature}
           classes={result.classes}
           frames={cur.frames}
           cardOf={cardOf}
