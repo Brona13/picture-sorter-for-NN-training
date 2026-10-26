@@ -111,6 +111,26 @@ def frame_image(camera: str, frame: str, request: Request) -> Response:
     return _cached(request, f'"{st.st_mtime_ns}-{st.st_size}"', buf.tobytes(), "image/png")
 
 
+@router.get("/cameras/{camera}/frames/{frame}/cutout")
+def frame_cutout(camera: str, frame: str, request: Request, feature: str) -> Response:
+    """The picture's cutout of ``feature`` at full resolution (PNG): a ROI, or a Dedup box fed by a detector target
+    (the box the detector found). 404 when the detector found no box on this picture."""
+    path = frame_path(camera, frame)
+    roi_tuple = _roi_tuple(camera, feature, path)  # raises 404 when there is no box on this picture
+    mtime = path.stat().st_mtime
+    etag = f'"cutout-{mtime}-{hash(roi_tuple) & 0xFFFFFFFF:x}"'
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers={"ETag": etag, "Cache-Control": "no-cache"})
+    try:
+        crop = engine.crop_for_frame(camera, feature, path)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    ok, buf = cv2.imencode(".png", crop)
+    if not ok:
+        raise HTTPException(status_code=415, detail=f"Cannot render the cutout of {frame}")
+    return _cached(request, etag, buf.tobytes(), "image/png")
+
+
 @router.get("/cameras/{camera}/frames/{frame}/thumb")
 def frame_thumb(
     camera: str,

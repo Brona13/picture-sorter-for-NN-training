@@ -695,6 +695,10 @@ export interface DeviceInfo {
 export const frameImageUrl = (camera: string, frame: string) =>
   `/api/cameras/${encodeURIComponent(camera)}/frames/${encodeURIComponent(frame)}/image`;
 
+/** The picture's cutout of a feature or Dedup box at full resolution (404 where the detector found no box). */
+export const frameCutoutUrl = (camera: string, frame: string, feature: string) =>
+  `/api/cameras/${encodeURIComponent(camera)}/frames/${encodeURIComponent(frame)}/cutout?feature=${encodeURIComponent(feature)}`;
+
 /**
  * The picture a Chain box works on (frame after the edits above it), or - `stage: "output"` on a Picture Edits box - the
  * one it passes on. `step` narrows that to one edit of the box (`input` enters it, `output` leaves it); `steps` is a list
@@ -1317,7 +1321,7 @@ export const api = {
       `/cameras/${encodeURIComponent(camera)}/rois/${encodeURIComponent(feature)}/anchor`,
     ),
   roiRect: (camera: string, feature: string, frame: string) =>
-    request<{ anchored: boolean; rect: { x: number; y: number; w: number; h: number } | null }>(
+    request<{ anchored: boolean; rect: { x: number; y: number; w: number; h: number } | null; box?: boolean; input?: string | null }>(
       `/cameras/${encodeURIComponent(camera)}/rois/${encodeURIComponent(feature)}/rect?frame=${encodeURIComponent(frame)}`,
     ),
   setRoiInput: (camera: string, feature: string, box: string) =>

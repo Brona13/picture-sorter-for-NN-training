@@ -6,6 +6,7 @@ import roi_input
 import config
 import datamodel
 import db
+import dedup_box
 import engine
 import flow
 import labels
@@ -242,18 +243,24 @@ def get_anchor(camera: str, feature: str) -> dict:
 def roi_rect(camera: str, feature: str, frame: str) -> dict:
     """The rectangle of the ROI on one picture: its own, or - anchored - where the detector's box puts it (``rect`` is
     ``None`` when the detector found no box there)."""
-    _require_roi(camera, feature)
+    if dedup_box.is_box(feature):  # a Dedup box (v1.106.0): the box a detector found for its target, or the Picture edits box it reads
+        require_camera(camera)
+        edits = roi_input.get_input(camera, feature)
+        extra = {"input": edits["box"] if edits else None, "box": True}
+    else:
+        _require_roi(camera, feature)
+        extra = {}
     path = datamodel.unsorted_dir(camera) / frame
     if not path.is_file():
         raise HTTPException(status_code=404, detail=f"Unknown frame: {frame}")
     spec = anchor.get_anchor(camera, feature)
     if spec is None:
         r = engine.resolve_roi(camera, feature)
-        return {"anchored": False, "rect": {"x": r.x, "y": r.y, "w": r.w, "h": r.h}}
+        return {"anchored": False, "rect": {"x": r.x, "y": r.y, "w": r.w, "h": r.h}, **extra}
     with Image.open(path) as picture:
         width, height = picture.size
     placed = engine.resolve_roi_for_frame(camera, feature, labels.hash_map(camera).get(frame, ""), width, height)
-    return {"anchored": True, "rect": None if placed is None else {"x": placed.x, "y": placed.y, "w": placed.w, "h": placed.h}}
+    return {"anchored": True, "rect": None if placed is None else {"x": placed.x, "y": placed.y, "w": placed.w, "h": placed.h}, **extra}
 
 
 class InputBody(BaseModel):

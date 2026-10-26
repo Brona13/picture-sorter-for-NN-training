@@ -40,6 +40,9 @@ export const lastSession = {
   /** The Detector review grid's "per page x columns", e.g. "24x4". */
   reviewGrid: () => get("review.grid"),
   setReviewGrid: (v: string) => set("review.grid", v),
+  /** The full-size viewer of a Dedup box: the cutout of the found box (default) or the whole picture. */
+  viewerCutout: () => get("viewer.cutout") !== "0",
+  setViewerCutout: (v: boolean) => set("viewer.cutout", v ? "1" : "0"),
   panelCollapsed: () => get("panel.collapsed") === "1",
   setPanelCollapsed: (v: boolean) => set("panel.collapsed", v ? "1" : ""),
 };

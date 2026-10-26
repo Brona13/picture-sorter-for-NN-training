@@ -100,6 +100,14 @@ class DetectorToDedupTests(ApiTestCase):
         self.assertEqual(sorted(shown), sorted(names[:2]))
         self.assertEqual(self.client.get(f"{base}/frames/{names[0]}/thumb", params={"feature": self.box}).status_code, 200)
         self.assertEqual(self.client.get(f"{base}/frames/{names[2]}/thumb", params={"feature": self.box}).status_code, 404)
+        # the viewer (v1.106.0): the box's rectangle on a picture, and its cutout at full resolution
+        rect = self.client.get(f"{base}/rois/{self.box}/rect", params={"frame": names[0]}).json()
+        self.assertTrue(rect["anchored"] and rect["box"] and rect["rect"] is not None)
+        self.assertIsNone(self.client.get(f"{base}/rois/{self.box}/rect", params={"frame": names[2]}).json()["rect"])
+        cut = self.client.get(f"{base}/frames/{names[0]}/cutout", params={"feature": self.box})
+        self.assertEqual((cut.status_code, cut.headers["content-type"]), (200, "image/png"))
+        self.assertEqual(self.client.get(f"{base}/frames/{names[2]}/cutout", params={"feature": self.box}).status_code, 404)
+        self.assertEqual(self.client.get(f"{base}/rois/nope/rect", params={"frame": names[0]}).status_code, 404)
 
     def test_a_box_with_no_detector_line_has_no_anchor(self) -> None:
         import anchor

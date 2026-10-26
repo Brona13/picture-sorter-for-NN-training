@@ -1,16 +1,19 @@
 import { ReactNode, useEffect, useRef, useState } from "react";
-import { api, flowPictureUrl, FlowEdit, RoiInfo } from "../api";
+import { api, flowPictureUrl, frameCutoutUrl, FlowEdit, RoiInfo } from "../api";
 import FramePane from "./FramePane";
 import PictureViewer from "./PictureViewer";
 import { useBrowse } from "./useBrowse";
 import { classColor } from "./colors";
 import { MAX_SHORTCUT_CLASSES } from "./Card";
 import { isClearKey } from "./paint";
+import { lastSession } from "../lastSession";
 
 interface Props {
   camera: string;
   /** The feature (ROI) the grid shows; its rectangle is drawn on the full frame. */
   feature?: string;
+  /** A Dedup box whose cutout the grid shows: the viewer offers its cutout (default) or the whole picture with the found box outlined. */
+  pictureFeature?: string;
   /** The frames in the order of the grid underneath; the arrows walk this list. */
   frames: string[];
   /** The frame to start on. */
@@ -44,7 +47,7 @@ interface Props {
  * pan, the same pane the ROI editor uses), the ROI outline, and the card's own actions for the frame on screen
  * (1-9 label, 0 or X clear, the key left of 1 golden, Delete).
  */
-export default function FrameViewer({ camera, feature, frames, start, classes, marks, busy, onLabel, onGolden, onDelete, deleted, onRestore, labelsLocked, lead, leadCaption, trail, note, onShow, onClose }: Props) {
+export default function FrameViewer({ camera, feature, pictureFeature, frames, start, classes, marks, busy, onLabel, onGolden, onDelete, deleted, onRestore, labelsLocked, lead, leadCaption, trail, note, onShow, onClose }: Props) {
   const [roi, setRoi] = useState<RoiInfo | null>(null);
   const [showRoi, setShowRoi] = useState(true);
   useEffect(() => {
@@ -82,7 +85,25 @@ export default function FrameViewer({ camera, feature, frames, start, classes, m
     api.roiRect(camera, feature, frame).then((r) => !cancelled && setPlaced({ frame, rect: r.rect })).catch(() => !cancelled && setPlaced(null));
     return () => { cancelled = true; };
   }, [camera, feature, frame, roi?.anchored]);
-  const outline = roi && showRoi ? (roi.anchored ? (placed && placed.frame === frame && placed.rect ? { ...roi, ...placed.rect } : null) : roi) : null;
+  // A Dedup box fed by a detector target (or reading a Picture edits box): its cutout, or the whole picture with the found box.
+  // The choice stays while browsing and is remembered in the browser.
+  const [boxInfo, setBoxInfo] = useState<{ frame: string; anchored: boolean; rect: { x: number; y: number; w: number; h: number } | null; input: string | null } | null>(null);
+  const [cutout, setCutout] = useState<boolean>(() => lastSession.viewerCutout());
+  useEffect(() => {
+    if (!pictureFeature || !frame) { setBoxInfo(null); return; }
+    let cancelled = false;
+    api.roiRect(camera, pictureFeature, frame)
+      .then((r) => !cancelled && setBoxInfo({ frame, anchored: r.anchored, rect: r.rect, input: r.input ?? null }))
+      .catch(() => !cancelled && setBoxInfo(null)); // cosmetic: the picture is useful without it
+    return () => { cancelled = true; };
+  }, [camera, pictureFeature, frame]);
+  const boxMode = !!pictureFeature && !!boxInfo && (boxInfo.anchored || !!boxInfo.input);
+  const boxHere = boxMode && boxInfo!.frame === frame;
+  const boxMissing = boxHere && boxInfo!.anchored && boxInfo!.rect === null;
+  const showCutout = boxMode && cutout && !boxMissing;
+  const boxPictureUrl = !boxMode ? undefined : showCutout ? frameCutoutUrl(camera, frame, pictureFeature!) : boxInfo!.input ? flowPictureUrl(camera, boxInfo!.input, frame, { stage: "output" }) : undefined;
+  const boxOutline = boxMode && !showCutout && boxHere && boxInfo!.anchored && boxInfo!.rect ? boxInfo!.rect : null;
+  const outline = boxMode ? boxOutline : roi && showRoi ? (roi.anchored ? (placed && placed.frame === frame && placed.rect ? { ...roi, ...placed.rect } : null) : roi) : null;
   const noAnchor = !!roi?.anchored && placed?.frame === frame && placed.rect === null;
 
   const latest = useRef({ frame, classes, busy, marks, onLabel, onGolden, onDelete, deleted, labelsLocked });
@@ -166,7 +187,7 @@ export default function FrameViewer({ camera, feature, frames, start, classes, m
       }
       tools={
         <>
-          {hasFilter && (
+          {hasFilter && !boxMode && (
             <button
               type="button"
               aria-label="Picture version"
@@ -178,7 +199,19 @@ export default function FrameViewer({ camera, feature, frames, start, classes, m
               {version === "original" ? "Original" : "Filtered"}
             </button>
           )}
-          {roi && (
+          {boxMode && (
+            <button
+              type="button"
+              aria-label="Picture view"
+              aria-pressed={showCutout}
+              title={showCutout ? "Showing the cutout of the found box. Click for the whole picture with the box outlined." : "Showing the whole picture with the found box outlined. Click for the cutout only."}
+              onClick={() => setCutout((v) => { lastSession.setViewerCutout(!v); return !v; })}
+              style={showCutout ? { background: "rgba(80,160,255,.3)", borderColor: "#4a90e2" } : undefined}
+            >
+              {showCutout ? "Cutout" : "Whole"}
+            </button>
+          )}
+          {roi && !boxMode && (
             <button
               type="button"
               aria-label="Show ROI"
@@ -202,7 +235,7 @@ export default function FrameViewer({ camera, feature, frames, start, classes, m
         </>
       }
     >
-      {(width) => <FramePane camera={camera} frame={frame} width={width} outline={outline} imageUrl={pictureUrl} info={noAnchor ? `${roi!.short_name}: the detector found no box here, so there is no ROI on this picture` : note?.(frame)} />}
+      {(width) => <FramePane camera={camera} frame={frame} width={width} outline={outline} imageUrl={boxMode ? boxPictureUrl : pictureUrl} info={boxMissing ? "The detector found no box on this picture" : noAnchor && !boxMode ? `${roi!.short_name}: the detector found no box here, so there is no ROI on this picture` : note?.(frame)} />}
     </PictureViewer>
   );
 }

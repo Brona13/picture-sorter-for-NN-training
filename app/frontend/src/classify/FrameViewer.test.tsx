@@ -199,3 +199,34 @@ test("no switch when the box has no filter", async () => {
   await screen.findByTestId("viewer-roi");
   expect(screen.queryByRole("button", { name: "Picture version" })).toBeNull();
 });
+
+test("a Dedup box fed by a detector target: the cutout or the whole picture with the found box, the choice kept while browsing", async () => {
+  localStorage.clear();
+  const rects: Record<string, unknown> = {
+    "a.png": { anchored: true, box: true, rect: { x: 0.1, y: 0.2, w: 0.3, h: 0.4 } },
+    "b.png": { anchored: true, box: true, rect: { x: 0.5, y: 0.25, w: 0.2, h: 0.1 } },
+    "c.png": { anchored: true, box: true, rect: null },
+  };
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+    if (url.includes("/rect?frame=")) return new Response(JSON.stringify(rects[decodeURIComponent(url.split("rect?frame=")[1])]));
+    return new Response(JSON.stringify(roiBody("seal")));
+  }));
+  setup({ feature: "seal", pictureFeature: "dedup:2" });
+  const toggle = await screen.findByRole("button", { name: "Picture view" });
+  expect(toggle).toHaveTextContent("Cutout");
+  const src = (name: string) => decodeURIComponent((screen.getByAltText(name) as HTMLImageElement).getAttribute("src") ?? "");
+  expect(src("b.png")).toContain("/frames/b.png/cutout?feature=dedup:2");
+  expect(screen.queryByTestId("viewer-roi")).toBeNull();
+  await userEvent.click(toggle);
+  expect(toggle).toHaveTextContent("Whole");
+  expect(src("b.png")).toBe("/api/cameras/camA/frames/b.png/image");
+  expect(await screen.findByTestId("viewer-roi")).toHaveStyle({ left: "50%", top: "25%", width: "20%", height: "10%" });
+  fireEvent.keyDown(window, { key: "ArrowLeft" });
+  expect(await screen.findByAltText("a.png")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Picture view" })).toHaveTextContent("Whole"); // the choice stays
+  await userEvent.click(screen.getByRole("button", { name: "Picture view" })); // back to the cutout for the next pictures
+  fireEvent.keyDown(window, { key: "ArrowRight" });
+  fireEvent.keyDown(window, { key: "ArrowRight" });
+  expect(await screen.findByText(/detector found no box on this picture/)).toBeInTheDocument();
+  expect(src("c.png")).toBe("/api/cameras/camA/frames/c.png/image"); // no cutout to show: the whole picture
+});

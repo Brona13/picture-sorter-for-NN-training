@@ -175,6 +175,7 @@ export default function PictureGrid({
         <FrameViewer
           camera={camera}
           feature={feature}
+          pictureFeature={pictureFeature}
           frames={display}
           start={viewing}
           classes={classes}
