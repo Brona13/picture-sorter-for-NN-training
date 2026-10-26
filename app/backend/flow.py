@@ -557,6 +557,25 @@ def parent_of(graph: dict, node_id: str) -> str | None:
     for e in graph["edges"]:
         if e["target"] == node_id and kind_of(e["source"]) in ("ingest", "crop", "detector", "calc"):
             return e["source"]
+        if e["target"] == node_id and kind_of(e["source"]) == "dedup" and kind_of(node_id) == "detector":
+            return _through_dedup(graph, e["source"])
+    return None
+
+
+def _through_dedup(graph: dict, dedup_id: str) -> str | None:
+    """A detector behind a Dedup box works on the picture the box reads: Ingest or a Picture edits box. A Dedup box
+    that reads a Classifier dot or one target of a detector hands on its pictures but not a different picture."""
+    for e in graph["edges"]:
+        if e["target"] == dedup_id and e.get("point") is None and kind_of(e["source"]) in ("ingest", "crop"):
+            return e["source"]
+    return None
+
+
+def dedup_feeding(graph: dict, node_id: str) -> str | None:
+    """The Dedup box a detector reads (v1.105.0), or ``None``."""
+    for e in graph["edges"]:
+        if e["target"] == node_id and kind_of(e["source"]) == "dedup" and kind_of(node_id) == "detector":
+            return e["source"]
     return None
 
 
@@ -572,15 +591,23 @@ def edge_allowed(graph: dict, source: str, target: str) -> str | None:
     why = lines.line_error(ks, kt)
     if why:
         return why
-    if (ks, kt) not in {("ingest", "crop"), ("crop", "crop"), ("crop", "detector"), ("ingest", "detector"), ("detector", "detector"), ("detector", "crop"), ("detector", "calc"), ("calc", "evaluation"), ("evaluation", "classify"), ("ingest", "dedup"), ("crop", "dedup"), ("detector", "dedup")}:
+    if (ks, kt) not in {("ingest", "crop"), ("crop", "crop"), ("crop", "detector"), ("ingest", "detector"), ("detector", "detector"), ("detector", "crop"), ("detector", "calc"), ("calc", "evaluation"), ("evaluation", "classify"), ("ingest", "dedup"), ("crop", "dedup"), ("detector", "dedup"), ("dedup", "detector")}:
         if ks == "dedup":
-            return "A Dedup box feeds a Classifier. Lines from it to Picture edits or a detector are not made yet."
+            return "A Dedup box feeds a Classifier or a detector. Lines from it to Picture edits are not made yet."
         names = {"ingest": "Ingest", "crop": "Picture edits", "detector": "a detector", "calc": "Calculate", "evaluation": "Evaluation", "classify": "a Classify box", "dedup": "a Dedup box"}
         return f"{names.get(ks, ks)} cannot feed {names.get(kt, kt)}."
     if is_flow_id(source) and source not in graph["nodes"]:
         return f"Unknown box: {source}"
     if is_flow_id(target) and target not in graph["nodes"]:
         return f"Unknown box: {target}"
+    if ks == "dedup" and kt == "detector":
+        seen: set[str] = set()
+        ancestor = parent_of_any(graph, source)
+        while ancestor and ancestor != INGEST_ID and ancestor not in seen:
+            if ancestor == target:
+                return "That would make a loop."
+            seen.add(ancestor)
+            ancestor = parent_of_any(graph, ancestor)
     if kt in ("crop", "detector") and ks in ("crop", "detector"):
         ancestor = source
         while ancestor and ancestor != INGEST_ID:
@@ -1157,7 +1184,14 @@ def node_source(graph: dict, node_id: str) -> dict | None:
 def node_frames(camera: str, node_id: str, graph: dict | None = None) -> list[str]:
     """The pictures a box works on: the pictures on its Classifier dot, or the whole camera when no dot feeds it.
     Deleted and removed pictures never; a class that went away gives none."""
-    src = node_source(graph or load_graph(camera), node_id)
+    graph = graph or load_graph(camera)
+    box = dedup_feeding(graph, node_id)
+    if box:  # behind a Dedup box: the pictures it sees, minus the ones it muted
+        import dedup_box
+        muted = db.muted_frames(camera, box)
+        live = set(_live_frames(camera))
+        return [f for f in dedup_box.frames(camera, box) if f in live and f not in muted]
+    src = node_source(graph, node_id)
     if not src:
         return _live_frames(camera)
     try:

@@ -194,8 +194,13 @@ export function flowConnect(canvas: ChainCanvas, c: Connection): FlowLink {
     if (source.flow?.source?.feature === target.ref) return { error: `${source.label} reads ${target.label}, so it cannot feed it back.` };
     return { dedupInput: { feature: target.ref, box: source.id } };
   }
-  if (source.kind === "dedup" && isFlowKind(target.kind)) {
-    return { error: "A Dedup box feeds a Classifier. Lines from it to Picture edits or a detector are not made yet." };
+  if (source.kind === "dedup" && isFlowKind(target.kind) && target.kind !== "detector") {
+    return { error: "A Dedup box feeds a Classifier or a detector. Lines from it to Picture edits are not made yet." };
+  }
+  if (source.kind === "dedup" && target.kind === "detector") {
+    if (c.sourceHandle) return { error: "Use the Dedup box's main dot." };
+    if (c.source === c.target) return { error: "A box cannot feed itself." };
+    return { source: c.source, target: c.target };
   }
   if (source.kind === "evaluation" && target.kind === "roi") {
     return { error: "An Evaluation is not drawn to a Classifier: pick it in the Classifier's panel." };

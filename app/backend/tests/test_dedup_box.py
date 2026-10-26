@@ -145,6 +145,39 @@ class DedupBoxTests(ApiTestCase):
         with self.assertRaises(flow.FlowError):
             flow.connect(CAM, det, self.d1)  # not the whole detector: one target's dot
 
+    def test_a_detector_behind_a_dedup_box_works_on_the_pictures_the_box_did_not_mute(self) -> None:
+        det = flow.create_node(CAM, "detector")
+        self.assertIsNone(flow.edge_allowed(flow.load_graph(CAM), self.d1, det))
+        flow.connect(CAM, "ingest", self.d1)
+        flow.connect(CAM, self.d1, det)
+        self.assertEqual(sorted(flow.node_frames(CAM, det)), sorted(self.frames))
+        self.mute(self.d1, self.frames[:2])
+        self.assertEqual(sorted(flow.node_frames(CAM, det)), sorted(self.frames[2:]))
+        self.mute(self.d2, self.frames[3:4])  # another box's mutes do not count
+        self.assertEqual(sorted(flow.node_frames(CAM, det)), sorted(self.frames[2:]))
+        flow.update_node(CAM, self.d1, {"source": {"feature": "type", "dot": "all"}})  # the box reads classified pictures only
+        self.assertEqual(sorted(flow.node_frames(CAM, det)), sorted(self.frames[2:4]))
+        self.assertIn((self.d1, None, det), self.edges())
+        flow.disconnect(CAM, self.d1, det)
+        self.assertEqual(sorted(flow.node_frames(CAM, det)), sorted(self.frames))  # no line: the whole camera again
+
+    def test_a_detector_behind_a_dedup_box_keeps_the_picture_edits_above_the_box(self) -> None:
+        crop = flow.create_node(CAM, "crop")
+        det = flow.create_node(CAM, "detector")
+        flow.connect(CAM, crop, self.d1)
+        flow.connect(CAM, self.d1, det)
+        self.assertEqual(flow.parent_of(flow.load_graph(CAM), det), crop)
+        flow.connect(CAM, "ingest", self.d1)
+        self.assertEqual(flow.parent_of(flow.load_graph(CAM), det), "ingest")
+
+    def test_a_dedup_box_reading_a_detector_cannot_feed_that_detector_back(self) -> None:
+        det = flow.create_node(CAM, "detector")
+        graph = flow.load_graph(CAM)
+        graph["nodes"][det]["targets"] = [{"name": "P", "examples": []}]
+        flow.save_graph(CAM, graph)
+        flow.connect(CAM, det, self.d1, point="P")
+        self.assertIn("loop", flow.edge_allowed(flow.load_graph(CAM), self.d1, det) or "")
+
     def test_a_picture_edits_box_in_front_is_the_input_of_the_embeddings(self) -> None:
         crop = flow.create_node(CAM, "crop")
         flow.connect(CAM, crop, self.d1)
