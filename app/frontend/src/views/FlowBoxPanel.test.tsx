@@ -79,6 +79,20 @@ test("Detector panel: adds a target, lists its examples and keeps Run off until 
   expect(screen.getByRole("button", { name: "Run" })).toBeDisabled();
 });
 
+test("Detector panel: 'How many in a picture' is saved per target and shows the numbered names", async () => {
+  detail = {
+    kind: "detector", input: "ingest", crops: [], rotate: true, angle_range: null, pad: 0.3, status: "none",
+    targets: [{ name: "hole", count: 2, slots: ["hole 1", "hole 2"], outputs: ["position"], examples: [] }, { name: "notch", outputs: ["position"], examples: [] }],
+    summary: { frames: 0, found: {}, complete: 0, review: 0 },
+  };
+  render(<FlowBoxPanel camera="camA" nodeId="det:1" detail={detail as FlowNodeDetail} onDetail={() => {}} onChanged={() => {}} />);
+  expect(screen.getByLabelText("How many hole in a picture")).toHaveValue("2");
+  expect(screen.getByText(/hole 1, hole 2/)).toBeInTheDocument();
+  expect(screen.getByLabelText("How many notch in a picture")).toHaveValue("1");
+  await userEvent.selectOptions(screen.getByLabelText("How many notch in a picture"), "3");
+  await waitFor(() => expect(calls.some((c) => c.method === "PUT" && c.url.endsWith("/targets/notch/count") && c.body.count === 3)).toBe(true));
+});
+
 test("Detector panel: the outputs are ticked per target, position first, and saved as the whole list", async () => {
   detail = {
     kind: "detector", input: "ingest", crops: [], rotate: true, angle_range: null, pad: 0.3, status: "none",

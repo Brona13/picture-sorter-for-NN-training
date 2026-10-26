@@ -486,7 +486,8 @@ export interface FlowDetector {
   /** Pictures a Crop above this detector (one that follows a detector) has no rectangle on: they are not shown or searched. */
   no_crop?: string[];
   /** `inside`: in a cascade, the input detector's target whose box this target searches in (none = the same name). */
-  targets: { name: string; inside?: string | null; outputs: FlowOutput[]; examples: FlowExample[] }[];
+  /** `count` similar elements are looked for in a picture; their boxes go by `slots` ("hole 1", "hole 2" ... left to right). */
+  targets: { name: string; count?: number; slots?: string[]; inside?: string | null; outputs: FlowOutput[]; examples: FlowExample[] }[];
   /** A cascade: the input detector's targets (with examples) a target here can search inside. */
   parent_targets?: string[];
   rotate: boolean;
@@ -1340,6 +1341,11 @@ export const api = {
     request<{ source: string; target: string }>(`/cameras/${encodeURIComponent(camera)}/flow/edges/remove`, send("POST", point ? { source, target, point } : { source, target })),
   flowAddTarget: (camera: string, id: string, name: string, inside?: string) =>
     request<FlowNodeDetail>(`/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/targets`, send("POST", inside ? { name, inside } : { name })),
+  flowSetTargetCount: (camera: string, id: string, name: string, count: number) =>
+    request<FlowNodeDetail>(
+      `/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/targets/${encodeURIComponent(name)}/count`,
+      send("PUT", { count }),
+    ),
   flowSetTargetOutputs: (camera: string, id: string, name: string, outputs: FlowOutput[]) =>
     request<FlowNodeDetail>(
       `/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/targets/${encodeURIComponent(name)}/outputs`,

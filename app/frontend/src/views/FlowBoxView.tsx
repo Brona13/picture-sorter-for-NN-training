@@ -185,6 +185,8 @@ function DetectorWork(p: {
   const pictureUrl = (f: string) => (cropped ? flowPictureUrl(camera, nodeId, f, { key: detail.crops }) : frameImageUrl(camera, f));
   const thumbUrl = (f: string) => (cropped ? flowPictureUrl(camera, nodeId, f, { size: 96, key: detail.crops }) : frameThumbUrl(camera, f));
   const names = detail.targets.map((t) => t.name);
+  // A target that looks for several similar elements has one box per element: "hole 1", "hole 2" (left to right).
+  const slotList = detail.targets.flatMap((t, ti) => (t.slots ?? [t.name]).map((slot) => ({ slot, ti })));
   const withExamples = detail.targets.filter((t) => t.examples.length > 0).map((t) => t.name);
   const cardUrl = (f: string) => (cropped ? flowPictureUrl(camera, nodeId, f, { size: 200, key: detail.crops }) : frameThumbUrl(camera, f, 200));
   const chosen = names.includes(target) ? target : names[0] ?? "";
@@ -216,7 +218,7 @@ function DetectorWork(p: {
   const start = Math.max(0, Math.min(at - STRIP_WINDOW / 2, shown.length - STRIP_WINDOW));
   const strip60 = shown.slice(start, start + STRIP_WINDOW);
   const found = frame ? boxes[frame] ?? {} : {};
-  const missing = names.filter((n) => !(n in found));
+  const missing = slotList.map((s) => s.slot).filter((n) => !(n in found));
   const examplesHere = detail.targets.flatMap((t, ti) =>
     t.examples.flatMap((e, index) => (e.frame === frame ? [{ name: t.name, ti, index, box: e.box as Rect, angle: e.angle ?? 0 }] : [])),
   );
@@ -462,7 +464,7 @@ function DetectorWork(p: {
               >
                 <span className="flow-dot" style={{ background: COLORS[i % COLORS.length] }} />
                 {name}
-                <small>{t?.examples.length ?? 0} ex.{detail.status === "fresh" ? ` · ${detail.summary.found[name] ?? 0} found` : ""}</small>
+                <small>{t?.examples.length ?? 0} ex.{detail.status === "fresh" ? ` · ${(t?.slots ?? [name]).reduce((sum, s) => sum + (detail.summary.found[s] ?? 0), 0)} found` : ""}</small>
               </button>
             );
           })}
@@ -581,7 +583,7 @@ function DetectorWork(p: {
                     </g>
                   );
                 })}
-                {names.map((n, i) => {
+                {slotList.map(({ slot: n, ti: i }) => {
                   const b = found[n] && drawn(found[n]);
                   if (!b) return null;
                   const color = COLORS[i % COLORS.length];

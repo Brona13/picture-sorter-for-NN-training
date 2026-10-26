@@ -155,11 +155,25 @@ def set_target_outputs(camera: str, node_id: str, name: str, body: TargetOutputs
     return flow.node_detail(camera, node_id)
 
 
+class TargetCountBody(BaseModel):
+    count: int
+
+
+@router.put("/cameras/{camera}/flow/nodes/{node_id}/targets/{name}/count")
+def set_target_count(camera: str, node_id: str, name: str, body: TargetCountBody) -> dict:
+    """How many similar elements the target looks for in one picture (numbered left to right)."""
+    _known(camera, node_id)
+    _guard(flow.set_target_count, camera, node_id, name, body.count)
+    return flow.node_detail(camera, node_id)
+
+
 @router.delete("/cameras/{camera}/flow/nodes/{node_id}/targets/{name}")
 def remove_target(camera: str, node_id: str, name: str) -> dict:
     _known(camera, node_id)
+    entry = flow.target_of(flow.load_graph(camera)["nodes"][node_id], name)
     flow.remove_target(camera, node_id, name)
-    anchor.drop_for_detector(camera, node_id, name)
+    for slot in (flow.slot_names(entry) if entry else [name]):
+        anchor.drop_for_detector(camera, node_id, slot)
     return flow.node_detail(camera, node_id)
 
 

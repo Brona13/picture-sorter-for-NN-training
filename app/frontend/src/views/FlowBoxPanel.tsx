@@ -261,6 +261,7 @@ export default function FlowBoxPanel({ camera, nodeId, detail, onDetail, onChang
           onRemoveTarget={(name) => void act(() => api.flowRemoveTarget(camera, nodeId, name))}
           onSetInside={(name, inside) => void act(() => api.flowSetTargetInside(camera, nodeId, name, inside))}
           onSetOutputs={(name, outputs) => void act(() => api.flowSetTargetOutputs(camera, nodeId, name, outputs))}
+          onSetCount={(name, count) => void act(() => api.flowSetTargetCount(camera, nodeId, name, count))}
           onRemoveExample={(name, i) => void act(() => api.flowRemoveExample(camera, nodeId, name, i))}
           onUpdate={update}
           onRun={() => void run()}
@@ -310,6 +311,7 @@ function DetectorOptions(p: {
   onRemoveTarget: (name: string) => void;
   onSetInside: (name: string, inside: string) => void;
   onSetOutputs: (name: string, outputs: FlowOutput[]) => void;
+  onSetCount: (name: string, count: number) => void;
   onRemoveExample: (name: string, index: number) => void;
   onUpdate: (body: Record<string, unknown>) => void;
   onRun: () => void;
@@ -344,6 +346,13 @@ function DetectorOptions(p: {
                 </select>
               </label>
             )}
+            <label className="flow-count" title="Several similar elements in one picture: their boxes are numbered from left to right (hole 1, hole 2, ...)">
+              How many in a picture{" "}
+              <select aria-label={`How many ${t.name} in a picture`} value={t.count ?? 1} onChange={(e) => p.onSetCount(t.name, Number(e.target.value))}>
+                {[1, 2, 3, 4].map((n) => <option key={n} value={n}>{n}</option>)}
+              </select>
+              {(t.count ?? 1) > 1 && <span className="muted"> → {(t.slots ?? []).join(", ")}</span>}
+            </label>
             <div className="flow-examples">
               {t.examples.length === 0 && <span className="muted">No example yet</span>}
               {t.examples.map((e, i) => (

@@ -53,6 +53,29 @@ OPERATIONS = {
 ZONE_SHAPES = ("circle", "rect")
 DEFAULT_ZONE = {"shape": "circle", "center": None, "radius": 10.0, "half": [10.0, 10.0]}
 MAX_TARGETS = 8
+MAX_COUNT = 4  # how many similar elements one target may find in a picture
+
+
+def count_of(target: dict) -> int:
+    """How many elements the target looks for in one picture (1 unless the user asked for more)."""
+    n = target.get("count", 1)
+    return n if isinstance(n, int) and not isinstance(n, bool) and 1 <= n <= MAX_COUNT else 1
+
+
+def slot_names(target: dict) -> list[str]:
+    """The names the boxes of one target go by: the target's own name, or ``name 1``, ``name 2`` ... (left to right)
+    when it looks for several elements. Lines, Calculate points and anchors use these names."""
+    n = count_of(target)
+    return [target["name"]] if n == 1 else [f"{target['name']} {i}" for i in range(1, n + 1)]
+
+
+def all_slots(node: dict, *, with_examples: bool = False) -> list[str]:
+    return [s for t in node.get("targets", []) if t["examples"] or not with_examples for s in slot_names(t)]
+
+
+def target_of(node: dict, name: str) -> dict | None:
+    """The target a box name belongs to (the target itself, or one of its ``name N`` slots)."""
+    return next((t for t in node.get("targets", []) if name in slot_names(t)), None)
 MAX_STEPS = 16  # picture edits (crop / filter) one box holds
 STEP_OPS = ("crop", "filter")
 MAX_EXAMPLES = 6
@@ -621,7 +644,7 @@ def connect(camera: str, source: str, target: str, point: str | None = None) -> 
     if point is not None:
         if kind_of(source) != "detector" or kind_of(target) not in ("calc", "crop", "dedup"):
             raise FlowError("Only a detector's target can feed one point of a Calculate box, a Picture edits box or a Dedup box.")
-        if point not in [t["name"] for t in graph["nodes"][source]["targets"]]:
+        if point not in all_slots(graph["nodes"][source]):
             raise FlowError(f"{source} has no target {point}.")
     edge = {"source": source, "target": target, **({"point": point} if point is not None else {})}
     if kind_of(target) == "calc":
@@ -862,7 +885,7 @@ def parent_target_names(graph: dict, node_id: str) -> list[str]:
     parent = parent_of(graph, node_id)
     if not parent or kind_of(parent) != "detector" or parent not in graph["nodes"]:
         return []
-    return [t["name"] for t in graph["nodes"][parent]["targets"] if t["examples"]]
+    return all_slots(graph["nodes"][parent], with_examples=True)
 
 
 def _clean_inside(graph: dict, node_id: str, inside: object) -> str | None:
@@ -917,7 +940,9 @@ def outputs_of(target: dict) -> list[str]:
 def _output_users(graph: dict, node_id: str, name: str, output: str) -> list[str]:
     """The boxes fed by this target's line that read ``output``: every line reads the position; a Crop that
     straightens the picture reads the angle too."""
-    lines = [e["target"] for e in graph["edges"] if e["source"] == node_id and e.get("point") == name]
+    entry = target_of(graph["nodes"][node_id], name)
+    mine = slot_names(entry) if entry else [name]
+    lines = [e["target"] for e in graph["edges"] if e["source"] == node_id and e.get("point") in mine]
     if output == "position":
         return lines
     return [b for b in lines if kind_of(b) == "crop" and output in FOLLOW_MODES.get(crop_mode(graph, b), {}).get("needs", [])]
@@ -937,6 +962,34 @@ def set_target_outputs(camera: str, node_id: str, name: str, outputs: object) ->
         if users:
             raise FlowError(f"{', '.join(users)} read the {output} of {name}. " + ("Delete its line first." if output == "position" else "Change its use of the target first."))
     entry["outputs"] = wanted
+    save_graph(camera, graph)
+
+
+def set_target_count(camera: str, node_id: str, name: str, count: object) -> None:
+    """How many similar elements the target looks for in one picture. The boxes then go by ``name 1`` ... ``name N``,
+    numbered left to right, so no line, anchor or cascaded target may use the old names; the detector needs a new run."""
+    graph = load_graph(camera)
+    node = _node(graph, node_id)
+    entry = next((t for t in node.get("targets", []) if t["name"] == name), None)
+    if entry is None:
+        raise FlowError(f"Unknown target: {name}")
+    if isinstance(count, bool) or not isinstance(count, int) or not 1 <= count <= MAX_COUNT:
+        raise FlowError(f"How many must be a whole number from 1 to {MAX_COUNT}.")
+    if count == count_of(entry):
+        return
+    used = set(slot_names(entry))
+    users = sorted({e["target"] for e in graph["edges"] if e["source"] == node_id and e.get("point") in used}
+                   | {n for n, other in graph["nodes"].items() if other.get("kind") == "detector" and parent_of(graph, n) == node_id
+                      and any(t.get("inside") in used for t in other.get("targets", []))})
+    if users:
+        raise FlowError(f"{', '.join(users)} use {name}. Delete those lines (or change what they search inside) first.")
+    import anchor  # noqa: PLC0415
+
+    anchored = [roi.name for roi in datamodel.load_rois(camera)
+                if (spec := anchor.get_anchor(camera, roi.name)) and spec["detector"] == node_id and spec["target"] in used]
+    if anchored:
+        raise FlowError(f"{', '.join(anchored)} is anchored on {name}. Remove that anchor first.")
+    entry["count"] = count
     save_graph(camera, graph)
 
 
@@ -1113,7 +1166,7 @@ def signature(graph: dict, node_id: str) -> str:
     parent = parent_of(graph, node_id)
     material = {
         "algo": ALGORITHM,
-        "targets": [(t["name"], [(e["png"], e["scale"]) if "scale" in e else e["png"] for e in t["examples"]]) + ((t["inside"],) if t.get("inside") else ()) for t in node["targets"]],
+        "targets": [(t["name"], [(e["png"], e["scale"]) if "scale" in e else e["png"] for e in t["examples"]]) + ((t["inside"],) if t.get("inside") else ()) + (("count", count_of(t)) if count_of(t) > 1 else ()) for t in node["targets"]],
         "rotate": node["rotate"],
         "range": node["angle_range"],
         "pad": node["pad"],
@@ -1227,6 +1280,18 @@ def _match_entry(match: rotsearch.Match, source: str = "auto", scale: float = 1.
     }
 
 
+def _blank_out(picture: np.ndarray, match: rotsearch.Match) -> np.ndarray:
+    """A copy of ``picture`` with the place of ``match`` painted over in the picture's mean colour, so the next search
+    for a similar element finds another place."""
+    out = picture.copy()
+    x0, y0, x1, y1 = match.bbox()
+    h, w = out.shape[:2]
+    x0, y0, x1, y1 = max(0, int(math.floor(x0))), max(0, int(math.floor(y0))), min(w, int(math.ceil(x1)) + 1), min(h, int(math.ceil(y1)) + 1)
+    if x1 > x0 and y1 > y0:
+        out[y0:y1, x0:x1] = out.mean(axis=(0, 1)).astype(out.dtype)
+    return out
+
+
 def _search_example(example: dict, scale: float) -> tuple[np.ndarray, tuple[int, int]]:
     """An example as the detector matches it: its stored crop, shrunk further when it was stored at a larger scale
     than the detector's ``scale``; and its own size in picture pixels."""
@@ -1285,6 +1350,7 @@ def run_detector(camera: str, node_id: str, report=None, frames: list[str] | Non
         parent_frames = load_stored(camera, parent)["frames"]
     scale = match_scale(node)  # < 1 when an example was too large to match as it is: the picture shrinks with it
     examples = {t["name"]: [_search_example(e, scale) for e in t["examples"]] for t in usable}
+    slots_of = {t["name"]: slot_names(t) for t in usable}
     inside_names = {t["name"]: inside_of(t) for t in usable}  # the input detector's target each one searches in
     angle_range = tuple(node["angle_range"]) if node["angle_range"] else None
     if not node["rotate"]:
@@ -1308,7 +1374,8 @@ def run_detector(camera: str, node_id: str, report=None, frames: list[str] | Non
             if picture is not None:
                 searched = cv2.resize(picture, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA) if scale < 1.0 else picture
                 for name, imgs in examples.items():
-                    if name in found:
+                    free = [s for s in slots_of[name] if s not in found]  # a box a human placed keeps its place
+                    if not free:
                         continue
                     region = None
                     if parent:
@@ -1319,13 +1386,22 @@ def run_detector(camera: str, node_id: str, report=None, frames: list[str] | Non
                         if scale < 1.0:
                             region = (int(math.floor(region[0] * scale)), int(math.floor(region[1] * scale)),
                                       int(math.ceil(region[2] * scale)) + 1, int(math.ceil(region[3] * scale)) + 1)
-                    best: tuple[rotsearch.Match, tuple[int, int]] | None = None
-                    for image, size in imgs:  # the best match over this target's examples
-                        match = rotsearch.find(searched, image, angle_range=angle_range, region=region)
-                        if match is not None and (best is None or match.score > best[0].score):
-                            best = (match, size)
-                    if best is not None:
-                        found[name] = _match_entry(best[0], scale=scale, size=best[1])
+                    matches: list[tuple[rotsearch.Match, tuple[int, int]]] = []
+                    work = searched
+                    for _ in free:  # one best match per element asked for; each found place is blanked before the next search
+                        best: tuple[rotsearch.Match, tuple[int, int]] | None = None
+                        for image, size in imgs:  # the best match over this target's examples
+                            match = rotsearch.find(work, image, angle_range=angle_range, region=region)
+                            if match is not None and (best is None or match.score > best[0].score):
+                                best = (match, size)
+                        if best is None:
+                            break
+                        matches.append(best)
+                        if len(free) > 1:
+                            work = _blank_out(work, best[0])
+                    matches.sort(key=lambda m: m[0].x)  # "name 1" is the leftmost
+                    for slot, (match, size) in zip(free, matches):
+                        found[slot] = _match_entry(match, scale=scale, size=size)
             out[key] = found
         if report:
             report({"phase": "detecting", "node": node_id, "done": i, "total": len(names)})
@@ -1346,7 +1422,7 @@ def set_box(camera: str, node_id: str, frame: str, target: str, x: float, y: flo
     """A human places (or moves) one box. It is kept when the detector runs again."""
     graph = load_graph(camera)
     node = _node(graph, node_id)
-    entry = next((t for t in node.get("targets", []) if t["name"] == target), None)
+    entry = target_of(node, target) or next((t for t in node.get("targets", []) if t["name"] == target), None)
     if entry is None or not entry["examples"]:
         raise FlowError(f"Unknown target: {target}")
     key = labels.hash_map(camera).get(frame)
@@ -1354,6 +1430,10 @@ def set_box(camera: str, node_id: str, frame: str, target: str, x: float, y: flo
         raise FlowError(f"Unknown frame: {frame}")
     stored = load_stored(camera, node_id)
     boxes = stored["frames"].setdefault(key, {})
+    if target not in slot_names(entry):  # the target's plain name while it looks for several: the first free number, else the nearest box
+        slots = slot_names(entry)
+        free = [s for s in slots if s not in boxes]
+        target = free[0] if free else min(slots, key=lambda s: abs(float(boxes[s]["x"]) - x))
     old = boxes.get(target)
     example = entry["examples"][0]
     boxes[target] = {
@@ -1373,7 +1453,7 @@ def summarize_detector(camera: str, node_id: str) -> dict:
     graph = load_graph(camera)
     node = _node(graph, node_id)
     stored = load_stored(camera, node_id)
-    names = [t["name"] for t in node["targets"] if t["examples"]]
+    names = all_slots(node, with_examples=True)
     per = {n: sum(1 for f in stored["frames"].values() if n in f) for n in names}
     complete = sum(1 for f in stored["frames"].values() if all(n in f for n in names)) if names else 0
     total = len(stored["frames"])
@@ -1395,7 +1475,7 @@ def frame_boxes(camera: str, node_id: str) -> dict[str, dict]:
 def review_frames(camera: str, node_id: str) -> list[str]:
     """Frames where a target with examples has no box: the ones a human should look at."""
     graph = load_graph(camera)
-    names = [t["name"] for t in _node(graph, node_id)["targets"] if t["examples"]]
+    names = all_slots(_node(graph, node_id), with_examples=True)
     return [f for f, boxes in frame_boxes(camera, node_id).items() if any(n not in boxes for n in names)]
 
 
@@ -1403,7 +1483,7 @@ def review_frames(camera: str, node_id: str) -> list[str]:
 def _detector_targets(graph: dict, detector: str) -> list[str]:
     if detector not in graph["nodes"]:
         return []
-    return [t["name"] for t in graph["nodes"][detector]["targets"] if t["examples"]]
+    return all_slots(graph["nodes"][detector], with_examples=True)
 
 
 def calc_points(graph: dict, calc_id: str) -> list[tuple[str, str]]:
@@ -1723,7 +1803,7 @@ def follow_detail(camera: str, graph: dict, crop_id: str) -> dict | None:
         return None
     spec = graph["nodes"][crop_id].get("follow") or {}
     mode = crop_mode(graph, crop_id)
-    target = next((t for t in graph["nodes"].get(follow["detector"], {}).get("targets", []) if t["name"] == follow["target"]), {})
+    target = target_of(graph["nodes"].get(follow["detector"], {}), follow["target"]) or {}
     offered = outputs_of(target)
     return {
         **follow,
@@ -1764,7 +1844,7 @@ def node_detail(camera: str, node_id: str, graph: dict | None = None) -> dict:
             "crops": input_rects(graph, node_id),
             "no_crop": frames_without_crop(camera, graph, node_id),
             "targets": [
-                {"name": t["name"], "inside": t.get("inside"), "outputs": outputs_of(t), "examples": [{"frame": e["frame"], "box": e["box"], "png": "data:image/png;base64," + e["png"], "scale": e.get("scale", 1.0), "angle": e.get("angle", 0.0)} for e in t["examples"]]}
+                {"name": t["name"], "count": count_of(t), "slots": slot_names(t), "inside": t.get("inside"), "outputs": outputs_of(t), "examples": [{"frame": e["frame"], "box": e["box"], "png": "data:image/png;base64," + e["png"], "scale": e.get("scale", 1.0), "angle": e.get("angle", 0.0)} for e in t["examples"]]}
                 for t in node["targets"]
             ],
             "rotate": node["rotate"],

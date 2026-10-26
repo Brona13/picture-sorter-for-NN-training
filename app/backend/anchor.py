@@ -223,7 +223,7 @@ def set_anchor(camera: str, feature: str, detector: str, target: str, frame: str
     node = graph["nodes"].get(detector)
     if node is None or node["kind"] != "detector":
         raise AnchorError("The anchor must be a detector box.")
-    if target not in [t["name"] for t in node["targets"]]:
+    if target not in flow.all_slots(node):
         raise AnchorError(f"The detector has no target named {target!r}.")
     anchor = {"detector": detector, "target": target, "mode": mode, "margin": round(float(margin), 4),
               "follow_rotation": bool(follow_rotation)}

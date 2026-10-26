@@ -216,7 +216,7 @@ def _flow_nodes(camera: str, graph: dict, stored: dict) -> list[dict]:
                 spec = node.get("follow") or {}
                 summary["follow"] = {**summary["follow"], "size": spec.get("size")}
         elif kind == "detector":
-            summary = {"targets": [t["name"] for t in node["targets"]], "status": flow.status(camera, node_id, graph), **flow.summarize_detector(camera, node_id),
+            summary = {"targets": flow.all_slots(node), "status": flow.status(camera, node_id, graph), **flow.summarize_detector(camera, node_id),
                        "source": flow.node_source(graph, node_id), "in_scope": len(flow.node_frames(camera, node_id, graph)),
                        "area": "edited" if flow.input_rects(graph, node_id) else "whole"}  # the picture area the search runs on
         elif kind == "calc":
