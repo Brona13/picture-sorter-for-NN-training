@@ -285,6 +285,36 @@ test("Detector page: a new rectangle dragged past the picture edge ends at the e
   vi.unstubAllGlobals();
 });
 
+test("Detector page: Esc while dragging a rectangle throws it away, nothing is saved", async () => {
+  const overlay = await openDetectorOn100px();
+  fireEvent.pointerDown(overlay, { clientX: 60, clientY: 60 });
+  fireEvent.pointerMove(overlay, { clientX: 90, clientY: 90 });
+  fireEvent.keyDown(window, { key: "Escape" });
+  fireEvent.pointerUp(overlay, { clientX: 90, clientY: 90 });
+  await new Promise((r) => setTimeout(r, 50));
+  expect(calls.some((c) => c.method === "POST" && c.url.endsWith("/examples"))).toBe(false);
+  vi.unstubAllGlobals();
+});
+
+test("Detector page: Esc removes the finished rectangle that waits for a name", async () => {
+  vi.stubGlobal("PointerEvent", MouseEvent);
+  routes({ kind: "detector", input: "ingest", crops: [], rotate: true, angle_range: null, pad: 0.3, status: "none", targets: [], summary: { frames: 0, found: {}, complete: 0, review: 0 } });
+  render(<FlowBoxView camera="camA" focus={{ nodeId: "det:1", onBack: () => {} }} />);
+  const img = await screen.findByAltText("a.png", {}, { timeout: 4000 });
+  Object.defineProperty(img, "naturalWidth", { value: 100 });
+  Object.defineProperty(img, "naturalHeight", { value: 100 });
+  fireEvent.load(img);
+  const overlay = await screen.findByTestId("flow-overlay", {}, { timeout: 4000 });
+  overlay.getBoundingClientRect = () => ({ left: 0, top: 0, width: 100, height: 100, right: 100, bottom: 100, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
+  fireEvent.pointerDown(overlay, { clientX: 10, clientY: 10 });
+  fireEvent.pointerMove(overlay, { clientX: 60, clientY: 60 });
+  fireEvent.pointerUp(overlay, { clientX: 60, clientY: 60 });
+  expect(await screen.findByText(/What is this\?/)).toBeInTheDocument();
+  fireEvent.keyDown(window, { key: "Escape" });
+  await waitFor(() => expect(screen.queryByText(/What is this\?/)).toBeNull());
+  vi.unstubAllGlobals();
+});
+
 test("dragBand: the middle moves the nominal, an edge sets the tolerance from the nominal", () => {
   expect(dragBand("centre", 100, 50, 3)).toEqual({ nominal: 100, tolerance: 3 });
   expect(dragBand("high", 58, 50, 3)).toEqual({ nominal: 50, tolerance: 8 });

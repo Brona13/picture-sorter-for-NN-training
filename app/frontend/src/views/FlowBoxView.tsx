@@ -300,6 +300,20 @@ function DetectorWork(p: {
     } catch (e) { p.onError(msg(e)); }
   };
 
+  // Esc throws away what is being drawn: a rectangle still being dragged, a move/resize in progress, the unsaved
+  // rectangle waiting for its name, or the copy placed by Reuse.
+  const busyDrawing = !!(drag || edit || stampDrag || pending || stamp);
+  useEffect(() => {
+    if (!busyDrawing) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      setDrag(null); setEdit(null); setStampDrag(null); setPending(null); setStamp(null);
+      p.onError(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [busyDrawing]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const onDown = (e: React.PointerEvent<SVGSVGElement>) => {
     const q = point(e);
     (e.currentTarget as SVGSVGElement).setPointerCapture?.(e.pointerId);
@@ -530,7 +544,7 @@ function DetectorWork(p: {
             contentCursor={cursor}
             info={[
               hover ? `pixel ${Math.floor(hover.x)}, ${Math.floor(hover.y)}` : null,
-              drag && mode === "draw" ? `rectangle ${rectOf(drag.from, drag.to)[2]} × ${rectOf(drag.from, drag.to)[3]} px` : null,
+              drag && mode === "draw" ? `rectangle ${rectOf(drag.from, drag.to)[2]} × ${rectOf(drag.from, drag.to)[3]} px (Esc cancels)` : null,
             ].filter(Boolean).join("  |  ")}
           >
             <img
