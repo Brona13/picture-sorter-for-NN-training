@@ -977,7 +977,7 @@ def set_target_count(camera: str, node_id: str, name: str, count: object) -> Non
         raise FlowError(f"How many must be a whole number from 1 to {MAX_COUNT}.")
     if count == count_of(entry):
         return
-    used = set(slot_names(entry))
+    used = set(slot_names(entry)) | {name}
     users = sorted({e["target"] for e in graph["edges"] if e["source"] == node_id and e.get("point") in used}
                    | {n for n, other in graph["nodes"].items() if other.get("kind") == "detector" and parent_of(graph, n) == node_id
                       and any(t.get("inside") in used for t in other.get("targets", []))})

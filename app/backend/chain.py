@@ -216,7 +216,7 @@ def _flow_nodes(camera: str, graph: dict, stored: dict) -> list[dict]:
                 spec = node.get("follow") or {}
                 summary["follow"] = {**summary["follow"], "size": spec.get("size")}
         elif kind == "detector":
-            summary = {"targets": flow.all_slots(node), "status": flow.status(camera, node_id, graph), **flow.summarize_detector(camera, node_id),
+            summary = {"targets": flow.all_slots(node), "groups": [t["name"] for t in node["targets"] if flow.count_of(t) > 1 and t["examples"]], "status": flow.status(camera, node_id, graph), **flow.summarize_detector(camera, node_id),
                        "source": flow.node_source(graph, node_id), "in_scope": len(flow.node_frames(camera, node_id, graph)),
                        "area": "edited" if flow.input_rects(graph, node_id) else "whole"}  # the picture area the search runs on
         elif kind == "calc":
@@ -358,7 +358,9 @@ def get_canvas(camera: str) -> dict:
     for roi in rois:  # a detector-anchored ROI hangs from the detector too (the arrow is stored in the anchor)
         spec = anchor.get_anchor(camera, roi.name)
         if spec and spec["detector"] in known:
-            edges.append({"id": f"{spec['detector']}->{roi_node_id(roi.name)}", "source": spec["detector"], "source_handle": f"t:{spec['target']}", "target": roi_node_id(roi.name), "locked": False})
+            together = anchor.group_slots(camera, spec)  # an anchor on all boxes of a target: one arrow from each numbered dot
+            for slot in together or [spec["target"]]:
+                edges.append({"id": f"{spec['detector']}->{roi_node_id(roi.name)}" + (f"#{slot}" if together else ""), "source": spec["detector"], "source_handle": f"t:{slot}", "target": roi_node_id(roi.name), "locked": False})
     reading = sorted(i for i, n in graph["nodes"].items() if n["kind"] in ("dedup", "crop", "detector"))
     for box in reading:  # a Dedup, Picture edits or detector box reading one dot of a Classifier hangs from that dot
         src = dedup_box.source_of(camera, box, graph)

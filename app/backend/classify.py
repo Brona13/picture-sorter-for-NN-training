@@ -253,11 +253,18 @@ def _prepare_vector_cache(
         try:
             img = roi_input.edited(camera, feature, curation.load_image(datamodel.unsorted_dir(camera) / frame), frame)
             frame_roi = roi
-            if frame in frame_entries:
-                frame_roi = anchor.rect_for(spec, frame_entries[frame], roi.name, img.shape[1], img.shape[0])
-                if frame_roi is None:  # the rectangle lies outside this picture
+            entry = frame_entries.get(frame)
+            if entry and "group" in entry:  # all numbered boxes of one target: side by side, one input
+                together = anchor.group_crop(spec, entry["group"], roi.name, img)
+                if together is None:
                     raise FileNotFoundError(frame)
-            cutout = vision_settings.apply_settings(vision, frame_roi.crop(img), frame_offsets.get(frame))
+                cutout = vision_settings.apply_settings(vision, together, frame_offsets.get(frame))
+            else:
+                if entry:
+                    frame_roi = anchor.rect_for(spec, entry, roi.name, img.shape[1], img.shape[0])
+                    if frame_roi is None:  # the rectangle lies outside this picture
+                        raise FileNotFoundError(frame)
+                cutout = vision_settings.apply_settings(vision, frame_roi.crop(img), frame_offsets.get(frame))
         except FileNotFoundError:
             return None
         missing = missing_by_frame[frame]

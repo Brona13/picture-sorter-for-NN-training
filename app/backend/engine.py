@@ -43,6 +43,15 @@ def crop_for_frame(camera: str, feature: str, frame_path):
     import roi_input  # noqa: PLC0415
 
     image = roi_input.edited(camera, feature, curation.load_image(path), path.name)  # a ROI fed by a Picture edits box reads its output picture
+    import anchor  # noqa: PLC0415
+
+    spec = anchor.get_anchor(camera, feature)
+    if spec and anchor.group_slots(camera, spec):  # an anchor on all the numbered boxes of a target: they go side by side
+        entries = anchor.group_entries(camera, spec, labels.hash_map(camera).get(path.name, ""))
+        crop = anchor.group_crop(spec, entries, feature, image) if entries else None
+        if crop is None:
+            raise FileNotFoundError(f"No anchor boxes on {path.name}")
+        return crop
     roi = resolve_roi_for_frame(camera, feature, labels.hash_map(camera).get(path.name, ""), image.shape[1], image.shape[0])
     if roi is None:
         raise FileNotFoundError(f"No anchor box on {path.name}")

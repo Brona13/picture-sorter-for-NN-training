@@ -403,6 +403,8 @@ export interface FlowSummary {
   /** A Picture Edits box fed by one detector target: which, and the size of its rectangle (null until drawn). */
   follow?: { detector: string; target: string; size: [number, number] | null } | null;
   targets?: string[];
+  /** Targets that look for several elements: their plain name stands for all their numbered boxes together. */
+  groups?: string[];
   status?: "none" | "fresh" | "stale";
   frames?: number;
   complete?: number;

@@ -18,8 +18,11 @@ type Props = {
 export default function AnchorSection({ camera, roi, detectors, onChanged, onError }: Props) {
   const anchor = roi.anchor ?? null;
   const [detector, setDetector] = useState(anchor?.detector ?? detectors[0]?.id ?? "");
-  const targets = detectors.find((d) => d.id === detector)?.flow?.targets ?? [];
+  const flow = detectors.find((d) => d.id === detector)?.flow;
+  const groups = flow?.groups ?? [];
+  const targets = [...groups, ...(flow?.targets ?? [])]; // a group's plain name means all its numbered boxes together
   const [target, setTarget] = useState(anchor?.target ?? targets[0] ?? "");
+  const together = groups.includes(target);
   const [frames, setFrames] = useState<string[]>([]);
   const [frame, setFrame] = useState("");
   const [follow, setFollow] = useState(anchor?.follow_rotation ?? false);
@@ -30,6 +33,9 @@ export default function AnchorSection({ camera, roi, detectors, onChanged, onErr
   useEffect(() => {
     if (!targets.includes(target)) setTarget(targets[0] ?? "");
   }, [detector]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (together && mode !== "box") setMode("box"); // several boxes are used as the found boxes, side by side
+  }, [together, mode]);
 
   useEffect(() => {
     if (!detector || !target) { setFrames([]); return; }
@@ -62,6 +68,7 @@ export default function AnchorSection({ camera, roi, detectors, onChanged, onErr
   return (
     <div className="chain-anchor">
       <h3>Anchor</h3>
+      {together && <p className="muted">All the boxes of {target} are cut out and put side by side, left to right, as one picture: the Classifier sees them together and a picture gets one label.</p>}
       {anchor && (
         <p className="muted">
           {anchor.mode === "box" ? "Is the box found for" : "Follows a rectangle drawn relative to"} <strong>{anchor.target}</strong> of {anchor.detector}
@@ -77,7 +84,7 @@ export default function AnchorSection({ camera, roi, detectors, onChanged, onErr
       <label>
         Target
         <select value={target} onChange={(e) => setTarget(e.target.value)}>
-          {targets.map((t) => <option key={t} value={t}>{t}</option>)}
+          {targets.map((t) => <option key={t} value={t}>{groups.includes(t) ? `${t} (all boxes together)` : t}</option>)}
         </select>
       </label>
       <fieldset>
@@ -86,7 +93,7 @@ export default function AnchorSection({ camera, roi, detectors, onChanged, onErr
           <input type="radio" name={`anchor-mode-${roi.id}`} checked={mode === "box"} onChange={() => setMode("box")} /> the found box (plus a margin)
         </label>
         <label>
-          <input type="radio" name={`anchor-mode-${roi.id}`} checked={mode === "rect"} onChange={() => setMode("rect")} /> my own rectangle, related to the box
+          <input type="radio" name={`anchor-mode-${roi.id}`} checked={mode === "rect"} disabled={together} onChange={() => setMode("rect")} /> my own rectangle, related to the box
         </label>
       </fieldset>
       {mode === "box" ? (

@@ -23,6 +23,9 @@ from __future__ import annotations
 import json
 import math
 
+import cv2
+import numpy as np
+
 import datamodel
 import db
 import flow
@@ -129,6 +132,7 @@ class Source:
 
     def __init__(self, camera: str, spec: dict) -> None:
         self.target = spec["target"]
+        self.slots = group_slots(camera, spec)  # the boxes of a target that looks for several elements, used together
         graph = flow.load_graph(camera)
         self.camera = camera
         self.rects = flow.input_rects(graph, spec["detector"]) if spec["detector"] in graph["nodes"] else []
@@ -136,7 +140,13 @@ class Source:
         self.finder = flow.Finder(camera)
 
     def entry(self, frame_hash: str) -> dict | None:
-        found = self.frames.get(frame_hash, {}).get(self.target)
+        if self.slots:  # all boxes of the group, or none (a picture where one is missing has no input)
+            parts = [self._one(frame_hash, s) for s in self.slots]
+            return None if any(p is None for p in parts) else {"group": parts}
+        return self._one(frame_hash, self.target)
+
+    def _one(self, frame_hash: str, target: str) -> dict | None:
+        found = self.frames.get(frame_hash, {}).get(target)
         return {**found, "rects": self.rects, **_finder(self.camera, self.rects, frame_hash, self.finder)} if found else None
 
 
@@ -198,6 +208,8 @@ def found_box(camera: str, spec: dict, frame: str) -> dict | None:
 
 def frame_key(spec: dict, entry: dict) -> str:
     """What about the detected box changes the rectangle on this picture (goes behind the frame hash in cache keys)."""
+    if "group" in entry:
+        return "+".join(frame_key(spec, e) for e in entry["group"])
     angle = f",{float(entry['angle']):.2f}" if spec.get("follow_rotation") else ""
     return f"a={float(entry['x']):.2f},{float(entry['y']):.2f}{angle}"
 
@@ -223,8 +235,11 @@ def set_anchor(camera: str, feature: str, detector: str, target: str, frame: str
     node = graph["nodes"].get(detector)
     if node is None or node["kind"] != "detector":
         raise AnchorError("The anchor must be a detector box.")
-    if target not in flow.all_slots(node):
+    group = next((t for t in node["targets"] if t["name"] == target and flow.count_of(t) > 1), None)
+    if target not in flow.all_slots(node) and group is None:
         raise AnchorError(f"The detector has no target named {target!r}.")
+    if group is not None and mode != "box":
+        raise AnchorError(f"{target} has several boxes: they are used together as the found boxes (mode box); pick one numbered box for a rectangle of your own.")
     anchor = {"detector": detector, "target": target, "mode": mode, "margin": round(float(margin), 4),
               "follow_rotation": bool(follow_rotation)}
     if mode == "rect":
@@ -250,6 +265,36 @@ def set_anchor(camera: str, feature: str, detector: str, target: str, frame: str
         anchor["frame"] = frame
     db.set_setting(camera, _key(feature), json.dumps(anchor, sort_keys=True))
     return get_anchor(camera, feature) or anchor
+
+
+def group_slots(camera: str, spec: dict) -> list[str] | None:
+    """The numbered boxes (``hole 1``, ``hole 2``) an anchor on a target that looks for several elements uses together,
+    or ``None`` when it follows a single box."""
+    node = flow.load_graph(camera)["nodes"].get(spec["detector"])
+    target = next((t for t in (node or {}).get("targets", []) if t["name"] == spec["target"]), None)
+    return flow.slot_names(target) if target and flow.count_of(target) > 1 else None
+
+
+def group_entries(camera: str, spec: dict, frame_hash: str, source: "Source | None" = None) -> list[dict] | None:
+    """The boxes of every number of the group on this picture, or ``None`` when one is missing."""
+    if source is not None:
+        found = source.entry(frame_hash)
+        return found["group"] if found else None
+    parts = [_entry(camera, spec["detector"], s, frame_hash) for s in group_slots(camera, spec) or []]
+    return None if not parts or any(p is None for p in parts) else parts
+
+
+def compose(crops: list[np.ndarray]) -> np.ndarray:
+    """The cut-outs side by side, left to right, scaled to one height (the tallest), as one picture."""
+    height = max(c.shape[0] for c in crops)
+    parts = [c if c.shape[0] == height else cv2.resize(c, (max(1, round(c.shape[1] * height / c.shape[0])), height), interpolation=cv2.INTER_CUBIC) for c in crops]
+    return np.hstack(parts)
+
+
+def group_crop(anchor: dict, entries: list[dict], name: str, image: np.ndarray) -> np.ndarray | None:
+    """The found boxes (plus margin) of a group cut out of ``image`` and put side by side; ``None`` when one lies outside."""
+    rois = [rect_for(anchor, e, name, image.shape[1], image.shape[0]) for e in entries]
+    return None if any(r is None for r in rois) else compose([r.crop(image) for r in rois])
 
 
 def rect_for(anchor: dict, entry: dict | None, name: str, img_w: int, img_h: int) -> ROI | None:
