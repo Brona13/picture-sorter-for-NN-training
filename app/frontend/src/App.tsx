@@ -29,6 +29,18 @@ import StatusView from "./views/StatusView";
 import VerdictView from "./views/VerdictView";
 import VersionsView from "./views/VersionsView";
 
+/** A camera was deleted or created: the page starts over, so no picture, list or setting of an earlier camera with the
+ *  same name can survive in the browser (memory cache of thumbnails, state held by views). The camera to open is
+ *  remembered first. Without a browser (tests) nothing happens. */
+export function freshStart(camera?: string) {
+  if (camera !== undefined) lastSession.setCamera(camera);
+  try {
+    window.setTimeout(() => window.location.reload(), 150); // lets the router finish its own navigation first
+  } catch {
+    /* no window */
+  }
+}
+
 export default function App() {
   const [cameras, setCameras] = useState<string[]>([]);
   const [camera, setCamera] = useState("");
@@ -326,10 +338,12 @@ export default function App() {
                 onCameraDeleted={(name) => {
                   if (name === camera) setCamera("");
                   loadCameras();
+                  freshStart(name === camera ? "" : undefined);
                 }}
                 onCameraCreated={(name) => {
                   loadCameras(name);
                   navigate("/ingest");
+                  freshStart(name);
                 }}
               />
             }

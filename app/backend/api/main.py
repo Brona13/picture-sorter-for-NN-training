@@ -102,6 +102,8 @@ def create_app() -> FastAPI:
             if request.url.path.startswith("/api") and request.url.path != "/api/logs":  # a report is not itself worth a line
                 _log.log(level, "%s %s -> %s", request.method, request.url.path, status,
                          extra=applog.fields(method=request.method, path=request.url.path, query=request.url.query or None, status=status, duration_ms=ms, detail=info.get("detail")))
+            if request.url.path.startswith("/api") and request.method == "GET" and "cache-control" not in response.headers:
+                response.headers["Cache-Control"] = "no-store"  # data is read fresh each time; pictures set their own (ETag + no-cache)
             applog.request_id.reset(tokens[0])
             applog.camera.reset(tokens[1])
             applog.request_info.reset(tokens[2])

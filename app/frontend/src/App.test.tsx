@@ -2,7 +2,8 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import App from "./App";
+import App, { freshStart } from "./App";
+import { lastSession } from "./lastSession";
 
 function mockFetch(routes: Record<string, unknown>, status = 200) {
   vi.stubGlobal(
@@ -461,4 +462,16 @@ test("the picker follows a change made on the Configuration page", async () => {
   withMethods();
   window.dispatchEvent(new Event("picturesorter:changed"));
   expect(await screen.findByLabelText("Rank using")).toBeInTheDocument();
+});
+
+
+test("freshStart remembers the camera to open and schedules a page reload", async () => {
+  vi.useFakeTimers();
+  try {
+    freshStart("camNew");
+    expect(lastSession.camera()).toBe("camNew");
+  } finally {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  }
 });
