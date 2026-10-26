@@ -25,6 +25,7 @@ class DedupApiTests(ApiTestCase):
         self.frames = write_frames(CAM, 6)
         datamodel.save_rois(CAM, [ROI(name=ROI_NAME, x=0, y=0, w=1, h=1)])
         self.assertEqual(flow.create_node(CAM, "dedup"), FEAT)
+        flow.connect(CAM, "ingest", FEAT)  # v1.107.0: a box with no line has no pictures
         dedup_api._results.clear()
         # Fake embeddings: frames 0-2 are near-identical, 3-4 near-identical, 5 is unique.
         vecs = {0: [1, 0, 0], 1: [1, 0.001, 0], 2: [1, 0, 0.001], 3: [0, 1, 0], 4: [0, 1, 0.001], 5: [0, 0, 1]}

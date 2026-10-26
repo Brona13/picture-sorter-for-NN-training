@@ -1252,6 +1252,11 @@ export const api = {
       `/cameras/${encodeURIComponent(camera)}/frames` +
         (feature ? `?feature=${encodeURIComponent(feature)}` : product ? `?product=${encodeURIComponent(product)}` : ""),
     ),
+  /** The pictures a Chain box works on (what its input passes on); none, with `has_input` false, while no line feeds it. */
+  flowNodeFrames: (camera: string, nodeId: string) =>
+    request<{ frames: string[]; has_input: boolean; reference_frame: string | null }>(
+      `/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(nodeId)}/frames`,
+    ),
   setReferenceFrame: (camera: string, frame: string) =>
     request<{ reference_frame: string }>(
       `/cameras/${encodeURIComponent(camera)}/reference-frame`,

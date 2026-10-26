@@ -51,7 +51,7 @@ class OutlierApiTests(ApiTestCase):
         super().setUp()
         self.frames = write_frames(CAM, 6)
         datamodel.save_rois(CAM, [ROI(name=ROI_NAME, x=0, y=0, w=1, h=1)])
-        flow.create_node(CAM, "dedup")
+        flow.connect(CAM, "ingest", flow.create_node(CAM, "dedup"))  # v1.107.0: a box with no line has no pictures
         vecs = {0: [1, 0, 0], 1: [1, 0.001, 0], 2: [1, 0, 0.001], 3: [1, 0.002, 0], 4: [1, 0, 0.002], 5: [0, 0, 1]}
 
         def fake_fetch(camera, feature, frames, backbone, progress_cb=None):

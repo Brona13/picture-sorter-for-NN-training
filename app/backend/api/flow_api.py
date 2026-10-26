@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 
 import anchor
+import db
 import dedup_box
 import roi_input
 import cv2
@@ -78,6 +79,19 @@ def create_node(camera: str, body: NodeCreate) -> dict:
 def get_node(camera: str, node_id: str) -> dict:
     _known(camera, node_id)
     return flow.node_detail(camera, node_id)
+
+
+@router.get("/cameras/{camera}/flow/nodes/{node_id}/frames")
+def get_node_frames(camera: str, node_id: str) -> dict:
+    """The pictures this box works on (what its input passes on): the list its page offers. Empty, with
+    ``has_input`` false, while nothing is drawn into the box."""
+    _known(camera, node_id)
+    graph = flow.load_graph(camera)
+    return {
+        "frames": flow.node_frames(camera, node_id, graph),
+        "has_input": flow.has_input(graph, node_id),
+        "reference_frame": db.get_setting(camera, "reference_frame"),
+    }
 
 
 @router.put("/cameras/{camera}/flow/nodes/{node_id}")

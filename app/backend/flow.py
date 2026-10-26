@@ -557,24 +557,16 @@ def parent_of(graph: dict, node_id: str) -> str | None:
     for e in graph["edges"]:
         if e["target"] == node_id and kind_of(e["source"]) in ("ingest", "crop", "detector", "calc"):
             return e["source"]
-        if e["target"] == node_id and kind_of(e["source"]) == "dedup" and kind_of(node_id) == "detector":
+        if e["target"] == node_id and kind_of(e["source"]) == "dedup" and kind_of(node_id) in ("detector", "crop"):
             return _through_dedup(graph, e["source"])
     return None
 
 
 def _through_dedup(graph: dict, dedup_id: str) -> str | None:
-    """A detector behind a Dedup box works on the picture the box reads: Ingest or a Picture edits box. A Dedup box
+    """A detector or Picture edits box behind a Dedup box works on the picture the box reads: Ingest or a Picture edits box. A Dedup box
     that reads a Classifier dot or one target of a detector hands on its pictures but not a different picture."""
     for e in graph["edges"]:
         if e["target"] == dedup_id and e.get("point") is None and kind_of(e["source"]) in ("ingest", "crop"):
-            return e["source"]
-    return None
-
-
-def dedup_feeding(graph: dict, node_id: str) -> str | None:
-    """The Dedup box a detector reads (v1.105.0), or ``None``."""
-    for e in graph["edges"]:
-        if e["target"] == node_id and kind_of(e["source"]) == "dedup" and kind_of(node_id) == "detector":
             return e["source"]
     return None
 
@@ -591,16 +583,14 @@ def edge_allowed(graph: dict, source: str, target: str) -> str | None:
     why = lines.line_error(ks, kt)
     if why:
         return why
-    if (ks, kt) not in {("ingest", "crop"), ("crop", "crop"), ("crop", "detector"), ("ingest", "detector"), ("detector", "detector"), ("detector", "crop"), ("detector", "calc"), ("calc", "evaluation"), ("evaluation", "classify"), ("ingest", "dedup"), ("crop", "dedup"), ("detector", "dedup"), ("dedup", "detector")}:
-        if ks == "dedup":
-            return "A Dedup box feeds a Classifier or a detector. Lines from it to Picture edits are not made yet."
+    if (ks, kt) not in {("ingest", "crop"), ("crop", "crop"), ("crop", "detector"), ("ingest", "detector"), ("detector", "detector"), ("detector", "crop"), ("detector", "calc"), ("calc", "evaluation"), ("evaluation", "classify"), ("ingest", "dedup"), ("crop", "dedup"), ("detector", "dedup"), ("dedup", "detector"), ("dedup", "crop")}:
         names = {"ingest": "Ingest", "crop": "Picture edits", "detector": "a detector", "calc": "Calculate", "evaluation": "Evaluation", "classify": "a Classify box", "dedup": "a Dedup box"}
         return f"{names.get(ks, ks)} cannot feed {names.get(kt, kt)}."
     if is_flow_id(source) and source not in graph["nodes"]:
         return f"Unknown box: {source}"
     if is_flow_id(target) and target not in graph["nodes"]:
         return f"Unknown box: {target}"
-    if ks == "dedup" and kt == "detector":
+    if ks == "dedup" and kt in ("detector", "crop"):
         seen: set[str] = set()
         ancestor = parent_of_any(graph, source)
         while ancestor and ancestor != INGEST_ID and ancestor not in seen:
@@ -1181,25 +1171,42 @@ def node_source(graph: dict, node_id: str) -> dict | None:
     return src if isinstance(src, dict) and src.get("feature") and src.get("dot") else None
 
 
-def node_frames(camera: str, node_id: str, graph: dict | None = None) -> list[str]:
-    """The pictures a box works on: the pictures on its Classifier dot, or the whole camera when no dot feeds it.
-    Deleted and removed pictures never; a class that went away gives none."""
+def has_input(graph: dict, node_id: str) -> bool:
+    """Whether anything feeds the box: a Classifier dot or a line from Ingest, Picture edits, a detector or a Dedup box."""
+    if node_source(graph, node_id):
+        return True
+    return any(e["target"] == node_id and kind_of(e["source"]) in ("ingest", "crop", "detector", "dedup") for e in graph["edges"])
+
+
+def node_frames(camera: str, node_id: str, graph: dict | None = None, _seen: frozenset = frozenset()) -> list[str]:
+    """The pictures a box works on, resolved up the chain (v1.107.0): the pictures on its Classifier dot, or what the box
+    it reads passes on (Ingest: every live picture; a Dedup box: its pictures minus the ones it muted). A box with no
+    line into it has no pictures. Deleted and removed pictures never; a class that went away gives none."""
     graph = graph or load_graph(camera)
-    box = dedup_feeding(graph, node_id)
-    if box:  # behind a Dedup box: the pictures it sees, minus the ones it muted
-        import dedup_box
-        muted = db.muted_frames(camera, box)
-        live = set(_live_frames(camera))
-        return [f for f in dedup_box.frames(camera, box) if f in live and f not in muted]
+    live = _live_frames(camera)
     src = node_source(graph, node_id)
-    if not src:
-        return _live_frames(camera)
-    try:
-        names = lines.frames_on_dot(camera, src["feature"], src["dot"])
-    except ValueError:
+    if src:
+        try:
+            names = lines.frames_on_dot(camera, src["feature"], src["dot"])
+        except ValueError:
+            return []
+        keep = set(live)
+        return [f for f in names if f in keep]
+    seen = _seen | {node_id}
+    line = next((e for e in graph["edges"] if e["target"] == node_id and kind_of(e["source"]) in ("ingest", "crop", "detector", "dedup")), None)
+    if line is None:
         return []
-    live = set(_live_frames(camera))
-    return [f for f in names if f in live]
+    upstream = line["source"]
+    if kind_of(upstream) == "ingest":
+        return live
+    if upstream in seen or upstream not in graph["nodes"]:
+        return []
+    names = node_frames(camera, upstream, graph, seen)
+    if kind_of(upstream) == "dedup":
+        muted = db.muted_frames(camera, upstream)
+        names = [f for f in names if f not in muted]
+    keep = set(live)
+    return [f for f in names if f in keep]
 
 
 def _match_entry(match: rotsearch.Match, source: str = "auto", scale: float = 1.0, size: tuple[int, int] | None = None) -> dict:

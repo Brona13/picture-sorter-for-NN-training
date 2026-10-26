@@ -200,7 +200,7 @@ test("describeNode: a Picture edits box lists its steps in order", () => {
   expect(describeNode(node({ kind: "crop", flow: { steps: [] } }))).toBe("no steps yet");
 });
 
-test("Dedup boxes: Ingest / Picture edits / a Classifier dot feed them, they feed a Classifier or a detector, nothing else", () => {
+test("Dedup boxes: Ingest / Picture edits / a Classifier dot feed them, they feed a Classifier, a detector or Picture edits, nothing else", () => {
   const withBox: ChainCanvas = {
     ...flowCanvas,
     nodes: [
@@ -214,7 +214,8 @@ test("Dedup boxes: Ingest / Picture edits / a Classifier dot feed them, they fee
   expect(flowConnect(withBox, { source: "roi:seal", sourceHandle: "p:OK", target: "dedup:1" })).toEqual({ dedupSource: { box: "dedup:1", feature: "seal", dot: "OK" } });
   expect(flowConnect(withBox, link("dedup:1", "roi:seal"))).toEqual({ dedupInput: { feature: "seal", box: "dedup:1" } });
   expect(flowConnect(withBox, link("dedup:1", "det:1"))).toEqual({ source: "dedup:1", target: "det:1" });
-  for (const [s, t] of [["dedup:1", "crop:1"], ["dedup:1", "calc:1"]]) {
+  expect(flowConnect(withBox, link("dedup:1", "crop:1"))).toEqual({ source: "dedup:1", target: "crop:1" });
+  for (const [s, t] of [["dedup:1", "calc:1"]]) {
     expect(flowConnect(withBox, link(s, t))).toHaveProperty("error");
   }
 });

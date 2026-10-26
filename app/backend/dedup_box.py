@@ -57,17 +57,9 @@ def label_source(camera: str, feature: str) -> str:
 
 
 def frames(camera: str, box: str) -> list[str]:
-    """The pictures the box sees: the whole camera, or the pictures on its Classifier dot; deleted ones never."""
-    src = source_of(camera, box)
-    if src:
-        try:
-            names = lines.frames_on_dot(camera, src["feature"], src["dot"])
-        except ValueError:
-            names = []  # the class went away
-    else:
-        names = [p.name for p in datamodel.list_unsorted(camera)]
-    deleted = db.deleted_frames_of(camera)
-    return [f for f in names if f not in deleted]
+    """The pictures the box sees: what its input passes on (Ingest, a Picture edits box, a detector, or one dot of a
+    Classifier); no line into it, no pictures. Deleted ones never."""
+    return flow.node_frames(camera, box)
 
 
 def input_of(camera: str, feature: str) -> str | None:

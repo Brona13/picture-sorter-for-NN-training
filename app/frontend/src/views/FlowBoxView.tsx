@@ -129,6 +129,7 @@ function DetectorWork(p: {
 }) {
   const { camera, nodeId, detail } = p;
   const [frames, setFrames] = useState<string[]>([]);
+  const [hasInput, setHasInput] = useState(true);
   const [index, setIndex] = useState(0);
   const [target, setTarget] = useState("");
   const [mode, setMode] = useState<"draw" | "place" | "reuse">("draw");
@@ -167,7 +168,7 @@ function DetectorWork(p: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [camera, nodeId],
   );
-  useEffect(() => { api.frames(camera).then((r) => setFrames(r.frames)).catch((e) => p.onError(msg(e))); }, [camera]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { api.flowNodeFrames(camera, nodeId).then((r) => { setFrames(r.frames); setHasInput(r.has_input); }).catch((e) => p.onError(msg(e))); }, [camera, nodeId, p.version]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { void loadBoxes(); }, [loadBoxes, p.version]);
 
   // A cascade (its input is another detector) works on the boxes that detector found: one picture per found box.
@@ -601,7 +602,7 @@ function DetectorWork(p: {
           </ZoomPane>
         </>
       ) : (
-        <p className="muted">{onlyReview ? "Nothing to review." : "This camera has no pictures yet."}</p>
+        <p className="muted">{onlyReview ? "Nothing to review." : hasInput ? "No pictures reach this box yet." : "Nothing is drawn into this box, so it has no pictures. Draw a line into it on the Chain."}</p>
       )}
 
       <div className="flow-nav">

@@ -40,7 +40,10 @@ class DedupBoxTests(ApiTestCase):
     def edges(self) -> set[tuple]:
         return {(e["source"], e["source_handle"], e["target"]) for e in self.canvas()["edges"]}
 
-    def test_a_box_without_a_line_sees_the_whole_camera(self) -> None:
+    def test_a_box_without_a_line_has_no_pictures_and_one_from_ingest_gives_the_whole_camera(self) -> None:
+        self.assertEqual(dedup_box.frames(CAM, self.d1), [])
+        self.assertEqual(self.node(self.d1)["flow"]["frames"], 0)
+        flow.connect(CAM, "ingest", self.d1)
         self.assertEqual(sorted(dedup_box.frames(CAM, self.d1)), sorted(self.frames))
         self.assertEqual(self.node(self.d1)["flow"]["frames"], 6)
 
@@ -139,7 +142,9 @@ class DedupBoxTests(ApiTestCase):
         crop = flow.create_node(CAM, "crop")
         graph = flow.load_graph(CAM)
         self.assertIsNone(flow.edge_allowed(graph, crop, self.d1))
-        self.assertIn("feeds a Classifier", flow.edge_allowed(graph, self.d1, crop) or "")
+        self.assertIsNone(flow.edge_allowed(graph, self.d1, crop))  # a Dedup box feeds Picture edits (v1.107.0)
+        calc = flow.create_node(CAM, "calc")
+        self.assertIn("Calculate takes", flow.edge_allowed(flow.load_graph(CAM), self.d1, calc) or "")
         det = flow.create_node(CAM, "detector")
         self.assertIsNone(flow.edge_allowed(flow.load_graph(CAM), det, self.d1))  # a detector target feeds it (v1.99.0)
         with self.assertRaises(flow.FlowError):
@@ -159,7 +164,7 @@ class DedupBoxTests(ApiTestCase):
         self.assertEqual(sorted(flow.node_frames(CAM, det)), sorted(self.frames[2:4]))
         self.assertIn((self.d1, None, det), self.edges())
         flow.disconnect(CAM, self.d1, det)
-        self.assertEqual(sorted(flow.node_frames(CAM, det)), sorted(self.frames))  # no line: the whole camera again
+        self.assertEqual(flow.node_frames(CAM, det), [])  # no line: no pictures
 
     def test_a_detector_behind_a_dedup_box_keeps_the_picture_edits_above_the_box(self) -> None:
         crop = flow.create_node(CAM, "crop")
@@ -177,6 +182,35 @@ class DedupBoxTests(ApiTestCase):
         flow.save_graph(CAM, graph)
         flow.connect(CAM, det, self.d1, point="P")
         self.assertIn("loop", flow.edge_allowed(flow.load_graph(CAM), self.d1, det) or "")
+
+    def test_one_dedup_box_feeds_three_picture_edits_boxes_each_feeding_its_own_dedup_box(self) -> None:
+        flow.connect(CAM, "ingest", self.d1)
+        crops = [flow.create_node(CAM, "crop") for _ in range(3)]
+        for crop in crops:
+            flow.connect(CAM, self.d1, crop)
+        self.assertEqual({(e["source"], e["target"]) for e in flow.load_graph(CAM)["edges"] if e["source"] == self.d1}, {(self.d1, c) for c in crops})
+        self.mute(self.d1, self.frames[:2])
+        for crop in crops:  # each crop sees what the first box kept, and its picture is the one the box reads
+            self.assertEqual(sorted(flow.node_frames(CAM, crop)), sorted(self.frames[2:]))
+            self.assertEqual(flow.parent_of(flow.load_graph(CAM), crop), "ingest")
+        flow.connect(CAM, crops[0], self.d2)  # Dedup 2 behind the first crop: the survivors of Dedup 1 only
+        self.assertEqual(sorted(dedup_box.frames(CAM, self.d2)), sorted(self.frames[2:]))
+        self.assertEqual(roi_input.get_input(CAM, self.d2), {"box": crops[0]})
+        dedup_box.set_input(CAM, "seal", self.d2)
+        self.assertIn((self.d2, None, "roi:seal"), self.edges())
+        self.assertIn((self.d1, None, crops[2]), self.edges())
+        self.assertIn("loop", flow.edge_allowed(flow.load_graph(CAM), self.d2, crops[0]) or "")
+
+    def test_a_box_page_lists_only_the_pictures_its_input_passes_on(self) -> None:
+        crop = flow.create_node(CAM, "crop")
+        base = f"{self.base}/flow/nodes/{crop}/frames"
+        body = self.client.get(base).json()
+        self.assertEqual((body["frames"], body["has_input"]), ([], False))
+        flow.connect(CAM, "ingest", self.d1)
+        flow.connect(CAM, self.d1, crop)
+        self.mute(self.d1, self.frames[:1])
+        body = self.client.get(base).json()
+        self.assertEqual((sorted(body["frames"]), body["has_input"]), (sorted(self.frames[1:]), True))
 
     def test_a_picture_edits_box_in_front_is_the_input_of_the_embeddings(self) -> None:
         crop = flow.create_node(CAM, "crop")

@@ -21,7 +21,9 @@ class ClassifierScopeTests(ApiTestCase):
         self.crop = flow.create_node(CAM, "crop")
         self.base = f"/api/cameras/{CAM}"
 
-    def test_without_a_dot_a_box_works_on_the_whole_camera(self) -> None:
+    def test_without_a_line_a_box_has_no_pictures_and_a_line_from_ingest_gives_the_whole_camera(self) -> None:
+        self.assertEqual(flow.node_frames(CAM, self.det), [])
+        flow.connect(CAM, "ingest", self.det)
         self.assertEqual(sorted(flow.node_frames(CAM, self.det)), sorted(self.frames))
 
     def test_a_class_dot_gives_its_pictures_and_all_gives_the_classified_ones(self) -> None:
@@ -73,6 +75,7 @@ class DetectorToDedupTests(ApiTestCase):
         write_frames(CAM + "2", 3)
         self.cam = CAM + "2"
         self.det = flow.create_node(self.cam, "detector")
+        flow.connect(self.cam, "ingest", self.det)  # v1.107.0: a box with no line has no pictures
         self.box = flow.create_node(self.cam, "dedup")
 
     def test_a_target_dot_feeds_the_box_and_the_line_is_its_anchor(self) -> None:

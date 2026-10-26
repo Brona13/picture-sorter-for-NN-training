@@ -26,8 +26,8 @@ class DeletedFramesTests(ApiTestCase):
         super().setUp()
         self.frames = write_frames(CAM, 6)
         datamodel.save_rois(CAM, [ROI(name=FEAT, x=0, y=0, w=1, h=1), ROI(name=OTHER, x=0, y=0, w=1, h=1)])
-        flow.create_node(CAM, "dedup")
-        flow.create_node(CAM, "dedup")
+        for box in (flow.create_node(CAM, "dedup"), flow.create_node(CAM, "dedup")):
+            flow.connect(CAM, "ingest", box)  # v1.107.0: a box with no line has no pictures
         dedup_api._results.clear()
         vecs = {0: [1, 0, 0], 1: [1, 0.001, 0], 2: [1, 0, 0.001], 3: [0, 1, 0], 4: [0, 1, 0.001], 5: [0, 0, 1]}
 

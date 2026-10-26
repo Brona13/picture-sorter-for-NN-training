@@ -46,6 +46,7 @@ export default function PictureEditsWork({ camera, nodeId, detail, edits, onErro
   const { steps } = edits;
   const [size, setSize] = usePictureSize("flow.cropSize", 900, 200, 1600);
   const [frames, setFrames] = useState<string[]>([]);
+  const [hasInput, setHasInput] = useState(true);
   const [frame, setFrame] = useState("");
   const [view, setView] = useState<View>(FIT_VIEW);
   const step = steps.find((s) => s.id === edits.selected) ?? null;
@@ -60,14 +61,15 @@ export default function PictureEditsWork({ camera, nodeId, detail, edits, onErro
   useEffect(() => setShow(step?.op === "filter" ? "after" : "before"), [step?.id, step?.op]); // a filter is judged by its result, a crop is drawn first
   useEffect(() => setView(FIT_VIEW), [nodeId]);
   useEffect(() => {
-    api.frames(camera).then((r) => {
+    api.flowNodeFrames(camera, nodeId).then((r) => {
       setFrames(r.frames);
+      setHasInput(r.has_input);
       setFrame((cur) => (r.frames.includes(cur) ? cur
         : follow?.frame && r.frames.includes(follow.frame) ? follow.frame
         : follow ? r.frames.find((f) => !follow.missing.includes(f)) ?? r.frames[0] ?? ""
         : r.reference_frame && r.frames.includes(r.reference_frame) ? r.reference_frame : r.frames[0] ?? ""));
     }).catch((e) => onError(msg(e)));
-  }, [camera]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [camera, nodeId, detail.input_box]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const live = useDebounced(steps, 120);
   const liveIndex = step ? live.findIndex((s) => s.id === step.id) : -1;
@@ -123,7 +125,7 @@ export default function PictureEditsWork({ camera, nodeId, detail, edits, onErro
               : isFollowStep ? "" : "Drag on the picture to draw the crop rectangle, or drag the rectangle to move it or a corner or edge to resize it; it is saved when you let go. Wheel zooms, middle button or Space + drag pans."}
       </p>
       {!frame ? (
-        <p className="flow-empty">No pictures yet: add some in Ingest first.</p>
+        <p className="flow-empty">{hasInput ? "No pictures reach this box yet: add some in Ingest, or check what the box before it passes on." : "Nothing is drawn into this box, so it has no pictures. Draw a line into it on the Chain."}</p>
       ) : canvasMode && step && isFollowStep && follow ? (
         <FollowCanvas camera={camera} nodeId={nodeId} frame={frame} frames={frames} detail={detail} follow={follow} size={size} view={view} setView={setView} url={stepUrl("input", { straighten: straight })} straight={!!straight} edits={edits} onError={onError} />
       ) : canvasMode && step && step.op === "crop" ? (

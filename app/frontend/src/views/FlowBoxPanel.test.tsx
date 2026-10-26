@@ -103,6 +103,7 @@ const routes = (nodes: Record<string, unknown>, extra: (url: string, method: str
     if (special !== undefined) return new Response(JSON.stringify(special));
     if (url.endsWith("/chain")) return new Response(JSON.stringify({ nodes: [{ id: "det:1", label: "Detector 1" }, { id: "eval:1", label: "Evaluation 1" }] }));
     if (url.includes("/frames") && !url.includes("/flow/")) return new Response(JSON.stringify({ frames: ["a.png", "b.png"], showing_all: true, total: 2, reference_frame: null }));
+    if (/\/flow\/nodes\/[^/]+\/frames$/.test(url)) return new Response(JSON.stringify({ frames: ["a.png", "b.png"], has_input: true, reference_frame: null }));
     if (url.includes("/boxes")) return new Response(JSON.stringify({ boxes: {}, review: [] }));
     return new Response(JSON.stringify(nodes));
   }));

@@ -56,8 +56,7 @@ class FlowTests(ApiTestCase):
             self.post(f"/nodes/{node}/targets", {"name": name})
             self.post(f"/nodes/{node}/examples", {"target": name, "frame": self.names[0], "box": box})
         self.put(f"/nodes/{node}", {"rotate": rotate})
-        if parent:
-            self.post("/edges", {"source": parent, "target": node})
+        self.post("/edges", {"source": parent or "ingest", "target": node})  # v1.107.0: a box with no line has no pictures
         return node
 
     def run_all(self) -> None:
@@ -702,6 +701,7 @@ class FlowTests(ApiTestCase):
     def _crop(self, pixels: list[int]) -> tuple[str, int, int]:
         height, width = cv2.imread(str(datamodel.unsorted_dir(CAM) / self.names[0])).shape[:2]
         crop = self.node("crop")
+        self.post("/edges", {"source": "ingest", "target": crop})  # v1.107.0: a box with no line has no pictures
         x, y, w, h = pixels
         self.put(f"/nodes/{crop}", {"rect": [x / width, y / height, w / width, h / height]})
         return crop, width, height
@@ -963,6 +963,7 @@ class LargeExampleTests(ApiTestCase):
         ingest.rebuild_index(self.cam)
         self.base = f"/api/cameras/{self.cam}/flow"
         self.det = self.client.post(f"{self.base}/nodes", json={"kind": "detector"}).json()["id"]
+        self.client.post(f"{self.base}/edges", json={"source": "ingest", "target": self.det})  # v1.107.0: a box with no line has no pictures
         self.client.put(f"{self.base}/nodes/{self.det}", json={"rotate": False})
 
     def target(self, name: str) -> None:
