@@ -29,6 +29,7 @@ import numpy as np
 
 import db
 import preprocess
+import samples
 import vision_settings
 import applog
 
@@ -297,11 +298,11 @@ def verdict(result: dict, expected: dict | None) -> str | None:
     return "pass" if diff <= expected["tolerance"] and result["polarity"] == expected["polarity"] else "fail"
 
 
-def filtered_crop(camera: str, feature: str, frame_path, flt: dict | None) -> np.ndarray:
+def filtered_crop(camera: str, feature: str, frame_path, flt: dict | None, frame: str | None = None) -> np.ndarray:
     """The frame's ROI crop with the feature's pre-processing filter (never the mask)."""
     import engine  # noqa: PLC0415
 
-    crop = engine.crop_for_frame(camera, feature, frame_path)
+    crop = engine.crop_for_frame(camera, feature, frame_path, frame)
     return preprocess.apply(crop, flt["name"], flt["params"]) if flt else crop
 
 
@@ -347,7 +348,7 @@ def run(camera: str, feature: str, report=None) -> dict:
     results: dict[str, dict] = {}
     for i, frame in enumerate(frames, 1):
         try:
-            crop = filtered_crop(camera, feature, datamodel.unsorted_dir(camera) / frame, flt)
+            crop = filtered_crop(camera, feature, datamodel.unsorted_dir(camera) / samples.file_of(frame), flt, frame)
             m = measure(crop, settings)
         except Exception:  # noqa: BLE001 - an unreadable frame is "none", not a failed run
             applog.warn_once(_log, f"edge-{camera}-{frame}", "edge angle not measured for %s/%s", camera, frame)

@@ -34,7 +34,7 @@ export default function AnchorSection({ camera, roi, detectors, onChanged, onErr
     if (!targets.includes(target)) setTarget(targets[0] ?? "");
   }, [detector]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    if (together && mode !== "box") setMode("box"); // several boxes are used as the found boxes, side by side
+    if (together && mode !== "box") setMode("box"); // every box becomes its own picture
   }, [together, mode]);
 
   useEffect(() => {
@@ -68,7 +68,7 @@ export default function AnchorSection({ camera, roi, detectors, onChanged, onErr
   return (
     <div className="chain-anchor">
       <h3>Anchor</h3>
-      {together && <p className="muted">All the boxes of {target} are cut out and put side by side, left to right, as one picture: the Classifier sees them together and a picture gets one label.</p>}
+      {together && <p className="muted">Every box of {target} becomes its own picture in the Classifier (picture name · box 1, 2, …, left to right): each one is labeled, sorted and plotted on its own.</p>}
       {anchor && (
         <p className="muted">
           {anchor.mode === "box" ? "Is the box found for" : "Follows a rectangle drawn relative to"} <strong>{anchor.target}</strong> of {anchor.detector}
@@ -84,7 +84,7 @@ export default function AnchorSection({ camera, roi, detectors, onChanged, onErr
       <label>
         Target
         <select value={target} onChange={(e) => setTarget(e.target.value)}>
-          {targets.map((t) => <option key={t} value={t}>{groups.includes(t) ? `${t} (all boxes together)` : t}</option>)}
+          {targets.map((t) => <option key={t} value={t}>{groups.includes(t) ? `${t} (each box a picture)` : t}</option>)}
         </select>
       </label>
       <fieldset>

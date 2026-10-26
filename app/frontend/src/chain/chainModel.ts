@@ -169,7 +169,7 @@ export function flowConnect(canvas: ChainCanvas, c: Connection): FlowLink {
     // A detector target's dot dropped on an ROI feature anchors the ROI to that target's box.
     const name = targetOfHandle(c.sourceHandle);
     if (!name) return { error: "Drag from one of the detector's target dots (on its right edge) to the ROI." };
-    // A target that looks for several elements has a dot "name (all)" that takes all its boxes together, and one dot per number.
+    // A target that looks for several elements has a dot "name (all)" that makes each of its boxes a Classifier picture, and one dot per number.
     return { anchor: { feature: target.ref, detector: source.id, target: name } };
   }
   if (source.kind === "crop" && target.kind === "roi") {
@@ -209,7 +209,7 @@ export function flowConnect(canvas: ChainCanvas, c: Connection): FlowLink {
   if (!isFlowKind(source.kind) && !isFlowKind(target.kind)) return null;
   const point = targetOfHandle(c.sourceHandle);
   if (point && (source.flow?.groups ?? []).includes(point)) {
-    return { error: `The “${point} (all)” dot gives several boxes together: it can only feed a Classifier. Use one numbered dot (${point} 1 ...) for anything else.` };
+    return { error: `The “${point} (all)” dot stands for several boxes: it can only feed a Classifier. Use one numbered dot (${point} 1 ...) for anything else.` };
   }
   if (point && !(source.kind === "detector" && (target.kind === "calc" || target.kind === "crop" || target.kind === "dedup"))) {
     return { error: "A target dot can feed one point of a Calculate box, be followed by a Picture edits box, be read by a Dedup box or anchor a Classifier; use the detector's main dot for anything else." };

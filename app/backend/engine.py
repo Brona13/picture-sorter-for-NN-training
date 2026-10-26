@@ -26,16 +26,17 @@ def resolve_roi_for_frame(camera: str, feature: str, frame_hash: str, img_w: int
     if spec is None:
         return roi
     spec = anchor.effective(camera, feature, spec)
-    entry = anchor._entry(camera, spec["detector"], spec["target"], frame_hash)
+    entry = anchor.entry_for(camera, spec, frame_hash)
     placed = anchor.rect_for(spec, entry, roi.name, img_w, img_h)
     if placed is None:
         return None
     return ROI(name=roi.name, x=placed.x, y=placed.y, w=placed.w, h=placed.h, role=roi.role, classes=roi.classes, products=roi.products)
 
 
-def crop_for_frame(camera: str, feature: str, frame_path):
+def crop_for_frame(camera: str, feature: str, frame_path, frame: str | None = None):
     """The picture's ROI crop (anchored ROIs: cut where the detector's box is). Raises ``FileNotFoundError`` when
-    the picture cannot be read or has no rectangle (no anchor box), which callers already treat as "skip"."""
+    the picture cannot be read or has no rectangle (no anchor box), which callers already treat as "skip". ``frame`` is
+    the picture's name when it differs from the file's: a sample of a target with several elements (``part.png#2``)."""
     import curation  # noqa: PLC0415
     import labels  # noqa: PLC0415
 
@@ -43,16 +44,7 @@ def crop_for_frame(camera: str, feature: str, frame_path):
     import roi_input  # noqa: PLC0415
 
     image = roi_input.edited(camera, feature, curation.load_image(path), path.name)  # a ROI fed by a Picture edits box reads its output picture
-    import anchor  # noqa: PLC0415
-
-    spec = anchor.get_anchor(camera, feature)
-    if spec and anchor.group_slots(camera, spec):  # an anchor on all the numbered boxes of a target: they go side by side
-        entries = anchor.group_entries(camera, spec, labels.hash_map(camera).get(path.name, ""))
-        crop = anchor.group_crop(spec, entries, feature, image) if entries else None
-        if crop is None:
-            raise FileNotFoundError(f"No anchor boxes on {path.name}")
-        return crop
-    roi = resolve_roi_for_frame(camera, feature, labels.hash_map(camera).get(path.name, ""), image.shape[1], image.shape[0])
+    roi = resolve_roi_for_frame(camera, feature, labels.hash_map(camera).get(frame or path.name, ""), image.shape[1], image.shape[0])
     if roi is None:
         raise FileNotFoundError(f"No anchor box on {path.name}")
     return roi.crop(image)

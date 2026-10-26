@@ -13,6 +13,7 @@ import datamodel
 import db
 import engine
 import labels
+import samples
 import thumbs
 from api.cameras import require_camera
 from fastapi import APIRouter, HTTPException, Request, Response
@@ -27,22 +28,23 @@ _BROWSER_TYPES = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 def frame_path(camera: str, frame: str) -> Path:
     """Resolve a frame name inside the camera's immutable inbox (no traversal)."""
     require_camera(camera)
-    if Path(frame).name != frame or Path(frame).suffix.lower() not in config.IMAGE_EXTENSIONS:
+    file = samples.file_of(frame)  # a sample of a target with several elements (``part.png#2``) is a picture of its file
+    if Path(file).name != file or Path(file).suffix.lower() not in config.IMAGE_EXTENSIONS:
         raise HTTPException(status_code=404, detail=f"Unknown frame: {frame}")
-    path = datamodel.unsorted_dir(camera) / frame
+    path = datamodel.unsorted_dir(camera) / file
     if not path.is_file():
         raise HTTPException(status_code=404, detail=f"Unknown frame: {frame}")
     return path
 
 
-def _roi_tuple(camera: str, feature: str | None, path: Path | None = None) -> tuple:
+def _roi_tuple(camera: str, feature: str | None, path: Path | None = None, frame: str | None = None) -> tuple:
     """The rectangle to cut: the ROI's own, or - for a detector-anchored ROI - the one placed on this picture."""
     feature = feature or config.WHOLE_FRAME_FEATURE
     roi = engine.resolve_roi(camera, feature)
     if path is not None and anchor.get_anchor(camera, feature):
         with Image.open(path) as picture:
             width, height = picture.size
-        placed = engine.resolve_roi_for_frame(camera, feature, labels.hash_map(camera).get(path.name, ""), width, height)
+        placed = engine.resolve_roi_for_frame(camera, feature, labels.hash_map(camera).get(frame or path.name, ""), width, height)
         if placed is None:
             raise HTTPException(status_code=404, detail="The detector found no anchor on this picture.")
         roi = placed
@@ -116,54 +118,19 @@ def frame_cutout(camera: str, frame: str, request: Request, feature: str) -> Res
     """The picture's cutout of ``feature`` at full resolution (PNG): a ROI, or a Dedup box fed by a detector target
     (the box the detector found). 404 when the detector found no box on this picture."""
     path = frame_path(camera, frame)
-    spec = anchor.get_anchor(camera, feature)
-    if spec and anchor.group_slots(camera, spec):  # all numbered boxes of one target, side by side
-        entries = anchor.group_entries(camera, spec, labels.hash_map(camera).get(path.name, ""))
-        if entries is None:
-            raise HTTPException(status_code=404, detail="The detector found no anchor on this picture.")
-        token = hash((anchor.frame_key(spec, {"group": entries}), anchor.rule_key(spec, camera)))
-    else:
-        token = hash(_roi_tuple(camera, feature, path))  # raises 404 when there is no box on this picture
+    token = hash(_roi_tuple(camera, feature, path, frame))  # raises 404 when there is no box on this picture
     mtime = path.stat().st_mtime
     etag = f'"cutout-{mtime}-{token & 0xFFFFFFFF:x}"'
     if request.headers.get("if-none-match") == etag:
         return Response(status_code=304, headers={"ETag": etag, "Cache-Control": "no-cache"})
     try:
-        crop = engine.crop_for_frame(camera, feature, path)
+        crop = engine.crop_for_frame(camera, feature, path, frame)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     ok, buf = cv2.imencode(".png", crop)
     if not ok:
         raise HTTPException(status_code=415, detail=f"Cannot render the cutout of {frame}")
     return _cached(request, etag, buf.tobytes(), "image/png")
-
-
-def _group_thumb(camera: str, feature: str, path: Path, request: Request, variant: str, size: int) -> Response:
-    """Thumbnail of an anchor on all the numbered boxes of a target: the cut-outs side by side."""
-    frame_hash = labels.hash_map(camera).get(path.name, "")
-    spec = anchor.get_anchor(camera, feature)
-    entries = anchor.group_entries(camera, spec, frame_hash)
-    if entries is None:
-        raise HTTPException(status_code=404, detail="The detector found no anchor on this picture.")
-    key = anchor.frame_key(spec, {"group": entries})
-    etag = f'"g-{variant}-{size}-{path.stat().st_mtime}-{hash((key, anchor.rule_key(spec, camera))) & 0xFFFFFFFF:x}"'
-    if request.headers.get("if-none-match") == etag:
-        return Response(status_code=304, headers={"ETag": etag, "Cache-Control": "no-cache"})
-    try:
-        pil = thumbs.bgr_to_pil(engine.crop_for_frame(camera, feature, path)).convert("RGB")
-        if variant == "square":
-            side = min(pil.width, pil.height)
-            left, top = (pil.width - side) // 2, (pil.height - side) // 2
-            pil = pil.crop((left, top, left + side, top + side)).resize((size, size))
-        elif pil.width > thumbs.THUMB_WIDTH:
-            pil = pil.resize((thumbs.THUMB_WIDTH, max(1, int(pil.height * thumbs.THUMB_WIDTH / pil.width))))
-        buf = io.BytesIO()
-        pil.save(buf, format="JPEG", quality=thumbs.THUMB_JPEG_QUALITY)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="The detector found no anchor on this picture.") from exc
-    except Exception as exc:  # noqa: BLE001 - unreadable image
-        raise HTTPException(status_code=415, detail=f"Cannot render thumbnail: {exc}") from exc
-    return _cached(request, etag, buf.getvalue(), "image/jpeg")
 
 
 @router.get("/cameras/{camera}/frames/{frame}/thumb")
@@ -182,10 +149,7 @@ def frame_thumb(
         raise HTTPException(status_code=422, detail="variant must be 'cutout' or 'square'")
     if not 16 <= size <= 512:
         raise HTTPException(status_code=422, detail="size must be between 16 and 512")
-    spec = anchor.get_anchor(camera, feature) if feature else None
-    if spec and anchor.group_slots(camera, spec):
-        return _group_thumb(camera, feature, path, request, variant, size)
-    roi_tuple = _roi_tuple(camera, feature, path)
+    roi_tuple = _roi_tuple(camera, feature, path, frame)
     mtime = path.stat().st_mtime
     etag = f'"{variant}-{size}-{mtime}-{hash(roi_tuple) & 0xFFFFFFFF:x}"'
     if request.headers.get("if-none-match") == etag:

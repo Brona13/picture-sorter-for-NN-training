@@ -18,6 +18,7 @@ import time
 from pathlib import Path
 
 import datamodel
+import samples
 import db
 import labels
 
@@ -352,7 +353,7 @@ def export(camera: str, version_id: int) -> tuple[Path, dict]:
         if item["kind"] != "verdict" or item["frame"] in seen:
             continue
         seen.add(item["frame"])
-        src = datamodel.unsorted_dir(camera) / item["frame"]
+        src = datamodel.unsorted_dir(camera) / samples.file_of(item["frame"])
         if not src.exists():
             report["missing"].append(item["frame"])
             continue

@@ -48,6 +48,7 @@ import engine
 import labels
 import methods_config
 import perf
+import samples
 import vision_settings
 
 
@@ -251,20 +252,14 @@ def _prepare_vector_cache(
         """Load, cut and compute the classical features of one picture. Touches nothing shared, so it runs in a worker
         thread while the neural network works on the previous group (None: the picture has no ROI picture)."""
         try:
-            img = roi_input.edited(camera, feature, curation.load_image(datamodel.unsorted_dir(camera) / frame), frame)
+            file = samples.file_of(frame)  # a sample of a target with several elements (``part.png#2``) is cut from its file
+            img = roi_input.edited(camera, feature, curation.load_image(datamodel.unsorted_dir(camera) / file), file)
             frame_roi = roi
-            entry = frame_entries.get(frame)
-            if entry and "group" in entry:  # all numbered boxes of one target: side by side, one input
-                together = anchor.group_crop(spec, entry["group"], roi.name, img)
-                if together is None:
+            if frame in frame_entries:
+                frame_roi = anchor.rect_for(spec, frame_entries[frame], roi.name, img.shape[1], img.shape[0])
+                if frame_roi is None:  # the rectangle lies outside this picture
                     raise FileNotFoundError(frame)
-                cutout = vision_settings.apply_settings(vision, together, frame_offsets.get(frame))
-            else:
-                if entry:
-                    frame_roi = anchor.rect_for(spec, entry, roi.name, img.shape[1], img.shape[0])
-                    if frame_roi is None:  # the rectangle lies outside this picture
-                        raise FileNotFoundError(frame)
-                cutout = vision_settings.apply_settings(vision, frame_roi.crop(img), frame_offsets.get(frame))
+            cutout = vision_settings.apply_settings(vision, frame_roi.crop(img), frame_offsets.get(frame))
         except FileNotFoundError:
             return None
         missing = missing_by_frame[frame]

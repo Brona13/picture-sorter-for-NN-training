@@ -1,3 +1,4 @@
+import { sampleLabel } from "../samples";
 import { ReactNode, useEffect, useRef, useState } from "react";
 import { api, flowPictureUrl, frameCutoutUrl, FlowEdit, RoiInfo } from "../api";
 import FramePane from "./FramePane";
@@ -145,7 +146,7 @@ export default function FrameViewer({ camera, feature, pictureFeature, frames, s
     <PictureViewer
       label="Full-size picture"
       testId="frame-viewer"
-      name={frame}
+      name={sampleLabel(frame)}
       index={index}
       total={frames.length}
       onGo={go}

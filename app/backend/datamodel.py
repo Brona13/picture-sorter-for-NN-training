@@ -19,6 +19,7 @@ from typing import Callable, Iterator, TypeVar
 import config
 import db
 import perf
+import samples
 from roi import ROI
 
 
@@ -344,7 +345,7 @@ def frames_for_feature(camera: str, feature: str) -> list[str]:
     def load():
         product = split_feature(feature)[0]
         if product:
-            return frames_of_product(camera, product)
+            return _as_samples(camera, feature, frames_of_product(camera, product))
 
         shared = feature_products(camera, feature)
         if shared:
@@ -352,14 +353,35 @@ def frames_for_feature(camera: str, feature: str) -> list[str]:
             for selected_product in shared:
                 allowed.update(frames_of_product(camera, selected_product))
             # keep the inbox order rather than the products' order
-            return [
+            return _as_samples(camera, feature, [
                 frame for frame in frames_of_product(camera, None)
                 if frame in allowed
-            ]
+            ])
 
-        return frames_of_product(camera, None)
+        return _as_samples(camera, feature, frames_of_product(camera, None))
 
     return _snapshot_value(("feature_frames", camera, feature), load)
+
+
+def _as_samples(camera: str, feature: str, files: list[str]) -> list[str]:
+    """A Classifier anchored on a detector target that looks for several elements works on one sample per found box
+    (``part.png#2``, see ``samples.py``) instead of one per picture; every other feature keeps its pictures."""
+    import anchor  # noqa: PLC0415  (anchor imports this module)
+    import flow  # noqa: PLC0415
+
+    if feature == config.WHOLE_FRAME_FEATURE or feature.startswith("dedup:"):
+        return files
+    spec = anchor.get_anchor(camera, feature)
+    slots = anchor.group_slots(camera, spec) if spec else None
+    if not slots:
+        return files
+    stored = flow.load_stored(camera, spec["detector"])["frames"]
+    hashes = db.frame_hash_map(camera)
+    out: list[str] = []
+    for frame in files:
+        found = stored.get(hashes.get(frame, ""), {})
+        out.extend(samples.make(frame, i) for i, slot in enumerate(slots, 1) if slot in found)
+    return out
 
 
 def ensure_camera_dirs(camera: str) -> None:

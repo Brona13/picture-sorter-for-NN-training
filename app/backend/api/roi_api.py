@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import anchor
 import roi_input
+import samples
 import config
 import datamodel
 import db
@@ -250,7 +251,7 @@ def roi_rect(camera: str, feature: str, frame: str) -> dict:
     else:
         _require_roi(camera, feature)
         extra = {}
-    path = datamodel.unsorted_dir(camera) / frame
+    path = datamodel.unsorted_dir(camera) / samples.file_of(frame)  # a sample of a target with several elements: its file
     if not path.is_file():
         raise HTTPException(status_code=404, detail=f"Unknown frame: {frame}")
     spec = anchor.get_anchor(camera, feature)

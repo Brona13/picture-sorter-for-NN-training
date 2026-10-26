@@ -1,3 +1,4 @@
+import { sampleLabel } from "../samples";
 import { CardData, frameImageUrl } from "../api";
 import { methodTag } from "../methodTags";
 import { classColor, clusterColor } from "./colors";
@@ -134,7 +135,7 @@ export default function Card({ camera, feature, pictureFeature, classes, methods
         const img = (
           <img
             src={thumbUrl(camera, frame, pictureFeature ?? feature)}
-            alt={frame}
+            alt={sampleLabel(frame)}
             loading="lazy"
             style={{ width: "100%", display: "block", borderRadius: 4, opacity: deleted ? 0.5 : 1 }}
           />

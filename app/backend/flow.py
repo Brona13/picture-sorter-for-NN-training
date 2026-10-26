@@ -1193,6 +1193,7 @@ def load_stored(camera: str, node_id: str) -> dict:
 
 def _store(camera: str, node_id: str, sig: str | None, frames: dict) -> None:
     db.set_setting(camera, _results_key(node_id), json.dumps({"sig": sig, "frames": frames}))
+    datamodel.invalidate_product_membership(camera)  # a Classifier on this detector's boxes has one picture per found box
 
 
 def _drop_results(camera: str, node_id: str) -> None:
@@ -1202,6 +1203,7 @@ def _drop_results(camera: str, node_id: str) -> None:
         con.commit()
     finally:
         con.close()
+    datamodel.invalidate_product_membership(camera)
 
 
 def status(camera: str, node_id: str, graph: dict | None = None) -> str:

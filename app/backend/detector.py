@@ -20,6 +20,7 @@ import cv2
 import numpy as np
 
 import datamodel
+import samples
 import detections
 import engine
 import labels
@@ -288,7 +289,7 @@ def _get_backend(method: str = "model") -> Backend:
 
 def _filtered_crop(camera: str, feature: str, frame: str, settings: dict) -> np.ndarray:
     """The frame's ROI crop with the feature's pre-processing filter (never the mask)."""
-    crop = engine.crop_for_frame(camera, feature, datamodel.unsorted_dir(camera) / frame)
+    crop = engine.crop_for_frame(camera, feature, datamodel.unsorted_dir(camera) / samples.file_of(frame), frame)
     flt = settings["filter"]
     return preprocess.apply(crop, flt["name"], flt["params"]) if flt else crop
 

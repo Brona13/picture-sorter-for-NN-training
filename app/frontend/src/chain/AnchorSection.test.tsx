@@ -59,9 +59,9 @@ test("by default the ROI is the found box with a margin; no example picture is n
 test("a target that looks for several elements can be used with all its boxes together (the found boxes only)", async () => {
   const pair = { ...detector, flow: { targets: ["hole 1", "hole 2", "notch"], groups: ["hole"] } } as ChainNode;
   render(<AnchorSection camera="camA" roi={roi} detectors={[pair]} onChanged={() => {}} onError={() => {}} />);
-  expect(screen.getByRole("option", { name: "hole (all boxes together)" })).toBeInTheDocument();
+  expect(screen.getByRole("option", { name: "hole (each box a picture)" })).toBeInTheDocument();
   expect(screen.getByLabelText(/my own rectangle/)).toBeDisabled();
-  expect(screen.getByText(/put side by side/)).toBeInTheDocument();
+  expect(screen.getByText(/its own picture/)).toBeInTheDocument();
   await userEvent.click(screen.getByRole("button", { name: "Set anchor" }));
   await waitFor(() => expect(calls.some((c) => c.method === "PUT")).toBe(true));
   expect(calls.find((c) => c.method === "PUT")!.body).toEqual({ detector: "det:1", target: "hole", mode: "box", margin: 0.1 });

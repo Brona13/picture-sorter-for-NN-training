@@ -102,7 +102,7 @@ class CountTests(ApiTestCase):
 
 
 class CountClassifierTests(CountTests):
-    """A Classifier anchored on a target with several elements gets all its boxes side by side as one input."""
+    """A Classifier anchored on a target with several elements works on one sample per found box (``two.png#1``)."""
 
     test_one_element_is_the_default_and_keeps_the_plain_name = None  # inherited tests of the single-element setup
     test_changing_how_many_makes_the_detector_stale = None
@@ -121,28 +121,47 @@ class CountClassifierTests(CountTests):
     def anchor(self, target: str, mode: str = "box", **more):
         return self.client.put(f"/api/cameras/{CAM}/rois/pair/anchor", json={"detector": self.det, "target": target, "mode": mode, **more})
 
-    def test_the_plain_name_anchors_on_both_boxes_and_the_cutout_is_both_side_by_side(self) -> None:
-        import anchor
-        import engine
-
+    def test_each_found_box_is_its_own_picture_of_the_classifier(self) -> None:
         self.assertEqual(self.anchor("hole", margin=0.0).status_code, 200)
-        spec = anchor.get_anchor(CAM, "pair")
-        self.assertEqual(anchor.group_slots(CAM, spec), ["hole 1", "hole 2"])
-        crop = engine.crop_for_frame(CAM, "pair", datamodel.unsorted_dir(CAM) / "two.png")
-        self.assertAlmostEqual(crop.shape[1], 80, delta=4)  # two 40 px boxes next to each other
-        self.assertAlmostEqual(crop.shape[0], 40, delta=4)
-        thumb = self.client.get(f"/api/cameras/{CAM}/frames/two.png/thumb", params={"feature": "pair"})
-        self.assertEqual(thumb.status_code, 200)
-        self.assertEqual(self.client.get(f"/api/cameras/{CAM}/frames/two.png/cutout", params={"feature": "pair"}).status_code, 200)
+        self.assertEqual(datamodel.frames_for_feature(CAM, "pair"), ["two.png#1", "two.png#2"])
+        # the whole picture is not a picture of this Classifier, and other features still see the files
+        self.assertEqual(datamodel.frames_for_feature(CAM, "whole-frame"), ["two.png"])
 
-    def test_one_numbered_box_still_anchors_on_that_box_alone(self) -> None:
-        import anchor
+    def test_the_cutout_and_the_thumbnail_of_a_sample_are_that_box_alone(self) -> None:
         import engine
 
+        self.anchor("hole", margin=0.0)
+        left = engine.crop_for_frame(CAM, "pair", datamodel.unsorted_dir(CAM) / "two.png", "two.png#1")
+        right = engine.crop_for_frame(CAM, "pair", datamodel.unsorted_dir(CAM) / "two.png", "two.png#2")
+        self.assertAlmostEqual(left.shape[1], 40, delta=4)
+        self.assertAlmostEqual(right.shape[1], 40, delta=4)
+        thumbs = [self.client.get(f"/api/cameras/{CAM}/frames/{f}/thumb", params={"feature": "pair"}) for f in ("two.png%231", "two.png%232")]
+        self.assertEqual([t.status_code for t in thumbs], [200, 200])
+        cut = self.client.get(f"/api/cameras/{CAM}/frames/two.png%232/cutout", params={"feature": "pair"})
+        self.assertEqual(cut.status_code, 200)
+        self.assertEqual(self.client.get(f"/api/cameras/{CAM}/frames/two.png%232/image").status_code, 200)
+
+    def test_the_viewer_gets_the_rectangle_of_that_box(self) -> None:
+        self.anchor("hole", margin=0.0)
+        one = self.client.get(f"/api/cameras/{CAM}/rois/pair/rect", params={"frame": "two.png#1"}).json()
+        two = self.client.get(f"/api/cameras/{CAM}/rois/pair/rect", params={"frame": "two.png#2"}).json()
+        self.assertTrue(one["anchored"])
+        self.assertLess(one["rect"]["x"], two["rect"]["x"])
+        self.assertAlmostEqual(one["rect"]["w"] * 280, 40, delta=4)
+
+    def test_every_sample_has_its_own_label(self) -> None:
+        import labels
+
+        self.anchor("hole", margin=0.0)
+        labels.set_label(CAM, "pair", "two.png#1", "OK")
+        labels.set_label(CAM, "pair", "two.png#2", "NG")
+        self.assertEqual(labels.current_labels(CAM, "pair"), {"two.png#1": "OK", "two.png#2": "NG"})
+        hashes = labels.hash_map(CAM)
+        self.assertEqual(hashes["two.png#2"], hashes["two.png"] + "#2")
+
+    def test_one_numbered_box_is_only_that_sample(self) -> None:
         self.assertEqual(self.anchor("hole 2", margin=0.0).status_code, 200)
-        self.assertIsNone(anchor.group_slots(CAM, anchor.get_anchor(CAM, "pair")))
-        crop = engine.crop_for_frame(CAM, "pair", datamodel.unsorted_dir(CAM) / "two.png")
-        self.assertAlmostEqual(crop.shape[1], 40, delta=4)
+        self.assertEqual(datamodel.frames_for_feature(CAM, "pair"), ["two.png"])
 
     def test_a_rectangle_of_your_own_needs_one_numbered_box(self) -> None:
         refused = self.anchor("hole", mode="rect", frame="two.png")
@@ -155,19 +174,18 @@ class CountClassifierTests(CountTests):
         self.assertEqual(refused.status_code, 422)
         self.assertIn("pair", refused.text)
 
-    def test_a_picture_where_one_box_is_missing_has_no_input(self) -> None:
-        import anchor
-
-        self.anchor("hole", margin=0.0)
-        source = anchor.Source(CAM, anchor.get_anchor(CAM, "pair"))
+    def test_a_missing_box_is_a_missing_sample(self) -> None:
+        import flow
         import labels
 
+        self.anchor("hole", margin=0.0)
+        stored = flow.load_stored(CAM, self.det)
         key = labels.hash_map(CAM)["two.png"]
-        self.assertIsNotNone(source.entry(key))
-        source.frames[key].pop("hole 2")
-        self.assertIsNone(source.entry(key))
+        stored["frames"][key].pop("hole 2")
+        flow._store(CAM, self.det, stored["sig"], stored["frames"])
+        self.assertEqual(datamodel.frames_for_feature(CAM, "pair"), ["two.png#1"])
 
-    def test_the_classifier_vectors_are_made_from_both_boxes_together(self) -> None:
+    def test_the_classifier_vectors_are_made_from_each_box_alone(self) -> None:
         import classify
         import db
         import engine
@@ -177,12 +195,11 @@ class CountClassifierTests(CountTests):
         con = db.connect()
         try:
             roi = engine.resolve_roi(CAM, "pair")
-            vectors = classify.fetch_vectors(con, CAM, "pair", classify._roi_cache_key(roi, CAM, "pair", con), roi, ["two.png"],
+            vectors = classify.fetch_vectors(con, CAM, "pair", classify._roi_cache_key(roi, CAM, "pair", con), roi, ["two.png#1", "two.png#2"],
                                              labels.hash_map(CAM), [], include_classical=True)
         finally:
             con.close()
-        self.assertIn("two.png", vectors)
-        self.assertIn("hist", vectors["two.png"])
+        self.assertEqual(sorted(vectors), ["two.png#1", "two.png#2"])
 
     def test_the_chain_draws_an_arrow_from_each_numbered_dot_to_the_classifier(self) -> None:
         self.anchor("hole", margin=0.0)

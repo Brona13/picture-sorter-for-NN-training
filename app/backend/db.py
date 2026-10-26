@@ -17,6 +17,7 @@ from pathlib import Path
 
 import config
 import perf
+import samples
 
 
 SCHEMA_VERSION = 10
@@ -866,7 +867,7 @@ def frame_hash_map(camera: str) -> dict[str, str]:
         rows = con.execute(
             "SELECT filename,hash FROM frames WHERE camera=?", (camera,)
         ).fetchall()
-        return {row["filename"]: row["hash"] for row in rows}
+        return samples.HashMap({row["filename"]: row["hash"] for row in rows})  # also answers for sample ids
     finally:
         con.close()
 
@@ -935,12 +936,15 @@ def set_frame_sizes(camera: str, sizes: dict[str, tuple[int, int]]) -> None:
 
 
 def frame_hash_for(camera: str, filename: str) -> str | None:
+    file, number = samples.split(filename)
     con = connect()
     try:
         row = con.execute(
-            "SELECT hash FROM frames WHERE camera=? AND filename=?", (camera, filename)
+            "SELECT hash FROM frames WHERE camera=? AND filename=?", (camera, file)
         ).fetchone()
-        return row["hash"] if row else None
+        if not row:
+            return None
+        return row["hash"] if number is None else f"{row['hash']}#{number}"
     finally:
         con.close()
 
