@@ -26,6 +26,27 @@ class IngestApiTests(ApiTestCase):
         self.assertIn("My-Cam-1", self.client.get("/api/cameras").json())
         self.assertEqual(self.client.post("/api/cameras", json={"name": " ../ "}).status_code, 422)
 
+    def test_creating_a_camera_with_an_existing_name_is_refused_and_leftover_rows_do_not_show_up(self) -> None:
+        import shutil
+
+        import config
+        import datamodel
+        import db
+
+        self.assertEqual(self.client.post("/api/cameras", json={"name": "camX"}).status_code, 201)
+        self.assertEqual(self.client.post("/api/cameras", json={"name": "camX"}).status_code, 409)
+        self.assertEqual(self.client.post("/api/cameras", json={"name": " cam X"}).status_code, 201)  # another name: cam-X
+        # a camera whose folder was deleted by hand leaves its picture rows behind
+        con = db.connect()
+        con.execute("INSERT INTO frames(camera,hash,filename,orig_name,created) VALUES(?,?,?,?,?)", ("camY", "h1", "old.png", "old.png", 1.0))
+        con.commit()
+        con.close()
+        self.assertEqual(db.frame_index_count("camY"), 1)
+        self.assertNotIn("camY", datamodel.list_cameras())
+        self.assertEqual(self.client.post("/api/cameras", json={"name": "camY"}).status_code, 201)
+        self.assertEqual(self.client.get("/api/cameras/camY/ingest/frames").json()["frames"], [])
+        shutil.rmtree(config.CAMERAS_ROOT / "camY", ignore_errors=True)
+
     def test_upload_adds_frames_and_reports_progress(self) -> None:
         job = self.upload([("a.png", png_bytes(1)), ("b.png", png_bytes(2))])
         self.assertEqual(job["status"], "done", job)

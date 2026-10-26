@@ -56,6 +56,9 @@ def create_camera(body: CameraRequest) -> dict:
         cleaned = camera_tags.clean(body.tags)
     except camera_tags.TagError as e:
         raise HTTPException(status_code=422, detail=str(e))
+    if name in datamodel.list_cameras():
+        raise HTTPException(status_code=409, detail=f"A camera named {name} already exists (spaces and special characters in a name become \"-\"). Choose another name.")
+    db.delete_camera_rows(name)  # leftovers of a camera whose folder was removed outside the app: a new camera starts empty
     datamodel.ensure_camera_dirs(name)
     if cleaned:
         camera_tags.set_tags(name, cleaned)
