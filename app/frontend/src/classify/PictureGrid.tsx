@@ -29,6 +29,7 @@ export interface GridExtras {
 export default function PictureGrid({
   camera,
   feature,
+  pictureFeature,
   classes,
   methods = [],
   frames,
@@ -49,6 +50,8 @@ export default function PictureGrid({
 }: {
   camera: string;
   feature: string;
+  /** Cutout the cards show, when it differs from the feature labels go to (a Dedup box fed by a detector target). */
+  pictureFeature?: string;
   classes: string[];
   methods?: string[];
   /** The frames to show, in order, already filtered. */
@@ -149,6 +152,7 @@ export default function PictureGrid({
             <Card
               camera={camera}
               feature={feature}
+              pictureFeature={pictureFeature}
               classes={classes}
               methods={methods}
               card={cardAt(f)}

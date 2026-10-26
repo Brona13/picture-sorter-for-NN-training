@@ -10,6 +10,7 @@ import grid_sizes
 import dataclasses
 import threading
 
+import anchor
 import datamodel
 import db
 import dedup
@@ -226,6 +227,11 @@ def box_frames(camera: str, feature: str) -> dict:
     """The pictures a Dedup box sees (for its Grid), which of them it muted, and the labels of the Classifier it reads."""
     require_box(camera, feature)
     frames = dedup.live_frames(camera, feature)
+    spec = anchor.get_anchor(camera, feature)
+    if spec:  # a box fed by one target of a detector shows that target's box: a picture with none has no card
+        source = anchor.Source(camera, spec)
+        hashes = labels.hash_map(camera)
+        frames = [f for f in frames if source.entry(hashes.get(f, "")) is not None]
     own = db.muted_frames(camera, feature)
     return {
         "frames": frames,

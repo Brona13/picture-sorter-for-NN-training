@@ -86,6 +86,21 @@ class DetectorToDedupTests(ApiTestCase):
         with self.assertRaises(flow.FlowError):
             flow.connect(self.cam, self.det, self.box)
 
+    def test_the_grid_lists_and_cuts_only_the_pictures_where_the_detector_found_the_target(self) -> None:
+        import labels as lab
+        base = f"/api/cameras/{self.cam}"
+        names = [p.name for p in datamodel.list_unsorted(self.cam)]
+        flow.add_target(self.cam, self.det, "T")
+        flow.connect(self.cam, self.det, self.box, point="T")
+        self.assertEqual(self.client.get(f"{base}/dedup/frames", params={"feature": self.box}).json()["frames"], [])  # nothing found yet
+        hashes = lab.hash_map(self.cam)
+        found = {"x": 10.0, "y": 10.0, "angle": 0.0, "score": 1.0, "w": 8, "h": 8, "source": "auto"}
+        flow._store(self.cam, self.det, flow.signature(flow.load_graph(self.cam), self.det), {hashes[names[0]]: {"T": found}, hashes[names[1]]: {"T": found}})
+        shown = self.client.get(f"{base}/dedup/frames", params={"feature": self.box}).json()["frames"]
+        self.assertEqual(sorted(shown), sorted(names[:2]))
+        self.assertEqual(self.client.get(f"{base}/frames/{names[0]}/thumb", params={"feature": self.box}).status_code, 200)
+        self.assertEqual(self.client.get(f"{base}/frames/{names[2]}/thumb", params={"feature": self.box}).status_code, 404)
+
     def test_a_box_with_no_detector_line_has_no_anchor(self) -> None:
         import anchor
         self.assertIsNone(anchor.get_anchor(self.cam, self.box))

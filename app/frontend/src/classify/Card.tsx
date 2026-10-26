@@ -7,6 +7,8 @@ import { useGridCard } from "./useGridCard";
 interface Props {
   camera: string;
   feature: string;
+  /** The feature whose cutout the picture shows, when it is not the one labels go to (a Dedup box fed by a detector target). */
+  pictureFeature?: string;
   classes: string[];
   methods: string[];
   card: CardData;
@@ -51,7 +53,7 @@ const badge = (bg: string): React.CSSProperties => ({
  */
 export const MAX_SHORTCUT_CLASSES = 9;
 
-export default function Card({ camera, feature, classes, methods, card, busy, onLabel, onGolden, onDelete, onRestore, canRestore = true, isRep, onSetRep, fullSize, onOpen, caption, onSimilar }: Props) {
+export default function Card({ camera, feature, pictureFeature, classes, methods, card, busy, onLabel, onGolden, onDelete, onRestore, canRestore = true, isRep, onSetRep, fullSize, onOpen, caption, onSimilar }: Props) {
   const { frame, label, golden, deleted, bars, leanings, cluster, edge, measure } = card;
   // Search results only: a picture outside this ROI's scope gets a red frame and cannot be labeled here until its
   // product fits (open it to change the product); a muted one gets a dark grey dashed frame.
@@ -131,7 +133,7 @@ export default function Card({ camera, feature, classes, methods, card, busy, on
       {(() => {
         const img = (
           <img
-            src={thumbUrl(camera, frame, feature)}
+            src={thumbUrl(camera, frame, pictureFeature ?? feature)}
             alt={frame}
             loading="lazy"
             style={{ width: "100%", display: "block", borderRadius: 4, opacity: deleted ? 0.5 : 1 }}

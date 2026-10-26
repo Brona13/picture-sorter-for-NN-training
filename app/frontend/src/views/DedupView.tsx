@@ -383,6 +383,7 @@ export default function DedupView({
             <PictureGrid
               camera={camera}
               feature={act}
+              pictureFeature={feature}
               classes={gridData.classes}
               frames={shownFrames}
               cardOf={cardOf}
