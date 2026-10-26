@@ -13,18 +13,19 @@ export default function LogView({ camera }: { camera: string }) {
   const [source, setSource] = useState("");
   const [thisCamera, setThisCamera] = useState(false);
   const [requestId, setRequestId] = useState("");
+  const [sinceRestart, setSinceRestart] = useState(false);
   const [open, setOpen] = useState<number | null>(null);
   const [version, setVersion] = useState("");
 
   const load = useCallback(() => {
     api
-      .logs({ level, source, camera: thisCamera ? camera : "", request_id: requestId.trim(), limit: 300 })
+      .logs({ level, source, camera: thisCamera ? camera : "", request_id: requestId.trim(), since_restart: sinceRestart || undefined, limit: 300 })
       .then((r) => {
         setRecords(r);
         setError(null);
       })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
-  }, [level, source, thisCamera, camera, requestId]);
+  }, [level, source, thisCamera, camera, requestId, sinceRestart]);
 
   useEffect(load, [load]);
   useEffect(() => {
@@ -54,6 +55,9 @@ export default function LogView({ camera }: { camera: string }) {
         </label>
         <label>
           <input type="checkbox" checked={thisCamera} onChange={(e) => setThisCamera(e.target.checked)} disabled={!camera} /> only {camera || "this camera"}
+        </label>
+        <label title="Only what was recorded after the backend was last started">
+          <input type="checkbox" checked={sinceRestart} onChange={(e) => setSinceRestart(e.target.checked)} /> since app restart
         </label>
         <label>
           Request id <input value={requestId} onChange={(e) => setRequestId(e.target.value)} size={14} />

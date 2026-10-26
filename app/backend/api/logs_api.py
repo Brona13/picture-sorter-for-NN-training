@@ -48,6 +48,7 @@ def report(batch: ClientBatch) -> dict[str, int]:
 
 @router.get("/logs")
 def read(level: str | None = None, source: str | None = None, camera: str | None = None,
-         request_id: str | None = None, limit: int = 200) -> list[dict[str, Any]]:
+         request_id: str | None = None, since_restart: bool = False, limit: int = 200) -> list[dict[str, Any]]:
     applog.flush()
-    return applog.query(level=level, source=source, camera_name=camera, request=request_id, limit=limit)
+    return applog.query(level=level, source=source, camera_name=camera, request=request_id,
+                        since=applog.STARTED if since_restart else None, limit=limit)

@@ -60,6 +60,9 @@ CREATE INDEX IF NOT EXISTS logs_request ON logs (request_id);
 _COLUMNS = ("ts", "level", "source", "logger", "message", "request_id", "camera", "job_id", "duration_ms", "exc", "extra", "audit")
 
 
+STARTED = time.time()  # when this backend process started: the log view can show only what happened since
+
+
 def get(name: str) -> logging.Logger:
     """The logger of one module/area, e.g. ``applog.get("jobs")``."""
     return logging.getLogger(f"{ROOT}.{name}")

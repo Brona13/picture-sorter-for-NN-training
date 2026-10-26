@@ -28,6 +28,22 @@ class LogTests(ApiTestCase):
         applog.flush()
         return applog.query(self.dir, **kw)
 
+    def test_since_restart_leaves_out_records_from_before_the_backend_started(self) -> None:
+        import sqlite3
+        applog.get("t").error("old one")
+        applog.flush()
+        c = sqlite3.connect(self.dir / "logs.db")
+        c.execute("UPDATE logs SET ts = ?", (applog.STARTED - 100,))
+        c.commit()
+        c.close()
+        applog.get("t").error("new one")
+        applog.flush()
+        shown = [r["message"] for r in self.client.get("/api/logs", params={"level": "ERROR", "since_restart": "true"}).json()]
+        self.assertIn("new one", shown)
+        self.assertNotIn("old one", shown)
+        everything = [r["message"] for r in self.client.get("/api/logs", params={"level": "ERROR"}).json()]
+        self.assertIn("old one", everything)
+
     def test_nothing_is_written_before_setup_and_the_real_data_dir_is_untouched(self) -> None:
         applog.shutdown()
         applog.get("x").error("nobody listens")

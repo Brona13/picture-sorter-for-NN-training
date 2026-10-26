@@ -73,6 +73,7 @@ export interface LogQuery {
   source?: string;
   camera?: string;
   request_id?: string;
+  since_restart?: boolean;
   limit?: number;
 }
 

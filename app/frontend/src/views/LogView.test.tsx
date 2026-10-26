@@ -27,6 +27,15 @@ test("lists records, filters by level and request id through the query", async (
   await waitFor(() => expect(fetchMock.mock.calls.some(([u]) => String(u).includes("camera=camA"))).toBe(true));
 });
 
+test("'since app restart' asks the backend for only what was recorded after it started", async () => {
+  const fetchMock = stub([rec(1)]);
+  render(<LogView camera="camA" />);
+  await screen.findByText("msg 1");
+  expect(fetchMock.mock.calls.some(([u]) => String(u).includes("since_restart"))).toBe(false);
+  await userEvent.click(screen.getByLabelText(/since app restart/));
+  await waitFor(() => expect(fetchMock.mock.calls.some(([u]) => String(u).includes("since_restart=true"))).toBe(true));
+});
+
 test("a record opens to its traceback", async () => {
   stub([rec(1)]);
   render(<LogView camera="camA" />);
