@@ -157,6 +157,17 @@ test("a detector target's dot dropped on an ROI feature anchors it; the main han
   expect(isAnchorEdge(flowCanvas, { id: "e", source: "ingest", source_handle: null, target: "roi:seal", locked: false })).toBe(false);
 });
 
+test("the '(all)' dot of a target that looks for several elements anchors a Classifier on all its boxes, and feeds nothing else", async () => {
+  const { targetHandle } = await import("./chainModel");
+  const many: ChainCanvas = {
+    ...flowCanvas,
+    nodes: flowCanvas.nodes.map((n) => (n.id === "det:1" ? { ...n, flow: { targets: ["hole 1", "hole 2"], groups: ["hole"] } } : n)),
+  };
+  expect(flowConnect(many, { source: "det:1", sourceHandle: targetHandle("hole"), target: "roi:seal" })).toEqual({ anchor: { feature: "seal", detector: "det:1", target: "hole" } });
+  expect(flowConnect(many, { source: "det:1", sourceHandle: targetHandle("hole 2"), target: "roi:seal" })).toEqual({ anchor: { feature: "seal", detector: "det:1", target: "hole 2" } });
+  expect(flowConnect(many, { source: "det:1", sourceHandle: targetHandle("hole"), target: "calc:1" })).toEqual({ error: expect.stringContaining("only feed a Classifier") });
+});
+
 test("flowConnect: Ingest or a Crop feeds a Crop or a detector; nothing feeds Ingest, a Crop is not fed by a detector", () => {
   const withCrop: ChainCanvas = { ...flowCanvas, nodes: [...flowCanvas.nodes, node({ id: "crop:1", kind: "crop", ref: null, role: null, scope: null, label: "Crop 1" }), node({ id: "crop:2", kind: "crop", ref: null, role: null, scope: null, label: "Crop 2" })] };
   for (const [s, t] of [["ingest", "crop:1"], ["crop:1", "crop:2"], ["crop:2", "det:1"], ["crop:1", "det:2"]]) {

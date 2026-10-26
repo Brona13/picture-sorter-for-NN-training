@@ -95,6 +95,13 @@ function Box({ data, selected }: NodeProps<BoxNode>) {
         </>
       )}
       {node.kind === "detector" &&
+        (node.flow?.groups ?? []).map((group) => (
+          <div className="chain-node-product chain-node-target" key={`group:${group}`} title={`Drag this dot onto a Classifier: it reads all the boxes found for ${group} together, side by side, as one picture`}>
+            {group} (all)
+            <Handle type="source" position={Position.Right} id={targetHandle(group)} />
+          </div>
+        ))}
+      {node.kind === "detector" &&
         (node.flow?.targets ?? []).map((target) => (
           <div className="chain-node-product chain-node-target" key={target} title={`Drag this dot onto a Classifier (it reads the box found for ${target}), a Dedup box, a Picture edits box or Calculate (a point)`}>
             {target}
