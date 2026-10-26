@@ -14,6 +14,18 @@ const PHASE_LABELS: Record<string, string> = {
   persistence: "Committing the SQLite frame catalog…",
 };
 
+/** Share of the whole ingest done (0..1), or null while the number of pictures is not known (scanning).
+ *  The backend's `done`/`total` describe only the picture in hand (its bytes while hashing), so the bar uses
+ *  `file_index` / `file_total` and adds the share of the current picture. */
+export function overallShare(p: Record<string, unknown>): number | null {
+  const count = Number(p.file_total ?? 0);
+  const index = Number(p.file_index ?? 0);
+  if (!(count > 0) || !(index > 0)) return null;
+  const phase = String(p.phase ?? "");
+  const within = phase === "hashing" || phase === "copying" ? (Number(p.total) > 0 ? Math.min(1, Number(p.done ?? 0) / Number(p.total)) : 0) : 1;
+  return Math.min(1, (index - 1 + within) / count);
+}
+
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const ACCEPT = ".jpg,.jpeg,.png,.bmp,.tif,.tiff,.webp";
 
@@ -103,8 +115,7 @@ export default function IngestView({ camera, onBack }: Props) {
   const p = job?.progress ?? {};
   const phase = String(p.phase ?? "");
   const label = PHASE_LABELS[phase] ?? (phase ? phase.replace(/_/g, " ") : "Queued…");
-  const done = Number(p.done ?? 0);
-  const total = Number(p.total ?? 0);
+  const share = overallShare(p);
   const latest = pictures && pictures.length ? timeOf(Math.max(...pictures.map((f) => f.created))) : null;
 
   return (
@@ -152,7 +163,7 @@ export default function IngestView({ camera, onBack }: Props) {
         <div aria-live="polite">
           {running && (
             <p>
-              <progress value={done} max={total || undefined} /> {label}
+              <progress value={share ?? undefined} max={share === null ? undefined : 1} /> {label}
               {p.detail ? ` · ${String(p.detail)}` : ""}
               {Number(p.added) || Number(p.skipped) || Number(p.errors)
                 ? ` · added ${Number(p.added)}, duplicates ${Number(p.skipped)}, errors ${Number(p.errors)}`

@@ -1,3 +1,4 @@
+import { overallShare } from "./IngestView";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
@@ -119,4 +120,14 @@ test("opened from the Chain it has a way back; opened from the menu it does not"
   render(<IngestView camera="camA" />);
   await screen.findByText("Frames in this camera: 7");
   expect(screen.queryByRole("button", { name: "← Back to chain" })).toBeNull();
+});
+
+
+test("the bar shows the share of the whole ingest, not of the picture in hand", () => {
+  expect(overallShare({ phase: "scanning" })).toBeNull();
+  expect(overallShare({ phase: "hashing", done: 0, total: 5000, file_index: 1, file_total: 1000 })).toBe(0);
+  expect(overallShare({ phase: "hashing", done: 2500, total: 5000, file_index: 431, file_total: 1000 })).toBeCloseTo(0.4305, 4);
+  expect(overallShare({ phase: "copying", done: 1, total: 1, file_index: 431, file_total: 1000 })).toBeCloseTo(0.431, 4);
+  expect(overallShare({ phase: "duplicate", done: 431, total: 1000, file_index: 431, file_total: 1000 })).toBeCloseTo(0.431, 4);
+  expect(overallShare({ phase: "persistence", done: 0, total: 0, file_index: 1000, file_total: 1000 })).toBe(1);
 });
