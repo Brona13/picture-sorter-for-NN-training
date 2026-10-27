@@ -60,6 +60,22 @@ Launch with `./run.sh` (see README). History: `plans/streamlit-to-react-fastapi-
 - Keep direct label/golden state transactionally consistent; deliberate history belongs in Versions.
 - When changing a domain invariant, update its canonical documentation and behavior tests in the same change.
 
+## Git and delivery: who does what
+
+- Claude works in a read-only clone in its own cloud session. It cannot push to this repo and does not need to say so or offer to.
+- Claude delivers a version-named `git format-patch` (one commit, applied with `git am`) for every change.
+- The user pulls, applies, commits and pushes himself, straight to `main`. Claude gives the git commands step by step and never pushes.
+- Docs-only changes ride along with the next code patch (no version bump of their own).
+
+What Claude delivers depends on the machine the user works on:
+
+| Machine | Frontend | Claude delivers |
+|---|---|---|
+| Home Linux workstation | npm installed; the user runs `./run.sh build`, then `./run.sh` | the patch only, no dist zip |
+| Work Windows laptop | no Node.js/npm | the patch plus `frontend-dist-vX.Y.Z.zip`, built by Claude, whenever frontend code changed (backend-only changes need no zip) |
+
+Ask which machine he is on if it is not clear. Per-machine details (proxy, SSH, paths) are in `docs/machines.md`.
+
 ## Context efficiency
 
 Do not scan these by default:

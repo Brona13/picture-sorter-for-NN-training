@@ -20,6 +20,7 @@ Created 2026-10-22. Facts are from checks in the chat unless marked *(from proje
 - Network: pypi.org and github.com are not reachable directly. pip works through `--proxy http://localhost:9001`, and git through `git config http.proxy http://localhost:9001` (set in the repo).
 - No Node.js/npm: the frontend arrives as a version-named dist zip.
 - Delivery: version-named `git am` patch plus `frontend-dist-vX.Y.Z.zip`.
+- Git: the user applies the patch (`git am`), commits and pushes himself, through the proxy above. Claude cannot push.
 
 ## VR PC (work, checked 2026-10-22)
 
@@ -49,6 +50,7 @@ Created 2026-10-22. Facts are from checks in the chat unless marked *(from proje
 - torch 2.14.1+rocm7.2, no `HSA_OVERRIDE_GFX_VERSION` needed.
 - Measured: resnet18 about 678 frames/s vs 163 on CPU, resnet50 about 405 vs 59, OWL-ViT about 95 ms/frame vs 367 on CPU.
 - npm is installed: `./run.sh build`, then `./run.sh`. Direct network, no proxy.
+- Git: SSH key, the user commits and pushes straight to `main` after almost every change. Claude cannot push.
 - Python version and project path: **?** (the Linux project path in `docs/workflow.md` is still unfilled).
 
 ## Lenovo Legion (brona-legion, checked 2026-10-22)
