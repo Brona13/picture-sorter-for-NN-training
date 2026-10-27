@@ -351,9 +351,10 @@ button[aria-pressed="true"] { background: var(--info-bg); color: var(--info-fg);
 .chain-node-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .chain-node-line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .chain-node-ingest { width: 170px; height: 64px; min-width: 0; overflow: hidden; }
-.chain-node-crop, .chain-node-calc, .chain-node-evaluation { width: 200px; height: 84px; min-width: 0; overflow: hidden; }
+.chain-node-crop, .chain-node-calc { width: 200px; height: 84px; min-width: 0; overflow: hidden; }
+.chain-node-evaluation { width: 200px; min-height: 84px; min-width: 0; } /* grows with its three dots: pass, fail, all */
 .chain-node-crop { height: 66px; }
-.chain-node-calc, .chain-node-evaluation { height: 86px; }
+.chain-node-calc { height: 86px; }
 .chain-node-roi, .chain-node-classify, .chain-node-detector { width: 200px; min-height: 84px; min-width: 0; }
 .chain-node-roi .chain-node-product { display: flex; align-items: center; gap: 6px; text-align: left; }
 .chain-node-class { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

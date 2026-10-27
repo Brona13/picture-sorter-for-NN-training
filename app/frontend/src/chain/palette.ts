@@ -12,7 +12,7 @@ export const BOX_SIZE: Record<ChainNode["kind"], { w: number; h: number }> = {
   crop: { w: 200, h: 66 },
   detector: { w: 200, h: 86 },
   calc: { w: 200, h: 86 },
-  evaluation: { w: 200, h: 86 },
+  evaluation: { w: 200, h: 150 },
   dedup: { w: 200, h: 86 },
   export: { w: 200, h: 110 },
 };
