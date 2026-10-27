@@ -16,7 +16,7 @@ export interface Outline {
  * optional yellow outline. The zoom and pan are kept when the frame changes, so the same spot can be compared across
  * pictures. Shared by the viewers that show a plain frame.
  */
-export default function FramePane({ camera, frame, width, outline, info, imageUrl, overlay, view: given, onViewChange, fixPoint }: {
+export default function FramePane({ camera, frame, width, outline, info, imageUrl, overlay, view: given, onViewChange, fixPoint, compare }: {
   camera: string;
   frame: string;
   width: number;
@@ -36,6 +36,12 @@ export default function FramePane({ camera, frame, width, outline, info, imageUr
    * of the picture, as before.
    */
   fixPoint?: { on: boolean; point: { x: number; y: number } | null };
+  /**
+   * A second picture to flip to (an Evaluation's reference picture). While `on` it is shown instead of `frame`, at the zoom
+   * of the shown view and placed so its `point` lies exactly where `fixPoint.point` of `frame` was on screen; pans and zooms
+   * are ignored meanwhile. Off, it is only preloaded. The two pictures are then comparable by eye around the reference point.
+   */
+  compare?: { on: boolean; frame: string; imageUrl?: string; point: { x: number; y: number } | null; overlay?: (size: { w: number; h: number }) => ReactNode };
 }) {
   const [size, setSize] = useState({ w: 4, h: 3 });
   const [own, setOwn] = useState<View>(FIT_VIEW);
@@ -54,21 +60,37 @@ export default function FramePane({ camera, frame, width, outline, info, imageUr
     if (fix.current.off) setView(viewForOffset(view, point, fix.current.off, size));
     else fix.current.off = pointOffset(view, point, size);
   }, [on, point?.x, point?.y, loaded, frame]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [altSize, setAltSize] = useState({ w: 4, h: 3 });
+  const showAlt = !!compare?.on;
+  const aligned = showAlt && point && compare?.point ? viewForOffset(view, compare.point, pointOffset(view, point, size), altSize) : view;
+  const altUrl = compare ? compare.imageUrl ?? frameImageUrl(camera, compare.frame) : null;
   const change = (v: View) => {
+    if (showAlt) return;
     setView(v);
     if (on && point && loaded === frame) fix.current.off = pointOffset(v, point, size);
   };
   return (
-    <ZoomPane imageSize={size} width={width} view={view} onViewChange={change} panOnBackground contentRef={contentRef} resetOnZero={false} info={info}>
-      <img
-        key={frame}
-        src={imageUrl ?? frameImageUrl(camera, frame)}
-        alt={frame}
-        draggable={false}
-        onLoad={(e) => { setSize({ w: e.currentTarget.naturalWidth || 4, h: e.currentTarget.naturalHeight || 3 }); setLoaded(frame); }}
-        style={{ width: "100%", height: "100%", display: "block" }}
-      />
-      {overlay?.(size)}
+    <ZoomPane imageSize={showAlt ? altSize : size} width={width} view={aligned} onViewChange={change} panOnBackground contentRef={contentRef} resetOnZero={false} info={info}>
+      {showAlt && compare ? (
+        <img
+          key={`alt:${compare.frame}`}
+          src={altUrl ?? undefined}
+          alt={compare.frame}
+          draggable={false}
+          style={{ width: "100%", height: "100%", display: "block" }}
+        />
+      ) : (
+        <img
+          key={frame}
+          src={imageUrl ?? frameImageUrl(camera, frame)}
+          alt={frame}
+          draggable={false}
+          onLoad={(e) => { setSize({ w: e.currentTarget.naturalWidth || 4, h: e.currentTarget.naturalHeight || 3 }); setLoaded(frame); }}
+          style={{ width: "100%", height: "100%", display: "block" }}
+        />
+      )}
+      {showAlt && compare ? compare.overlay?.(altSize) : overlay?.(size)}
+      {compare && !showAlt && <img src={altUrl ?? undefined} alt="" aria-hidden="true" onLoad={(e) => setAltSize({ w: e.currentTarget.naturalWidth || 4, h: e.currentTarget.naturalHeight || 3 })} style={{ display: "none" }} />}
       {outline && (
         <div
           data-testid="viewer-roi"

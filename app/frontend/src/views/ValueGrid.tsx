@@ -1,5 +1,5 @@
 import { ReactNode, useEffect, useState } from "react";
-import { frameImageUrl, frameThumbUrl } from "../api";
+import { frameThumbUrl } from "../api";
 import CardGrid from "../classify/CardGrid";
 import FramePane from "../classify/FramePane";
 import PictureViewer from "../classify/PictureViewer";
@@ -147,10 +147,15 @@ function Viewer({ camera, rows, start, unit, onClose, onNominal, onCentre, info,
       }
     >
       {(width) => (
-        <>
-          <FramePane camera={camera} frame={shown.frame} width={width} imageUrl={extras?.imageUrl?.(shown.frame)} overlay={extras?.overlay ? (size) => extras.overlay!(shown, size) : undefined} fixPoint={extras?.fixPoint ? { on: fixed, point: extras.fixPoint(shown) } : undefined} />
-          {reference && !holding && <img src={extras?.imageUrl?.(reference.frame) ?? frameImageUrl(camera, reference.frame)} alt="" style={{ display: "none" }} />}
-        </>
+        <FramePane
+          camera={camera}
+          frame={row.frame}
+          width={width}
+          imageUrl={extras?.imageUrl?.(row.frame)}
+          overlay={extras?.overlay ? (size) => extras.overlay!(row, size) : undefined}
+          fixPoint={extras?.fixPoint ? { on: fixed, point: extras.fixPoint(row) } : undefined}
+          compare={reference ? { on: holding, frame: reference.frame, imageUrl: extras?.imageUrl?.(reference.frame), point: extras?.fixPoint?.(reference) ?? null, overlay: extras?.overlay ? (size) => extras.overlay!(reference, size) : undefined } : undefined}
+        />
       )}
     </PictureViewer>
   );

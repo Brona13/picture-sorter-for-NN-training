@@ -49,3 +49,20 @@ test("on: a picture with no point leaves the view alone, and the next one with a
   expect(left() + 120).toBeCloseTo(before[0]);
   expect(top() + 130).toBeCloseTo(before[1]);
 });
+
+test("compare: while on, the other picture is shown with its point exactly where the selected picture's point was", () => {
+  const cmp = (on: boolean) => ({ on, frame: "ref.png", point: { x: 140, y: 90 } });
+  const view = (on: boolean) => <FramePane camera="cam" frame="a.png" width={400} fixPoint={{ on: false, point: { x: 100, y: 100 } }} compare={cmp(on)} />;
+  const { rerender, container } = render(view(false));
+  load("a.png");
+  sized(container.querySelector("img[aria-hidden]") as HTMLElement, 400, 300); // the preloaded reference
+  const before = [left() + 100, top() + 100];
+  rerender(view(true));
+  expect(screen.getByAltText("ref.png")).toBeTruthy();
+  expect(left() + 140).toBeCloseTo(before[0]);
+  expect(top() + 90).toBeCloseTo(before[1]);
+  rerender(view(false));
+  expect(screen.getByAltText("a.png")).toBeTruthy();
+  expect(left() + 100).toBeCloseTo(before[0]);
+  expect(top() + 100).toBeCloseTo(before[1]);
+});
