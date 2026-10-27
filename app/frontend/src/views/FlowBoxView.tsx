@@ -13,6 +13,7 @@ import FlowBoxPanel, { EvaluationHistogram } from "./FlowBoxPanel";
 import ZoneScatter from "./ZoneScatter";
 import { Zone } from "../zoneGeometry";
 import CalcGeometry from "./CalcGeometry";
+import type { EvalSpec } from "../evalGeometry";
 import ValueGrid, { ViewerExtras } from "./ValueGrid";
 
 const CHART_STORE = "flow.histogram";
@@ -699,6 +700,11 @@ function ValuesWork(p: {
     if (!detectorId) { setFoundBoxes({}); return; }
     api.flowBoxes(camera, detectorId).then((b) => setFoundBoxes(b.boxes)).catch(() => setFoundBoxes({}));
   }, [camera, detectorId, p.version]);
+  // On an Evaluation page the viewer also draws the pass region of the rule (zone, angle wedge, distance ring, dx / dy band).
+  const evalSpec = useMemo<EvalSpec | null>(
+    () => (tolerance && calc ? { mode: tolerance.mode, op: calc.op, zone: tolerance.zone, nominal: tolerance.nominal, tolerance: tolerance.tolerance, clockwise: calc.clockwise, unit: tolerance.unit } : null),
+    [tolerance, calc],
+  );
   const viewer = useMemo<ViewerExtras | undefined>(() => {
     if (!calc || !detectorId || !calc.a || !calc.b) return undefined;
     const names: [string, string] = [calc.a, calc.b];
@@ -707,7 +713,7 @@ function ValuesWork(p: {
       // boxes are in the picture the detector works on: the cut-out, when a Crop box is above it
       imageUrl: cropped ? (frame) => flowPictureUrl(camera, detectorId, frame, { key: calc.crops }) : undefined,
       overlay: (row, size) => (
-        <CalcGeometry size={size} op={calc.op} names={names} clockwise={calc.clockwise} boxes={foundBoxes[row.frame]} value={row.value} unit={calc.op === "angle" ? "°" : "px"} />
+        <CalcGeometry size={size} op={calc.op} names={names} clockwise={calc.clockwise} boxes={foundBoxes[row.frame]} value={row.value} unit={calc.op === "angle" ? "°" : "px"} evaluation={evalSpec ? { spec: evalSpec, verdict: row.verdict } : undefined} />
       ),
       note: (row) => {
         const found = foundBoxes[row.frame] ?? {};
@@ -715,7 +721,7 @@ function ValuesWork(p: {
         return missing.length ? `not found here: ${missing.join(", ")}` : `${calc.operations[calc.op] ?? calc.op}: ${names[0]} → ${names[1]}`;
       },
     };
-  }, [calc, detectorId, foundBoxes, camera]);
+  }, [calc, detectorId, foundBoxes, camera, evalSpec]);
 
   const numbers = useMemo(() => Object.values(data?.values ?? {}).filter((v): v is number => v !== null), [data]);
 
