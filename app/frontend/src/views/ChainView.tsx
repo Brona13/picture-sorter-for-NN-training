@@ -16,7 +16,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, ChainCanvas, ChainDeletePreview, ChainEdge, ChainNode, ChainViewport, FlowDeletePreview } from "../api";
-import { ALL_HANDLE, INGEST_ID, targetHandle, targetOfHandle, connectAction, describeNode, disconnectAction, exportLineOf, flowConnect, freshName, isAnchorEdge, isDedupInputEdge, isDedupSourceEdge, isExportLineEdge, isRoiInputEdge, isFlowKind, layoutOf, productHandle } from "../chain/chainModel";
+import { ALL_HANDLE, INGEST_ID, targetHandle, targetOfHandle, connectAction, describeNode, disconnectAction, exportLineOf, flowConnect, freshName, isAnchorEdge, isDedupInputEdge, isEvaluationLabelEdge, isDedupSourceEdge, isExportLineEdge, isRoiInputEdge, isFlowKind, layoutOf, productHandle } from "../chain/chainModel";
 import ClassifierMode from "../chain/ClassifierMode";
 import LineConfirm from "../chain/LineConfirm";
 import Palette, { PALETTE_DRAG } from "../chain/Palette";
@@ -291,6 +291,10 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
       const a = flowArrow.dedupInput; // a Dedup box dropped on a Classifier: the Classifier hides what the box muted
       run = () => void applyFlow(() => api.setChainDedup(camera, a.feature, a.box));
       note = replaceNote(canvas, link, flowArrow);
+    } else if ("evaluationOf" in flowArrow) {
+      const a = flowArrow.evaluationOf; // an Evaluation dropped on a Classifier: its verdicts become the labels (pass = OK, fail = NG)
+      run = () => void applyFlow(() => api.setChainEvaluation(camera, a.feature, a.box));
+      note = replaceNote(canvas, link, flowArrow);
     } else if ("roiInput" in flowArrow) {
       const a = flowArrow.roiInput; // a Picture edits box dropped on an ROI: the ROI is cut from that box's picture
       // An ROI is anchored or reads a box, never both: a taken input is cleared first, after the confirmation.
@@ -324,6 +328,7 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
       const line = exportLineOf(canvas, edge);
       if (line) void applyFlow(() => api.flowUpdate(camera, edge.target, { remove_line: line }));
     } else if (isDedupSourceEdge(canvas, edge)) void applyFlow(() => api.flowUpdate(camera, edge.target, { source: null }));
+    else if (isEvaluationLabelEdge(canvas, edge)) void applyFlow(() => api.setChainEvaluation(camera, targetNode!.ref!, null));
     else if (isDedupInputEdge(canvas, edge)) void applyFlow(() => api.setChainDedup(camera, targetNode!.ref!, null));
     else if (isRoiInputEdge(canvas, edge)) void api.clearRoiInput(camera, targetNode!.ref!).then(() => reload()).catch(fail);
     else if (isAnchorEdge(canvas, edge)) void api.clearRoiAnchor(camera, targetNode!.ref!).then(() => reload()).catch(fail);
@@ -551,7 +556,7 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
           )}
           {selectedLive.kind === "roi" && selectedLive.ref && (
             <label className="chain-evaluation">
-              Evaluation shown on the cards
+              Evaluation labeling this Classifier (pass = OK, fail = NG)
               <select
                 aria-label="Evaluation"
                 value={selectedLive.evaluation ?? ""}

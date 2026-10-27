@@ -89,3 +89,14 @@ test("a line from Ingest onto a product-scoped ROI says it replaces the product 
   expect(scopeNote(c, { source: "ingest", sourceHandle: null, target: "roi:f" })!.lines[0]).toContain("only to A, B");
   expect(scopeNote(canvas([nodes[0], { ...nodes[1], products: [] }], []), { source: "ingest", sourceHandle: null, target: "roi:f" })).toBeNull();
 });
+
+
+test("an Evaluation line onto a Classifier asks first: the verdicts replace hand labels", () => {
+  const c = canvas(base, []);
+  const link = { evaluationOf: { feature: "f", box: "eval:1" } };
+  const note = replaceNote(c, { source: "eval:1", sourceHandle: "all", target: "roi:f" }, link)!;
+  expect(note.title).toContain("Label seal from Evaluation 1");
+  expect(note.lines.join(" ")).toMatch(/pass is OK, fail is NG/);
+  const again = canvas(base.map((x) => (x.id === "roi:f" ? { ...x, evaluation: "eval:1" } : x)), []);
+  expect(replaceNote(again, { source: "eval:1", sourceHandle: "all", target: "roi:f" }, link)).toBeNull();
+});

@@ -12,7 +12,7 @@ is derived from the ROI rows:
     name (``"<product>::<roi>"``, locked) or through the ROI's ``products`` list.
 
 The Evaluation a Classifier shows on its cards is picked in its panel and stored as before (an arrow ``eval ->
-classify:<feature>`` in the flow graph); it is not drawn as a line.
+classify:<feature>`` in the flow graph); it is drawn as a line from the Evaluation's "all" dot and its verdicts label the Classifier (pass = OK, fail = NG).
 
 Only the layout (box positions, display names, viewport) is stored, as the camera setting ``chain.canvas``.
 Creating, connecting and deleting boxes goes through the existing ROI endpoints, so the invariants live in one place.
@@ -401,6 +401,10 @@ def get_canvas(camera: str) -> dict:
         box = dedup_box.input_of(camera, roi.name)
         if box and box in known:
             edges.append({"id": f"{box}->{roi_node_id(roi.name)}", "source": box, "source_handle": None, "target": roi_node_id(roi.name), "locked": False})
+    for roi in rois:  # a Classifier labeled by an Evaluation's verdicts hangs from the box (drawn from its "all" dot)
+        judged = flow.feature_evaluation(camera, roi.name)
+        if judged and judged in known:
+            edges.append({"id": f"{judged}#{ALL_HANDLE}->{roi_node_id(roi.name)}", "source": judged, "source_handle": ALL_HANDLE, "target": roi_node_id(roi.name), "locked": False})
     for roi in rois:  # a ROI fed by a Picture edits box hangs from it
         spec = roi_input.get_input(camera, roi.name)
         if spec and spec["box"] in known:

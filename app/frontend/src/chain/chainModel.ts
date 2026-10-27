@@ -172,7 +172,7 @@ export const isFlowKind = (kind: string | undefined): boolean => !!kind && (FLOW
 export const targetHandle = (target: string) => `t:${target}`;
 export const targetOfHandle = (handle: string | null | undefined): string | null => (handle && handle.startsWith("t:") ? handle.slice(2) : null);
 
-export type FlowLink = { exportLine: { box: string; input: "ok" | "ng"; ref: ExportRef } } | { source: string; target: string; point?: string } | { dedupSource: { box: string; feature?: string; evaluation?: string; dot: string } } | { dedupInput: { feature: string; box: string } } | { anchor: { feature: string; detector: string; target: string } } | { roiInput: { feature: string; box: string } } | { error: string } | null;
+export type FlowLink = { exportLine: { box: string; input: "ok" | "ng"; ref: ExportRef } } | { source: string; target: string; point?: string } | { dedupSource: { box: string; feature?: string; evaluation?: string; dot: string } } | { dedupInput: { feature: string; box: string } } | { evaluationOf: { feature: string; box: string } } | { anchor: { feature: string; detector: string; target: string } } | { roiInput: { feature: string; box: string } } | { error: string } | null;
 
 export function flowConnect(canvas: ChainCanvas, c: Connection): FlowLink {
   const source = featureOf(canvas, c.source);
@@ -243,7 +243,9 @@ export function flowConnect(canvas: ChainCanvas, c: Connection): FlowLink {
     return { dedupSource: { box: target.id, evaluation: source.id, dot } };
   }
   if (source.kind === "evaluation" && target.kind === "roi") {
-    return { error: "An Evaluation is not drawn to a Classifier: pick it in the Classifier's panel." };
+    // An Evaluation dropped on a Classifier: its verdicts are the Classifier's labels (pass = OK, fail = NG), whichever dot the line leaves from.
+    if (!target.ref) return { error: "Unknown box." };
+    return { evaluationOf: { feature: target.ref, box: source.id } };
   }
   if (!isFlowKind(source.kind) && !isFlowKind(target.kind)) return null;
   const point = targetOfHandle(c.sourceHandle);
@@ -289,6 +291,10 @@ export const isDedupSourceEdge = (canvas: ChainCanvas, edge: ChainEdge): boolean
   const from = canvas.nodes.find((n) => n.id === edge.source)?.kind;
   return (from === "roi" || from === "evaluation") && (kind === "dedup" || kind === "crop" || kind === "detector");
 };
+
+/** A line from an Evaluation to a Classifier: the verdicts are the Classifier's labels (stored as the Classifier's Evaluation). */
+export const isEvaluationLabelEdge = (canvas: ChainCanvas, edge: ChainEdge): boolean =>
+  canvas.nodes.find((n) => n.id === edge.source)?.kind === "evaluation" && canvas.nodes.find((n) => n.id === edge.target)?.kind === "roi";
 
 /** A line from a Dedup box to a Classifier is the Classifier's Dedup input (stored with the Classifier). */
 export const isDedupInputEdge = (canvas: ChainCanvas, edge: ChainEdge): boolean =>

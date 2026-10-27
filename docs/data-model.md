@@ -98,6 +98,10 @@ Golden rules:
 
 Intentional history belongs in Versions, not in every edit operation.
 
+### Labels from an Evaluation (v1.119.0)
+
+A Classifier with an Evaluation box wired to it (`eval -> classify:<feature>`) is labeled by the box's verdicts: pass is `OK`, fail is `NG` (the Classifier needs both classes). These labels have the source `evaluation`, follow the verdicts (`flow.sync_evaluation_labels`, run whenever the Classifier is read) and cannot be changed, cleared or bulk-labeled by hand; only goldens are chosen among them, and a golden follows its label as always. A picture without a pass or fail verdict has no verdict label. Removing the line turns these labels into ordinary hand labels, goldens included. Deleting a picture or the ROI removes them as any other label.
+
 ## Deletion and dedup mute
 
 `deleted_frames` and `dedup_mute` are direct current-state sets.

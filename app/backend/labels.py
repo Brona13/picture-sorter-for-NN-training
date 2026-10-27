@@ -57,10 +57,44 @@ def _via(source: str, via: str | None) -> str:
     return (via or _DEFAULT_VIA.get(source, "")).strip()[:40]
 
 
+EVALUATION = "evaluation"  # label source: the verdict of an Evaluation box wired to the Classifier; hand changes are refused
+
+
+class LabelLocked(Exception):
+    """The label comes from an Evaluation verdict, so it can only change when the Evaluation or its line does."""
+
+
+def locked_frames(camera: str, feature: str) -> set[str]:
+    """Frames whose label is an Evaluation verdict (final for the user; a golden may still be chosen among them)."""
+    con = db.connect()
+    try:
+        rows = con.execute("SELECT frame FROM labels WHERE camera=? AND feature=? AND source=?", (camera, feature, EVALUATION)).fetchall()
+    finally:
+        con.close()
+    return {r["frame"] for r in rows}
+
+
+def _check_unlocked(camera: str, feature: str, frames: list[str], source: str) -> None:
+    if source != EVALUATION and locked_frames(camera, feature) & set(frames):
+        raise LabelLocked("This label is the verdict of an Evaluation box and cannot be changed by hand. Choose Goldens only, or remove the Evaluation line.")
+
+
+def release_evaluation(camera: str, feature: str) -> int:
+    """The Evaluation line is gone: its verdict labels (and their goldens) stay, as ordinary hand labels."""
+    con = db.connect()
+    try:
+        cur = con.execute("UPDATE labels SET source='manual', via='Evaluation (line removed)' WHERE camera=? AND feature=? AND source=?", (camera, feature, EVALUATION))
+        con.commit()
+        return max(cur.rowcount, 0)
+    finally:
+        con.close()
+
+
 def set_label(
     camera: str, feature: str, frame: str, cls: str, source: str = "manual", via: str | None = None
 ) -> None:
     """Set current label and keep an existing golden in the same class."""
+    _check_unlocked(camera, feature, [frame], source)
     if not cls:
         clear_label(camera, feature, frame)
         return
@@ -95,9 +129,14 @@ def set_labels_bulk(
 ) -> int:
     if not frames:
         return 0
+    if source != EVALUATION:
+        locked = locked_frames(camera, feature)
+        frames = [f for f in frames if f not in locked]  # verdict labels are not changed by a bulk action
+        if not frames:
+            return 0
     if not cls:
         for frame in frames:
-            clear_label(camera, feature, frame)
+            clear_label(camera, feature, frame, force=True)
         return len(frames)
     updated = time.time()
     hmap = hash_map(camera)
@@ -133,8 +172,10 @@ def set_labels_bulk(
     return len(frames)
 
 
-def clear_label(camera: str, feature: str, frame: str) -> None:
+def clear_label(camera: str, feature: str, frame: str, force: bool = False) -> None:
     """Clear label and golden atomically so the domain invariant cannot drift."""
+    if not force:
+        _check_unlocked(camera, feature, [frame], "manual")
     con = db.connect()
     try:
         con.execute("BEGIN IMMEDIATE")
@@ -155,7 +196,7 @@ def clear_label(camera: str, feature: str, frame: str) -> None:
     datamodel.invalidate_product_membership(camera)
 
 
-def clear_labels_bulk(camera: str, feature: str, frames: list[str]) -> int:
+def clear_labels_bulk(camera: str, feature: str, frames: list[str], force: bool = False) -> int:
     """Clear labels (and any goldens) for many frames in one transaction.
 
     Returns how many labels were removed. A golden is always a labeled frame, so its
@@ -163,6 +204,9 @@ def clear_labels_bulk(camera: str, feature: str, frames: list[str]) -> int:
     """
     if not frames:
         return 0
+    if not force:
+        locked = locked_frames(camera, feature)
+        frames = [f for f in frames if f not in locked]
     keys = [(camera, feature, frame) for frame in frames]
     con = db.connect()
     try:

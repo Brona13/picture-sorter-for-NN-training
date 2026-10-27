@@ -2,8 +2,9 @@
 
 This is the human-like analysis of a picture: find named targets (for example the left and right hole of a
 component), compute a number from them (the angle from A to B), and compare it with nominal +- tolerance. The
-result is an *opinion* (value, pass / fail / undetermined), shown next to the human's label in Classify. It never
-labels a picture and is never blended with the classical or ResNet scores.
+result is an *opinion* (value, pass / fail / undetermined), shown next to the human's label in Classify. It labels a
+picture only when the user wires it to a Classifier (pass = OK, fail = NG; ``sync_evaluation_labels``) and is never
+blended with the classical or ResNet scores.
 
 Storage needs no schema change; everything is per-camera settings:
 
@@ -1882,8 +1883,13 @@ def feature_evaluation(camera: str, feature: str) -> str | None:
     return None
 
 
+VERDICT_CLASS = {"pass": "OK", "fail": "NG"}  # an Evaluation wired to a Classifier labels its pictures with these classes
+
+
 def set_feature_evaluation(camera: str, feature: str, box: str | None) -> None:
-    """Pick the one Evaluation box a feature's cards show, or none. Stored as the arrow ``eval -> classify:<feature>``."""
+    """Wire the one Evaluation box to a Classifier, or none. Stored as the arrow ``eval -> classify:<feature>``.
+    The box's verdicts become the Classifier's labels (pass = OK, fail = NG; see ``sync_evaluation_labels``); the
+    Classifier then only needs Goldens chosen. Taking the line away keeps the labels as ordinary hand labels."""
     if datamodel.get_roi(camera, feature) is None:
         raise FlowError(f"Unknown ROI: {feature}")
     graph = load_graph(camera)
@@ -1891,10 +1897,41 @@ def set_feature_evaluation(camera: str, feature: str, box: str | None) -> None:
     if box is not None:
         if kind_of(box) != "evaluation" or box not in graph["nodes"]:
             raise FlowError(f"{box} is not an Evaluation box.")
+        classes = datamodel.classes_for(camera, feature)
+        if any(c not in classes for c in VERDICT_CLASS.values()):
+            raise FlowError("An Evaluation labels pictures OK and NG, so the Classifier needs the classes OK and NG.")
+    had = feature_evaluation(camera, feature)
     graph["edges"] = [e for e in graph["edges"] if not (e["target"] == target and kind_of(e["source"]) == "evaluation")]
     if box is not None:
         graph["edges"].append({"source": box, "target": target})
     save_graph(camera, graph)
+    if box is not None:
+        sync_evaluation_labels(camera, feature)
+    elif had:
+        labels.release_evaluation(camera, feature)
+
+
+def sync_evaluation_labels(camera: str, feature: str) -> dict:
+    """Make the labels of a Classifier wired to an Evaluation follow its verdicts: pass is OK, fail is NG. A picture the
+    Evaluation cannot judge (no value, or no box) keeps no verdict label. Only writes what differs, so it is cheap to
+    call whenever the Classifier is read; Goldens are left alone (a golden follows a changed verdict, as always)."""
+    box = feature_evaluation(camera, feature)
+    if box is None:
+        return {"labeled": 0, "cleared": 0}
+    classes = datamodel.classes_for(camera, feature)
+    if any(c not in classes for c in VERDICT_CLASS.values()):
+        return {"labeled": 0, "cleared": 0}
+    verdicts = evaluation_state(camera, box)["verdicts"]
+    in_scope = set(datamodel.frames_for_feature(camera, feature))
+    have = labels.current_labels(camera, feature)
+    locked = labels.locked_frames(camera, feature)
+    labeled = 0
+    for verdict, cls in VERDICT_CLASS.items():
+        todo = [f for f, v in verdicts.items() if v == verdict and f in in_scope and (have.get(f) != cls or f not in locked)]
+        labeled += labels.set_labels_bulk(camera, feature, todo, cls, source=labels.EVALUATION, via="Evaluation")
+    stale = [f for f in locked if verdicts.get(f) not in VERDICT_CLASS or f not in in_scope]
+    cleared = labels.clear_labels_bulk(camera, feature, stale, force=True)
+    return {"labeled": labeled, "cleared": cleared}
 
 
 def freeze_record(camera: str, feature: str) -> list[dict]:

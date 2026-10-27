@@ -188,10 +188,16 @@ def revert(camera: str, feature: str, version_id: int) -> dict:
     cur_gold = labels.current_goldens(camera, feature)
 
     for frame in set(cur_labels) - set(snap_labels):
-        labels.clear_label(camera, feature, frame)
+        try:
+            labels.clear_label(camera, feature, frame)
+        except labels.LabelLocked:
+            pass  # an Evaluation verdict stays: it is not a hand label
     for frame, cls in snap_labels.items():
         if cur_labels.get(frame) != cls:
-            labels.set_label(camera, feature, frame, cls, source="revert")
+            try:
+                labels.set_label(camera, feature, frame, cls, source="revert")
+            except labels.LabelLocked:
+                pass
 
     for cls in set(cur_gold) | set(snap_gold):
         now, want = set(cur_gold.get(cls, [])), snap_gold.get(cls, set())

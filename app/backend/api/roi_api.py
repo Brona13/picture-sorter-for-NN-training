@@ -390,6 +390,6 @@ def set_mode(camera: str, feature: str, body: ModeUpdate) -> dict:
         if dependents:
             raise HTTPException(status_code=422, detail=f"{', '.join(dependents)} depend on the products. Delete those lines or Classifiers first.")
         target.role, target.classes = "quality", None
-    labels.clear_labels_bulk(camera, feature, list(labels.current_labels(camera, feature)))
+    labels.clear_labels_bulk(camera, feature, list(labels.current_labels(camera, feature)), force=True)
     datamodel.save_rois(camera, rois)
     return {**_describe(camera, target, len(datamodel.list_unsorted(camera))), "cleared": cleared}

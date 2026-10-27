@@ -125,7 +125,7 @@ test("flowConnect accepts the typed chain Ingest -> detector -> detector -> Calc
 });
 
 test("flowConnect refuses arrows whose types do not fit, and leaves ROI arrows to connectAction", () => {
-  for (const [s, t] of [["eval:1", "calc:1"], ["det:1", "eval:1"], ["calc:1", "det:1"], ["ingest", "calc:1"], ["det:1", "det:1"], ["eval:1", "roi:seal"], ["roi:type", "det:1"]]) {
+  for (const [s, t] of [["eval:1", "calc:1"], ["det:1", "eval:1"], ["calc:1", "det:1"], ["ingest", "calc:1"], ["det:1", "det:1"], ["roi:type", "det:1"]]) {
     expect(flowConnect(flowCanvas, link(s, t))).toHaveProperty("error");
   }
   expect(flowConnect(flowCanvas, link("ingest", "roi:seal"))).toBeNull();
@@ -263,7 +263,9 @@ test("an Evaluation dot feeds Dedup, Picture edits or a detector, and nothing el
   expect(flowConnect(withBoxes, { source: "eval:1", sourceHandle: "all", target: "det:7" })).toEqual({ dedupSource: { box: "det:7", evaluation: "eval:1", dot: "all" } });
   expect(flowConnect(withBoxes, { source: "eval:1", sourceHandle: null, target: "dedup:7" })).toHaveProperty("error");
   expect(flowConnect(withBoxes, { source: "eval:1", sourceHandle: "p:maybe", target: "dedup:7" })).toHaveProperty("error");
-  expect(flowConnect(withBoxes, { source: "eval:1", sourceHandle: "p:pass", target: "roi:seal" })).toHaveProperty("error");
+  // onto a Classifier its verdicts become the labels, whichever dot the line leaves from
+  expect(flowConnect(withBoxes, { source: "eval:1", sourceHandle: "p:pass", target: "roi:seal" })).toEqual({ evaluationOf: { feature: "seal", box: "eval:1" } });
+  expect(flowConnect(withBoxes, { source: "eval:1", sourceHandle: "all", target: "roi:seal" })).toEqual({ evaluationOf: { feature: "seal", box: "eval:1" } });
   expect(describeFlow("dedup", { eval_source: { box: "eval:1", dot: "pass" } } as never)).toContain("pass");
 });
 

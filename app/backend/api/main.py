@@ -25,6 +25,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException  # noqa
 import applog  # noqa: E402
 import appinfo  # noqa: E402
 import db  # noqa: E402
+import labels  # noqa: E402
 from api import cameras, chain_api, classify_api, config_api, dedup_api, flow_api, frames_api, ingest_api, insights_api, jobs, logs_api, motion_api, outliers_api, overview_api, roi_api, rules_api, similar_api, status, verdicts_api, versions_api, vision_api  # noqa: E402
 
 
@@ -109,6 +110,10 @@ def create_app() -> FastAPI:
             applog.request_info.reset(tokens[2])
         response.headers["X-Request-ID"] = rid
         return response
+
+    @app.exception_handler(labels.LabelLocked)
+    async def _label_locked(_: Request, exc: labels.LabelLocked) -> JSONResponse:
+        return JSONResponse(status_code=409, content={"detail": str(exc)})
 
     @app.exception_handler(db.DatabaseResetRequired)
     async def _db_reset(_: Request, exc: db.DatabaseResetRequired) -> JSONResponse:

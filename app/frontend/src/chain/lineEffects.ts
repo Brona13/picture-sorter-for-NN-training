@@ -119,6 +119,18 @@ export function replaceNote(canvas: ChainCanvas, c: Connection, link: Exclude<Fl
       lines: [`${t} is fed by ${old} now. The new line replaces it.`, `${t} follows ${newSource} instead of ${old}.`, "Scores and thumbnails of this ROI are computed again."],
     };
   }
+  if ("evaluationOf" in link) {
+    if (target.evaluation === link.evaluationOf.box) return null; // the same line again
+    const box = name(canvas, c.source);
+    return {
+      title: `Label ${t} from ${box}?`,
+      lines: [
+        `The verdicts of ${box} become the labels of ${t}: pass is OK, fail is NG.`,
+        "Labels already set on those pictures are replaced, and they can no longer be changed by hand: only Goldens are chosen.",
+        target.evaluation ? `${t} stops being labeled by ${name(canvas, target.evaluation)}.` : "A picture the Evaluation cannot judge keeps no label from it.",
+      ],
+    };
+  }
   if ("dedupSource" in link) {
     const taken = canvas.edges.find((e) => e.target === c.target && !(e.source === c.source && (e.source_handle ?? null) === (c.sourceHandle ?? null)));
     if (!taken) return null;

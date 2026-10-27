@@ -154,6 +154,7 @@ class Ctx:
 
 def _build(camera: str, q: GridQuery, *, apply_auto_preview: bool = True) -> Ctx:
     require_feature(camera, q.feature)
+    _refresh_verdicts(camera, q.feature)
     classes = datamodel.classes_for(camera, q.feature)
     methods = classify.methods_available()
     rank = q.rank or cv.default_rank_method(methods)
@@ -231,6 +232,7 @@ def _counts(camera: str, feature: str, **state) -> dict[str, int]:
 @router.get("/cameras/{camera}/classify/state")
 def state(camera: str, feature: str) -> dict:
     require_feature(camera, feature)
+    _refresh_verdicts(camera, feature)
     classes = datamodel.classes_for(camera, feature)
     methods = classify.methods_available()
     gold = labels.current_goldens(camera, feature)
@@ -353,6 +355,7 @@ def _search_grid(camera: str, q: GridQuery, page: int, per_page: int) -> dict:
     picture is outside this ROI's scope (``outside``), which product it is in (``product``) and whether it is muted
     for this ROI (``muted``), so the page can flag it and offer the fixes.
     """
+    _refresh_verdicts(camera, q.feature)
     require_feature(camera, q.feature)
     classes = datamodel.classes_for(camera, q.feature)
     methods = classify.methods_available()
@@ -450,6 +453,14 @@ class DeleteBody(BaseModel):
     via: str | None = None  # the tool the delete was made from; stored as the deletion's source
 
 
+def _refresh_verdicts(camera: str, feature: str) -> None:
+    """A Classifier wired to an Evaluation shows its current verdicts as labels (the calculation may have changed)."""
+    try:
+        flow.sync_evaluation_labels(camera, feature)
+    except flow.FlowError:
+        pass
+
+
 def _result(camera: str, feature: str, frame: str, classes: list[str]) -> dict:
     return {
         "card": _card(camera, feature, frame, classes),
@@ -515,7 +526,7 @@ def _delete_frames(camera: str, frames: list[str], note: str, via: str | None = 
         lab = labels.current_labels(camera, feat)
         cleared_goldens += sum(1 for f in frames if f in on_gold)
         cleared_labels += sum(1 for f in frames if f in lab)
-        labels.clear_labels_bulk(camera, feat, [f for f in frames if f in lab or f in on_gold])
+        labels.clear_labels_bulk(camera, feat, [f for f in frames if f in lab or f in on_gold], force=True)
     db.mark_frames_deleted(
         camera, [(f, labels.frame_hash(camera, f, hmap)) for f in frames], source=_clean_via(via), note=_clean_note(note)
     )

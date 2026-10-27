@@ -150,13 +150,13 @@ class ChainApiTests(ApiTestCase):
         self.client.delete(f"/api/cameras/{CAM}/rois/type")
         self.assertNotIn("roi:type", [n["id"] for n in self.canvas()["nodes"]])
 
-    def test_the_evaluation_is_picked_in_the_panel_not_drawn(self) -> None:
+    def test_the_evaluation_is_picked_in_the_panel_or_drawn_and_its_line_shows(self) -> None:
         self.make_chain()
         made = self.client.post(f"/api/cameras/{CAM}/flow/nodes", json={"kind": "evaluation"}).json()["id"]
         r = self.client.put(f"{self.base}/edge/evaluation", json={"box": made})
         self.assertEqual(r.status_code, 200, r.text)
         self.assertEqual(self.node("roi:edge")["evaluation"], made)
-        self.assertFalse([e for e in self.canvas()["edges"] if e["source"] == made])  # no line
+        self.assertTrue([e for e in self.canvas()["edges"] if e["source"] == made and e["target"] == "roi:edge"])  # drawn from its "all" dot
         self.assertEqual(self.client.put(f"{self.base}/edge/evaluation", json={"box": None}).status_code, 200)
         self.assertIsNone(self.node("roi:edge")["evaluation"])
 
