@@ -46,8 +46,8 @@ def _key(feature: str) -> str:
 def get_anchor(camera: str, feature: str, con=None) -> dict | None:
     """The stored anchor of a ROI, or ``None``. Reads through ``con`` when the caller already holds a connection.
 
-    A Dedup box fed by a detector target (v1.99.0) has no setting of its own: the line is its anchor, in mode ``box``,
-    so its embeddings are made from the box the detector found."""
+    A Dedup box fed by a detector target (v1.99.0) has no setting of its own: the line is its anchor, in mode ``box``
+    with margin 0 (since v1.115.1; it was 10 %), so its embeddings are made from exactly the box the detector found."""
     if flow.kind_of(feature) == "dedup":
         graph = flow.load_graph(camera)
         line = next((e for e in graph["edges"] if e["target"] == feature and e.get("point") and flow.kind_of(e["source"]) == "detector"), None)
@@ -57,7 +57,7 @@ def get_anchor(camera: str, feature: str, con=None) -> dict | None:
             src = dedup_box.source_of(camera, feature, graph)  # a box reading a Classifier whose pictures are the boxes of a target: same boxes
             spec = get_anchor(camera, src["feature"], con) if src else None
             return spec if spec and group_slots(camera, spec) else None
-        return {"detector": line["source"], "target": line["point"], "mode": "box", "margin": DEFAULT_MARGIN}
+        return {"detector": line["source"], "target": line["point"], "mode": "box", "margin": 0.0}  # exactly the found box: no hidden margin
     if con is None:
         raw = db.get_setting(camera, _key(feature))
     else:

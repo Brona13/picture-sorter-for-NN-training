@@ -183,6 +183,16 @@ class DedupBoxTests(ApiTestCase):
         flow.connect(CAM, det, self.d1, point="P")
         self.assertIn("loop", flow.edge_allowed(flow.load_graph(CAM), self.d1, det) or "")
 
+    def test_a_dedup_box_fed_by_a_detector_target_reads_exactly_the_found_box(self) -> None:
+        import anchor
+        det = flow.create_node(CAM, "detector")
+        graph = flow.load_graph(CAM)
+        graph["nodes"][det]["targets"] = [{"name": "P", "examples": []}]
+        flow.save_graph(CAM, graph)
+        flow.connect(CAM, det, self.d1, point="P")
+        spec = anchor.get_anchor(CAM, self.d1)
+        self.assertEqual((spec["detector"], spec["target"], spec["mode"], spec["margin"]), (det, "P", "box", 0.0))  # no hidden margin
+
     def test_one_dedup_box_feeds_three_picture_edits_boxes_each_feeding_its_own_dedup_box(self) -> None:
         flow.connect(CAM, "ingest", self.d1)
         crops = [flow.create_node(CAM, "crop") for _ in range(3)]
