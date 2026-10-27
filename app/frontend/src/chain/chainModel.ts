@@ -1,4 +1,4 @@
-import type { ChainCanvas, ChainEdge, ChainLayout, ChainNode, FlowSummary } from "../api";
+import type { ChainCanvas, ChainEdge, ChainLayout, ChainNode, ExportRef, FlowSummary } from "../api";
 
 /** The handle id a product leaves the product Classifier by (matches `chain.product_handle`). */
 export const productHandle = (product: string) => `p:${product}`;
@@ -27,6 +27,8 @@ export interface Connection {
   source: string;
   sourceHandle: string | null;
   target: string;
+  /** The input an Export box is entered by: `in:ok` or `in:ng`. */
+  targetHandle?: string | null;
 }
 
 function featureOf(canvas: ChainCanvas, id: string): ChainNode | undefined {
@@ -125,6 +127,12 @@ function describeFlowBox(kind: string, f: FlowSummary | undefined): string {
     if (f?.a || f?.b) return `1 of 2 points (${f.a ?? f.b}) · needs one more target`; // one detector target gives one point; two are needed
     return "needs two points · connect a detector with two targets";
   }
+  if (kind === "export") {
+    const n = (f?.lines?.ok ?? 0) + (f?.lines?.ng ?? 0);
+    if (!n) return "connect lines to OK or NG";
+    const frozen = f?.frozen ? ` · frozen v${f.frozen}${f.changed ? " (changed)" : ""}` : "";
+    return `${f?.ok ?? 0} OK · ${f?.ng ?? 0} NG${frozen}`;
+  }
   if (kind === "dedup") {
     const where = f?.source ? `${f.source.feature} · ${f.source.dot}` : f?.eval_source ? `${evalName(f.eval_source.box)} · ${f.eval_source.dot}` : "whole camera";
     return `${where} · ${f?.frames ?? 0} pictures · ${f?.muted ?? 0} muted`;
@@ -152,7 +160,7 @@ export function describeNode(n: ChainNode): string {
   return `Feature · ${where} · ${n.labeled}/${n.frames} labeled`;
 }
 
-export const FLOW_KINDS = ["crop", "detector", "calc", "evaluation", "dedup"] as const;
+export const FLOW_KINDS = ["crop", "detector", "calc", "evaluation", "dedup", "export"] as const;
 export const isFlowKind = (kind: string | undefined): boolean => !!kind && (FLOW_KINDS as readonly string[]).includes(kind);
 
 /**
@@ -164,12 +172,32 @@ export const isFlowKind = (kind: string | undefined): boolean => !!kind && (FLOW
 export const targetHandle = (target: string) => `t:${target}`;
 export const targetOfHandle = (handle: string | null | undefined): string | null => (handle && handle.startsWith("t:") ? handle.slice(2) : null);
 
-export type FlowLink = { source: string; target: string; point?: string } | { dedupSource: { box: string; feature?: string; evaluation?: string; dot: string } } | { dedupInput: { feature: string; box: string } } | { anchor: { feature: string; detector: string; target: string } } | { roiInput: { feature: string; box: string } } | { error: string } | null;
+export type FlowLink = { exportLine: { box: string; input: "ok" | "ng"; ref: ExportRef } } | { source: string; target: string; point?: string } | { dedupSource: { box: string; feature?: string; evaluation?: string; dot: string } } | { dedupInput: { feature: string; box: string } } | { anchor: { feature: string; detector: string; target: string } } | { roiInput: { feature: string; box: string } } | { error: string } | null;
 
 export function flowConnect(canvas: ChainCanvas, c: Connection): FlowLink {
   const source = featureOf(canvas, c.source);
   const target = featureOf(canvas, c.target);
   if (!source || !target) return { error: "Unknown box." };
+  if (source.kind === "export") return { error: "Export is the end of the Chain: nothing leaves it." };
+  if (target.kind === "export") {
+    // A line onto one of the two inputs: the pictures that should land in the OK or NG folders.
+    const input = c.targetHandle === "in:ok" ? "ok" : c.targetHandle === "in:ng" ? "ng" : null;
+    if (!input) return { error: "Drop the line on the OK or the NG input of the Export box." };
+    const dot = c.sourceHandle === ALL_HANDLE ? ALL_HANDLE : productOfHandle(c.sourceHandle);
+    if (source.kind === "roi") {
+      if (!dot || !source.ref) return { error: "Drag from one of the Classifier's dots (a class or all) to the Export box." };
+      return { exportLine: { box: target.id, input, ref: { feature: source.ref, dot } } };
+    }
+    if (source.kind === "evaluation") {
+      if (!dot || !["pass", "fail", ALL_HANDLE].includes(dot)) return { error: "Drag from one of the Evaluation's dots (pass, fail or all)." };
+      return { exportLine: { box: target.id, input, ref: { box: source.id, dot } } };
+    }
+    if (source.kind === "ingest" || source.kind === "crop" || source.kind === "dedup" || (source.kind === "detector" && !c.sourceHandle)) {
+      if (c.sourceHandle) return { error: `Use ${source.label}'s main dot.` };
+      return { exportLine: { box: target.id, input, ref: { from: source.id } } };
+    }
+    return { error: `${source.label} passes no pictures on: feed Export from a Classifier or Evaluation dot, Ingest, Picture edits, a detector or Dedup.` };
+  }
   if (source.kind === "detector" && target.kind === "roi" && target.ref) {
     // A detector target's dot dropped on an ROI feature anchors the ROI to that target's box.
     const name = targetOfHandle(c.sourceHandle);
@@ -239,6 +267,20 @@ export function flowConnect(canvas: ChainCanvas, c: Connection): FlowLink {
   }
   if (c.source === c.target) return { error: "A box cannot feed itself." };
   return point ? { source: c.source, target: c.target, point } : { source: c.source, target: c.target };
+}
+
+/** A line onto an Export box's OK or NG input (stored in the Export box as a line of its own, not as a flow edge). */
+export const isExportLineEdge = (canvas: ChainCanvas, edge: ChainEdge): boolean => canvas.nodes.find((n) => n.id === edge.target)?.kind === "export";
+
+/** The stored line an edge into an Export input stands for, as `flowUpdate` takes it for `remove_line`. */
+export function exportLineOf(canvas: ChainCanvas, edge: ChainEdge): { input: "ok" | "ng"; ref: ExportRef } | null {
+  const source = canvas.nodes.find((n) => n.id === edge.source);
+  if (!source || !edge.target_handle) return null;
+  const input = edge.target_handle === "in:ng" ? "ng" : "ok";
+  const dot = edge.source_handle === ALL_HANDLE ? ALL_HANDLE : productOfHandle(edge.source_handle) ?? "";
+  if (source.kind === "roi") return source.ref ? { input, ref: { feature: source.ref, dot } } : null;
+  if (source.kind === "evaluation") return { input, ref: { box: source.id, dot } };
+  return { input, ref: { from: source.id } };
 }
 
 /** A line from a Classifier dot to a Dedup, Picture edits or detector box is the box's source (stored in the box, not in the flow lines). */

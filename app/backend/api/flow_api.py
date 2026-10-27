@@ -6,6 +6,8 @@ import json
 import anchor
 import db
 import dedup_box
+import export_box
+import versions
 import roi_input
 import cv2
 import flow
@@ -274,6 +276,34 @@ def get_boxes(camera: str, node_id: str, only_review: bool = False) -> dict:
 def put_box(camera: str, node_id: str, body: BoxBody) -> dict:
     _known(camera, node_id)
     return _guard(flow.set_box, camera, node_id, body.frame, body.target, body.x, body.y, body.angle)
+
+
+class ExportFreeze(BaseModel):
+    name: str = ""
+    notes: str = ""
+
+
+def _export_box(camera: str, node_id: str) -> None:
+    _known(camera, node_id)
+    if flow.load_graph(camera)["nodes"][node_id]["kind"] != "export":
+        raise HTTPException(status_code=422, detail="This is not an Export box.")
+
+
+@router.get("/cameras/{camera}/flow/nodes/{node_id}/export")
+def get_export(camera: str, node_id: str) -> dict:
+    """What this Export box would write now (counts per folder) and the state of its latest freeze."""
+    _export_box(camera, node_id)
+    return export_box.state(camera, node_id)
+
+
+@router.post("/cameras/{camera}/flow/nodes/{node_id}/export/freeze", status_code=201)
+def freeze_export(camera: str, node_id: str, body: ExportFreeze) -> dict:
+    """Freeze what the box would export now as the next project version; the export follows (project-versions/{id}/export)."""
+    _export_box(camera, node_id)
+    try:
+        return export_box.freeze(camera, node_id, body.name, body.notes)
+    except versions.NothingToFreezeError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get("/cameras/{camera}/flow/nodes/{node_id}/labeling")

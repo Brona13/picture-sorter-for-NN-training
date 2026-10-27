@@ -16,7 +16,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, ChainCanvas, ChainDeletePreview, ChainEdge, ChainNode, ChainViewport, FlowDeletePreview } from "../api";
-import { ALL_HANDLE, INGEST_ID, targetHandle, targetOfHandle, connectAction, describeNode, disconnectAction, flowConnect, freshName, isAnchorEdge, isDedupInputEdge, isDedupSourceEdge, isRoiInputEdge, isFlowKind, layoutOf, productHandle } from "../chain/chainModel";
+import { ALL_HANDLE, INGEST_ID, targetHandle, targetOfHandle, connectAction, describeNode, disconnectAction, exportLineOf, flowConnect, freshName, isAnchorEdge, isDedupInputEdge, isDedupSourceEdge, isExportLineEdge, isRoiInputEdge, isFlowKind, layoutOf, productHandle } from "../chain/chainModel";
 import ClassifierMode from "../chain/ClassifierMode";
 import LineConfirm from "../chain/LineConfirm";
 import Palette, { PALETTE_DRAG } from "../chain/Palette";
@@ -47,9 +47,25 @@ function Box({ data, selected }: NodeProps<BoxNode>) {
       style={{ ["--hue" as string]: hueOf(node) }}
       data-testid={`chain-node-${node.id}`}
     >
-      {node.kind !== "ingest" && <Handle type="target" position={Position.Left} />}
+      {node.kind !== "ingest" && node.kind !== "export" && <Handle type="target" position={Position.Left} />}
       <div className="chain-node-title">{node.label}</div>
-      {node.kind === "dedup" ? (
+      {node.kind === "export" ? (
+        <>
+          {/* Two inputs, like a Classifier has one dot per class: the OK and the NG folder. */}
+          {(["ok", "ng"] as const).map((where) => (
+            <div className="chain-node-product chain-node-in" key={where} title={`${where.toUpperCase()} input: ${node.flow?.lines?.[where] ?? 0} line(s). Drop a Classifier or Evaluation dot, or a box, here.`}>
+              <Handle type="target" position={Position.Left} id={`in:${where}`} isConnectable />
+              <span className="chain-node-class">{where.toUpperCase()}</span>
+              <span className="chain-node-count">{node.flow?.[where] ?? 0}</span>
+            </div>
+          ))}
+          <div className="chain-node-counters" aria-label="Counters" title={describeNode(node)}>
+            <span title="Pictures that would be exported">▦ {node.flow?.total ?? 0}</span>
+            <span title="Left out: reach both OK and NG">⇄ {node.flow?.both ?? 0}</span>
+            <span title="Last freeze">{node.flow?.frozen ? `❄ v${node.flow.frozen}${node.flow.changed ? " ≠" : ""}` : "❄ –"}</span>
+          </div>
+        </>
+      ) : node.kind === "dedup" ? (
         <div className="chain-node-counters" aria-label="Counters" title={describeNode(node)}>
           <span title="Pictures it sees">▦ {node.flow?.frames ?? 0}</span>
           <span title="Muted by this box">🔇 {node.flow?.muted ?? 0}</span>
@@ -133,7 +149,7 @@ function Box({ data, selected }: NodeProps<BoxNode>) {
 const nodeTypes = { box: Box };
 /** How far (px) from an anchor point a dragged arrow still snaps to it. */
 const CONNECT_RADIUS = 40;
-const FLOW_PAGE = { crop: "Picture edits", detector: "Detector", calc: "Calculate", evaluation: "Evaluation", dedup: "Dedup" } as const;
+const FLOW_PAGE = { crop: "Picture edits", detector: "Detector", calc: "Calculate", evaluation: "Evaluation", dedup: "Dedup", export: "Export" } as const;
 
 function toFlowNode(n: ChainNode, onRename: BoxData["onRename"], selected: boolean): BoxNode {
   return { id: n.id, type: "box", position: { x: n.x, y: n.y }, data: { node: n, onRename }, selected, deletable: n.kind === "roi" || isFlowKind(n.kind) };
@@ -145,6 +161,7 @@ export function toFlowEdge(e: ChainCanvas["edges"][number]): Edge {
     source: e.source,
     sourceHandle: e.source_handle,
     target: e.target,
+    targetHandle: e.target_handle ?? undefined,
     type: "smoothstep",
     deletable: !e.locked,
     className: e.locked ? "chain-edge-locked" : undefined,
@@ -252,7 +269,7 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
 
   const onConnect = (c: Connection) => {
     if (!canvas) return;
-    const link = { source: c.source, sourceHandle: c.sourceHandle, target: c.target };
+    const link = { source: c.source, sourceHandle: c.sourceHandle, target: c.target, targetHandle: c.targetHandle };
     const flowArrow = flowConnect(canvas, link);
     const target = canvas.nodes.find((n) => n.id === c.target);
     let run: () => void;
@@ -263,6 +280,9 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
     } else if ("error" in flowArrow) {
       setError(flowArrow.error);
       return;
+    } else if ("exportLine" in flowArrow) {
+      const a = flowArrow.exportLine; // a dot or box dropped on the OK or NG input of an Export box: one more line into it
+      run = () => void applyFlow(() => api.flowUpdate(camera, a.box, { add_line: { input: a.input, ref: a.ref } }));
     } else if ("dedupSource" in flowArrow) {
       const a = flowArrow.dedupSource; // a Classifier or Evaluation dot dropped on a Dedup, Picture edits or detector box: the box reads only the pictures on that dot
       run = () => void applyFlow(() => api.flowUpdate(camera, a.box, { source: a.evaluation ? { box: a.evaluation, dot: a.dot } : { feature: a.feature, dot: a.dot } }));
@@ -300,7 +320,10 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
     if (!canvas) return;
     const targetNode = canvas.nodes.find((n) => n.id === edge.target);
     const ends = [edge.source, edge.target].map((id) => canvas.nodes.find((n) => n.id === id)?.kind);
-    if (isDedupSourceEdge(canvas, edge)) void applyFlow(() => api.flowUpdate(camera, edge.target, { source: null }));
+    if (isExportLineEdge(canvas, edge)) {
+      const line = exportLineOf(canvas, edge);
+      if (line) void applyFlow(() => api.flowUpdate(camera, edge.target, { remove_line: line }));
+    } else if (isDedupSourceEdge(canvas, edge)) void applyFlow(() => api.flowUpdate(camera, edge.target, { source: null }));
     else if (isDedupInputEdge(canvas, edge)) void applyFlow(() => api.setChainDedup(camera, targetNode!.ref!, null));
     else if (isRoiInputEdge(canvas, edge)) void api.clearRoiInput(camera, targetNode!.ref!).then(() => reload()).catch(fail);
     else if (isAnchorEdge(canvas, edge)) void api.clearRoiAnchor(camera, targetNode!.ref!).then(() => reload()).catch(fail);
@@ -332,7 +355,7 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
 
   const isValidConnection = (c: Connection | Edge) => {
     if (!canvas) return false;
-    const link = { source: c.source, sourceHandle: c.sourceHandle ?? null, target: c.target };
+    const link = { source: c.source, sourceHandle: c.sourceHandle ?? null, target: c.target, targetHandle: c.targetHandle ?? null };
     const flowArrow = flowConnect(canvas, link);
     return flowArrow === null ? !("error" in connectAction(canvas, link)) : !("error" in flowArrow);
   };
@@ -386,7 +409,7 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
     return freeSpot(taken, dropPosition(middle, box), box);
   };
 
-  const addFlowBox = async (kind: "crop" | "detector" | "calc" | "evaluation" | "dedup", at?: { x: number; y: number }) => {
+  const addFlowBox = async (kind: "crop" | "detector" | "calc" | "evaluation" | "dedup" | "export", at?: { x: number; y: number }) => {
     await applyFlow(async () => {
       const made = await api.flowCreate(camera, kind);
       setSelectedId(made.id);

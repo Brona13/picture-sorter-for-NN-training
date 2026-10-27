@@ -112,3 +112,16 @@ test("drawing onto a taken input asks; Esc leaves the old line; a free output or
   fireEvent.keyDown(window, { key: "Enter" });
   await waitFor(() => expect(writes().some((c) => c.url.endsWith("/flow/edges") && c.body.source === "ingest" && c.body.target === "det:1")).toBe(true));
 });
+
+test("a Classifier dot dropped on the OK input of an Export box adds a line to it; deleting that line removes only it", async () => {
+  current.nodes.push(flowNode("export:1", "export", "Export"));
+  current.edges.push({ id: "x1", source: "roi:seal", source_handle: "p:OK", target: "export:1", target_handle: "in:ng", locked: false });
+  await open();
+  act(() => flowProps.onConnect({ source: "roi:seal", sourceHandle: "all", target: "export:1", targetHandle: "in:ok" }));
+  await waitFor(() => expect(writes().some((c) => c.method === "PUT" && c.url.endsWith("/flow/nodes/export%3A1") && c.body.add_line?.input === "ok" && c.body.add_line.ref.dot === "all")).toBe(true));
+  expect(flowProps.edges.find((e: any) => e.id === "x1").targetHandle).toBe("in:ng");
+  calls.length = 0;
+  await act(async () => { await flowProps.onBeforeDelete({ nodes: [], edges: [{ id: "x1" }] }); });
+  fireEvent.keyDown(window, { key: "Enter" });
+  await waitFor(() => expect(writes().some((c) => c.body?.remove_line?.input === "ng" && c.body.remove_line.ref.feature === "seal" && c.body.remove_line.ref.dot === "OK")).toBe(true));
+});

@@ -348,7 +348,7 @@ export interface CameraDeletePreview {
 /** One box of the chain canvas: Ingest, a Classifier (one ROI with its labeling) or a measurement box (see `chain.py`). */
 export interface ChainNode {
   id: string;
-  kind: "ingest" | "roi" | "classify" | "crop" | "detector" | "calc" | "evaluation" | "dedup";
+  kind: "ingest" | "roi" | "classify" | "crop" | "detector" | "calc" | "evaluation" | "dedup" | "export";
   /** The ROI's feature name (null for Ingest). */
   ref: string | null;
   label: string;
@@ -429,6 +429,17 @@ export interface FlowSummary {
   muted?: number;
   deleted?: number;
   feeds?: string[];
+  /** An Export box: lines per input, pictures per folder, and the state of its last freeze. */
+  lines?: { ok: number; ng: number };
+  folders?: Record<string, number>;
+  total?: number;
+  ok?: number;
+  ng?: number;
+  both?: number;
+  uses_product?: boolean;
+  frozen?: number | null;
+  changed?: boolean | null;
+  exported?: boolean | null;
 }
 
 export interface FlowExample {
@@ -534,7 +545,38 @@ export interface FlowEvaluation {
   histogram: { low: number; high: number; bins: number[] } | null;
   features: string[];
 }
-export type FlowNodeDetail = FlowCrop | FlowDetector | FlowCalc | FlowEvaluation;
+/** What one line into an Export input comes from (see `flow._export_ref`). */
+export type ExportRef = { feature: string; dot: string } | { box: string; dot: string } | { from: string };
+export interface FlowExport {
+  kind: "export";
+  lines: { ok: ExportRef[]; ng: ExportRef[] };
+  goldens_only: boolean;
+}
+export interface ExportLatest {
+  id: number;
+  number: number;
+  name: string;
+  created: string;
+  counts: Record<string, number>;
+  /** The Chain would pick other pictures (or folders) than this freeze holds. */
+  changed: boolean;
+  exported: boolean;
+  folder: string;
+}
+export interface ExportState {
+  folders: Record<string, number>;
+  total: number;
+  ok: number;
+  ng: number;
+  both: number;
+  not_golden: number;
+  no_product: number;
+  uses_product: boolean;
+  goldens_only: boolean;
+  lines: { ok: number; ng: number };
+  latest: ExportLatest | null;
+}
+export type FlowNodeDetail = FlowCrop | FlowDetector | FlowCalc | FlowEvaluation | FlowExport;
 export interface FlowBox {
   x: number;
   y: number;
@@ -569,6 +611,17 @@ export interface FlowDeletePreview {
   mutes?: number;
   detections: number;
   arrows: number;
+  /** An Export box: lines per input, pictures per folder, and the state of its last freeze. */
+  lines?: { ok: number; ng: number };
+  folders?: Record<string, number>;
+  total?: number;
+  ok?: number;
+  ng?: number;
+  both?: number;
+  uses_product?: boolean;
+  frozen?: number | null;
+  changed?: boolean | null;
+  exported?: boolean | null;
 }
 
 export interface ChainEdge {
@@ -577,6 +630,8 @@ export interface ChainEdge {
   /** `p:<product>` for a line that leaves one product dot of the product Classifier, `all` for its "all" dot. */
   source_handle: string | null;
   target: string;
+  /** Export boxes only: `in:ok` or `in:ng`, the input the line ends at. */
+  target_handle?: string | null;
   /** An arrow fixed by the ROI's name (`<product>::<roi>`); it cannot be removed. */
   locked: boolean;
 }
@@ -1325,12 +1380,19 @@ export const api = {
   chain: (camera: string) => request<ChainCanvas>(`/cameras/${encodeURIComponent(camera)}/chain`),
   saveChainLayout: (camera: string, layout: ChainLayout) =>
     request<ChainCanvas>(`/cameras/${encodeURIComponent(camera)}/chain/layout`, send("PUT", layout)),
-  flowCreate: (camera: string, kind: "crop" | "detector" | "calc" | "evaluation" | "dedup") =>
+  flowCreate: (camera: string, kind: "crop" | "detector" | "calc" | "evaluation" | "dedup" | "export") =>
     request<{ id: string }>(`/cameras/${encodeURIComponent(camera)}/flow/nodes`, send("POST", { kind })),
   flowNode: (camera: string, id: string) =>
     request<FlowNodeDetail>(`/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}`),
   flowUpdate: (camera: string, id: string, body: Record<string, unknown>) =>
     request<FlowNodeDetail>(`/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}`, send("PUT", body)),
+  flowExport: (camera: string, id: string) =>
+    request<ExportState>(`/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/export`),
+  flowExportFreeze: (camera: string, id: string, name = "", notes = "") =>
+    request<{ id: number; number: number; counts: Record<string, number> }>(
+      `/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/export/freeze`,
+      send("POST", { name, notes }),
+    ),
   flowDeletePreview: (camera: string, id: string) =>
     request<FlowDeletePreview>(`/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/delete-preview`),
   flowDelete: (camera: string, id: string) =>

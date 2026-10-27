@@ -295,6 +295,12 @@ def freeze_project(camera: str, name: str, notes: str = "", goldens_only: bool =
     counts["ok"] = sum(1 for _, c in chosen if c == "OK")
     counts["ng"] = sum(1 for _, c in chosen if c == "NG")
     counts["not_golden"] = not_golden
+    return insert_project_version(camera, name, notes, counts, {"export": {"goldens_only": 1 if goldens_only else 0}}, chosen)
+
+
+def insert_project_version(camera: str, name: str, notes: str, counts: dict, stats: dict, items: list[tuple[str, str]]) -> dict:
+    """Store the next project version: ``items`` are (frame, class folder) pairs; the folder is ``OK`` / ``NG`` or, with
+    products, ``<product>/OK``. It becomes the active one. Returns ``{id, number, counts}``."""
     hmap = labels.hash_map(camera)
     con = db.connect()
     try:
@@ -304,13 +310,12 @@ def freeze_project(camera: str, name: str, notes: str = "", goldens_only: bool =
         cur = con.execute(
             "INSERT INTO versions(camera, feature, number, name, notes, created, counts_json, stats_json, active) "
             "VALUES (?,?,?,?,?,?,?,?,1)",
-            (camera, PROJECT, number, name.strip() or f"v{number}", notes.strip(), time.time(), json.dumps(counts),
-             json.dumps({"export": {"goldens_only": 1 if goldens_only else 0}})),
+            (camera, PROJECT, number, name.strip() or f"v{number}", notes.strip(), time.time(), json.dumps(counts), json.dumps(stats)),
         )
         vid = cur.lastrowid
         con.executemany(
             "INSERT INTO version_items(version_id, frame, hash, kind, class) VALUES (?,?,?,?,?)",
-            [(vid, f, labels.frame_hash(camera, f, hmap), "verdict", cls) for f, cls in chosen],
+            [(vid, f, labels.frame_hash(camera, f, hmap), "verdict", cls) for f, cls in items],
         )
         con.commit()
     finally:

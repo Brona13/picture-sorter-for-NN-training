@@ -27,6 +27,7 @@ import roi_input
 import datamodel
 import db
 import dedup_box
+import export_box
 import flow
 import labels
 import lines
@@ -231,11 +232,16 @@ def _flow_nodes(camera: str, graph: dict, stored: dict) -> list[dict]:
                 "deleted": len(db.deleted_frames_of(camera)),
                 "feeds": dedup_box.fed_by(camera).get(node_id, []),
             }
+        elif kind == "export":
+            st = export_box.state(camera, node_id)
+            summary = {"lines": st["lines"], "folders": st["folders"], "total": st["total"], "ok": st["ok"], "ng": st["ng"], "both": st["both"],
+                       "uses_product": st["uses_product"], "frozen": (st["latest"] or {}).get("number"), "changed": (st["latest"] or {}).get("changed"),
+                       "exported": (st["latest"] or {}).get("exported")}
         else:
             state = flow.evaluation_state(camera, node_id)
             summary = {"nominal": node["nominal"], "tolerance": node["tolerance"], "unit": state["unit"], "counts": state["counts"],
                        "mode": state["mode"], "zone": state["zone"]}
-        default = {"crop": "Picture edits", "detector": "Detector", "calc": "Calculate", "evaluation": "Evaluation", "dedup": "Dedup"}[kind]
+        default = {"crop": "Picture edits", "detector": "Detector", "calc": "Calculate", "evaluation": "Evaluation", "dedup": "Dedup", "export": "Export"}[kind]
         entry = stored.get(node_id, {})
         nodes.append({
             "id": node_id, "kind": kind, "ref": None, "label": entry.get("label") or f"{default} {node_id.split(':')[1]}",
@@ -252,7 +258,7 @@ def overview_flow(camera: str, picture_frame: str | None) -> dict | None:
     if not graph["nodes"]:
         return None
     stored = load_layout(camera)["nodes"]
-    order = {"crop": 0, "detector": 1, "calc": 2, "evaluation": 3, "dedup": 4}
+    order = {"crop": 0, "detector": 1, "calc": 2, "evaluation": 3, "dedup": 4, "export": 5}
     nodes = sorted(_flow_nodes(camera, graph, stored), key=lambda n: (order[n["kind"]], n["id"]))
     boxes: list[dict] = []
     size = None
@@ -299,6 +305,8 @@ def _column(node: dict) -> int:
         return 2
     if node["kind"] == "evaluation":
         return 3
+    if node["kind"] == "export":
+        return 4
     return 1 if node["role"] == "classify" else 3
 
 
@@ -373,6 +381,19 @@ def get_canvas(camera: str) -> dict:
         if judged and judged["box"] in known and box in known:
             handle = ALL_HANDLE if judged["dot"] == ALL_HANDLE else product_handle(judged["dot"])
             edges.append({"id": f"{judged['box']}#{handle}->{box}", "source": judged["box"], "source_handle": handle, "target": box, "locked": False})
+    for box_id, node in sorted(graph["nodes"].items()):  # the lines into an Export box's OK and NG inputs
+        if node["kind"] != "export" or box_id not in known:
+            continue
+        for where, refs in flow.export_lines(graph, box_id).items():
+            for ref in refs:
+                if ref.get("from"):
+                    source, handle = ref["from"], None
+                elif ref.get("box"):
+                    source, handle = ref["box"], (ALL_HANDLE if ref["dot"] == ALL_HANDLE else product_handle(ref["dot"]))
+                else:
+                    source, handle = roi_node_id(ref["feature"]), (ALL_HANDLE if ref["dot"] == ALL_HANDLE else product_handle(ref["dot"]))
+                if source in known:
+                    edges.append({"id": f"{source}#{handle or ''}->{box_id}#in:{where}", "source": source, "source_handle": handle, "target": box_id, "target_handle": f"in:{where}", "locked": False})
     for roi in rois:  # a Classifier read through a Dedup box hangs from it
         box = dedup_box.input_of(camera, roi.name)
         if box and box in known:

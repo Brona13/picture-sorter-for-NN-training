@@ -38,8 +38,8 @@ _log = applog.get("flow")
 GRAPH_KEY = "flow.graph"
 RESULTS_PREFIX = "flow.det."
 INGEST_ID = "ingest"
-KINDS = ("crop", "detector", "calc", "evaluation", "dedup")
-PREFIX = {"crop": "crop", "detector": "det", "calc": "calc", "evaluation": "eval", "dedup": "dedup"}
+KINDS = ("crop", "detector", "calc", "evaluation", "dedup", "export")
+PREFIX = {"crop": "crop", "detector": "det", "calc": "calc", "evaluation": "eval", "dedup": "dedup", "export": "export"}
 KIND_OF = {v: k for k, v in PREFIX.items()}
 PICTURE_KINDS = ("crop", "detector")  # boxes that read a picture (a box with no line reads the whole picture)
 ALGORITHM = 1  # bump when detection changes, so stored boxes are recomputed
@@ -507,6 +507,8 @@ def _default_config(kind: str) -> dict:
         return {"targets": [], "angle_range": None, "rotate": True, "pad": DEFAULT_PAD, "source": None}
     if kind == "calc":
         return {"op": "angle", "a": None, "b": None, "clockwise": False}
+    if kind == "export":
+        return {"lines": {"ok": [], "ng": []}, "goldens_only": True}  # what feeds each dot (see ``export_box.py``)
     if kind == "dedup":
         return {"source": None}  # None: the whole camera (or the box a line comes from); else {"feature", "dot"} of a Classifier
     return {"nominal": None, "tolerance": 3.0, "zone": clean_zone(None)}
@@ -698,7 +700,8 @@ def delete_preview(camera: str, node_id: str) -> dict:
         "kind": kind_of(node_id),
         "detections": len(stored["frames"]),
         "arrows": sum(1 for e in graph["edges"] if node_id in (e["source"], e["target"]))
-        + sum(1 for n in graph["nodes"].values() if isinstance(n.get("source"), dict) and n["source"].get("box") == node_id),
+        + sum(1 for n in graph["nodes"].values() if isinstance(n.get("source"), dict) and n["source"].get("box") == node_id)
+        + _export_readers(graph, node_id),
         **({"mutes": len(db.muted_frames(camera, node_id))} if kind_of(node_id) == "dedup" else {}),
     }
 
@@ -711,6 +714,9 @@ def delete_node(camera: str, node_id: str) -> None:
     for other in graph["nodes"].values():  # a box that read a dot of the deleted Evaluation reads the whole camera again
         if isinstance(other.get("source"), dict) and other["source"].get("box") == node_id:
             other["source"] = None
+        if other.get("kind") == "export":  # an Export box loses the lines that came from the deleted box
+            stored = other.get("lines") or {}
+            other["lines"] = {k: [r for r in stored.get(k, []) if node_id not in (r.get("box"), r.get("from"))] for k in EXPORT_INPUTS}
     save_graph(camera, graph)
     _drop_results(camera, node_id)
 
@@ -855,6 +861,24 @@ def update_node(camera: str, node_id: str, raw: dict) -> dict:
             node["source"] = _dedup_source(camera, node_id, raw["source"])
             if node["source"]:
                 graph["edges"] = [e for e in graph["edges"] if e["target"] != node_id]  # one input: the Classifier dot replaces the line
+    elif kind == "export":
+        node.setdefault("lines", {"ok": [], "ng": []})
+        if "add_line" in raw:
+            spec = raw["add_line"] if isinstance(raw["add_line"], dict) else {}
+            where = _export_input(spec.get("input"))
+            ref = _export_ref(camera, graph, spec.get("ref"))
+            if ref not in node["lines"][where]:
+                node["lines"][where] = node["lines"][where] + [ref]
+        if "remove_line" in raw:
+            spec = raw["remove_line"] if isinstance(raw["remove_line"], dict) else {}
+            where = _export_input(spec.get("input"))
+            ref = spec.get("ref")
+            kept = [r for r in node["lines"][where] if r != ref]
+            if len(kept) == len(node["lines"][where]):
+                raise FlowError("There is no such line.")
+            node["lines"][where] = kept
+        if "goldens_only" in raw:
+            node["goldens_only"] = bool(raw["goldens_only"])
     else:
         if "nominal" in raw:
             node["nominal"] = None if raw["nominal"] is None else _finite(raw["nominal"], "Nominal")
@@ -870,6 +894,50 @@ def update_node(camera: str, node_id: str, raw: dict) -> dict:
 
 
 VERDICT_DOTS = ("pass", "fail", lines.ALL_DOT)
+EXPORT_INPUTS = ("ok", "ng")
+
+
+def _export_input(raw: object) -> str:
+    if raw not in EXPORT_INPUTS:
+        raise FlowError("An Export box has two inputs: OK and NG.")
+    return str(raw)
+
+
+def _export_ref(camera: str, graph: dict, raw: object) -> dict:
+    """What one line into an Export box comes from: one dot of a Classifier (``{"feature", "dot"}``), one dot of an Evaluation
+    (``{"box", "dot"}``: pass, fail or all) or a whole box that passes pictures on (``{"from"}``: Ingest, Picture edits, a detector or Dedup)."""
+    if not isinstance(raw, dict):
+        raise FlowError("A line into Export comes from a Classifier or Evaluation dot, or from a box.")
+    if raw.get("from"):
+        box = str(raw["from"])
+        if box != INGEST_ID and (kind_of(box) not in ("crop", "detector", "dedup") or box not in graph["nodes"]):
+            raise FlowError(f"{box} cannot feed Export: it passes no pictures on.")
+        return {"from": box}
+    if raw.get("box"):
+        box, dot = str(raw["box"]), str(raw.get("dot") or "")
+        if kind_of(box) != "evaluation" or box not in graph["nodes"]:
+            raise FlowError(f"Unknown Evaluation: {box}")
+        if dot not in VERDICT_DOTS:
+            raise FlowError("An Evaluation has the dots pass, fail and all.")
+        return {"box": box, "dot": dot}
+    feature, dot = str(raw.get("feature") or ""), str(raw.get("dot") or "")
+    if datamodel.get_roi(camera, feature) is None:
+        raise FlowError(f"Unknown ROI: {feature}")
+    if dot != lines.ALL_DOT and dot not in datamodel.classes_for(camera, feature):
+        raise FlowError(f"{feature} has no class {dot}.")
+    return {"feature": feature, "dot": dot}
+
+
+def export_lines(graph: dict, node_id: str) -> dict[str, list[dict]]:
+    """The lines into an Export box by input: ``{"ok": [...], "ng": [...]}``."""
+    stored = (graph["nodes"].get(node_id) or {}).get("lines") or {}
+    return {k: list(stored.get(k) or []) for k in EXPORT_INPUTS}
+
+
+def _export_readers(graph: dict, box: str) -> int:
+    """How many lines into Export boxes come from ``box`` (what deleting it would cut)."""
+    return sum(1 for n_id, n in graph["nodes"].items() if n.get("kind") == "export"
+               for refs in export_lines(graph, n_id).values() for r in refs if box in (r.get("box"), r.get("from")))
 
 
 def _upstream_ids(graph: dict, node_id: str, _seen: set[str] | None = None) -> set[str]:
@@ -1923,6 +1991,8 @@ def node_detail(camera: str, node_id: str, graph: dict | None = None) -> dict:
     elif kind == "dedup":
         parent = next((e["source"] for e in graph["edges"] if e["target"] == node_id), None)
         detail.update({"input_box": parent, "source": node.get("source")})
+    elif kind == "export":
+        detail.update({"lines": export_lines(graph, node_id), "goldens_only": node.get("goldens_only", True)})
     elif kind == "evaluation":
         calc_id = evaluation_source(graph, node_id)
         state = evaluation_state(camera, node_id)

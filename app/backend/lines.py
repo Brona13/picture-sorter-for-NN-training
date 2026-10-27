@@ -43,10 +43,11 @@ TAKES = {
     "calc": {POINT},
     "evaluation": {VALUE},
     "dedup": {FRAMES, PICTURE},
+    "export": {FRAMES, PICTURE},  # two inputs, OK and NG; it gives nothing (the end of the chain)
 }
 NAMES = {
     "ingest": "Ingest", "roi": "a Classifier", "classify": "a Classify box", "crop": "Picture edits",
-    "detector": "a detector", "calc": "Calculate", "evaluation": "Evaluation", "dedup": "a Dedup box",
+    "detector": "a detector", "calc": "Calculate", "evaluation": "Evaluation", "dedup": "a Dedup box", "export": "Export",
 }
 TYPE_NAMES = {FRAMES: "frames", PICTURE: "a picture", POINT: "a target point", VALUE: "a number", VERDICT: "a verdict"}
 

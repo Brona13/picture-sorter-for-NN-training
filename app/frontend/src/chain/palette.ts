@@ -1,7 +1,7 @@
 import type { ChainNode } from "../api";
 
 /** One colour per box type (the hue of its border, fill and palette tile). */
-export const HUE = { ingest: 160, roi: 30, classify: 145, crop: 100, detector: 265, calc: 200, evaluation: 340, dedup: 55 } as const;
+export const HUE = { ingest: 160, roi: 30, classify: 145, crop: 100, detector: 265, calc: 200, evaluation: 340, dedup: 55, export: 20 } as const;
 
 /** One fixed size per box type, in canvas pixels. A box never changes size with what it holds; only the rows that are
  *  classes (Classify box) or targets (detector) make a box taller, because each row carries its own dot. */
@@ -14,10 +14,11 @@ export const BOX_SIZE: Record<ChainNode["kind"], { w: number; h: number }> = {
   calc: { w: 200, h: 86 },
   evaluation: { w: 200, h: 86 },
   dedup: { w: 200, h: 86 },
+  export: { w: 200, h: 110 },
 };
 
 /** What the palette can add. One Classifier tile: its mode (Product or Feature) is chosen in the panel. */
-export type PaletteKind = "classifier" | "crop" | "detector" | "calc" | "evaluation" | "dedup";
+export type PaletteKind = "classifier" | "crop" | "detector" | "calc" | "evaluation" | "dedup" | "export";
 
 export interface PaletteItem {
   kind: PaletteKind;
@@ -43,6 +44,10 @@ export const PALETTE: { group: string; items: PaletteItem[] }[] = [
       { kind: "calc", label: "Calculate", box: "calc", hint: "Angle or distance between two points." },
       { kind: "evaluation", label: "Evaluation", box: "evaluation", hint: "Nominal ± tolerance on a number." },
     ],
+  },
+  {
+    group: "Picture sink",
+    items: [{ kind: "export", label: "Export", box: "export", hint: "The end of the Chain: OK and NG inputs; freezes and exports the originals into folders." }],
   },
   {
     group: "Sorts pictures into classes",

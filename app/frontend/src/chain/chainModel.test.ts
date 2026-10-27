@@ -289,3 +289,29 @@ test("describeNode: an Evaluation behind an Offset says its zone", () => {
   expect(describeNode(f({ zone: { shape: "circle", center: [100, 0.04], radius: 6, half: [10, 10] }, counts }))).toBe("circle r 6 around nominal 100, 0 px · 5 pass, 2 fail");
   expect(describeNode(f({ zone: { shape: "rect", center: [1, 2], radius: 6, half: [10, 4] } }))).toBe("rectangle 20 × 8 around nominal 1, 2 px");
 });
+
+test("Export boxes: a Classifier or Evaluation dot or a passing box feeds the OK or NG input; nothing leaves Export", () => {
+  const withExport: ChainCanvas = {
+    ...flowCanvas,
+    nodes: [
+      ...flowCanvas.nodes,
+      node({ id: "export:1", kind: "export", ref: null, role: null, scope: null, label: "Export" }),
+      node({ id: "eval:1", kind: "evaluation", ref: null, role: null, scope: null, label: "Evaluation 1" }),
+      node({ id: "dedup:1", kind: "dedup", ref: null, role: null, scope: null, label: "Dedup 1" }),
+    ],
+  };
+  const to = (source: string, sourceHandle: string | null, targetHandle: string | null) => flowConnect(withExport, { source, sourceHandle, target: "export:1", targetHandle });
+  expect(to("roi:seal", "p:OK", "in:ok")).toEqual({ exportLine: { box: "export:1", input: "ok", ref: { feature: "seal", dot: "OK" } } });
+  expect(to("roi:seal", "all", "in:ng")).toEqual({ exportLine: { box: "export:1", input: "ng", ref: { feature: "seal", dot: "all" } } });
+  expect(to("eval:1", "p:fail", "in:ng")).toEqual({ exportLine: { box: "export:1", input: "ng", ref: { box: "eval:1", dot: "fail" } } });
+  expect(to("dedup:1", null, "in:ok")).toEqual({ exportLine: { box: "export:1", input: "ok", ref: { from: "dedup:1" } } });
+  expect(to("ingest", null, "in:ok")).toEqual({ exportLine: { box: "export:1", input: "ok", ref: { from: "ingest" } } });
+  expect(to("roi:seal", "p:OK", null)).toHaveProperty("error"); // no input chosen
+  expect(to("eval:1", "p:maybe", "in:ok")).toHaveProperty("error");
+  expect(flowConnect(withExport, { source: "export:1", sourceHandle: null, target: "dedup:1" })).toHaveProperty("error");
+});
+
+test("describeFlow: an Export box says its lines, counts and freeze", () => {
+  expect(describeFlow("export", { lines: { ok: 0, ng: 0 } } as any)).toBe("connect lines to OK or NG");
+  expect(describeFlow("export", { lines: { ok: 1, ng: 1 }, ok: 5, ng: 2, frozen: 3, changed: true } as any)).toBe("5 OK · 2 NG · frozen v3 (changed)");
+});

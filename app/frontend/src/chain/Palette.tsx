@@ -39,6 +39,12 @@ const ICONS: Record<PaletteKind, ReactElement> = {
       <path d="M6.5 12.5l2 2 3.5-4" />
     </>
   ),
+  export: (
+    <>
+      <path d="M4 7h6l2 2h8v10H4z" />
+      <path d="M12 12v5M9.5 14.5L12 17l2.5-2.5" />
+    </>
+  ),
   evaluation: (
     <>
       <path d="M3 17h18" />

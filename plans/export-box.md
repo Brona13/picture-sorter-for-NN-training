@@ -1,14 +1,14 @@
 ---
 name: export-box
 description: Plan for an Export box at the end of the Chain (OK / NG dots, golden pictures, freeze then export); decisions of 2026-10-27, nothing built yet
-status: draft
+status: built in v1.114.0 (Run button and retiring the old Versions export still open)
 document_type: plan
 last_updated: 2026-10-27
 ---
 
 # Export box (plan, 2026-10-27)
 
-**Status: discussed and decided with the user, no code yet.** Getting selected pictures out is the main goal of the app. The Chain is becoming a recipe: per camera, the flow says what to do with the pictures. This plan is for the Export box only.
+**Status: built in v1.114.0 (see `docs/current-project.md`). Still open: the Run button, and retiring the old Versions export.** Getting selected pictures out is the main goal of the app. The Chain is becoming a recipe: per camera, the flow says what to do with the pictures. This plan is for the Export box only.
 
 ## What exists today
 

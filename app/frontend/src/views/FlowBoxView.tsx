@@ -16,6 +16,7 @@ import ZoneScatter from "./ZoneScatter";
 import { Zone } from "../zoneGeometry";
 import CalcGeometry from "./CalcGeometry";
 import type { EvalSpec } from "../evalGeometry";
+import ExportWork from "./ExportWork";
 import ValueGrid, { ViewerExtras } from "./ValueGrid";
 
 const CHART_STORE = "flow.histogram";
@@ -64,7 +65,7 @@ const handlePoint = (r: Rect, h: Handle) => ({
   y: h.includes("n") ? r[1] : h.includes("s") ? r[1] + r[3] : r[1] + r[3] / 2,
 });
 
-const TITLES = { crop: "Picture edits", detector: "Detector", calc: "Calculate", evaluation: "Evaluation" } as const;
+const TITLES = { crop: "Picture edits", detector: "Detector", calc: "Calculate", evaluation: "Evaluation", export: "Export" } as const;
 
 export type FlowFocus = { nodeId: string; onBack: () => void };
 
@@ -110,7 +111,8 @@ export default function FlowBoxView({ camera, focus }: { camera: string; focus: 
         {error && <p role="alert">{error}</p>}
         {detail?.kind === "crop" && <PictureEditsWork camera={camera} nodeId={nodeId} detail={detail} edits={edits} onError={setError} />}
         {detail?.kind === "detector" && <DetectorWork camera={camera} nodeId={nodeId} detail={detail} setDetail={setDetail} version={version} onChanged={changed} onError={setError} />}
-        {detail && detail.kind !== "detector" && detail.kind !== "crop" && (
+        {detail?.kind === "export" && <ExportWork camera={camera} nodeId={nodeId} detail={detail} setDetail={setDetail} onError={setError} />}
+        {detail && detail.kind !== "detector" && detail.kind !== "crop" && detail.kind !== "export" && (
           <ValuesWork camera={camera} nodeId={nodeId} detail={detail} setDetail={setDetail} version={version} onError={setError} />
         )}
       </section>
