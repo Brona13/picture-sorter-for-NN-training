@@ -308,19 +308,6 @@ test("a ROI that is the found box has nothing to draw: the page says so", async 
   expect(screen.getByLabelText(/Frame to draw on/)).not.toBeDisabled();
 });
 
-test("the anchor settings live on the ROI page: the detector's targets can be chosen there", async () => {
-  install(focusData());
-  const inner = globalThis.fetch;
-  vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) =>
-    url.endsWith("/chain") ? new Response(JSON.stringify({ edges: [], nodes: [
-      { id: "det:1", kind: "detector", ref: null, label: "Detector 1", role: null, flow: { targets: ["hole"] } },
-      { id: "roi:seal", kind: "roi", ref: "seal", label: "seal", role: "quality", scope: "camera" },
-    ] })) : inner(url, init)));
-  render(<RoiEditorView camera="camA" focus={{ feature: "seal", onBack: () => {} }} />);
-  expect(await screen.findByRole("heading", { name: "Anchor" })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Set anchor" })).toBeInTheDocument();
-});
-
 test("a Classifier that uses the picture as it comes in has no rectangle: none is drawn, no fields, no Save position", async () => {
   install(base({ rois: [roi({ feature: "seal", short_name: "seal", region: "as_is" })] }));
   render(<RoiEditorView camera="camA" focus={{ feature: "seal", onBack: () => {} }} />);
@@ -346,6 +333,7 @@ test("a Classifier that is the found box shows the content of the detected box, 
   render(<RoiEditorView camera="camA" focus={{ feature: "seal", onBack: () => {} }} />);
   const img = await screen.findByAltText("The box the detector found");
   expect(img.getAttribute("src")).toContain("/frames/f1.png/cutout?feature=seal");
+  expect(screen.getByRole("button", { name: /reset/i })).toBeInTheDocument(); // the zoomable canvas, not a bare picture
   expect(screen.queryByLabelText("x")).toBeNull();
   expect(screen.queryByText(/uses the picture as it comes in/)).toBeNull(); // the anchored note says it instead
 });

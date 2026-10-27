@@ -38,6 +38,8 @@ interface Props {
   onChange: (box: Box) => void;
   /** Other ROIs, drawn as green outlines for reference. */
   others?: { name: string; box: Box }[];
+  /** Alternative text of the picture (default: "Frame to draw on"). */
+  alt?: string;
   maxWidth?: number;
   /** Exact display width in px (the picture may be scaled up); without it the picture keeps its own size up to ``maxWidth``. */
   width?: number;
@@ -51,7 +53,7 @@ interface Props {
  * edit mode also by dragging the background). Draw mode: drag to create a rectangle. Edit mode: drag the box
  * to move it or a handle to resize it. The box stays in normalised coordinates at any zoom.
  */
-export default function RoiCanvas({ imageUrl, mode, box, onChange, others = [], maxWidth = 1100, width, view, onViewChange }: Props) {
+export default function RoiCanvas({ imageUrl, mode, box, onChange, others = [], alt = "Frame to draw on", maxWidth = 1100, width, view, onViewChange }: Props) {
   const area = useRef<HTMLDivElement>(null);
   const drag = useRef<Drag | null>(null);
   const [size, setSize] = useState({ w: 4, h: 3 }); // picture size in pixels (a placeholder shape until it loads)
@@ -110,7 +112,7 @@ export default function RoiCanvas({ imageUrl, mode, box, onChange, others = [], 
     >
       <img
         src={imageUrl}
-        alt="Frame to draw on"
+        alt={alt}
         draggable={false}
         style={{ width: "100%", height: "100%", display: "block" }}
         onLoad={(e) => {

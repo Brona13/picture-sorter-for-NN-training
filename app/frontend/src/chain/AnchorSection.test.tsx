@@ -6,7 +6,7 @@ import AnchorSection from "./AnchorSection";
 
 const base = { x: 0, y: 0, role: null, scope: null, product: null, products: [], classes: [], frames: 0, labeled: 0, product_counts: {}, unlabeled: 0 };
 const detector = { ...base, id: "det:1", kind: "detector", ref: null, label: "Detector 1", flow: { targets: ["hole", "notch"] } } as ChainNode;
-const roi = { ...base, id: "roi:part", kind: "roi", ref: "part", label: "part", role: "quality", scope: "camera" } as ChainNode;
+const roi = { ...base, id: "roi:part", kind: "roi", ref: "part", label: "part", role: "quality", scope: "camera", anchor: { detector: "det:1", target: "hole", mode: "box", follow_rotation: false } } as ChainNode;
 
 let calls: { url: string; method: string; body?: any }[];
 
@@ -21,48 +21,49 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-test("sets the anchor from the first picture where the target was found, with the chosen options", async () => {
+test("has no detector or target to pick: the line already says it; nothing without an anchor", async () => {
+  const { container, rerender } = render(<AnchorSection camera="camA" roi={roi} detectors={[detector]} onChanged={() => {}} onError={() => {}} />);
+  expect(screen.queryByLabelText("Detector")).toBeNull();
+  expect(screen.queryByLabelText("Target")).toBeNull();
+  expect(screen.queryByRole("button", { name: /anchor/i })).toBeNull();
+  expect(screen.getByLabelText(/the found box/)).toBeChecked();
+  const bare = { ...roi, anchor: undefined } as ChainNode;
+  rerender(<AnchorSection camera="camA" roi={bare} detectors={[detector]} onChanged={() => {}} onError={() => {}} />);
+  expect(container).toBeEmptyDOMElement();
+});
+
+test("choosing my own rectangle is saved at once, from the first picture where the target was found", async () => {
   const onChanged = vi.fn();
   render(<AnchorSection camera="camA" roi={roi} detectors={[detector]} onChanged={onChanged} onError={() => {}} />);
+  await waitFor(() => expect(screen.getByLabelText(/my own rectangle/)).toBeEnabled());
   await userEvent.click(screen.getByLabelText(/my own rectangle/));
-  await waitFor(() => expect(screen.getByRole("option", { name: "a.png" })).toBeInTheDocument());
-  expect(screen.queryByRole("option", { name: "c.png" })).toBeNull(); // the notch was found there, not the hole
-  await userEvent.click(screen.getByLabelText(/Follow rotation/));
-  await userEvent.click(screen.getByRole("button", { name: "Set anchor" }));
   await waitFor(() => expect(onChanged).toHaveBeenCalled());
   const put = calls.find((c) => c.method === "PUT")!;
   expect(put.url).toContain("/rois/part/anchor");
-  expect(put.body).toEqual({ detector: "det:1", target: "hole", mode: "rect", frame: "a.png", follow_rotation: true });
+  expect(put.body).toEqual({ detector: "det:1", target: "hole", mode: "rect", frame: "a.png", follow_rotation: false });
 });
 
-test("an anchored ROI can be released", async () => {
-  const anchored = { ...roi, anchor: { detector: "det:1", target: "hole", mode: "rect", follow_rotation: false, angle0: 0, dx: 1, dy: 1, w: 5, h: 5 } } as ChainNode;
-  render(<AnchorSection camera="camA" roi={anchored} detectors={[detector]} onChanged={() => {}} onError={() => {}} />);
-  await userEvent.click(await screen.findByRole("button", { name: "Remove anchor" }));
-  await waitFor(() => expect(calls.some((c) => c.method === "DELETE" && c.url.endsWith("/rois/part/anchor"))).toBe(true));
+test("with its own rectangle, the example picture lists only pictures with the target, and follow rotation is saved at once", async () => {
+  const own = { ...roi, anchor: { detector: "det:1", target: "hole", mode: "rect", frame: "a.png", follow_rotation: false } } as ChainNode;
+  render(<AnchorSection camera="camA" roi={own} detectors={[detector]} onChanged={() => {}} onError={() => {}} />);
+  await waitFor(() => expect(screen.getByRole("option", { name: "b.png" })).toBeInTheDocument());
+  expect(screen.queryByRole("option", { name: "c.png" })).toBeNull();
+  await userEvent.click(screen.getByLabelText(/Follow rotation/));
+  await waitFor(() => expect(calls.some((c) => c.method === "PUT")).toBe(true));
+  expect(calls.find((c) => c.method === "PUT")!.body).toEqual({ detector: "det:1", target: "hole", mode: "rect", frame: "a.png", follow_rotation: true });
 });
 
-test("by default the ROI is exactly the found box, with no margin option; no example picture is needed", async () => {
-  const onChanged = vi.fn();
-  render(<AnchorSection camera="camA" roi={roi} detectors={[detector]} onChanged={onChanged} onError={() => {}} />);
-  expect(screen.getByLabelText(/the found box/)).toBeChecked();
-  expect(screen.queryByLabelText(/Rectangle drawn on/)).toBeNull();
-  expect(screen.queryByLabelText(/Margin/)).toBeNull();
-  await userEvent.click(screen.getByRole("button", { name: "Set anchor" }));
-  await waitFor(() => expect(onChanged).toHaveBeenCalled());
-  expect(calls.find((c) => c.method === "PUT")!.body).toEqual({ detector: "det:1", target: "hole", mode: "box" });
-});
-
-
-test("a target that looks for several elements can be used with all its boxes together (the found boxes only)", async () => {
-  const pair = { ...detector, flow: { targets: ["hole 1", "hole 2", "notch"], groups: ["hole"] } } as ChainNode;
-  render(<AnchorSection camera="camA" roi={roi} detectors={[pair]} onChanged={() => {}} onError={() => {}} />);
-  expect(screen.getByRole("option", { name: "hole (each box a picture)" })).toBeInTheDocument();
-  expect(screen.getByLabelText(/my own rectangle/)).toBeDisabled();
-  expect(screen.getByText(/its own picture/)).toBeInTheDocument();
-  await userEvent.click(screen.getByRole("button", { name: "Set anchor" }));
+test("going back to the found box is saved at once", async () => {
+  const own = { ...roi, anchor: { detector: "det:1", target: "hole", mode: "rect", frame: "a.png", follow_rotation: false } } as ChainNode;
+  render(<AnchorSection camera="camA" roi={own} detectors={[detector]} onChanged={() => {}} onError={() => {}} />);
+  await userEvent.click(screen.getByLabelText(/the found box/));
   await waitFor(() => expect(calls.some((c) => c.method === "PUT")).toBe(true));
   expect(calls.find((c) => c.method === "PUT")!.body).toEqual({ detector: "det:1", target: "hole", mode: "box" });
-  await userEvent.selectOptions(screen.getByLabelText("Target"), "hole 2");
-  expect(screen.getByLabelText(/my own rectangle/)).toBeEnabled();
+});
+
+test("a target that looks for several elements gives every box its own picture; no own rectangle", async () => {
+  const pair = { ...detector, flow: { targets: ["hole 1", "hole 2", "notch"], groups: ["hole"] } } as ChainNode;
+  render(<AnchorSection camera="camA" roi={roi} detectors={[pair]} onChanged={() => {}} onError={() => {}} />);
+  expect(screen.getByLabelText(/my own rectangle/)).toBeDisabled();
+  expect(screen.getByText(/its own picture/)).toBeInTheDocument();
 });

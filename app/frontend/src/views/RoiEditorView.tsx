@@ -287,24 +287,17 @@ export default function RoiEditorView({ camera, product, focus }: { camera: stri
       {frame && (!focus || target) && (
         <>
           <PictureSizeSlider value={size} onChange={setSize} min={200} max={1600} />
-          {asIs ? (
-            <img
-              alt={anchorInfo?.anchor ? "The box the detector found" : "The picture as it comes in"}
-              src={anchorInfo?.anchor ? frameCutoutUrl(camera, frame, target!.feature) : target?.input ? flowPictureUrl(camera, target.input, frame, { stage: "output" }) : frameImageUrl(camera, frame)}
-              style={{ width: size, maxWidth: "100%", display: "block" }}
-            />
-          ) : (
           <RoiCanvas
-            imageUrl={editing && target?.input ? flowPictureUrl(camera, target.input, frame, { stage: "output" }) : frameImageUrl(camera, frame)}
-            mode={editing ? "edit" : "draw"}
-            box={box}
+            imageUrl={asIs && anchorInfo?.anchor ? frameCutoutUrl(camera, frame, target!.feature) : editing && target?.input ? flowPictureUrl(camera, target.input, frame, { stage: "output" }) : frameImageUrl(camera, frame)}
+            alt={asIs ? (anchorInfo?.anchor ? "The box the detector found" : "The picture as it comes in") : undefined}
+            mode={editing || asIs ? "edit" : "draw"}
+            box={asIs ? null : box}
             onChange={setBox}
-            others={editing && target?.input ? [] : others}
+            others={asIs || (editing && target?.input) ? [] : others}
             width={size}
             view={view}
             onViewChange={setView}
           />
-          )}
         </>
       )}
       {asIs && !anchorInfo?.anchor && (
