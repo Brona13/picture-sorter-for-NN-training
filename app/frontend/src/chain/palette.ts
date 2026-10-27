@@ -46,14 +46,14 @@ export const PALETTE: { group: string; items: PaletteItem[] }[] = [
     ],
   },
   {
-    group: "Picture sink",
-    items: [{ kind: "export", label: "Export", box: "export", hint: "The end of the Chain: OK and NG inputs; freezes and exports the originals into folders." }],
-  },
-  {
     group: "Sorts pictures into classes",
     items: [
       { kind: "classifier", label: "Classifier", box: "roi", hint: "Labels pictures into classes. Choose Feature (OK / NG) or Product in its panel." },
     ],
+  },
+  {
+    group: "Picture sink",
+    items: [{ kind: "export", label: "Export", box: "export", hint: "The end of the Chain: OK and NG inputs; freezes and exports the originals into folders." }],
   },
 ];
 
