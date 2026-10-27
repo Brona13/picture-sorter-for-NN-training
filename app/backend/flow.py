@@ -673,6 +673,8 @@ def connect(camera: str, source: str, target: str, point: str | None = None) -> 
         if kind_of(target) == "classify":
             graph["edges"] = [e for e in graph["edges"] if not (e["source"] == source and e["target"] == target)]
         graph["edges"].append(edge)
+    if target in _upstream_ids(graph, target):  # e.g. a box that reads an Evaluation's dot now feeds that Evaluation
+        raise FlowError("That would make a loop.")
     save_graph(camera, graph)
 
 
@@ -695,7 +697,8 @@ def delete_preview(camera: str, node_id: str) -> dict:
         "node": node_id,
         "kind": kind_of(node_id),
         "detections": len(stored["frames"]),
-        "arrows": sum(1 for e in graph["edges"] if node_id in (e["source"], e["target"])),
+        "arrows": sum(1 for e in graph["edges"] if node_id in (e["source"], e["target"]))
+        + sum(1 for n in graph["nodes"].values() if isinstance(n.get("source"), dict) and n["source"].get("box") == node_id),
         **({"mutes": len(db.muted_frames(camera, node_id))} if kind_of(node_id) == "dedup" else {}),
     }
 
@@ -705,6 +708,9 @@ def delete_node(camera: str, node_id: str) -> None:
     _node(graph, node_id)
     del graph["nodes"][node_id]
     graph["edges"] = [e for e in graph["edges"] if node_id not in (e["source"], e["target"])]
+    for other in graph["nodes"].values():  # a box that read a dot of the deleted Evaluation reads the whole camera again
+        if isinstance(other.get("source"), dict) and other["source"].get("box") == node_id:
+            other["source"] = None
     save_graph(camera, graph)
     _drop_results(camera, node_id)
 
@@ -863,12 +869,40 @@ def update_node(camera: str, node_id: str, raw: dict) -> dict:
     return node
 
 
+VERDICT_DOTS = ("pass", "fail", lines.ALL_DOT)
+
+
+def _upstream_ids(graph: dict, node_id: str, _seen: set[str] | None = None) -> set[str]:
+    """Every box that feeds ``node_id``, however far up: by a line or by reading an Evaluation's dot."""
+    seen = _seen if _seen is not None else set()
+    parents = [e["source"] for e in graph["edges"] if e["target"] == node_id]
+    read = ((graph["nodes"].get(node_id) or {}).get("source") or {}).get("box") if isinstance((graph["nodes"].get(node_id) or {}).get("source"), dict) else None
+    if read:
+        parents.append(read)
+    for parent in parents:
+        if parent not in seen:
+            seen.add(parent)
+            _upstream_ids(graph, parent, seen)
+    return seen
+
+
 def _dedup_source(camera: str, node_id: str, raw: object) -> dict | None:
-    """The Classifier dot a Dedup box reads: ``None`` (the whole camera) or ``{"feature", "dot"}``."""
+    """What a Dedup, Picture edits or detector box reads: ``None`` (the whole camera), one dot of a Classifier
+    (``{"feature", "dot"}``) or one dot of an Evaluation (``{"box", "dot"}``: pass, fail or all)."""
     if raw is None:
         return None
     if not isinstance(raw, dict):
         raise FlowError("The source of a Dedup box is a Classifier and one of its dots.")
+    if raw.get("box"):
+        box, dot = str(raw["box"]), str(raw.get("dot") or "")
+        graph = load_graph(camera)
+        if kind_of(box) != "evaluation" or box not in graph["nodes"]:
+            raise FlowError(f"Unknown Evaluation: {box}")
+        if dot not in VERDICT_DOTS:
+            raise FlowError("An Evaluation has the dots pass, fail and all.")
+        if node_id == box or node_id in _upstream_ids(graph, box):
+            raise FlowError(f"{node_id} feeds {box}, so it cannot read it.")
+        return {"box": box, "dot": dot}
     feature, dot = str(raw.get("feature") or ""), str(raw.get("dot") or "")
     roi = datamodel.get_roi(camera, feature)
     if roi is None:
@@ -1226,9 +1260,23 @@ def node_source(graph: dict, node_id: str) -> dict | None:
     return src if isinstance(src, dict) and src.get("feature") and src.get("dot") else None
 
 
+def node_eval_source(graph: dict, node_id: str) -> dict | None:
+    """``{"box", "dot"}`` when a Dedup, Picture edits or detector box reads one dot of an Evaluation (pass, fail, all), else ``None``."""
+    src = (graph["nodes"].get(node_id) or {}).get("source")
+    return src if isinstance(src, dict) and src.get("box") and src.get("dot") else None
+
+
+def verdict_frames(camera: str, eval_id: str, dot: str) -> list[str]:
+    """The pictures on a dot of an Evaluation: the ones it judged pass, the ones it judged fail, or both ("all": every
+    judged picture, never one it could not judge). Deleted pictures never."""
+    verdicts = evaluation_state(camera, eval_id)["verdicts"]
+    wanted = ("pass", "fail") if dot == lines.ALL_DOT else (dot,)
+    return sorted(f for f, v in verdicts.items() if v in wanted)
+
+
 def has_input(graph: dict, node_id: str) -> bool:
-    """Whether anything feeds the box: a Classifier dot or a line from Ingest, Picture edits, a detector or a Dedup box."""
-    if node_source(graph, node_id):
+    """Whether anything feeds the box: a Classifier or Evaluation dot or a line from Ingest, Picture edits, a detector or a Dedup box."""
+    if node_source(graph, node_id) or node_eval_source(graph, node_id):
         return True
     return any(e["target"] == node_id and kind_of(e["source"]) in ("ingest", "crop", "detector", "dedup") for e in graph["edges"])
 
@@ -1239,6 +1287,12 @@ def node_frames(camera: str, node_id: str, graph: dict | None = None, _seen: fro
     line into it has no pictures. Deleted and removed pictures never; a class that went away gives none."""
     graph = graph or load_graph(camera)
     live = _live_frames(camera)
+    judged = node_eval_source(graph, node_id)
+    if judged:
+        if judged["box"] not in graph["nodes"]:
+            return []
+        keep = set(live)
+        return [f for f in verdict_frames(camera, judged["box"], judged["dot"]) if f in keep]
     src = node_source(graph, node_id)
     if src:
         try:

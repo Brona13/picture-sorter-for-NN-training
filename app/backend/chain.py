@@ -211,13 +211,13 @@ def _flow_nodes(camera: str, graph: dict, stored: dict) -> list[dict]:
                 else {"op": "crop", "rect": None if st["id"] == fid else st.get("rect"), "follows": st["id"] == fid, "enabled": st.get("enabled") is not False}
                 for st in flow.crop_steps(node)
             ]
-            summary = {"steps": steps, "follow": flow.follow_of(graph, node_id), "source": flow.node_source(graph, node_id)}
+            summary = {"steps": steps, "follow": flow.follow_of(graph, node_id), "source": flow.node_source(graph, node_id), "eval_source": flow.node_eval_source(graph, node_id)}
             if summary["follow"]:
                 spec = node.get("follow") or {}
                 summary["follow"] = {**summary["follow"], "size": spec.get("size")}
         elif kind == "detector":
             summary = {"targets": flow.all_slots(node), "groups": [t["name"] for t in node["targets"] if flow.count_of(t) > 1 and t["examples"]], "status": flow.status(camera, node_id, graph), **flow.summarize_detector(camera, node_id),
-                       "source": flow.node_source(graph, node_id), "in_scope": len(flow.node_frames(camera, node_id, graph)),
+                       "source": flow.node_source(graph, node_id), "eval_source": flow.node_eval_source(graph, node_id), "in_scope": len(flow.node_frames(camera, node_id, graph)),
                        "area": "edited" if flow.input_rects(graph, node_id) else "whole"}  # the picture area the search runs on
         elif kind == "calc":
             a, b = flow.effective_points(graph, node_id)
@@ -225,6 +225,7 @@ def _flow_nodes(camera: str, graph: dict, stored: dict) -> list[dict]:
         elif kind == "dedup":
             summary = {
                 "source": dedup_box.source_of(camera, node_id, graph),
+                "eval_source": flow.node_eval_source(graph, node_id),
                 "frames": len(dedup_box.frames(camera, node_id)),
                 "muted": len(db.muted_frames(camera, node_id)),
                 "deleted": len(db.deleted_frames_of(camera)),
@@ -367,6 +368,11 @@ def get_canvas(camera: str) -> dict:
         if src and roi_node_id(src["feature"]) in known and box in known:
             handle = ALL_HANDLE if src["dot"] == ALL_HANDLE else product_handle(src["dot"])
             edges.append({"id": f"{roi_node_id(src['feature'])}#{handle}->{box}", "source": roi_node_id(src["feature"]), "source_handle": handle, "target": box, "locked": False})
+    for box in reading:  # ... or from a dot of an Evaluation (pass, fail, all)
+        judged = flow.node_eval_source(graph, box)
+        if judged and judged["box"] in known and box in known:
+            handle = ALL_HANDLE if judged["dot"] == ALL_HANDLE else product_handle(judged["dot"])
+            edges.append({"id": f"{judged['box']}#{handle}->{box}", "source": judged["box"], "source_handle": handle, "target": box, "locked": False})
     for roi in rois:  # a Classifier read through a Dedup box hangs from it
         box = dedup_box.input_of(camera, roi.name)
         if box and box in known:

@@ -247,6 +247,26 @@ test("a Classifier dot feeds a detector or a Picture edits box, which then works
   expect(describeFlow("detector", { targets: ["P"], status: "none" })).toBe("1 target · not run");
 });
 
+test("an Evaluation dot feeds Dedup, Picture edits or a detector, and nothing else", () => {
+  const withBoxes: ChainCanvas = {
+    ...flowCanvas,
+    nodes: [
+      ...flowCanvas.nodes,
+      node({ id: "eval:1", kind: "evaluation", ref: null, role: null, scope: null, label: "Evaluation 1" }),
+      node({ id: "dedup:7", kind: "dedup", ref: null, role: null, scope: null, label: "Dedup 7" }),
+      node({ id: "crop:7", kind: "crop", ref: null, role: null, scope: null, label: "Picture edits 7" }),
+      node({ id: "det:7", kind: "detector", ref: null, role: null, scope: null, label: "Detector 7" }),
+    ],
+  };
+  expect(flowConnect(withBoxes, { source: "eval:1", sourceHandle: "p:pass", target: "dedup:7" })).toEqual({ dedupSource: { box: "dedup:7", evaluation: "eval:1", dot: "pass" } });
+  expect(flowConnect(withBoxes, { source: "eval:1", sourceHandle: "p:fail", target: "crop:7" })).toEqual({ dedupSource: { box: "crop:7", evaluation: "eval:1", dot: "fail" } });
+  expect(flowConnect(withBoxes, { source: "eval:1", sourceHandle: "all", target: "det:7" })).toEqual({ dedupSource: { box: "det:7", evaluation: "eval:1", dot: "all" } });
+  expect(flowConnect(withBoxes, { source: "eval:1", sourceHandle: null, target: "dedup:7" })).toHaveProperty("error");
+  expect(flowConnect(withBoxes, { source: "eval:1", sourceHandle: "p:maybe", target: "dedup:7" })).toHaveProperty("error");
+  expect(flowConnect(withBoxes, { source: "eval:1", sourceHandle: "p:pass", target: "roi:seal" })).toHaveProperty("error");
+  expect(describeFlow("dedup", { eval_source: { box: "eval:1", dot: "pass" } } as never)).toContain("pass");
+});
+
 test("Calculate says how many points it has and what it needs", () => {
   expect(describeFlow("calc", { op: "angle", a: null, b: null })).toBe("needs two points · connect a detector with two targets");
   expect(describeFlow("calc", { op: "angle", a: "Detector 1 · P", b: null })).toBe("1 of 2 points (Detector 1 · P) · needs one more target");

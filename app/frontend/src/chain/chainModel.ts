@@ -89,8 +89,13 @@ export function layoutOf(
 }
 
 /** Short line for a Picture edits, detector, Calculate or Evaluation box, from its light summary (the Chain and the Overview use it). */
+const evalName = (id: string) => `Evaluation ${id.split(":")[1] ?? id}`;
+
 export function describeFlow(kind: string, f: FlowSummary | undefined): string {
   const base = describeFlowBox(kind, f);
+  if ((kind === "crop" || kind === "detector") && f?.eval_source) {
+    return `${base} · ${evalName(f.eval_source.box)} ${f.eval_source.dot}${f.in_scope != null ? ` · ${f.in_scope} pictures` : ""}`;
+  }
   if ((kind === "crop" || kind === "detector") && f?.source) {
     const where = `${f.source.dot === ALL_HANDLE ? "all" : f.source.dot}${f.in_scope != null ? ` · ${f.in_scope} pictures` : ""}`;
     return `${base} · ${where}`;
@@ -121,7 +126,7 @@ function describeFlowBox(kind: string, f: FlowSummary | undefined): string {
     return "needs two points · connect a detector with two targets";
   }
   if (kind === "dedup") {
-    const where = f?.source ? `${f.source.feature} · ${f.source.dot}` : "whole camera";
+    const where = f?.source ? `${f.source.feature} · ${f.source.dot}` : f?.eval_source ? `${evalName(f.eval_source.box)} · ${f.eval_source.dot}` : "whole camera";
     return `${where} · ${f?.frames ?? 0} pictures · ${f?.muted ?? 0} muted`;
   }
   if (f?.mode === "zone") {
@@ -159,7 +164,7 @@ export const isFlowKind = (kind: string | undefined): boolean => !!kind && (FLOW
 export const targetHandle = (target: string) => `t:${target}`;
 export const targetOfHandle = (handle: string | null | undefined): string | null => (handle && handle.startsWith("t:") ? handle.slice(2) : null);
 
-export type FlowLink = { source: string; target: string; point?: string } | { dedupSource: { box: string; feature: string; dot: string } } | { dedupInput: { feature: string; box: string } } | { anchor: { feature: string; detector: string; target: string } } | { roiInput: { feature: string; box: string } } | { error: string } | null;
+export type FlowLink = { source: string; target: string; point?: string } | { dedupSource: { box: string; feature?: string; evaluation?: string; dot: string } } | { dedupInput: { feature: string; box: string } } | { anchor: { feature: string; detector: string; target: string } } | { roiInput: { feature: string; box: string } } | { error: string } | null;
 
 export function flowConnect(canvas: ChainCanvas, c: Connection): FlowLink {
   const source = featureOf(canvas, c.source);
@@ -203,6 +208,12 @@ export function flowConnect(canvas: ChainCanvas, c: Connection): FlowLink {
     if (c.source === c.target) return { error: "A box cannot feed itself." };
     return { source: c.source, target: c.target };
   }
+  if (source.kind === "evaluation" && (target.kind === "dedup" || target.kind === "crop" || target.kind === "detector")) {
+    // A dot of an Evaluation dropped on a Dedup, Picture edits or detector box: the box reads only the pictures judged pass, fail, or both.
+    const dot = c.sourceHandle === ALL_HANDLE ? ALL_HANDLE : productOfHandle(c.sourceHandle);
+    if (!dot || !["pass", "fail", ALL_HANDLE].includes(dot)) return { error: "Drag from one of the Evaluation's dots (pass, fail or all)." };
+    return { dedupSource: { box: target.id, evaluation: source.id, dot } };
+  }
   if (source.kind === "evaluation" && target.kind === "roi") {
     return { error: "An Evaluation is not drawn to a Classifier: pick it in the Classifier's panel." };
   }
@@ -223,7 +234,7 @@ export function flowConnect(canvas: ChainCanvas, c: Connection): FlowLink {
     (source.kind === "calc" && target.kind === "evaluation");
   if (!ok) {
     return {
-      error: `${source.label} cannot feed ${target.label}. Ingest or a Picture edits box feeds a Picture edits box, a detector or a Dedup box, a detector (one target) feeds a Picture edits box, a detector feeds a detector or Calculate, Calculate feeds Evaluation. An Evaluation is picked in a Classifier's panel, not drawn.`,
+      error: `${source.label} cannot feed ${target.label}. Ingest or a Picture edits box feeds a Picture edits box, a detector or a Dedup box, a detector (one target) feeds a Picture edits box, a detector feeds a detector or Calculate, Calculate feeds Evaluation, and an Evaluation's dots (pass, fail, all) feed a Dedup box, Picture edits or a detector. An Evaluation is picked in a Classifier's panel, not drawn to it.`,
     };
   }
   if (c.source === c.target) return { error: "A box cannot feed itself." };
@@ -233,7 +244,8 @@ export function flowConnect(canvas: ChainCanvas, c: Connection): FlowLink {
 /** A line from a Classifier dot to a Dedup, Picture edits or detector box is the box's source (stored in the box, not in the flow lines). */
 export const isDedupSourceEdge = (canvas: ChainCanvas, edge: ChainEdge): boolean => {
   const kind = canvas.nodes.find((n) => n.id === edge.target)?.kind;
-  return canvas.nodes.find((n) => n.id === edge.source)?.kind === "roi" && (kind === "dedup" || kind === "crop" || kind === "detector");
+  const from = canvas.nodes.find((n) => n.id === edge.source)?.kind;
+  return (from === "roi" || from === "evaluation") && (kind === "dedup" || kind === "crop" || kind === "detector");
 };
 
 /** A line from a Dedup box to a Classifier is the Classifier's Dedup input (stored with the Classifier). */

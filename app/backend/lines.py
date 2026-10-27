@@ -4,6 +4,9 @@ A line carries a **frame set** (which pictures) and a **picture** (what they loo
 value. Every box kind says which of these it gives on its output and which it takes on its input. A line fits when the
 output type is one the input takes.
 
+An Evaluation's dots work the same way: "pass" passes the pictures it judged pass, "fail" the ones it judged fail, "all"
+every judged picture (never one it could not judge).
+
 The frame-set rule for a classifier: a class dot passes the frames labelled with that class; the "all" dot passes every
 labelled frame and no unlabelled one. Deleted frames (the bin) and frames muted by a Dedup box are never passed.
 """
@@ -29,7 +32,7 @@ GIVES = {
     "crop": {PICTURE},
     "detector": {PICTURE, POINT},
     "calc": {VALUE},
-    "evaluation": {VERDICT},
+    "evaluation": {VERDICT, FRAMES, PICTURE},  # its pass / fail / all dots pass the pictures it judged
     "dedup": {FRAMES, PICTURE},  # the pictures it sees, minus the ones it muted
 }
 TAKES = {

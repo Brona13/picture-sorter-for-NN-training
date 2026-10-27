@@ -94,6 +94,23 @@ function Box({ data, selected }: NodeProps<BoxNode>) {
           </div>
         </>
       )}
+      {node.kind === "evaluation" && (
+        <>
+          {/* One dot per verdict, as a Classifier has one per class; "all" passes every judged picture and never one it could not judge. */}
+          {(["pass", "fail"] as const).map((verdict) => (
+            <div className="chain-node-product" key={verdict} title={`${verdict}: ${node.flow?.counts?.[verdict] ?? 0} pictures. Drag this dot onto a Dedup box, Picture edits or a detector.`}>
+              <span className="chain-node-class">{verdict}</span>
+              <span className="chain-node-count">{node.flow?.counts?.[verdict] ?? 0}</span>
+              <Handle type="source" position={Position.Right} id={productHandle(verdict)} isConnectable />
+            </div>
+          ))}
+          <div className="chain-node-product chain-node-all" title="Every judged picture (pass and fail, never one that could not be judged)">
+            <span className="chain-node-class">all</span>
+            <span className="chain-node-count">{(node.flow?.counts?.pass ?? 0) + (node.flow?.counts?.fail ?? 0)}</span>
+            <Handle type="source" position={Position.Right} id={ALL_HANDLE} isConnectable />
+          </div>
+        </>
+      )}
       {node.kind === "detector" &&
         (node.flow?.groups ?? []).map((group) => (
           <div className="chain-node-product chain-node-target" key={`group:${group}`} title={`Drag this dot onto a Classifier: every box found for ${group} becomes its own picture there (name · box 1, 2, …)`}>
@@ -108,7 +125,7 @@ function Box({ data, selected }: NodeProps<BoxNode>) {
             <Handle type="source" position={Position.Right} id={targetHandle(target)} />
           </div>
         ))}
-      {!isClassifier && <Handle type="source" position={Position.Right} style={node.kind === "detector" ? { top: 16 } : undefined} />}
+      {!isClassifier && node.kind !== "evaluation" && <Handle type="source" position={Position.Right} style={node.kind === "detector" ? { top: 16 } : undefined} />}
     </div>
   );
 }
@@ -247,8 +264,8 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
       setError(flowArrow.error);
       return;
     } else if ("dedupSource" in flowArrow) {
-      const a = flowArrow.dedupSource; // a Classifier dot dropped on a Dedup box: the box reads only the pictures on that dot
-      run = () => void applyFlow(() => api.flowUpdate(camera, a.box, { source: { feature: a.feature, dot: a.dot } }));
+      const a = flowArrow.dedupSource; // a Classifier or Evaluation dot dropped on a Dedup, Picture edits or detector box: the box reads only the pictures on that dot
+      run = () => void applyFlow(() => api.flowUpdate(camera, a.box, { source: a.evaluation ? { box: a.evaluation, dot: a.dot } : { feature: a.feature, dot: a.dot } }));
       note = replaceNote(canvas, link, flowArrow);
     } else if ("dedupInput" in flowArrow) {
       const a = flowArrow.dedupInput; // a Dedup box dropped on a Classifier: the Classifier hides what the box muted
