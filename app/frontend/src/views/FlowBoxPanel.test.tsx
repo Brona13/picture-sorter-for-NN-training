@@ -165,6 +165,37 @@ test("Evaluation page: lists the pictures by value and takes a picture's value a
   await waitFor(() => expect(calls.some((c) => c.method === "PUT" && c.body?.nominal === 174.6)).toBe(true));
 });
 
+test("Evaluation page: the densest spot button takes the pile, not the outliers, as the nominal", async () => {
+  const tol = {
+    kind: "evaluation", mode: "tolerance", zone: { shape: "circle", center: null, radius: 10, half: [10, 10] }, nominal: null, tolerance: 3, calc: "calc:1", wrap: false, unit: "px",
+    counts: { pass: 0, fail: 0, undetermined: 7 }, histogram: null, features: [],
+  };
+  routes(tol, (url) => (url.includes("/values")
+    ? { values: { "a.png": 50, "b.png": 50.2, "c.png": 50.4, "d.png": 49.8, "e.png": 50.1, "f.png": 120, "g.png": 5 }, verdicts: {}, unit: "px" }
+    : undefined));
+  render(<FlowBoxView camera="camA" focus={{ nodeId: "eval:1", onBack: () => {} }} />);
+  await userEvent.click(await screen.findByRole("button", { name: "Use densest spot as nominal" }));
+  await waitFor(() => expect(calls.some((c) => c.method === "PUT" && typeof c.body?.nominal === "number" && Math.abs(c.body.nominal - 50) < 3)).toBe(true));
+});
+
+test("Evaluation page, Offset: the chart can switch to a heat map, and the densest spot becomes the zone centre", async () => {
+  const zoneDetail = {
+    kind: "evaluation", mode: "zone", zone: { shape: "circle", center: null, radius: 10, half: [10, 10] }, nominal: null, tolerance: 3, calc: "calc:1", wrap: false, unit: "px",
+    counts: { pass: 0, fail: 0, undetermined: 4 }, histogram: null, features: [],
+  };
+  routes(zoneDetail, (url) => (url.includes("/values")
+    ? { values: { "a.png": 1, "b.png": 1, "c.png": 1, "d.png": 1 }, verdicts: {}, unit: "px", mode: "zone", points: { "a.png": [100, 50], "b.png": [101, 50], "c.png": [100, 51], "d.png": [300, 200] }, deviations: {} }
+    : undefined));
+  render(<FlowBoxView camera="camA" focus={{ nodeId: "eval:1", onBack: () => {} }} />);
+  await userEvent.click(await screen.findByRole("button", { name: "Heatmap" }));
+  expect(await screen.findByTestId("zone-heat-legend")).toBeTruthy();
+  expect(screen.queryAllByTestId("zone-dot")).toHaveLength(0);
+  await userEvent.click(screen.getByRole("button", { name: "Use densest spot as nominal" }));
+  await waitFor(() => expect(calls.some((c) => c.method === "PUT" && Array.isArray(c.body?.zone?.center) && Math.abs(c.body.zone.center[0] - 100) < 8 && Math.abs(c.body.zone.center[1] - 50) < 8)).toBe(true));
+  await userEvent.click(screen.getByRole("button", { name: "Dots" }));
+  expect(screen.queryByTestId("zone-heat-legend")).toBeNull();
+});
+
 test("Cascade detector page shows one picture per box of the input detector, zoomed to that box", async () => {
   const parentDetail = { kind: "detector", input: "ingest", crops: [], rotate: true, angle_range: null, pad: 0.3, status: "fresh", targets: [{ name: "left hole", outputs: ["position"], examples: [{ frame: "a.png", box: [0, 0, 60, 40], png: "data:image/png;base64,AA" }] }], summary: { frames: 2, found: { "left hole": 1 }, complete: 1, review: 1 } };
   const own = { ...parentDetail, input: "det:1", parent_targets: ["left hole"], targets: [], status: "none" };

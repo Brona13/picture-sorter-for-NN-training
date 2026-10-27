@@ -60,3 +60,16 @@ test("with a nominal the chart is centred on it: dots are distances from the nom
   expect(screen.getByTestId("zone-shape").getAttribute("cx")).toBe("0");
   expect(screen.queryByTestId("zone-centre")).toBeNull(); // the nominal is set by clicking, typing or a card, not dragged
 });
+
+test("heat map: the dots are replaced by a legend (and an image where a canvas exists), the zone stays", () => {
+  mount(zone, { heat: { points: [[100, 1], [101, 1], [130, 20]], smoothing: 1 } });
+  expect(screen.queryAllByTestId("zone-dot")).toHaveLength(0);
+  expect(screen.getByTestId("zone-shape")).toBeTruthy();
+  expect(screen.getByTestId("zone-heat-legend").textContent).toContain("3 pictures");
+});
+
+test("without heat the dots are drawn and there is no legend", () => {
+  mount(zone);
+  expect(screen.getAllByTestId("zone-dot")).toHaveLength(2);
+  expect(screen.queryByTestId("zone-heat-legend")).toBeNull();
+});

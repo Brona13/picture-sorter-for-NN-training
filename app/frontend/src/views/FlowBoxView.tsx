@@ -1,3 +1,4 @@
+import { densestSpot, densestValue } from "../density";
 import { referenceFrame } from "../referencePicture";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, FlowBox, FlowCalc, FlowCrop, FlowDetector, FlowLabeling, FlowNodeDetail, FlowValues, flowPictureUrl, frameImageUrl, frameThumbUrl, frameWholeThumbUrl } from "../api";
@@ -18,6 +19,8 @@ import type { EvalSpec } from "../evalGeometry";
 import ValueGrid, { ViewerExtras } from "./ValueGrid";
 
 const CHART_STORE = "flow.histogram";
+const HEAT_STORE = "flow.heatmap"; // "heat" or "dots": what the zone chart draws
+const SMOOTH_STORE = "flow.heatSmoothing"; // the heat map's smoothing, as a power of two (0 = automatic)
 
 /** The look of a rectangle being drawn or edited, the same as in the ROI editor. */
 const ROI_RED = "#ff3030";
@@ -691,6 +694,21 @@ function ValuesWork(p: {
     try { return localStorage.getItem(CHART_STORE) !== "off"; } catch { return true; }
   });
   useEffect(() => setRange(null), [nodeId]);
+  const [heatOn, setHeatOn] = useState(() => {
+    try { return localStorage.getItem(HEAT_STORE) === "heat"; } catch { return false; }
+  });
+  const [smoothExp, setSmoothExp] = useState(() => {
+    try { const v = Number(localStorage.getItem(SMOOTH_STORE)); return Number.isFinite(v) && v >= -2 && v <= 2 ? v : 0; } catch { return 0; }
+  });
+  const smoothing = 2 ** smoothExp;
+  const chooseHeat = (on: boolean) => {
+    setHeatOn(on);
+    try { localStorage.setItem(HEAT_STORE, on ? "heat" : "dots"); } catch { /* not remembered */ }
+  };
+  const chooseSmooth = (v: number) => {
+    setSmoothExp(v);
+    try { localStorage.setItem(SMOOTH_STORE, String(v)); } catch { /* not remembered */ }
+  };
   const chooseChart = (on: boolean) => {
     setShowChart(on);
     try { localStorage.setItem(CHART_STORE, on ? "on" : "off"); } catch { /* not remembered */ }
@@ -768,6 +786,17 @@ function ValuesWork(p: {
     } catch (e) { p.onError(msg(e)); }
   };
 
+  // The densest spot of the pictures shown (Show filter and range apply), taken as the nominal: the peak of the heat map.
+  const useDensest = () => {
+    if (zoneMode) {
+      const spot = densestSpot(rows.map((r) => r.point).filter((q): q is [number, number] => !!q), smoothing);
+      if (spot) void setZone({ center: [Math.round(spot[0] * 10) / 10, Math.round(spot[1] * 10) / 10] });
+    } else {
+      const v = densestValue(rows.map((r) => r.value).filter((x): x is number => x !== null), !!tolerance?.wrap);
+      if (v !== null) void useAsNominal(v);
+    }
+  };
+
   const setZone = async (zone: Partial<Zone>) => {
     try {
       p.setDetail(await api.flowUpdate(camera, nodeId, { zone }));
@@ -797,6 +826,7 @@ function ValuesWork(p: {
           zone={tolerance.zone}
           onZone={(z) => void setZone(z)}
           onCentre={(at) => void setZone({ center: at })}
+          heat={heatOn ? { points: rows.map((r) => r.point).filter((q): q is [number, number] => !!q), smoothing } : null}
         />
       )}
       {tolerance && !zoneMode && showChart && (
@@ -814,6 +844,26 @@ function ValuesWork(p: {
           <label>
             <input type="checkbox" checked={showChart} onChange={(e) => chooseChart(e.target.checked)} /> {zoneMode ? "Chart" : "Histogram"}
           </label>
+        )}
+        {tolerance && zoneMode && showChart && (
+          <>
+            <span className="flow-segment" role="group" aria-label="Chart style">
+              <button type="button" aria-pressed={!heatOn} onClick={() => chooseHeat(false)}>Dots</button>
+              <button type="button" aria-pressed={heatOn} title="Colour by how many pictures lie around each place: blue few, red the most" onClick={() => chooseHeat(true)}>Heatmap</button>
+            </span>
+            {heatOn && (
+              <label title="How far each picture's bump reaches. Automatic in the middle; left shows small piles, right merges them">
+                Smoothing{" "}
+                <input type="range" min={-2} max={2} step={0.25} value={smoothExp} onChange={(e) => chooseSmooth(Number(e.target.value))} aria-label="Smoothing" />{" "}
+                {smoothExp === 0 ? "auto" : `×${smoothing.toFixed(2)}`}
+              </label>
+            )}
+          </>
+        )}
+        {tolerance && (
+          <button type="button" title="Take the densest spot of the pictures shown below (the red top of the heat map) as the nominal" onClick={useDensest}>
+            Use densest spot as nominal
+          </button>
         )}
         {tolerance && (
           <span className="flow-segment" role="group" aria-label="Show">
