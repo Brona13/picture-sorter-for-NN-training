@@ -30,6 +30,12 @@ interface Props {
   caption?: string;
   /** Classify only: open "Find similar" with this (labeled) frame as the seed. */
   onSimilar?: () => void;
+  /** The picture the card shows instead of the feature's cut-out (the measuring pages show the whole picture). */
+  thumb?: (frame: string) => string;
+  /** A coloured edge for the card (a pass / fail verdict), unless it is outside or muted. */
+  edgeColor?: string;
+  /** More buttons after the label buttons, e.g. "Use as nominal". */
+  extra?: React.ReactNode;
 }
 
 export function thumbUrl(camera: string, frame: string, feature: string) {
@@ -54,7 +60,7 @@ const badge = (bg: string): React.CSSProperties => ({
  */
 export const MAX_SHORTCUT_CLASSES = 9;
 
-export default function Card({ camera, feature, pictureFeature, classes, methods, card, busy, onLabel, onGolden, onDelete, onRestore, canRestore = true, isRep, onSetRep, fullSize, onOpen, caption, onSimilar }: Props) {
+export default function Card({ camera, feature, pictureFeature, classes, methods, card, busy, onLabel, onGolden, onDelete, onRestore, canRestore = true, isRep, onSetRep, fullSize, onOpen, caption, onSimilar, thumb, edgeColor, extra }: Props) {
   const { frame, label, golden, deleted, bars, leanings, cluster, edge, measure } = card;
   // Search results only: a picture outside this ROI's scope gets a red frame and cannot be labeled here until its
   // product fits (open it to change the product); a muted one gets a dark grey dashed frame.
@@ -125,16 +131,16 @@ export default function Card({ camera, feature, pictureFeature, classes, methods
       {...props}
       title={frameHint}
       style={{
-        border: outside ? "2px solid #c62828" : muted ? "2px dashed #555" : "1px solid #ccc",
+        border: outside ? "2px solid #c62828" : muted ? "2px dashed #555" : edgeColor ? `2px solid ${edgeColor}` : "1px solid #ccc",
         borderRadius: 8,
-        padding: outside || muted ? 5 : 6,
+        padding: outside || muted || edgeColor ? 5 : 6,
         listStyle: "none",
       }}
     >
       {(() => {
         const img = (
           <img
-            src={thumbUrl(camera, frame, pictureFeature ?? feature)}
+            src={thumb ? thumb(frame) : thumbUrl(camera, frame, pictureFeature ?? feature)}
             alt={sampleLabel(frame)}
             loading="lazy"
             style={{ width: "100%", display: "block", borderRadius: 4, opacity: deleted ? 0.5 : 1 }}
@@ -228,7 +234,7 @@ export default function Card({ camera, feature, pictureFeature, classes, methods
         )
       )}
 
-      <div style={{ fontSize: 12 }}>{frame.slice(0, 22)}</div>
+      <div title={frame} style={{ fontSize: 12, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{frame.slice(0, 22)}</div>
 
       {edge && (
         <div style={{ margin: "2px 0 4px", fontSize: 10 }} data-testid="edge-badge">
@@ -286,6 +292,7 @@ export default function Card({ camera, feature, pictureFeature, classes, methods
             {c}
           </button>
         ))}
+        {extra}
         <button
           aria-label={golden ? "Remove golden" : "Make golden"}
           disabled={busy || label === null || outside || deleted}

@@ -798,6 +798,14 @@ export interface BarRow {
   leader: boolean;
 }
 
+/** What an Evaluation page needs to label its pictures: the Classifiers that show it, and the chosen one's classes and marks. */
+export interface FlowLabeling {
+  features: string[];
+  feature: string | null;
+  classes: string[];
+  marks: Record<string, { label: string | null; golden: string | null }>;
+}
+
 export interface CardData {
   frame: string;
   label: string | null;
@@ -1391,6 +1399,8 @@ export const api = {
     request<FlowBoxes>(
       `/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/boxes${onlyReview ? "?only_review=true" : ""}`,
     ),
+  flowLabeling: (camera: string, id: string, feature?: string) =>
+    request<FlowLabeling>(`/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/labeling${feature ? `?feature=${encodeURIComponent(feature)}` : ""}`),
   flowValues: (camera: string, id: string) =>
     request<FlowValues>(`/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/values`),
   flowSetBox: (camera: string, id: string, frame: string, target: string, x: number, y: number) =>

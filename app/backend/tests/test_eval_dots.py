@@ -79,3 +79,44 @@ class EvaluationDotTests(ApiTestCase):
         self.assertIsNone(lines.line_error("evaluation", "dedup"))
         self.assertIsNone(lines.line_error("evaluation", "crop"))
         self.assertIsNone(lines.line_error("evaluation", "detector"))
+
+
+class EvaluationLabelingTests(ApiTestCase):
+    """The Evaluation page labels pictures for the Classifiers that show it."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        import datamodel  # noqa: PLC0415
+        import labels  # noqa: PLC0415
+        from roi import ROI  # noqa: PLC0415
+
+        self.frames = write_frames(CAM, 4)
+        datamodel.save_rois(CAM, [ROI("type", 0, 0, 1, 1, role="classify", classes=["A", "B"]), ROI("seal", 0, 0, 1, 1, classes=["OK", "NG"])])
+        self.eval = flow.create_node(CAM, "evaluation")
+        labels.set_label(CAM, "seal", self.frames[0], "OK")
+        labels.mark_golden(CAM, "seal", self.frames[0], "OK")
+        verdicts = {f: "pass" for f in self.frames}
+        patch = mock.patch.object(flow, "evaluation_state", return_value={"values": {f: 1.0 for f in self.frames}, "verdicts": verdicts, "counts": {"pass": 4, "fail": 0, "undetermined": 0}, "unit": "px", "mode": "tolerance", "zone": None})
+        patch.start()
+        self.addCleanup(patch.stop)
+        self.url = f"/api/cameras/{CAM}/flow/nodes/{self.eval}/labeling"
+
+    def test_no_classifier_shows_the_box_so_there_is_nothing_to_label(self) -> None:
+        self.assertEqual(self.client.get(self.url).json(), {"features": [], "feature": None, "classes": [], "marks": {}})
+
+    def test_a_classifier_that_shows_the_box_gives_its_classes_and_the_marks_of_these_pictures(self) -> None:
+        flow.set_feature_evaluation(CAM, "seal", self.eval)
+        body = self.client.get(self.url).json()
+        self.assertEqual(body["features"], ["seal"])
+        self.assertEqual(body["classes"], ["OK", "NG"])
+        self.assertEqual(body["marks"], {self.frames[0]: {"label": "OK", "golden": "OK"}})
+
+    def test_the_chosen_classifier_decides_and_an_unknown_one_falls_back_to_the_first(self) -> None:
+        flow.set_feature_evaluation(CAM, "seal", self.eval)
+        flow.set_feature_evaluation(CAM, "type", self.eval)
+        self.assertEqual(self.client.get(self.url, params={"feature": "type"}).json()["classes"], ["A", "B"])
+        self.assertEqual(self.client.get(self.url, params={"feature": "nope"}).json()["feature"], self.client.get(self.url).json()["features"][0])
+
+    def test_only_an_evaluation_labels(self) -> None:
+        det = flow.create_node(CAM, "detector")
+        self.assertEqual(self.client.get(f"/api/cameras/{CAM}/flow/nodes/{det}/labeling").status_code, 422)

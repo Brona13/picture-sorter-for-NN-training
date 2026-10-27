@@ -276,6 +276,28 @@ def put_box(camera: str, node_id: str, body: BoxBody) -> dict:
     return _guard(flow.set_box, camera, node_id, body.frame, body.target, body.x, body.y, body.angle)
 
 
+@router.get("/cameras/{camera}/flow/nodes/{node_id}/labeling")
+def get_labeling(camera: str, node_id: str, feature: str | None = None) -> dict:
+    """What an Evaluation page needs to label its pictures: the Classifiers (ROIs) that show this Evaluation on their cards,
+    and, for the chosen one (the first when none is given), its classes and the labels / goldens of the pictures here."""
+    import datamodel  # noqa: PLC0415
+    import labels  # noqa: PLC0415
+
+    _known(camera, node_id)
+    graph = flow.load_graph(camera)
+    if graph["nodes"][node_id]["kind"] != "evaluation":
+        raise HTTPException(status_code=422, detail="Only an Evaluation box labels pictures.")
+    features = [r.name for r in datamodel.load_rois(camera) if flow.feature_evaluation(camera, r.name) == node_id]
+    if not features:
+        return {"features": [], "feature": None, "classes": [], "marks": {}}
+    chosen = feature if feature in features else features[0]
+    frames = set(flow.evaluation_state(camera, node_id)["values"])
+    lab = labels.current_labels(camera, chosen)
+    golden_of = {f: cls for cls, fs in labels.current_goldens(camera, chosen).items() for f in fs}
+    marks = {f: {"label": lab.get(f), "golden": golden_of.get(f)} for f in frames if f in lab or f in golden_of}
+    return {"features": features, "feature": chosen, "classes": datamodel.classes_for(camera, chosen), "marks": marks}
+
+
 @router.get("/cameras/{camera}/flow/nodes/{node_id}/values")
 def get_values(camera: str, node_id: str) -> dict:
     """Per-frame measured number (Calculate) or value + verdict (Evaluation), by frame name."""

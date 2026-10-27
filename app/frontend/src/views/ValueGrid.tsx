@@ -1,5 +1,6 @@
 import { ReactNode, useEffect, useState } from "react";
-import { frameThumbUrl } from "../api";
+import { api, CardData, frameThumbUrl } from "../api";
+import ClassifyCard from "../classify/Card";
 import CardGrid from "../classify/CardGrid";
 import FramePane from "../classify/FramePane";
 import PictureViewer from "../classify/PictureViewer";
@@ -52,7 +53,7 @@ function Card({ camera, row, unit, onOpen, onNominal, onCentre, info, thumb }: {
       >
         <img src={thumb ? thumb(row.frame) : frameThumbUrl(camera, row.frame, 160)} alt={row.frame} loading="lazy" style={{ width: "100%", display: "block" }} />
       </button>
-      <div style={{ fontSize: 12, margin: "4px 0", wordBreak: "break-all" }}>{row.frame}</div>
+      <div title={row.frame} style={{ fontSize: 12, margin: "4px 0", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{row.frame}</div>
       <div style={{ margin: "2px 0", fontSize: 13 }}>
         {info ? info(row) : <><strong>{show(row, unit)}</strong> {row.verdict && <span className={`flow-verdict ${row.verdict}`}>{row.verdict}</span>}</>}
       </div>
@@ -166,7 +167,17 @@ function Viewer({ camera, rows, start, unit, onClose, onNominal, onCentre, info,
  * under each picture (`info`). `thumb` gives the card picture instead of the camera's centre-cropped square (the measuring
  * pages show the whole picture, like the detector's findings grid); a card of a pass or fail picture has a green or red edge.
  */
-export default function ValueGrid({ camera, rows, unit = "", onNominal, onCentre, info, viewer, thumb }: { camera: string; rows: ValueRow[]; unit?: string; onNominal?: (value: number) => void; onCentre?: (row: ValueRow) => void; info?: Info; viewer?: ViewerExtras; thumb?: (frame: string) => string }) {
+/** Labeling on the cards of an Evaluation page: the Classifier (ROI) the labels go to, its classes and the current marks. */
+export interface GridLabeling {
+  feature: string;
+  classes: string[];
+  marks: Record<string, { label: string | null; golden: string | null }>;
+  onError?: (message: string) => void;
+}
+
+const VERDICT_BADGE = { pass: "pass", fail: "fail", undetermined: "undetermined" } as const;
+
+export default function ValueGrid({ camera, rows, unit = "", onNominal, onCentre, info, viewer, thumb, labeling }: { camera: string; rows: ValueRow[]; unit?: string; onNominal?: (value: number) => void; onCentre?: (row: ValueRow) => void; info?: Info; viewer?: ViewerExtras; thumb?: (frame: string) => string; labeling?: GridLabeling }) {
   const [grid, setGrid] = useState(stored);
   const [page, setPage] = useState(1);
   const [viewing, setViewing] = useState<string | null>(null);
@@ -176,6 +187,30 @@ export default function ValueGrid({ camera, rows, unit = "", onNominal, onCentre
     setGrid({ per_page, cols });
     setPage(1);
     try { localStorage.setItem(STORE, JSON.stringify({ per_page, cols })); } catch { /* not remembered */ }
+  };
+  // Marks changed or deleted here, over what the page loaded (a different Classifier starts clean).
+  const [local, setLocal] = useState<Record<string, { label: string | null; golden: string | null; deleted: boolean }>>({});
+  const [busy, setBusy] = useState<string | null>(null);
+  useEffect(() => setLocal({}), [labeling?.feature]);
+  const act = async (frame: string, call: (feature: string) => Promise<{ card: { label: string | null; golden: string | null; deleted: boolean } }>) => {
+    if (!labeling) return;
+    setBusy(frame);
+    try {
+      const { card } = await call(labeling.feature);
+      setLocal((l) => ({ ...l, [frame]: { label: card.label, golden: card.golden, deleted: card.deleted } }));
+    } catch (e) {
+      labeling.onError?.(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+  const cardOf = (r: ValueRow): CardData => {
+    const mark = local[r.frame] ?? { ...(labeling?.marks[r.frame] ?? { label: null, golden: null }), deleted: false };
+    const zone = r.deviation != null || r.point != null;
+    return {
+      frame: r.frame, label: mark.label, golden: mark.golden, deleted: mark.deleted, leanings: {}, bars: null, cluster: null,
+      measure: r.verdict ? [{ value: r.value, unit, nominal: null, tolerance: 0, mode: zone ? "zone" : "tolerance", point: r.deviation ?? r.point ?? null, relative: r.deviation != null, verdict: VERDICT_BADGE[r.verdict] }] : null,
+    };
   };
   if (rows.length === 0) return <p className="muted">No pictures to show.</p>;
   return (
@@ -188,11 +223,36 @@ export default function ValueGrid({ camera, rows, unit = "", onNominal, onCentre
         page={page}
         onPage={setPage}
         where="values"
-        container="div"
+        container={labeling ? "ul" : "div"}
         onGridChange={() => setViewing(null)}
-        renderCard={(r) => (
-          <Card camera={camera} row={r} unit={unit} info={info} thumb={thumb} onOpen={() => setViewing(r.frame)} onNominal={onNominal && r.value !== null ? () => onNominal(r.value!) : undefined} onCentre={onCentre ? () => onCentre(r) : undefined} />
-        )}
+        renderCard={(r) =>
+          labeling ? (
+            <ClassifyCard
+              camera={camera}
+              feature={labeling.feature}
+              classes={labeling.classes}
+              methods={[]}
+              card={cardOf(r)}
+              busy={busy === r.frame}
+              fullSize
+              onOpen={() => setViewing(r.frame)}
+              thumb={thumb}
+              edgeColor={r.verdict ? VERDICT_EDGE[r.verdict] : undefined}
+              onLabel={(cls) => void act(r.frame, (f) => api.setLabel(camera, f, r.frame, cls, "Evaluation"))}
+              onGolden={(on) => void act(r.frame, (f) => api.setGolden(camera, f, r.frame, on))}
+              onDelete={() => void act(r.frame, (f) => api.deleteFrame(camera, f, r.frame, "Evaluation"))}
+              onRestore={() => void act(r.frame, (f) => api.restoreFrame(camera, f, r.frame))}
+              extra={
+                <>
+                  {onNominal && <button type="button" disabled={r.value === null} title="Take this picture's value as the nominal" onClick={() => onNominal(r.value!)}>Use as nominal</button>}
+                  {onCentre && <button type="button" disabled={!r.point} title="Take this picture's offset as the nominal of B" onClick={() => onCentre(r)}>Use as nominal</button>}
+                </>
+              }
+            />
+          ) : (
+            <Card camera={camera} row={r} unit={unit} info={info} thumb={thumb} onOpen={() => setViewing(r.frame)} onNominal={onNominal && r.value !== null ? () => onNominal(r.value!) : undefined} onCentre={onCentre ? () => onCentre(r) : undefined} />
+          )
+        }
       />
       {viewing && <Viewer camera={camera} rows={rows} start={viewing} unit={unit} info={info} extras={viewer} onClose={() => setViewing(null)} onNominal={onNominal} onCentre={onCentre} />}
     </>

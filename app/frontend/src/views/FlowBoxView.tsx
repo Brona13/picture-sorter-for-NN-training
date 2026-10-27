@@ -1,6 +1,6 @@
 import { referenceFrame } from "../referencePicture";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, FlowBox, FlowCalc, FlowCrop, FlowDetector, FlowNodeDetail, FlowValues, flowPictureUrl, frameImageUrl, frameThumbUrl, frameWholeThumbUrl } from "../api";
+import { api, FlowBox, FlowCalc, FlowCrop, FlowDetector, FlowLabeling, FlowNodeDetail, FlowValues, flowPictureUrl, frameImageUrl, frameThumbUrl, frameWholeThumbUrl } from "../api";
 import PictureEditsWork from "./PictureEditsWork";
 import { usePictureEdits } from "./pictureEdits";
 import PictureSizeSlider, { usePictureSize } from "../PictureSize";
@@ -679,6 +679,13 @@ function ValuesWork(p: {
     api.flowValues(camera, nodeId).then(setData).catch((e) => p.onError(msg(e)));
   }, [camera, nodeId, stamp, p.version]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Labeling on the cards: the Classifiers that show this Evaluation (one is chosen when there are several).
+  const [labelFeature, setLabelFeature] = useState<string | undefined>(undefined);
+  const [labeling, setLabeling] = useState<FlowLabeling | null>(null);
+  useEffect(() => {
+    if (detail.kind !== "evaluation") { setLabeling(null); return; }
+    api.flowLabeling(camera, nodeId, labelFeature).then(setLabeling).catch(() => setLabeling(null)); // cosmetic
+  }, [camera, nodeId, labelFeature, p.version, detail.kind]); // eslint-disable-line react-hooks/exhaustive-deps
   const [range, setRange] = useState<[number, number] | null>(null);
   const [showChart, setShowChart] = useState(() => {
     try { return localStorage.getItem(CHART_STORE) !== "off"; } catch { return true; }
@@ -825,9 +832,18 @@ function ValuesWork(p: {
             range {range[0]}–{range[1]} {unit} ✕
           </button>
         )}
+        {labeling && labeling.features.length > 1 && (
+          <label title="The Classifier the label buttons and number keys on the cards go to">
+            Label for{" "}
+            <select value={labeling.feature ?? ""} onChange={(e) => setLabelFeature(e.target.value)}>
+              {labeling.features.map((f) => <option key={f} value={f}>{f}</option>)}
+            </select>
+          </label>
+        )}
         <span className="muted">{rows.length} picture{rows.length === 1 ? "" : "s"}, sorted by value</span>
       </div>
       <ValueGrid
+        labeling={labeling?.feature ? { feature: labeling.feature, classes: labeling.classes, marks: labeling.marks, onError: p.onError } : undefined}
         camera={camera}
         rows={rows}
         unit={unit}
