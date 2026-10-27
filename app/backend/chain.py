@@ -23,6 +23,7 @@ import json
 import math
 
 import anchor
+import region
 import roi_input
 import datamodel
 import db
@@ -160,6 +161,8 @@ def _roi_node(camera: str, roi: datamodel.ROI, stored: dict) -> dict:
         "evaluation": flow.feature_evaluation(camera, roi.name),
         "anchor": anchor.get_anchor(camera, roi.name),
         "input": (roi_input.get_input(camera, roi.name) or {}).get("box"),
+        "region": region.get_region(camera, roi.name),
+        "region_source": region.source_kind(camera, roi.name),
     }
 
 

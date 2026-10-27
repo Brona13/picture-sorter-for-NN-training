@@ -43,6 +43,7 @@ beforeEach(() => {
         return new Response(JSON.stringify({ feature: "seal", role: "quality", counts: { labels: 7, goldens: 2, detections: 0, versions: 1 }, dependents: [] }));
       if (url.endsWith("/chain/layout")) return new Response(JSON.stringify(current));
       if (url.endsWith("/chain")) return new Response(JSON.stringify(current));
+      if (url.endsWith("/detached")) return new Response(JSON.stringify(current));
       if (url.includes("/rois") && method === "DELETE") return new Response(JSON.stringify({ removed: { labels: 7 } }));
       if (url.includes("/rois")) return new Response(JSON.stringify({}));
       return new Response("{}", { status: 404 });
@@ -155,6 +156,8 @@ test("the Classifier tile creates a real ROI with a free name", async () => {
   await waitFor(() => expect(calls.some((c) => c.method === "PUT" && c.url.endsWith("/rois"))).toBe(true));
   const put = calls.find((c) => c.method === "PUT" && c.url.endsWith("/rois"))!;
   expect(put.body.name).toBe("classifier");
+  // a new Classifier has no rectangle: it uses the picture as it comes in
+  await waitFor(() => expect(calls.some((c) => c.method === "PUT" && c.url.endsWith("/region") && c.body.mode === "as_is")).toBe(true));
 });
 
 test("renaming a box saves the layout, not the ROI", async () => {

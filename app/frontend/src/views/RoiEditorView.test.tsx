@@ -320,3 +320,22 @@ test("the anchor settings live on the ROI page: the detector's targets can be ch
   expect(await screen.findByRole("heading", { name: "Anchor" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Set anchor" })).toBeInTheDocument();
 });
+
+test("a Classifier that uses the picture as it comes in has no rectangle: none is drawn, no fields, no Save position", async () => {
+  install(base({ rois: [roi({ feature: "seal", short_name: "seal", region: "as_is" })] }));
+  render(<RoiEditorView camera="camA" focus={{ feature: "seal", onBack: () => {} }} />);
+  expect(await screen.findByText(/uses the picture as it comes in/)).toBeInTheDocument();
+  expect(screen.getByAltText("The picture as it comes in")).toBeInTheDocument();
+  expect(screen.queryByLabelText("x")).toBeNull();
+  expect(screen.queryByRole("button", { name: /Save position/ })).toBeNull();
+});
+
+test("my own rectangle chosen but not drawn yet: the editor asks to draw and Save position is ready without a change", async () => {
+  install(base({ rois: [roi({ feature: "seal", short_name: "seal", region: "own_pending", x: 0, y: 0, w: 1, h: 1 })] }));
+  render(<RoiEditorView camera="camA" focus={{ feature: "seal", onBack: () => {} }} />);
+  expect(await screen.findByText(/Draw your rectangle on the picture/)).toBeInTheDocument();
+  const save = await screen.findByRole("button", { name: /Save position/ });
+  await waitFor(() => expect(save).toBeEnabled());
+  await userEvent.click(save);
+  await waitFor(() => expect(calls.some((c) => c.url.includes("/rois/seal/geometry"))).toBe(true));
+});

@@ -5,6 +5,7 @@ import io
 from pathlib import Path
 
 import anchor
+import region
 import roi_input
 import config
 import cv2
@@ -41,6 +42,8 @@ def _roi_tuple(camera: str, feature: str | None, path: Path | None = None, frame
     """The rectangle to cut: the ROI's own, or - for a detector-anchored ROI - the one placed on this picture."""
     feature = feature or config.WHOLE_FRAME_FEATURE
     roi = engine.resolve_roi(camera, feature)
+    if path is not None and region.get_region(camera, feature) == region.OWN_PENDING and not anchor.get_anchor(camera, feature):
+        raise HTTPException(status_code=404, detail="No rectangle drawn yet for this ROI.")
     if path is not None and anchor.get_anchor(camera, feature):
         with Image.open(path) as picture:
             width, height = picture.size

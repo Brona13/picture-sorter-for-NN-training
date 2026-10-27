@@ -245,6 +245,8 @@ export interface RoiInfo {
   anchored?: boolean;
   /** The Picture edits box this ROI is cut from: its rectangle is then relative to that box's output picture (see `roi_input.py`). */
   input?: string | null;
+  /** as_is: the picture as it comes in, no rectangle used; own: my own rectangle; own_pending: chosen, not drawn yet (`region.py`). */
+  region?: "as_is" | "own" | "own_pending";
   /** Where this ROI stands in the pipeline (the Overview page only). */
   pipeline?: PipelineInfo;
 }
@@ -377,6 +379,10 @@ export interface ChainNode {
   anchor?: RoiAnchor | null;
   /** ROI boxes only: the Picture edits box the ROI is cut from, or null/absent (see `roi_input.py`). */
   input?: string | null;
+  /** Classifier only: as_is (the picture as it comes in, no rectangle), own (my own rectangle) or own_pending (chosen, not drawn yet). See `region.py`. */
+  region?: "as_is" | "own" | "own_pending";
+  /** Classifier only: what it reads, which decides the choices offered: ingest (whole pictures), edits (a Picture edits box) or detector. */
+  region_source?: "ingest" | "edits" | "detector";
 }
 
 export interface RoiAnchor {
@@ -1410,6 +1416,8 @@ export const api = {
     ),
   setRoiInput: (camera: string, feature: string, box: string) =>
     request<{ feature: string; input: { box: string } }>(`/cameras/${encodeURIComponent(camera)}/rois/${encodeURIComponent(feature)}/input`, send("PUT", { box })),
+  setRoiRegion: (camera: string, feature: string, mode: "as_is" | "own") =>
+    request<{ feature: string; region: "as_is" | "own" | "own_pending" }>(`/cameras/${encodeURIComponent(camera)}/rois/${encodeURIComponent(feature)}/region`, send("PUT", { mode })),
   clearRoiInput: (camera: string, feature: string) =>
     request<{ feature: string; input: null }>(`/cameras/${encodeURIComponent(camera)}/rois/${encodeURIComponent(feature)}/input`, { method: "DELETE" }),
   clearRoiAnchor: (camera: string, feature: string) =>

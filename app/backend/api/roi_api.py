@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import anchor
+import region
 import roi_input
 import samples
 import config
@@ -89,6 +90,7 @@ def _describe(camera: str, r: ROI, inbox_total: int) -> dict:
         "active_version": active,
         "anchored": anchor.get_anchor(camera, r.name) is not None,
         "input": (roi_input.get_input(camera, r.name) or {}).get("box"),
+        "region": region.get_region(camera, r.name),
     }
 
 
@@ -183,6 +185,7 @@ def move_roi(camera: str, feature: str, body: Box) -> dict:
             r.x, r.y, r.w, r.h = body.x, body.y, body.w, body.h
             moved = r
     datamodel.save_rois(camera, rois)
+    region.mark_drawn(camera, feature)  # a rectangle chosen as "my own" is now drawn
     return _describe(camera, moved, len(datamodel.list_unsorted(camera)))
 
 
@@ -263,6 +266,20 @@ def roi_rect(camera: str, feature: str, frame: str) -> dict:
     return {"anchored": True, "rect": None if placed is None else {"x": placed.x, "y": placed.y, "w": placed.w, "h": placed.h}, **extra}
 
 
+class RegionBody(BaseModel):
+    mode: str  # as_is: the picture as it comes in (no rectangle); own: my own rectangle (drawn in the ROI editor)
+
+
+@router.put("/cameras/{camera}/rois/{feature}/region")
+def put_region(camera: str, feature: str, body: RegionBody) -> dict:
+    """Choose whether the Classifier uses the picture as it comes in or its own rectangle (see ``region.py``)."""
+    _require_roi(camera, feature)
+    try:
+        return {"feature": feature, "region": region.set_region(camera, feature, body.mode)}
+    except region.RegionError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 class InputBody(BaseModel):
     box: str
 
@@ -282,6 +299,8 @@ def delete_input(camera: str, feature: str) -> dict:
     """Back to the whole, unedited picture."""
     _require_roi(camera, feature)
     roi_input.clear_input(camera, feature)
+    if region.get_region(camera, feature) == region.OWN_PENDING:  # nothing left to draw a rectangle on: Ingest gives whole pictures
+        region.set_region(camera, feature, region.AS_IS)
     return {"feature": feature, "input": None}
 
 
@@ -300,6 +319,7 @@ def delete_roi(camera: str, feature: str) -> dict:
     datamodel.delete_roi(camera, feature)
     anchor.clear_anchor(camera, feature)
     roi_input.clear_input(camera, feature)
+    region.clear(camera, feature)
     flow.drop_classify_edges(camera, feature)
     return {"removed": labels.purge_feature(camera, feature)}
 

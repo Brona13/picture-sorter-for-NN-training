@@ -9,7 +9,6 @@ import engine
 import labels
 import masking
 import preprocess
-import roi_input
 import vision_settings
 from api import jobs
 from api.cameras import require_feature
@@ -17,7 +16,6 @@ from api.frames_api import frame_path
 from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel
 
-import curation
 
 router = APIRouter()
 
@@ -125,7 +123,7 @@ def preview(camera: str, feature: str, body: PreviewRequest) -> Response:
     path = frame_path(camera, body.frame)
     frame_hash = labels.frame_hash(camera, body.frame)
     try:
-        img = engine.resolve_roi(camera, feature).crop(roi_input.edited(camera, feature, curation.load_image(path), body.frame))
+        img = engine.crop_for_frame(camera, feature, path, body.frame)  # the region on this picture (an anchored ROI: where the detector found its box)
         if body.filter:
             img = preprocess.apply(img, body.filter.name, body.filter.params)
         if body.mask and body.mask.enabled:

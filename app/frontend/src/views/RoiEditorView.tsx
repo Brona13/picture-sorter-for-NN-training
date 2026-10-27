@@ -1,6 +1,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { api, ChainNode, flowPictureUrl, frameImageUrl, FramesResponse, PRODUCTS_RENAMED, RoiInfo, RoisResponse, roiThumbUrl } from "../api";
 import AnchorSection from "../chain/AnchorSection";
+import RegionSection from "../chain/RegionSection";
 import SidePanel from "../SidePanel";
 import ProductNamesEditor from "../classify/ProductNamesEditor";
 import PictureSizeSlider, { usePictureSize } from "../PictureSize";
@@ -144,7 +145,9 @@ export default function RoiEditorView({ camera, product, focus }: { camera: stri
     });
   }
 
-  const moved = editing && target && box ? !sameBox(box, target) : false;
+  const asIs = !!focus && target?.region === "as_is"; // the picture as it comes in: no rectangle is used, so none is drawn
+  const pending = !!focus && target?.region === "own_pending"; // my own rectangle chosen, not drawn yet
+  const moved = editing && target && box ? !sameBox(box, target) || pending : false;
 
   if (!camera) return <p>Select a camera.</p>;
   if (frames && frames.frames.length === 0)
@@ -160,6 +163,8 @@ export default function RoiEditorView({ camera, product, focus }: { camera: stri
   const allProducts = data?.products ?? [];
 
   const anchorPanel = roiNode ? (
+    <>
+      <RegionSection key={`${roiNode.id}:${roiNode.region ?? ""}:${roiNode.region_source ?? ""}`} camera={camera} roi={roiNode} onChanged={() => { loadAnchor(); void reload(); }} onError={setError} />
       <AnchorSection
         key={`${roiNode.id}:${roiNode.anchor?.detector ?? ""}:${roiNode.anchor?.target ?? ""}:${roiNode.anchor?.mode ?? ""}`}
         camera={camera}
@@ -168,6 +173,7 @@ export default function RoiEditorView({ camera, product, focus }: { camera: stri
         onChanged={loadAnchor}
         onError={setError}
       />
+    </>
   ) : null;
 
   const page = (
@@ -281,6 +287,13 @@ export default function RoiEditorView({ camera, product, focus }: { camera: stri
       {frame && (!focus || target) && (
         <>
           <PictureSizeSlider value={size} onChange={setSize} min={200} max={1600} />
+          {asIs ? (
+            <img
+              alt="The picture as it comes in"
+              src={target?.input ? flowPictureUrl(camera, target.input, frame, { stage: "output" }) : frameImageUrl(camera, frame)}
+              style={{ width: size, maxWidth: "100%", display: "block" }}
+            />
+          ) : (
           <RoiCanvas
             imageUrl={editing && target?.input ? flowPictureUrl(camera, target.input, frame, { stage: "output" }) : frameImageUrl(camera, frame)}
             mode={editing ? "edit" : "draw"}
@@ -291,15 +304,23 @@ export default function RoiEditorView({ camera, product, focus }: { camera: stri
             view={view}
             onViewChange={setView}
           />
+          )}
         </>
       )}
-      <p>
+      {asIs && !anchorInfo?.anchor && (
+        <p role="note">
+          This Classifier uses the picture as it comes in, so there is no rectangle to draw or move. To use a part of it, choose <em>my own rectangle</em> in the Region section on the right
+          (after a Picture edits box is connected), or connect a detector.
+        </p>
+      )}
+      {pending && <p role="status">Draw your rectangle on the picture and press <strong>Save position</strong>. Until then this Classifier sees no pictures.</p>}
+      {!asIs && <p>
         {editing
           ? `Drag the box to move it, or pull a corner/edge handle to resize.${focus ? "" : " Other ROIs stay drawn in green for reference."} Wheel: zoom at the cursor. Pan: middle button or Space + drag (or drag the background).`
           : "Existing ROIs are drawn in green. Drag on the image to draw a new rectangle, name it, and add it. Wheel: zoom at the cursor. Pan: middle button or Space + drag."}
-      </p>
+      </p>}
 
-      <div>
+      {!asIs && <div>
         {NUM_FIELDS.map((k) => (
           <label key={k} style={{ marginRight: 8 }}>
             {k}{" "}
@@ -315,9 +336,9 @@ export default function RoiEditorView({ camera, product, focus }: { camera: stri
             />
           </label>
         ))}
-      </div>
+      </div>}
 
-      {editing && target && (
+      {editing && target && !asIs && (
         <div>
           {moved && (target.labeled > 0 || target.goldens > 0) && (
             <p role="alert">

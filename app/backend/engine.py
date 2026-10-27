@@ -12,7 +12,9 @@ def resolve_roi(camera: str, feature: str) -> ROI:
     """Return a named ROI or the explicit whole-frame pseudo-feature."""
     roi = datamodel.get_roi(camera, feature)
     if roi is not None:
-        return roi
+        import region  # noqa: PLC0415
+
+        return region.full_frame(roi) if region.get_region(camera, feature) == region.AS_IS else roi  # as is: the stored rectangle is not used
     return ROI.full_frame(feature or config.WHOLE_FRAME_FEATURE)
 
 
@@ -24,7 +26,9 @@ def resolve_roi_for_frame(camera: str, feature: str, frame_hash: str, img_w: int
 
     spec = anchor.get_anchor(camera, feature)
     if spec is None:
-        return roi
+        import region  # noqa: PLC0415
+
+        return None if region.get_region(camera, feature) == region.OWN_PENDING else roi  # no rectangle drawn yet: no region
     spec = anchor.effective(camera, feature, spec)
     entry = anchor.entry_for(camera, spec, frame_hash)
     placed = anchor.rect_for(spec, entry, roi.name, img_w, img_h)
