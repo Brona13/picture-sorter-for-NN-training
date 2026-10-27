@@ -75,3 +75,34 @@ class RegionTests(ApiTestCase):
         self.assertEqual((region.get_region(CAM, "new"), region.source_kind(CAM, "new")), ("as_is", "detector"))
         self.assertEqual(self.client.put(f"{self.url}/new/region", json={"mode": "own"}).status_code, 422)
         self.assertEqual(engine.resolve_roi(CAM, "new").w, 1.0)  # the stored rectangle is ignored for the key
+
+
+class RegionAnchorTests(ApiTestCase):
+    """A detector-fed Classifier: found box shows the box; my own rectangle starts from the found box and is pending until saved."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.frames = write_frames(CAM, 3)
+        datamodel.save_rois(CAM, [ROI("new", 0.25, 0.25, 0.5, 0.5)])
+        self.url = f"/api/cameras/{CAM}/rois"
+        self.client.put(f"{self.url}/new/region", json={"mode": "as_is"})
+        self.det = flow.create_node(CAM, "detector")
+        graph = flow.load_graph(CAM)
+        graph["nodes"][self.det]["targets"] = [{"name": "P", "examples": []}]
+        flow.save_graph(CAM, graph)
+
+    def test_switching_to_my_own_rectangle_starts_from_the_found_box_and_is_pending_until_saved(self) -> None:
+        import unittest.mock as mock
+
+        box = {"x": 0.3, "y": 0.4, "w": 0.2, "h": 0.1}
+        with mock.patch.object(anchor, "found_box", return_value=box), mock.patch.object(anchor, "_entry", return_value={"x": 50, "y": 50, "w": 10, "h": 10, "angle": 0}), \
+                mock.patch.object(anchor, "_on_frame", side_effect=lambda e, w, h: e):
+            anchor.set_anchor(CAM, "new", self.det, "P", mode="box", image_size=(100, 100))
+            self.assertEqual(region.get_region(CAM, "new"), "as_is")
+            anchor.set_anchor(CAM, "new", self.det, "P", self.frames[0], mode="rect", image_size=(100, 100))
+        rect = datamodel.get_roi(CAM, "new")
+        self.assertEqual((rect.x, rect.y, rect.w, rect.h), (0.3, 0.4, 0.2, 0.1))  # not the 0.25 placeholder
+        self.assertEqual(region.get_region(CAM, "new"), "own_pending")
+        self.assertIsNone(engine.resolve_roi_for_frame(CAM, "new", "h", 100, 100))  # no region until it is saved
+        self.client.patch(f"{self.url}/new/geometry", json={"x": 0.31, "y": 0.4, "w": 0.2, "h": 0.1})
+        self.assertEqual(region.get_region(CAM, "new"), "own")

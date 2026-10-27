@@ -13,7 +13,8 @@ A Classifier's region is decided by the line into it and by one choice:
 Ingest gives whole pictures, always: ``own`` is not offered for a Classifier that reads Ingest (to cut a region, use a
 Picture edits box or a detector); one that already is ``own`` keeps it until switched to ``as_is``.
 
-For an anchored Classifier the mode follows the anchor (``box`` -> ``as_is``, ``rect`` -> ``own``) and nothing is stored.
+For an anchored Classifier the mode follows the anchor (``box`` -> ``as_is``, ``rect`` -> ``own``, or ``own_pending`` until the
+rectangle has been placed and saved); switching a Classifier that had no rectangle to ``rect`` starts from the found box.
 Stored in the camera setting ``roi.region.<feature>`` as ``as_is`` or ``own_pending``; no setting means ``own`` (the
 legacy default). The ``rois`` table is unchanged: its rectangle is just ignored while the mode is ``as_is``.
 """
@@ -40,13 +41,15 @@ def _key(feature: str) -> str:
 def get_region(camera: str, feature: str, con=None) -> str:
     """``as_is``, ``own`` or ``own_pending`` (see the module text)."""
     spec = anchor.get_anchor(camera, feature, con)
-    if spec:
-        return OWN if spec.get("mode") == "rect" else AS_IS
+    if spec and spec.get("mode") != "rect":
+        return AS_IS
     if con is None:
         raw = db.get_setting(camera, _key(feature))
     else:
         row = con.execute("SELECT value FROM settings WHERE camera=? AND key=?", (camera, _key(feature))).fetchone()
         raw = row["value"] if row else None
+    if spec:  # anchored with a rectangle of its own: own, or not placed yet
+        return OWN_PENDING if raw == OWN_PENDING else OWN
     return raw if raw in (AS_IS, OWN_PENDING) else OWN
 
 

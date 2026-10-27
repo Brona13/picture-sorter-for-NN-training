@@ -260,6 +260,20 @@ def set_anchor(camera: str, feature: str, detector: str, target: str, frame: str
         key = labels.hash_map(camera).get(frame)
         if not (key and _entry(camera, detector, target, key)):
             raise AnchorError(f"The detector has not found {target!r} on {frame}; pick a picture where it did.")
+        import region  # noqa: PLC0415
+
+        if db.get_setting(camera, region.KEY_PREFIX + feature) == region.AS_IS and (get_anchor(camera, feature) or {}).get("mode") != "rect":
+            # A Classifier that had no rectangle starts "my own rectangle" from the found box itself (nothing is invented), and
+            # has no region until the user has placed the rectangle and saved it.
+            start = found_box(camera, {"detector": detector, "target": target}, frame)
+            if start:
+                rois = datamodel.load_rois(camera)
+                for r in rois:
+                    if r.name == feature:
+                        r.x, r.y, r.w, r.h = start["x"], start["y"], start["w"], start["h"]
+                datamodel.save_rois(camera, rois)
+                roi = datamodel.get_roi(camera, feature) or roi
+            db.set_setting(camera, region.KEY_PREFIX + feature, region.OWN_PENDING)
         if image_size is not None:  # known size (no file read): compute the snapshot here
             width, height = image_size
             entry = _on_frame(_entry(camera, detector, target, key), width, height)

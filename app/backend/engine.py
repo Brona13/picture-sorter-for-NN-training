@@ -24,11 +24,13 @@ def resolve_roi_for_frame(camera: str, feature: str, frame_hash: str, img_w: int
     roi = resolve_roi(camera, feature)
     import anchor  # noqa: PLC0415
 
+    import region  # noqa: PLC0415
+
+    if region.get_region(camera, feature) == region.OWN_PENDING:
+        return None  # my own rectangle chosen but not placed yet: no region
     spec = anchor.get_anchor(camera, feature)
     if spec is None:
-        import region  # noqa: PLC0415
-
-        return None if region.get_region(camera, feature) == region.OWN_PENDING else roi  # no rectangle drawn yet: no region
+        return roi
     spec = anchor.effective(camera, feature, spec)
     entry = anchor.entry_for(camera, spec, frame_hash)
     placed = anchor.rect_for(spec, entry, roi.name, img_w, img_h)

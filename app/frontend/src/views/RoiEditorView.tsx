@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { api, ChainNode, flowPictureUrl, frameImageUrl, FramesResponse, PRODUCTS_RENAMED, RoiInfo, RoisResponse, roiThumbUrl } from "../api";
+import { api, ChainNode, flowPictureUrl, frameCutoutUrl, frameImageUrl, FramesResponse, PRODUCTS_RENAMED, RoiInfo, RoisResponse, roiThumbUrl } from "../api";
 import AnchorSection from "../chain/AnchorSection";
 import RegionSection from "../chain/RegionSection";
 import SidePanel from "../SidePanel";
@@ -170,7 +170,7 @@ export default function RoiEditorView({ camera, product, focus }: { camera: stri
         camera={camera}
         roi={roiNode}
         detectors={chainNodes.filter((n) => n.kind === "detector")}
-        onChanged={loadAnchor}
+        onChanged={() => { loadAnchor(); void reload(); }}
         onError={setError}
       />
     </>
@@ -289,8 +289,8 @@ export default function RoiEditorView({ camera, product, focus }: { camera: stri
           <PictureSizeSlider value={size} onChange={setSize} min={200} max={1600} />
           {asIs ? (
             <img
-              alt="The picture as it comes in"
-              src={target?.input ? flowPictureUrl(camera, target.input, frame, { stage: "output" }) : frameImageUrl(camera, frame)}
+              alt={anchorInfo?.anchor ? "The box the detector found" : "The picture as it comes in"}
+              src={anchorInfo?.anchor ? frameCutoutUrl(camera, frame, target!.feature) : target?.input ? flowPictureUrl(camera, target.input, frame, { stage: "output" }) : frameImageUrl(camera, frame)}
               style={{ width: size, maxWidth: "100%", display: "block" }}
             />
           ) : (

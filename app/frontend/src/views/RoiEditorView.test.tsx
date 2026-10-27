@@ -339,3 +339,13 @@ test("my own rectangle chosen but not drawn yet: the editor asks to draw and Sav
   await userEvent.click(save);
   await waitFor(() => expect(calls.some((c) => c.url.includes("/rois/seal/geometry"))).toBe(true));
 });
+
+test("a Classifier that is the found box shows the content of the detected box, not the whole picture", async () => {
+  install(base({ rois: [roi({ feature: "seal", short_name: "seal", region: "as_is", anchored: true })] }));
+  withAnchor({ anchor: { detector: "det:1", target: "hole", mode: "box", follow_rotation: false }, context: null });
+  render(<RoiEditorView camera="camA" focus={{ feature: "seal", onBack: () => {} }} />);
+  const img = await screen.findByAltText("The box the detector found");
+  expect(img.getAttribute("src")).toContain("/frames/f1.png/cutout?feature=seal");
+  expect(screen.queryByLabelText("x")).toBeNull();
+  expect(screen.queryByText(/uses the picture as it comes in/)).toBeNull(); // the anchored note says it instead
+});
