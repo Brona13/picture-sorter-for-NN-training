@@ -191,7 +191,8 @@ class DedupBoxTests(ApiTestCase):
         flow.save_graph(CAM, graph)
         flow.connect(CAM, det, self.d1, point="P")
         spec = anchor.get_anchor(CAM, self.d1)
-        self.assertEqual((spec["detector"], spec["target"], spec["mode"], spec["margin"]), (det, "P", "box", 0.0))  # no hidden margin
+        self.assertEqual((spec["detector"], spec["target"], spec["mode"]), (det, "P", "box"))
+        self.assertNotIn("margin", spec)  # no margin at all
 
     def test_one_dedup_box_feeds_three_picture_edits_boxes_each_feeding_its_own_dedup_box(self) -> None:
         flow.connect(CAM, "ingest", self.d1)

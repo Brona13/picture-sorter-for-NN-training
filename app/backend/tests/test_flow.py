@@ -674,10 +674,10 @@ class FlowTests(ApiTestCase):
         plain = self.client.get(url).json()
         self.assertEqual((plain["anchored"], plain["rect"]["x"]), (False, 0.1))
         self.client.put(f"/api/cameras/{CAM}/rois/part/anchor", json={"detector": d1, "target": "A", "frame": self.names[0]})
-        self.assertAlmostEqual(self.client.get(url).json()["rect"]["x"], 0.1, places=2)
+        self.assertAlmostEqual(self.client.get(url).json()["rect"]["x"], 0.125, places=2)  # exactly the found box (no margin)
         other = self.client.get(f"/api/cameras/{CAM}/rois/part/rect?frame={self.names[2]}").json()
         self.assertTrue(other["anchored"])
-        self.assertNotAlmostEqual(other["rect"]["x"], 0.1, places=3)
+        self.assertNotAlmostEqual(other["rect"]["x"], 0.1, places=3)  # not the static rectangle
         self.assertTrue(any(r["anchored"] for r in self.client.get(f"/api/cameras/{CAM}/rois").json()["rois"]))
 
     def test_old_tolerance_boxes_become_evaluation_boxes_with_arrows_and_layout(self) -> None:
@@ -859,14 +859,15 @@ def height_of(case: "FlowTests") -> int:
         datamodel.save_rois(CAM, [ROI("part", 0.1, 0.2, 0.2, 0.2)])
         return d1, width, height
 
-    def test_box_mode_makes_the_roi_the_found_box_plus_the_margin(self) -> None:
+    def test_box_mode_makes_the_roi_exactly_the_found_box(self) -> None:
         import anchor
         import engine
         import labels
 
         d1, width, height = self._anchored_setup()
-        spec = anchor.set_anchor(CAM, "part", d1, "A", mode="box", margin=0.1, image_size=(width, height))
-        self.assertEqual((spec["mode"], spec["margin"]), ("box", 0.1))
+        spec = anchor.set_anchor(CAM, "part", d1, "A", mode="box", image_size=(width, height))
+        self.assertEqual(spec["mode"], "box")
+        self.assertNotIn("margin", spec)
         stored = flow.load_stored(CAM, d1)["frames"]
         for name in self.names:
             key = labels.hash_map(CAM)[name]
@@ -875,12 +876,11 @@ def height_of(case: "FlowTests") -> int:
             import rotsearch
 
             x0, y0, x1, y1 = rotsearch.Match(entry["x"], entry["y"], entry["angle"], 1.0, entry["w"], entry["h"]).bbox()
-            gx, gy = (x1 - x0) * 0.1, (y1 - y0) * 0.1
+            gx = gy = 0.0  # no margin
             x0, x1, y0, y1 = x0 + 0.5, x1 + 0.5, y0 + 0.5, y1 + 0.5  # pixel index -> pixel edge coordinates
             self.assertAlmostEqual(placed.x * width, max(0.0, x0 - gx), delta=0.01)
             self.assertAlmostEqual((placed.x + placed.w) * width, min(float(width), x1 + gx), delta=0.01)
             self.assertAlmostEqual(placed.y * height, max(0.0, y0 - gy), delta=0.01)
-        self.assertEqual(self.client.put(f"/api/cameras/{CAM}/rois/part/anchor", json={"detector": d1, "target": "A", "margin": 2}).status_code, 422)
         self.assertEqual(self.client.put(f"/api/cameras/{CAM}/rois/part/anchor", json={"detector": d1, "target": "A", "mode": "x"}).status_code, 422)
 
     def test_rect_mode_follows_the_rois_current_rectangle_without_setting_the_anchor_again(self) -> None:

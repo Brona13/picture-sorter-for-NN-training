@@ -382,9 +382,8 @@ export interface ChainNode {
 export interface RoiAnchor {
   detector: string;
   target: string;
-  /** box: the ROI is the found box plus `margin`; rect: it follows the rectangle drawn on `frame`. */
+  /** box: the ROI is exactly the found box; rect: it follows the rectangle drawn on `frame`. */
   mode: "box" | "rect";
-  margin: number;
   frame?: string;
   follow_rotation: boolean;
   angle0?: number;
@@ -1399,7 +1398,7 @@ export const api = {
     request<{ removed: string }>(`/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}`, send("DELETE")),
   flowConnect: (camera: string, source: string, target: string, point?: string) =>
     request<{ source: string; target: string }>(`/cameras/${encodeURIComponent(camera)}/flow/edges`, send("POST", point ? { source, target, point } : { source, target })),
-  setRoiAnchor: (camera: string, feature: string, body: { detector: string; target: string; mode?: "box" | "rect"; margin?: number; frame?: string; follow_rotation?: boolean }) =>
+  setRoiAnchor: (camera: string, feature: string, body: { detector: string; target: string; mode?: "box" | "rect"; frame?: string; follow_rotation?: boolean }) =>
     request<RoiAnchor>(`/cameras/${encodeURIComponent(camera)}/rois/${encodeURIComponent(feature)}/anchor`, send("PUT", body)),
   roiAnchor: (camera: string, feature: string) =>
     request<{ anchor: RoiAnchor | null; context: { frame: string; target: string; box: { x: number; y: number; w: number; h: number } | null } | null }>(

@@ -11,7 +11,7 @@ type Props = {
 
 /**
  * Right-panel section of an ROI box: make it follow a box a detector finds (`anchor.py`). Usually set by dragging a
- * target's dot of the detector onto the ROI; here the options change. Either the ROI is the found box plus a margin, or
+ * target's dot of the detector onto the ROI; here the options change. Either the ROI is exactly the found box, or
  * the user draws a rectangle (in the ROI editor, on the chosen example picture) and it keeps its place relative to the
  * box on every other picture. A picture without that box has no ROI there.
  */
@@ -27,7 +27,6 @@ export default function AnchorSection({ camera, roi, detectors, onChanged, onErr
   const [frame, setFrame] = useState("");
   const [follow, setFollow] = useState(anchor?.follow_rotation ?? false);
   const [mode, setMode] = useState<"box" | "rect">(anchor?.mode ?? "box");
-  const [margin, setMargin] = useState(Math.round((anchor?.margin ?? 0.1) * 100));
   const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
   useEffect(() => {
@@ -52,7 +51,7 @@ export default function AnchorSection({ camera, roi, detectors, onChanged, onErr
   const save = async () => {
     try {
       await api.setRoiAnchor(camera, roi.ref!, mode === "box"
-        ? { detector, target, mode, margin: Math.min(100, Math.max(0, margin)) / 100 }
+        ? { detector, target, mode }
         : { detector, target, mode, frame, follow_rotation: follow });
       onChanged();
     } catch (e) { onError(msg(e)); }
@@ -90,18 +89,13 @@ export default function AnchorSection({ camera, roi, detectors, onChanged, onErr
       <fieldset>
         <legend>The ROI is</legend>
         <label>
-          <input type="radio" name={`anchor-mode-${roi.id}`} checked={mode === "box"} onChange={() => setMode("box")} /> the found box (plus a margin)
+          <input type="radio" name={`anchor-mode-${roi.id}`} checked={mode === "box"} onChange={() => setMode("box")} /> the found box
         </label>
         <label>
           <input type="radio" name={`anchor-mode-${roi.id}`} checked={mode === "rect"} disabled={together} onChange={() => setMode("rect")} /> my own rectangle, related to the box
         </label>
       </fieldset>
-      {mode === "box" ? (
-        <label>
-          Margin on each side (%)
-          <input type="number" min={0} max={100} value={margin} onChange={(e) => setMargin(Number(e.target.value))} />
-        </label>
-      ) : (
+      {mode === "box" ? null : (
         <>
           <label>
             Rectangle drawn on

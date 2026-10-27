@@ -242,7 +242,7 @@ export default function RoiEditorView({ camera, product, focus }: { camera: stri
 
       {anchorInfo?.anchor?.mode === "box" && (
         <p role="note">
-          This ROI is the box the detector finds for <strong>{anchorInfo.anchor.target}</strong>, plus a margin of {Math.round(anchorInfo.anchor.margin * 100)} %:
+          This ROI is the box the detector finds for <strong>{anchorInfo.anchor.target}</strong>:
           there is nothing to draw here. To draw your own rectangle related to that box, switch the anchor to <em>My own rectangle</em> in the Anchor section of the panel on the right.
         </p>
       )}

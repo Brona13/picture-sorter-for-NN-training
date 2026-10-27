@@ -2,8 +2,8 @@
 
 Two modes (``spec["mode"]``):
 
-* ``box`` - the ROI *is* the found box: the axis-aligned box around the found (possibly turned) example, grown by
-  ``margin`` (a fraction of its size) on every side. Nothing is drawn.
+* ``box`` - the ROI *is* the found box: the axis-aligned box around the found (possibly turned) example,
+  exactly, with no margin (a margin option existed until v1.115.1 and is gone). Nothing is drawn.
 * ``rect`` - the user draws the rectangle (the static ROI row) on an exemplar picture (``spec["frame"]``). Where it
   lies relative to the detector's box there (centre offset and size in pixels, plus the detected angle) is read from
   the ROI's *current* rectangle (``effective``), so redrawing it needs no new anchor; the offsets stored with the
@@ -31,7 +31,6 @@ import rotsearch
 from roi import ROI
 
 KEY_PREFIX = "roi.anchor."
-DEFAULT_MARGIN = 0.1
 MODES = ("box", "rect")
 
 
@@ -47,7 +46,7 @@ def get_anchor(camera: str, feature: str, con=None) -> dict | None:
     """The stored anchor of a ROI, or ``None``. Reads through ``con`` when the caller already holds a connection.
 
     A Dedup box fed by a detector target (v1.99.0) has no setting of its own: the line is its anchor, in mode ``box``
-    with margin 0 (since v1.115.1; it was 10 %), so its embeddings are made from exactly the box the detector found."""
+    with no margin (it was 10 % until v1.115.1), so its embeddings are made from exactly the box the detector found."""
     if flow.kind_of(feature) == "dedup":
         graph = flow.load_graph(camera)
         line = next((e for e in graph["edges"] if e["target"] == feature and e.get("point") and flow.kind_of(e["source"]) == "detector"), None)
@@ -57,7 +56,7 @@ def get_anchor(camera: str, feature: str, con=None) -> dict | None:
             src = dedup_box.source_of(camera, feature, graph)  # a box reading a Classifier whose pictures are the boxes of a target: same boxes
             spec = get_anchor(camera, src["feature"], con) if src else None
             return spec if spec and group_slots(camera, spec) else None
-        return {"detector": line["source"], "target": line["point"], "mode": "box", "margin": 0.0}  # exactly the found box: no hidden margin
+        return {"detector": line["source"], "target": line["point"], "mode": "box"}
     if con is None:
         raw = db.get_setting(camera, _key(feature))
     else:
@@ -72,7 +71,7 @@ def get_anchor(camera: str, feature: str, con=None) -> dict | None:
     if not (isinstance(data, dict) and data.get("detector") and data.get("target")):
         return None
     data.setdefault("mode", "rect")
-    data.setdefault("margin", DEFAULT_MARGIN)
+    data.pop("margin", None)  # there is no margin any more (v1.116.0): the ROI is exactly the found box
     return data
 
 
@@ -230,7 +229,7 @@ def frame_key(spec: dict, entry: dict) -> str:
 
 
 def set_anchor(camera: str, feature: str, detector: str, target: str, frame: str | None = None, *, mode: str = "box",
-               margin: float = DEFAULT_MARGIN, follow_rotation: bool = False,
+               follow_rotation: bool = False,
                image_size: tuple[int, int] | None = None) -> dict:
     """Anchor ``feature`` to ``target`` of ``detector``. Mode ``box`` needs nothing more; mode ``rect`` needs ``frame``,
     the exemplar picture the ROI's rectangle is drawn on (the detector must have found the target there).
@@ -244,8 +243,6 @@ def set_anchor(camera: str, feature: str, detector: str, target: str, frame: str
         raise AnchorError(f"{feature} reads a Picture edits box; remove that arrow first.")
     if mode not in MODES:
         raise AnchorError("The mode is box or rect.")
-    if not 0.0 <= margin <= 1.0:
-        raise AnchorError("The margin is a fraction between 0 and 1.")
     graph = flow.load_graph(camera)
     node = graph["nodes"].get(detector)
     if node is None or node["kind"] != "detector":
@@ -255,7 +252,7 @@ def set_anchor(camera: str, feature: str, detector: str, target: str, frame: str
         raise AnchorError(f"The detector has no target named {target!r}.")
     if group is not None and mode != "box":
         raise AnchorError(f"{target} has several boxes: they are used together as the found boxes (mode box); pick one numbered box for a rectangle of your own.")
-    anchor = {"detector": detector, "target": target, "mode": mode, "margin": round(float(margin), 4),
+    anchor = {"detector": detector, "target": target, "mode": mode,
               "follow_rotation": bool(follow_rotation)}
     if mode == "rect":
         if not frame:
@@ -301,8 +298,7 @@ def rect_for(anchor: dict, entry: dict | None, name: str, img_w: int, img_h: int
         return None
     if anchor.get("mode") == "box":
         x0, y0, x1, y1 = rotsearch.Match(entry["x"], entry["y"], entry["angle"], entry.get("score", 1.0), entry["w"], entry["h"]).bbox()
-        gx, gy = (x1 - x0) * float(anchor.get("margin", DEFAULT_MARGIN)), (y1 - y0) * float(anchor.get("margin", DEFAULT_MARGIN))
-        x0, y0, x1, y1 = max(0.0, x0 - gx), max(0.0, y0 - gy), min(float(img_w), x1 + gx), min(float(img_h), y1 + gy)
+        x0, y0, x1, y1 = max(0.0, x0), max(0.0, y0), min(float(img_w), x1), min(float(img_h), y1)  # exactly the found box, cut at the picture's edge
         if x1 - x0 < 1 or y1 - y0 < 1:
             return None
         return ROI(name=name, x=x0 / img_w, y=y0 / img_h, w=(x1 - x0) / img_w, h=(y1 - y0) / img_h)
@@ -325,5 +321,5 @@ def rule_key(anchor: dict, camera: str) -> str:
     goes into the frame key). In mode ``rect`` the ROI's own rectangle (already in the key) carries the offsets."""
     graph = flow.load_graph(camera)
     sig = flow.signature(graph, anchor["detector"]) if anchor["detector"] in graph["nodes"] else "gone"
-    shape = f"box:{anchor.get('margin', DEFAULT_MARGIN)}" if anchor.get("mode") == "box" else f"rect:{anchor.get('frame', '')}"
+    shape = "box:0.0" if anchor.get("mode") == "box" else f"rect:{anchor.get('frame', '')}"
     return f"anchor:{anchor['detector']}:{anchor['target']}:{int(bool(anchor.get('follow_rotation')))}:{shape}:{sig}"

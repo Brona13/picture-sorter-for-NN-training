@@ -290,7 +290,7 @@ function withAnchor(body: unknown) {
 test("a ROI anchored with its own rectangle opens on the example picture, locked, with the detector's found box outlined", async () => {
   install(focusData());
   withAnchor({
-    anchor: { detector: "det:1", target: "hole", mode: "rect", margin: 0.1, frame: "f2.png", follow_rotation: false },
+    anchor: { detector: "det:1", target: "hole", mode: "rect", frame: "f2.png", follow_rotation: false },
     context: { frame: "f2.png", target: "hole", box: { x: 0.5, y: 0.5, w: 0.1, h: 0.1 } },
   });
   render(<RoiEditorView camera="camA" focus={{ feature: "seal", onBack: () => {} }} />);
@@ -302,7 +302,7 @@ test("a ROI anchored with its own rectangle opens on the example picture, locked
 
 test("a ROI that is the found box has nothing to draw: the page says so", async () => {
   install(focusData());
-  withAnchor({ anchor: { detector: "det:1", target: "hole", mode: "box", margin: 0.1, follow_rotation: false }, context: null });
+  withAnchor({ anchor: { detector: "det:1", target: "hole", mode: "box", follow_rotation: false }, context: null });
   render(<RoiEditorView camera="camA" focus={{ feature: "seal", onBack: () => {} }} />);
   expect(await screen.findByText(/there is nothing to draw here/)).toBeInTheDocument();
   expect(screen.getByLabelText(/Frame to draw on/)).not.toBeDisabled();

@@ -36,23 +36,21 @@ test("sets the anchor from the first picture where the target was found, with th
 });
 
 test("an anchored ROI can be released", async () => {
-  const anchored = { ...roi, anchor: { detector: "det:1", target: "hole", mode: "rect", margin: 0.1, follow_rotation: false, angle0: 0, dx: 1, dy: 1, w: 5, h: 5 } } as ChainNode;
+  const anchored = { ...roi, anchor: { detector: "det:1", target: "hole", mode: "rect", follow_rotation: false, angle0: 0, dx: 1, dy: 1, w: 5, h: 5 } } as ChainNode;
   render(<AnchorSection camera="camA" roi={anchored} detectors={[detector]} onChanged={() => {}} onError={() => {}} />);
   await userEvent.click(await screen.findByRole("button", { name: "Remove anchor" }));
   await waitFor(() => expect(calls.some((c) => c.method === "DELETE" && c.url.endsWith("/rois/part/anchor"))).toBe(true));
 });
 
-test("by default the ROI is the found box with a margin; no example picture is needed", async () => {
+test("by default the ROI is exactly the found box, with no margin option; no example picture is needed", async () => {
   const onChanged = vi.fn();
   render(<AnchorSection camera="camA" roi={roi} detectors={[detector]} onChanged={onChanged} onError={() => {}} />);
   expect(screen.getByLabelText(/the found box/)).toBeChecked();
   expect(screen.queryByLabelText(/Rectangle drawn on/)).toBeNull();
-  const margin = screen.getByLabelText(/Margin on each side/);
-  await userEvent.clear(margin);
-  await userEvent.type(margin, "25");
+  expect(screen.queryByLabelText(/Margin/)).toBeNull();
   await userEvent.click(screen.getByRole("button", { name: "Set anchor" }));
   await waitFor(() => expect(onChanged).toHaveBeenCalled());
-  expect(calls.find((c) => c.method === "PUT")!.body).toEqual({ detector: "det:1", target: "hole", mode: "box", margin: 0.25 });
+  expect(calls.find((c) => c.method === "PUT")!.body).toEqual({ detector: "det:1", target: "hole", mode: "box" });
 });
 
 
@@ -64,7 +62,7 @@ test("a target that looks for several elements can be used with all its boxes to
   expect(screen.getByText(/its own picture/)).toBeInTheDocument();
   await userEvent.click(screen.getByRole("button", { name: "Set anchor" }));
   await waitFor(() => expect(calls.some((c) => c.method === "PUT")).toBe(true));
-  expect(calls.find((c) => c.method === "PUT")!.body).toEqual({ detector: "det:1", target: "hole", mode: "box", margin: 0.1 });
+  expect(calls.find((c) => c.method === "PUT")!.body).toEqual({ detector: "det:1", target: "hole", mode: "box" });
   await userEvent.selectOptions(screen.getByLabelText("Target"), "hole 2");
   expect(screen.getByLabelText(/my own rectangle/)).toBeEnabled();
 });

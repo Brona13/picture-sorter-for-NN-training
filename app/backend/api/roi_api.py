@@ -207,8 +207,7 @@ def set_applies_to(camera: str, feature: str, body: ProductsUpdate) -> dict:
 class AnchorBody(BaseModel):
     detector: str
     target: str
-    mode: str = "box"  # box: the ROI is the found box plus a margin; rect: follows the rectangle drawn on `frame`
-    margin: float = 0.1
+    mode: str = "box"  # box: the ROI is exactly the found box; rect: follows the rectangle drawn on `frame`
     frame: str | None = None  # mode rect: the picture the rectangle is drawn on (the detector must have found the target there)
     follow_rotation: bool = False
 
@@ -219,7 +218,7 @@ def put_anchor(camera: str, feature: str, body: AnchorBody) -> dict:
     _require_roi(camera, feature)
     try:
         return anchor.set_anchor(camera, feature, body.detector, body.target, body.frame, mode=body.mode,
-                                 margin=body.margin, follow_rotation=body.follow_rotation)
+                                 follow_rotation=body.follow_rotation)
     except (anchor.AnchorError, FileNotFoundError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
