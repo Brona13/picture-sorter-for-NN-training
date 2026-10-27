@@ -187,6 +187,11 @@ test("Evaluation page, Offset: the chart can switch to a heat map, and the dense
     ? { values: { "a.png": 1, "b.png": 1, "c.png": 1, "d.png": 1 }, verdicts: {}, unit: "px", mode: "zone", points: { "a.png": [100, 50], "b.png": [101, 50], "c.png": [100, 51], "d.png": [300, 200] }, deviations: {} }
     : undefined));
   render(<FlowBoxView camera="camA" focus={{ nodeId: "eval:1", onBack: () => {} }} />);
+  await screen.findAllByTestId("zone-dot");
+  expect(screen.getAllByTestId("zone-dot")).toHaveLength(4);
+  await userEvent.click(screen.getByRole("button", { name: /^Pass/ })); // no picture is judged yet: no dots, as in the grid
+  expect(screen.queryAllByTestId("zone-dot")).toHaveLength(0);
+  await userEvent.click(screen.getByRole("button", { name: /^All/ }));
   await userEvent.click(await screen.findByRole("button", { name: "Heatmap" }));
   expect(await screen.findByTestId("zone-heat-legend")).toBeTruthy();
   expect(screen.queryAllByTestId("zone-dot")).toHaveLength(0);

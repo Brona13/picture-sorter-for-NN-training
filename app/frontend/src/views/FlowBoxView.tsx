@@ -826,6 +826,7 @@ function ValuesWork(p: {
           zone={tolerance.zone}
           onZone={(z) => void setZone(z)}
           onCentre={(at) => void setZone({ center: at })}
+          visible={new Set(rows.map((r) => r.frame))}
           heat={heatOn ? { points: rows.map((r) => r.point).filter((q): q is [number, number] => !!q), smoothing } : null}
         />
       )}

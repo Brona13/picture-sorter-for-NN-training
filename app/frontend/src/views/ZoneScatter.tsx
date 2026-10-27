@@ -13,10 +13,12 @@ const ORIGIN: Pt2 = [0, 0];
  * on the nominal: each dot is its distance from it, the zone is drawn around the cross, green inside and red outside
  * (grey where B is missing), and the square handle on the zone's edge resizes it (saved on release through `onZone`).
  */
-export default function ZoneScatter({ points, zone, onZone, onCentre, heat }: {
+export default function ZoneScatter({ points, zone, onZone, onCentre, heat, visible }: {
   points: Record<string, Pt2 | null>;
   /** Heat map instead of dots: the (dx, dy) of the pictures to count (the ones the grid shows) and the smoothing factor (1 = automatic). */
   heat?: { points: Pt2[]; smoothing: number } | null;
+  /** The pictures to draw as dots (the ones the grid shows); the chart's extent still follows all of them, so it does not jump when the filter changes. All when not given. */
+  visible?: Set<string> | null;
   zone: Zone;
   onZone: (zone: Zone) => void;
   onCentre: (at: Pt2) => void;
@@ -94,7 +96,7 @@ export default function ZoneScatter({ points, zone, onZone, onCentre, heat }: {
         {nominal && shown.shape === "rect" && (
           <rect data-testid="zone-shape" x={-shown.half[0]} y={-shown.half[1]} width={2 * shown.half[0]} height={2 * shown.half[1]} fill="rgba(40,160,110,.12)" stroke="#2a7" strokeWidth={2} vectorEffect="non-scaling-stroke" />
         )}
-        {!heat && entries.map(([frame, p, r]) => p && r && (
+        {!heat && entries.map(([frame, p, r]) => p && r && (!visible || visible.has(frame)) && (
           <circle
             key={frame}
             data-testid="zone-dot"

@@ -73,3 +73,12 @@ test("without heat the dots are drawn and there is no legend", () => {
   expect(screen.getAllByTestId("zone-dot")).toHaveLength(2);
   expect(screen.queryByTestId("zone-heat-legend")).toBeNull();
 });
+
+test("dots follow the pictures the grid shows, and the extent of the chart does not change with them", () => {
+  const all = mount(zone);
+  const viewAll = all.svg.getAttribute("viewBox");
+  document.body.innerHTML = "";
+  const some = mount(zone, { visible: new Set(["a.png"]) });
+  expect(screen.getAllByTestId("zone-dot")).toHaveLength(1);
+  expect(some.svg.getAttribute("viewBox")).toBe(viewAll);
+});
