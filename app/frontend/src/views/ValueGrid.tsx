@@ -37,9 +37,12 @@ const show = (r: ValueRow, unit: string) => (r.value === null ? "not measured" :
 /** What a card (and the viewer) says under the file name instead of the value: a page whose pictures have no value (Ingest) gives its own line. */
 type Info = (row: ValueRow) => ReactNode;
 
-function Card({ camera, row, unit, onOpen, onNominal, onCentre, info }: { camera: string; row: ValueRow; unit: string; onOpen: () => void; onNominal?: () => void; onCentre?: () => void; info?: Info }) {
+const VERDICT_EDGE: Record<string, string> = { pass: "#3ccf6e", fail: "#ff5b5b" };
+
+function Card({ camera, row, unit, onOpen, onNominal, onCentre, info, thumb }: { camera: string; row: ValueRow; unit: string; onOpen: () => void; onNominal?: () => void; onCentre?: () => void; info?: Info; thumb?: (frame: string) => string }) {
+  const edge = row.verdict ? VERDICT_EDGE[row.verdict] : undefined;
   return (
-    <article data-testid={`value-card-${row.frame}`} style={{ border: "1px solid var(--border)", borderRadius: "var(--radius)", background: "var(--panel)", padding: 8, minWidth: 0, boxSizing: "border-box" }}>
+    <article data-testid={`value-card-${row.frame}`} style={{ border: `${edge ? 2 : 1}px solid ${edge ?? "var(--border)"}`, borderRadius: "var(--radius)", background: "var(--panel)", padding: edge ? 7 : 8, minWidth: 0, boxSizing: "border-box" }}>
       <button
         type="button"
         aria-label={`Open ${row.frame}`}
@@ -47,7 +50,7 @@ function Card({ camera, row, unit, onOpen, onNominal, onCentre, info }: { camera
         onClick={(e) => { e.currentTarget.blur(); onOpen(); }}
         style={{ display: "block", width: "100%", padding: 0, border: 0, background: "none", lineHeight: 0, cursor: "pointer" }}
       >
-        <img src={frameThumbUrl(camera, row.frame, 160)} alt={row.frame} loading="lazy" style={{ width: "100%", display: "block" }} />
+        <img src={thumb ? thumb(row.frame) : frameThumbUrl(camera, row.frame, 160)} alt={row.frame} loading="lazy" style={{ width: "100%", display: "block" }} />
       </button>
       <div style={{ fontSize: 12, margin: "4px 0", wordBreak: "break-all" }}>{row.frame}</div>
       <div style={{ margin: "2px 0", fontSize: 13 }}>
@@ -122,9 +125,10 @@ function Viewer({ camera, rows, start, unit, onClose, onNominal, onCentre, info,
  * The pictures of a Calculate or Evaluation box as the usual card grid (pager, columns, search by file name, the shared
  * picture viewer behind a click), each card with its measured value and, for an Evaluation, the verdict and
  * "Use as nominal". Nothing is labeled here: the page judges a measurement. Ingest uses the same grid with its own line
- * under each picture (`info`).
+ * under each picture (`info`). `thumb` gives the card picture instead of the camera's centre-cropped square (the measuring
+ * pages show the whole picture, like the detector's findings grid); a card of a pass or fail picture has a green or red edge.
  */
-export default function ValueGrid({ camera, rows, unit = "", onNominal, onCentre, info, viewer }: { camera: string; rows: ValueRow[]; unit?: string; onNominal?: (value: number) => void; onCentre?: (row: ValueRow) => void; info?: Info; viewer?: ViewerExtras }) {
+export default function ValueGrid({ camera, rows, unit = "", onNominal, onCentre, info, viewer, thumb }: { camera: string; rows: ValueRow[]; unit?: string; onNominal?: (value: number) => void; onCentre?: (row: ValueRow) => void; info?: Info; viewer?: ViewerExtras; thumb?: (frame: string) => string }) {
   const [grid, setGrid] = useState(stored);
   const [page, setPage] = useState(1);
   const [viewing, setViewing] = useState<string | null>(null);
@@ -149,7 +153,7 @@ export default function ValueGrid({ camera, rows, unit = "", onNominal, onCentre
         container="div"
         onGridChange={() => setViewing(null)}
         renderCard={(r) => (
-          <Card camera={camera} row={r} unit={unit} info={info} onOpen={() => setViewing(r.frame)} onNominal={onNominal && r.value !== null ? () => onNominal(r.value!) : undefined} onCentre={onCentre ? () => onCentre(r) : undefined} />
+          <Card camera={camera} row={r} unit={unit} info={info} thumb={thumb} onOpen={() => setViewing(r.frame)} onNominal={onNominal && r.value !== null ? () => onNominal(r.value!) : undefined} onCentre={onCentre ? () => onCentre(r) : undefined} />
         )}
       />
       {viewing && <Viewer camera={camera} rows={rows} start={viewing} unit={unit} info={info} extras={viewer} onClose={() => setViewing(null)} onNominal={onNominal} onCentre={onCentre} />}

@@ -728,6 +728,12 @@ function ValuesWork(p: {
     };
   }, [calc, detectorId, foundBoxes, camera, evalSpec]);
 
+  const counts = data?.counts ?? tolerance?.counts;
+  // The cards show the whole picture (the cut-out when a Picture edits box is above the detector), not the camera's centre-cropped square.
+  const cardThumb = useMemo(
+    () => (calc && detectorId && (calc.crops ?? []).length > 0 ? (f: string) => flowPictureUrl(camera, detectorId, f, { size: 200, key: calc.crops }) : (f: string) => frameWholeThumbUrl(camera, f)),
+    [calc, detectorId, camera],
+  );
   const numbers = useMemo(() => Object.values(data?.values ?? {}).filter((v): v is number => v !== null), [data]);
 
   const rows = useMemo(() => {
@@ -794,15 +800,16 @@ function ValuesWork(p: {
           </label>
         )}
         {tolerance && (
-          <label>
-            Show{" "}
-            <select value={show} onChange={(e) => setShow(e.target.value as typeof show)}>
-              <option value="all">All</option>
-              <option value="pass">Pass</option>
-              <option value="fail">Fail</option>
-              <option value="undetermined">Undetermined</option>
-            </select>
-          </label>
+          <span className="flow-segment" role="group" aria-label="Show">
+            {(["all", "pass", "fail", "undetermined"] as const)
+              .filter((k) => k !== "undetermined" || (counts?.undetermined ?? 0) > 0 || show === k)
+              .map((k) => (
+                <button key={k} type="button" aria-pressed={show === k} onClick={() => setShow(k)}>
+                  {k === "all" ? "All" : k === "pass" ? "Pass" : k === "fail" ? "Fail" : "Undetermined"}
+                  {counts ? ` (${k === "all" ? counts.pass + counts.fail + counts.undetermined : counts[k]})` : ""}
+                </button>
+              ))}
+          </span>
         )}
         {range && (
           <button type="button" className="flow-range" title="Show all values again (right-click on the chart does the same)" onClick={() => setRange(null)}>
@@ -816,6 +823,7 @@ function ValuesWork(p: {
         rows={rows}
         unit={unit}
         viewer={viewer}
+        thumb={cardThumb}
         onNominal={tolerance && !zoneMode ? (v) => void useAsNominal(v) : undefined}
         onCentre={zoneMode ? (r) => { if (r.point) void setZone({ center: [Math.round(r.point[0] * 10) / 10, Math.round(r.point[1] * 10) / 10] }); } : undefined}
         info={zoneMode ? (r) => (
