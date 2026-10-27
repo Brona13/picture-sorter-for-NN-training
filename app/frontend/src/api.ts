@@ -720,6 +720,10 @@ export const flowPictureUrl = (camera: string, nodeId: string, frame: string, op
 export const frameThumbUrl = (camera: string, frame: string, size = 96) =>
   `/api/cameras/${encodeURIComponent(camera)}/frames/${encodeURIComponent(frame)}/thumb?variant=square&size=${size}`;
 
+/** The whole picture as a thumbnail with its own proportions (not the centre-cropped square of `frameThumbUrl`), so overlays in picture pixels fit it. */
+export const frameWholeThumbUrl = (camera: string, frame: string) =>
+  `/api/cameras/${encodeURIComponent(camera)}/frames/${encodeURIComponent(frame)}/thumb?variant=cutout`;
+
 export const roiThumbUrl = (camera: string, frame: string, feature: string, size = 56) =>
   `/api/cameras/${encodeURIComponent(camera)}/frames/${encodeURIComponent(frame)}/thumb` +
   `?feature=${encodeURIComponent(feature)}&variant=square&size=${size}`;

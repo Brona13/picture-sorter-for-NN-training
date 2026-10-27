@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, FlowBox, FlowCalc, FlowCrop, FlowDetector, FlowNodeDetail, FlowValues, flowPictureUrl, frameImageUrl, frameThumbUrl } from "../api";
+import { api, FlowBox, FlowCalc, FlowCrop, FlowDetector, FlowNodeDetail, FlowValues, flowPictureUrl, frameImageUrl, frameThumbUrl, frameWholeThumbUrl } from "../api";
 import PictureEditsWork from "./PictureEditsWork";
 import { usePictureEdits } from "./pictureEdits";
 import PictureSizeSlider, { usePictureSize } from "../PictureSize";
@@ -188,7 +188,7 @@ function DetectorWork(p: {
   // A target that looks for several similar elements has one box per element: "hole 1", "hole 2" (left to right).
   const slotList = detail.targets.flatMap((t, ti) => (t.slots ?? [t.name]).map((slot) => ({ slot, ti })));
   const withExamples = detail.targets.filter((t) => t.examples.length > 0).map((t) => t.name);
-  const cardUrl = (f: string) => (cropped ? flowPictureUrl(camera, nodeId, f, { size: 200, key: detail.crops }) : frameThumbUrl(camera, f, 200));
+  const cardUrl = (f: string) => (cropped ? flowPictureUrl(camera, nodeId, f, { size: 200, key: detail.crops }) : frameWholeThumbUrl(camera, f));
   const chosen = names.includes(target) ? target : names[0] ?? "";
   // A cascade: the input detector's target whose box is on show (this detector's targets each search inside one of them).
   const parentNames = detail.parent_targets ?? [];

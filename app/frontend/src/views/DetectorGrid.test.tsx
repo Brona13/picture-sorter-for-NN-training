@@ -78,3 +78,13 @@ test("a box a person moved is drawn dashed; clicking a card loads that picture",
   fireEvent.click(screen.getByRole("button", { name: "Load c.png in the canvas" }));
   expect(onPick).toHaveBeenCalledWith("c.png");
 });
+
+test("the thumbnail and the boxes share one frame with the picture's proportions, so the boxes lie on the same spot", () => {
+  setup();
+  const svg = screen.getByTestId("finding-boxes-a.png");
+  expect(svg).toHaveAttribute("viewBox", "0 0 200 100");
+  expect(svg).toHaveAttribute("preserveAspectRatio", "none");
+  const button = svg.parentElement as HTMLElement;
+  expect(button.style.aspectRatio).toBe("200 / 100");
+  expect(button.querySelector("img")!.style.objectFit).toBe("fill");
+});

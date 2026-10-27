@@ -159,11 +159,12 @@ export default function DetectorGrid({ frames, boxes, targets, current, size, im
                   aria-label={`Load ${f} in the canvas`}
                   title="Load this picture in the canvas above"
                   onClick={(e) => { e.currentTarget.blur(); onPick(f); }}
-                  style={{ display: "block", width: "100%", padding: 0, border: 0, background: "none", lineHeight: 0, cursor: "pointer", position: "relative" }}
+                  style={{ display: "block", width: "100%", padding: 0, border: 0, background: "none", lineHeight: 0, cursor: "pointer", position: "relative", aspectRatio: size ? `${size.w} / ${size.h}` : undefined }}
                 >
-                  <img src={imageUrl(f)} alt="" loading="lazy" style={{ width: "100%", display: "block" }} />
+                  {/* The thumbnail and the boxes share one frame with the picture's proportions, so a box in picture pixels lands on the same spot of both. */}
+                  <img src={imageUrl(f)} alt="" loading="lazy" style={{ width: "100%", height: size ? "100%" : undefined, display: "block", objectFit: "fill" }} />
                   {size && (
-                    <svg viewBox={`0 0 ${size.w} ${size.h}`} data-testid={`finding-boxes-${f}`} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}>
+                    <svg viewBox={`0 0 ${size.w} ${size.h}`} preserveAspectRatio="none" data-testid={`finding-boxes-${f}`} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}>
                       {shownTargets.map((t) => {
                         const b = here[t];
                         if (!b) return null;
