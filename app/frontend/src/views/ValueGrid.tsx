@@ -120,7 +120,6 @@ function Viewer({ camera, rows, start, unit, onClose, onNominal, onCentre, info,
     };
   }, [reference?.frame]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!row) return null;
-  const shown = holding && reference ? reference : row;
   return (
     <PictureViewer
       label="Full-size picture"
@@ -136,8 +135,7 @@ function Viewer({ camera, rows, start, unit, onClose, onNominal, onCentre, info,
           {info ? info(row) : <><strong>{show(row, unit)}</strong> {row.verdict && <span className={`flow-verdict ${row.verdict}`}>{row.verdict}</span>}</>}{" "}
           {onNominal && row.value !== null && <button type="button" onClick={() => onNominal(row.value!)}>Use as nominal</button>}
           {onCentre && row.point && <button type="button" onClick={() => onCentre(row)}>Use as nominal</button>}
-          {holding && reference && <strong data-testid="viewer-reference"> · reference picture {reference.frame}</strong>}
-          {extras?.note && <span className="muted"> · {extras.note(shown)}</span>}
+          {extras?.note && <span className="muted"> · {extras.note(row)}</span>}
           {extras?.fixPoint && (
             <label style={{ marginLeft: 8, whiteSpace: "nowrap" }} title="Keep point A at the same place on screen while browsing; the picture moves under it">
               <input type="checkbox" checked={fixed} onChange={(e) => chooseFixed(e.target.checked)} /> Fix reference point

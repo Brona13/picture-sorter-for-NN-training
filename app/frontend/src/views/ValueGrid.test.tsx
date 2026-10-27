@@ -32,15 +32,13 @@ test("in the viewer, holding Space shows the reference picture and releasing goe
   expect(shown()).toBe("a.png");
   fireEvent.keyDown(window, { code: "Space", key: " " });
   expect(shown()).toBe("b.png");
-  expect(screen.getByTestId("viewer-reference").textContent).toContain("b.png");
   fireEvent.keyUp(window, { code: "Space", key: " " });
   expect(shown()).toBe("a.png");
-  expect(screen.queryByTestId("viewer-reference")).toBeNull();
 });
 
 test("without a reference picture Space does nothing", () => {
   render(<ValueGrid camera="cam" rows={ROWS} viewer={{ reference: null }} />);
   fireEvent.click(screen.getByAltText("a.png"));
   fireEvent.keyDown(window, { code: "Space", key: " " });
-  expect(screen.queryByTestId("viewer-reference")).toBeNull();
+  expect(screen.getByTestId("value-viewer").querySelector("img[alt$='.png']")?.getAttribute("alt")).toBe("a.png");
 });
