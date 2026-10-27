@@ -87,6 +87,21 @@ test("hover shortcuts on a cluster card: a number does not label (Dedup does not
   await waitFor(() => expect(onDeleted).toHaveBeenCalledWith("m01.png"));
 });
 
+test("holding a class key and sweeping over cards paints nothing and shows no colour cursor (Dedup does not label)", async () => {
+  renderIt();
+  const a = screen.getByTestId("card-m00.png");
+  const b = screen.getByTestId("card-m01.png");
+  await userEvent.hover(a);
+  await userEvent.keyboard("{1>}");
+  fireEvent.mouseMove(a, { movementX: 8, movementY: 0 });
+  await userEvent.hover(b);
+  fireEvent.mouseMove(b, { movementX: 8, movementY: 0 });
+  expect(document.documentElement.classList.contains("painting")).toBe(false); // no colour cursor while the key is held
+  await userEvent.keyboard("{/1}");
+  expect(calls.some((c) => c.url.endsWith("/classify/label"))).toBe(false);
+  expect(document.documentElement.classList.contains("painting")).toBe(false);
+});
+
 test("Delete does nothing when no card is hovered", async () => {
   renderIt();
   fireEvent.keyDown(window, { key: "Delete" });

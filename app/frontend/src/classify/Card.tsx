@@ -126,7 +126,7 @@ export default function Card({ camera, feature, pictureFeature, classes, labelin
       onLabel(n === 0 ? null : classes[n - 1]);
       return true;
     },
-    cursorOf: (mode) => cursorFor(mode, classes),
+    cursorOf: (mode) => (!labeling && mode !== DELETE_MODE ? null : cursorFor(mode, classes)), // no colour cursor where nothing is labeled
   });
 
   return (
