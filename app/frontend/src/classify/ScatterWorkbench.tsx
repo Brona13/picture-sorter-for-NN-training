@@ -125,11 +125,14 @@ export function ScatterMapView({
   onNotice,
   onError,
   onChanged,
+  labeling = true,
 }: {
   camera: string;
   feature: string;
   /** The feature whose cutout the cards show, when it differs from the one the picture actions go through (a Dedup box). */
   pictureFeature?: string;
+  /** False in a Dedup box: the selection grid shows classes but does not label. */
+  labeling?: boolean;
   map: ScatterMap;
   colourBy: ColourBy;
   scores?: Record<string, number>;
@@ -152,6 +155,7 @@ export function ScatterMapView({
           pictureFeature={pictureFeature}
           points={selected}
           classes={scatter.classes}
+          labeling={labeling}
           grid={grid}
           onGrid={onGrid}
           onMark={(frame, m) => setOverrides((o) => ({ ...o, [frame]: m }))}
@@ -206,6 +210,7 @@ export function ScatterSelection({
   pictureFeature,
   points,
   classes,
+  labeling = true,
   grid,
   onGrid,
   onMark,
@@ -220,6 +225,8 @@ export function ScatterSelection({
   pictureFeature?: string;
   points: ScatterPoint[];
   classes: string[];
+  /** False in a Dedup box: no batch labeling, no label buttons on the cards. */
+  labeling?: boolean;
   grid: PagerSettings;
   onGrid: (perPage: number, cols: number) => void;
   onMark: (frame: string, mark: Mark) => void;
@@ -305,7 +312,7 @@ export function ScatterSelection({
           <p style={{ fontSize: 12 }}>{summary}</p>
           {preview === null ? (
             <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center", margin: "6px 0" }}>
-              <div role="group" aria-label="Label the selection" style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {labeling && <div role="group" aria-label="Label the selection" style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                 {classes.map((c) => (
                   <button
                     key={c}
@@ -317,7 +324,7 @@ export function ScatterSelection({
                     Label {rows.length} as {c}
                   </button>
                 ))}
-              </div>
+              </div>}
               <button type="button" disabled={busy} onClick={askDelete} style={{ borderColor: "#c62828", color: "#c62828" }}>
                 🗑 Delete these {rows.length} frame(s)…
               </button>
@@ -345,6 +352,7 @@ export function ScatterSelection({
             feature={feature}
             pictureFeature={pictureFeature}
             classes={classes}
+            labeling={labeling}
             frames={frames}
             cardOf={cardOf}
             via="Scatter"

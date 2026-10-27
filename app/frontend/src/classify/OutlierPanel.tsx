@@ -93,6 +93,7 @@ export function OutlierResults({
   onDeleted,
   onChanged,
   labelFeature,
+  labeling = true,
 }: {
   o: OutlierState;
   grid: PagerSettings;
@@ -102,6 +103,8 @@ export function OutlierResults({
   onChanged?: () => void;
   /** The feature the picture actions go through, when it is not the one the outliers were run for (a Dedup box). */
   labelFeature?: string;
+  /** False in a Dedup box: the grid shows classes but does not label. */
+  labeling?: boolean;
 }) {
   const { camera, feature: ranFor, result, marks, setMarks, gone, setGone, page, setPage } = o;
   if (!result) return null;
@@ -129,6 +132,7 @@ export function OutlierResults({
         feature={labelFeature ?? ranFor}
         pictureFeature={ranFor}
         classes={result.classes}
+        labeling={labeling}
         frames={rows.map((r) => r.frame)}
         cardOf={cardOf}
         via="Outliers"

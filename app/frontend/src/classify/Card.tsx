@@ -11,6 +11,8 @@ interface Props {
   /** The feature whose cutout the picture shows, when it is not the one labels go to (a Dedup box fed by a detector target). */
   pictureFeature?: string;
   classes: string[];
+  /** False in a Dedup box: the card only shows the class (its colour) and deletes; no label or golden buttons or keys. */
+  labeling?: boolean;
   methods: string[];
   card: CardData;
   busy: boolean;
@@ -60,7 +62,7 @@ const badge = (bg: string): React.CSSProperties => ({
  */
 export const MAX_SHORTCUT_CLASSES = 9;
 
-export default function Card({ camera, feature, pictureFeature, classes, methods, card, busy, onLabel, onGolden, onDelete, onRestore, canRestore = true, isRep, onSetRep, fullSize, onOpen, caption, onSimilar, thumb, edgeColor, extra }: Props) {
+export default function Card({ camera, feature, pictureFeature, classes, labeling = true, methods, card, busy, onLabel, onGolden, onDelete, onRestore, canRestore = true, isRep, onSetRep, fullSize, onOpen, caption, onSimilar, thumb, edgeColor, extra }: Props) {
   const { frame, label, golden, deleted, bars, leanings, cluster, edge, measure } = card;
   // Search results only: a picture outside this ROI's scope gets a red frame and cannot be labeled here until its
   // product fits (open it to change the product); a muted one gets a dark grey dashed frame.
@@ -88,6 +90,7 @@ export default function Card({ camera, feature, pictureFeature, classes, methods
         onDelete();
         return true;
       }
+      if (!labeling && !isDeleteKey) return false;
       if (isGoldenKey) {
         if (label === null) return false; // a golden is always a labeled frame
         onGolden(!golden);
@@ -111,6 +114,7 @@ export default function Card({ camera, feature, pictureFeature, classes, methods
     // ones (a labeled picture is deleted by a single press only); a picture outside the ROI keeps its labels, so it is never swept.
     paint: (mode) => {
       if (busy || deleted || golden || outside) return false;
+      if (!labeling && mode !== DELETE_MODE) return false;
       if (mode === DELETE_MODE) {
         if (label !== null) return false;
         onDelete();
@@ -276,7 +280,7 @@ export default function Card({ camera, feature, pictureFeature, classes, methods
       )}
 
       <div className="card-actions">
-        {classes.map((c, i) => (
+        {labeling && classes.map((c, i) => (
           <button
             key={c}
             disabled={busy || outside || deleted}
@@ -293,7 +297,7 @@ export default function Card({ camera, feature, pictureFeature, classes, methods
           </button>
         ))}
         {extra}
-        <button
+        {labeling && <button
           aria-label={golden ? "Remove golden" : "Make golden"}
           disabled={busy || label === null || outside || deleted}
           title={
@@ -306,7 +310,7 @@ export default function Card({ camera, feature, pictureFeature, classes, methods
           onClick={() => onGolden(!golden)}
         >
           {golden ? "⭐" : "☆"}
-        </button>
+        </button>}
         {onSetRep && (
           <button
             aria-label={isRep ? "Representative of this cluster" : "Make representative"}

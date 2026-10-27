@@ -31,6 +31,7 @@ export default function PictureGrid({
   feature,
   pictureFeature,
   classes,
+  labeling = true,
   methods = [],
   frames,
   cardOf,
@@ -53,6 +54,8 @@ export default function PictureGrid({
   /** Cutout the cards show, when it differs from the feature labels go to (a Dedup box fed by a detector target). */
   pictureFeature?: string;
   classes: string[];
+  /** False in a Dedup box: cards show the class colour only; no labeling, no golden. */
+  labeling?: boolean;
   methods?: string[];
   /** The frames to show, in order, already filtered. */
   frames: string[];
@@ -154,6 +157,7 @@ export default function PictureGrid({
               feature={feature}
               pictureFeature={pictureFeature}
               classes={classes}
+              labeling={labeling}
               methods={methods}
               card={cardAt(f)}
               busy={busy === f}
@@ -179,6 +183,7 @@ export default function PictureGrid({
           frames={display}
           start={viewing}
           classes={classes}
+          labeling={labeling}
           marks={(f) => {
             const c = cardAt(f);
             return { label: c.label, golden: c.golden };

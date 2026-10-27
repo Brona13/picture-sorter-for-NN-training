@@ -385,6 +385,7 @@ export default function DedupView({
               feature={act}
               pictureFeature={feature}
               classes={gridData.classes}
+              labeling={false}
               frames={shownFrames}
               cardOf={cardOf}
               via="Dedup grid"
@@ -420,6 +421,7 @@ export default function DedupView({
                 camera={camera}
                 feature={act}
                 pictureFeature={feature}
+                labeling={false}
                 map={map}
                 colourBy={shownColour}
                 scores={outliers ? outlierShades(outliers) : undefined}
@@ -443,6 +445,7 @@ export default function DedupView({
         <OutlierResults
           o={outlierRun}
           labelFeature={act}
+          labeling={false}
           grid={st.grid}
           onGrid={(perPage, cols) =>
             api

@@ -113,6 +113,7 @@ export default function ClusterBrowser({
           feature={feature}
           pictureFeature={pictureFeature}
           classes={result.classes}
+          labeling={false}
           frames={cur.frames}
           cardOf={cardOf}
           via="Clusters"

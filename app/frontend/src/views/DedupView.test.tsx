@@ -377,7 +377,8 @@ test("the selection uses the shared pager and cards, and clicking a picture open
   const panel = await selectA();
   expect(within(panel).getAllByRole("navigation", { name: /Pagination selection/ })).toHaveLength(2);
   const card = within(panel).getByTestId("card-a.png");
-  expect(within(card).getByRole("button", { name: /OK/ })).toBeInTheDocument(); // the usual card buttons
+  expect(within(card).queryByRole("button", { name: /OK/ })).toBeNull(); // Dedup does not label: no class buttons, no golden star
+  expect(within(card).queryByRole("button", { name: /golden/i })).toBeNull();
   expect(within(card).getByRole("button", { name: "Delete frame" })).toBeInTheDocument();
   await userEvent.click(within(card).getByRole("link"));
   expect(screen.getByRole("dialog", { name: "Full-size picture" })).toBeInTheDocument();
@@ -385,35 +386,19 @@ test("the selection uses the shared pager and cards, and clicking a picture open
   expect(screen.queryByRole("dialog")).toBeNull();
 });
 
-test("the batch buttons sit between the map and the grid, grouped, and labelling shows on the map without projecting again", async () => {
+test("the selection has no labelling buttons; deleting stays, and the map keeps the Classifier's colours", async () => {
   const panel = await selectA();
-  const group = within(panel).getByRole("group", { name: "Label the selection" });
-  const ok = within(group).getByRole("button", { name: "Label 1 as OK" });
-  expect(ok).toHaveStyle({ background: "#1a7f37" }); // the class colour, as on the cards
-  const buttons: HTMLElement[] = Array.from(panel.querySelectorAll("button"));
-  expect(buttons.indexOf(ok)).toBeLessThan(buttons.indexOf(within(panel).getByRole("button", { name: "Delete frame" }))); // before the grid
-  await userEvent.click(ok);
-  await waitFor(() => expect(calls.find((c) => c.url.endsWith("/classify/label-bulk"))?.body).toMatchObject({ frames: ["a.png"], cls: "OK", via: "Scatter" }));
-  expect(await within(panel).findByText("OK: 1")).toBeInTheDocument();
-  expect(within(screen.getByTestId("card-a.png")).getByRole("button", { name: /OK/ })).toHaveAttribute("aria-pressed", "true");
-  expect(calls.filter((c) => c.url.endsWith("/dedup/scatter")).length).toBe(1);
+  expect(within(panel).queryByRole("group", { name: "Label the selection" })).toBeNull();
+  expect(within(panel).getByRole("button", { name: /Delete these 1 frame/ })).toBeInTheDocument();
+  expect(calls.some((c) => c.url.endsWith("/classify/label-bulk"))).toBe(false);
+  expect(screen.getByTestId("pt-f.png").querySelector("title")!.textContent).toContain("golden OK"); // the marks come from the Classifier the box reads
 });
 
 test("picture actions of the map go through the feature the state names, not the box id", async () => {
   state = baseState({ source: "type" }); // the box reads the Classifier "type"; the Classify API knows no box
   const panel = await selectA();
-  await userEvent.click(within(within(panel).getByTestId("card-a.png")).getByRole("button", { name: /NG/ }));
-  await waitFor(() => expect(calls.find((c) => c.url.endsWith("/classify/label"))?.body).toMatchObject({ feature: "type", frame: "a.png" }));
   await userEvent.click(within(panel).getByRole("button", { name: "Delete frame" }));
   await waitFor(() => expect(calls.find((c) => c.url.endsWith("/classify/delete"))?.body).toMatchObject({ feature: "type" }));
-});
-
-test("labelling one card of the selection is reflected in the map's colours", async () => {
-  const panel = await selectA();
-  await userEvent.click(within(within(panel).getByTestId("card-a.png")).getByRole("button", { name: /NG/ }));
-  await waitFor(() => expect(calls.find((c) => c.url.endsWith("/classify/label"))?.body).toMatchObject({ frame: "a.png", cls: "NG", via: "Scatter" }));
-  const circle = screen.getByTestId("pt-a.png").querySelector("circle")!;
-  await waitFor(() => expect(circle.getAttribute("fill")).toBe("#c62828")); // NG red, coloured by label
 });
 
 test("Scatter is the default tool, and no tool shows another tool's controls", async () => {

@@ -73,13 +73,14 @@ test("paging is remembered per cluster while the grid size is shared", async () 
   expect(onGrid).toHaveBeenCalledWith(24, 6); // the page size follows the columns in whole rows
 });
 
-test("hover shortcuts work on a cluster card: a number labels, Delete deletes", async () => {
+test("hover shortcuts on a cluster card: a number does not label (Dedup does not label), Delete deletes", async () => {
   renderIt();
   const card = screen.getByTestId("card-m01.png");
+  expect(within(card).queryByRole("button", { name: "OK" })).toBeNull();
+  expect(within(card).queryByRole("button", { name: /golden/i })).toBeNull();
   await userEvent.hover(card);
   await userEvent.keyboard("2");
-  await waitFor(() => expect(calls.find((c) => c.url.endsWith("/classify/label"))!.body).toEqual({ feature: "seal", frame: "m01.png", cls: "NG", via: "Clusters" }));
-  await waitFor(() => expect(onMarks).toHaveBeenCalledWith("m01.png", { label: "NG", golden: null }));
+  expect(calls.some((c) => c.url.endsWith("/classify/label"))).toBe(false);
   fireEvent.keyDown(window, { key: "Delete" });
   await waitFor(() => expect(calls.some((c) => c.url.endsWith("/classify/delete"))).toBe(true));
   expect(calls.find((c) => c.url.endsWith("/classify/delete"))!.body).toEqual({ feature: "seal", frame: "m01.png", via: "Clusters" });
