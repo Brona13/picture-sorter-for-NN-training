@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { clampZoom, contentRect, FIT_VIEW, fitSize, oneToOneZoom, panBy, screenScale, viewFromRect, ZOOM_MAX, ZOOM_MIN, zoomAt } from "./zoomGeometry";
+import { clampZoom, contentRect, FIT_VIEW, fitSize, oneToOneZoom, panBy, pointOffset, screenScale, viewForOffset, viewFromRect, ZOOM_MAX, ZOOM_MIN, zoomAt } from "./zoomGeometry";
 
 const base = fitSize(400, 200, 300, 225); // 300 x 150, centred vertically in a 300 x 225 box
 
@@ -63,4 +63,24 @@ test("1:1 and the zoom percentage refer to picture pixels", () => {
   const z = oneToOneZoom(400, base);
   expect(screenScale({ ...FIT_VIEW, zoom: z }, base, 400)).toBeCloseTo(1);
   expect(viewFromRect(2, 0, 0, base, 300, 225).zoom).toBe(2);
+});
+
+test("a reference point kept in place: the next picture's point lands at the same distance from the view's centre, zoom kept", () => {
+  const img = { w: 400, h: 300 };
+  const view = { zoom: 4, cx: 0.5, cy: 0.5 };
+  const off = pointOffset(view, { x: 230, y: 140 }, img); // A is 30 px right and 10 px up of the centre
+  expect(off).toEqual({ x: 30, y: -10 });
+  const next = viewForOffset(view, { x: 250, y: 155 }, off, img); // on the next picture A is 20 px right and 15 px down
+  expect(next.zoom).toBe(4);
+  expect(next.cx * 400).toBeCloseTo(220); // 250 - 30
+  expect(next.cy * 300).toBeCloseTo(165); // 155 + 10
+  const back = pointOffset(next, { x: 250, y: 155 }, img);
+  expect(back.x).toBeCloseTo(off.x);
+  expect(back.y).toBeCloseTo(off.y);
+});
+
+test("a kept reference point never puts the view's centre far outside the picture", () => {
+  const v = viewForOffset({ zoom: 1, cx: 0.5, cy: 0.5 }, { x: 5000, y: -5000 }, { x: 0, y: 0 }, { w: 400, h: 300 });
+  expect(v.cx).toBe(2);
+  expect(v.cy).toBe(-1);
 });

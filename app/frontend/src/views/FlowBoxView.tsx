@@ -712,6 +712,11 @@ function ValuesWork(p: {
     return {
       // boxes are in the picture the detector works on: the cut-out, when a Crop box is above it
       imageUrl: cropped ? (frame) => flowPictureUrl(camera, detectorId, frame, { key: calc.crops }) : undefined,
+      // point A of the Calculate box on this picture: what the viewer's "Fix reference point" keeps in place
+      fixPoint: (row) => {
+        const a = foundBoxes[row.frame]?.[names[0]];
+        return a ? { x: drawn(a).x, y: drawn(a).y } : null;
+      },
       overlay: (row, size) => (
         <CalcGeometry size={size} op={calc.op} names={names} clockwise={calc.clockwise} boxes={foundBoxes[row.frame]} value={row.value} unit={calc.op === "angle" ? "°" : "px"} evaluation={evalSpec ? { spec: evalSpec, verdict: row.verdict } : undefined} />
       ),

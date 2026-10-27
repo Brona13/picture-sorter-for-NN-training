@@ -87,3 +87,22 @@ export function oneToOneZoom(imgW: number, base: Size): number {
 export function screenScale(view: View, base: Size, imgW: number): number {
   return (base.w * view.zoom) / Math.max(imgW, 1);
 }
+
+/**
+ * Keeping one picture point (a reference point, in picture pixels) at the same place on screen from picture to picture:
+ * `pointOffset` is how far the point lies from the view's centre (picture pixels) and `viewForOffset` is the view of
+ * another picture that puts its own point at that same distance from the centre. The zoom is kept.
+ */
+export function pointOffset(view: View, p: { x: number; y: number }, img: Size): { x: number; y: number } {
+  return { x: p.x - view.cx * img.w, y: p.y - view.cy * img.h };
+}
+
+const OUT = 1; // how far the view's centre may lie outside the picture, in picture sizes
+
+export function viewForOffset(view: View, p: { x: number; y: number }, offset: { x: number; y: number }, img: Size): View {
+  return {
+    zoom: view.zoom,
+    cx: clamp((p.x - offset.x) / Math.max(img.w, 1), -OUT, 1 + OUT),
+    cy: clamp((p.y - offset.y) / Math.max(img.h, 1), -OUT, 1 + OUT),
+  };
+}

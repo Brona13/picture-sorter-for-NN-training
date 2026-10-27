@@ -22,6 +22,7 @@ export interface ValueRow {
 
 const OPTIONS = { per_page_options: [12, 24, 48, 96], cols_options: [3, 4, 5, 6, 8] };
 const STORE = "flow.grid"; // the size of this grid is remembered for every page that uses it
+const FIX_STORE = "flow.fixReference"; // the viewer's "Fix reference point" toggle
 
 function stored(): { per_page: number; cols: number } {
   try {
@@ -72,12 +73,21 @@ export interface ViewerExtras {
   overlay?: (row: ValueRow, size: { w: number; h: number }) => ReactNode;
   /** A line in the viewer's toolbar (what the overlay shows, or why it shows nothing). */
   note?: (row: ValueRow) => ReactNode;
+  /** The reference point of a picture (picture pixels, point A of the Calculate box); offers the viewer's "Fix reference point" toggle. */
+  fixPoint?: (row: ValueRow) => { x: number; y: number } | null;
 }
 
 function Viewer({ camera, rows, start, unit, onClose, onNominal, onCentre, info, extras }: { camera: string; rows: ValueRow[]; start: string; unit: string; onClose: () => void; onNominal?: (value: number) => void; onCentre?: (row: ValueRow) => void; info?: Info; extras?: ViewerExtras }) {
   const frames = rows.map((r) => r.frame);
   const { frame, index, go } = useBrowse(frames, start, onClose);
   const row = rows.find((r) => r.frame === frame);
+  const [fixed, setFixed] = useState(() => {
+    try { return localStorage.getItem(FIX_STORE) === "on"; } catch { return false; }
+  });
+  const chooseFixed = (on: boolean) => {
+    setFixed(on);
+    try { localStorage.setItem(FIX_STORE, on ? "on" : "off"); } catch { /* not remembered */ }
+  };
   if (!row) return null;
   return (
     <PictureViewer
@@ -95,10 +105,15 @@ function Viewer({ camera, rows, start, unit, onClose, onNominal, onCentre, info,
           {onNominal && row.value !== null && <button type="button" onClick={() => onNominal(row.value!)}>Use as nominal</button>}
           {onCentre && row.point && <button type="button" onClick={() => onCentre(row)}>Use as nominal</button>}
           {extras?.note && <span className="muted"> · {extras.note(row)}</span>}
+          {extras?.fixPoint && (
+            <label style={{ marginLeft: 8, whiteSpace: "nowrap" }} title="Keep point A at the same place on screen while browsing; the picture moves under it">
+              <input type="checkbox" checked={fixed} onChange={(e) => chooseFixed(e.target.checked)} /> Fix reference point
+            </label>
+          )}
         </span>
       }
     >
-      {(width) => <FramePane camera={camera} frame={frame} width={width} imageUrl={extras?.imageUrl?.(frame)} overlay={extras?.overlay ? (size) => extras.overlay!(row, size) : undefined} />}
+      {(width) => <FramePane camera={camera} frame={frame} width={width} imageUrl={extras?.imageUrl?.(frame)} overlay={extras?.overlay ? (size) => extras.overlay!(row, size) : undefined} fixPoint={extras?.fixPoint ? { on: fixed, point: extras.fixPoint(row) } : undefined} />}
     </PictureViewer>
   );
 }
