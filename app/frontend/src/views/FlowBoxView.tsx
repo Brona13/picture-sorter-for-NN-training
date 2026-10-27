@@ -1,3 +1,4 @@
+import { referenceFrame } from "../referencePicture";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, FlowBox, FlowCalc, FlowCrop, FlowDetector, FlowNodeDetail, FlowValues, flowPictureUrl, frameImageUrl, frameThumbUrl, frameWholeThumbUrl } from "../api";
 import PictureEditsWork from "./PictureEditsWork";
@@ -705,11 +706,19 @@ function ValuesWork(p: {
     () => (tolerance && calc ? { mode: tolerance.mode, op: calc.op, zone: tolerance.zone, nominal: tolerance.nominal, tolerance: tolerance.tolerance, clockwise: calc.clockwise, unit: tolerance.unit } : null),
     [tolerance, calc],
   );
+  // The reference picture: the one nearest the nominal (zone centre), shown in the viewer while Space is held.
+  const reference = useMemo(() => {
+    if (!tolerance || !data) return null;
+    const all = Object.entries(data.values).map(([frame, value]) => ({ frame, value, verdict: data.verdicts?.[frame], point: data.points?.[frame] ?? null, deviation: data.deviations?.[frame] ?? null }));
+    const frame = referenceFrame(all, { mode: tolerance.mode ?? "tolerance", nominal: tolerance.nominal ?? null, centre: tolerance.zone?.center ?? null, wrap: !!tolerance.wrap });
+    return all.find((r) => r.frame === frame) ?? null;
+  }, [tolerance, data]);
   const viewer = useMemo<ViewerExtras | undefined>(() => {
     if (!calc || !detectorId || !calc.a || !calc.b) return undefined;
     const names: [string, string] = [calc.a, calc.b];
     const cropped = (calc.crops ?? []).length > 0;
     return {
+      reference,
       // boxes are in the picture the detector works on: the cut-out, when a Crop box is above it
       imageUrl: cropped ? (frame) => flowPictureUrl(camera, detectorId, frame, { key: calc.crops }) : undefined,
       // point A of the Calculate box on this picture: what the viewer's "Fix reference point" keeps in place
@@ -726,7 +735,7 @@ function ValuesWork(p: {
         return missing.length ? `not found here: ${missing.join(", ")}` : `${calc.operations[calc.op] ?? calc.op}: ${names[0]} → ${names[1]}`;
       },
     };
-  }, [calc, detectorId, foundBoxes, camera, evalSpec]);
+  }, [calc, detectorId, foundBoxes, camera, evalSpec, reference]);
 
   const counts = data?.counts ?? tolerance?.counts;
   // The cards show the whole picture (the cut-out when a Picture edits box is above the detector), not the camera's centre-cropped square.

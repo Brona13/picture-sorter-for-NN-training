@@ -1,5 +1,5 @@
 import { ReactNode, useEffect, useState } from "react";
-import { frameThumbUrl } from "../api";
+import { frameImageUrl, frameThumbUrl } from "../api";
 import CardGrid from "../classify/CardGrid";
 import FramePane from "../classify/FramePane";
 import PictureViewer from "../classify/PictureViewer";
@@ -78,6 +78,8 @@ export interface ViewerExtras {
   note?: (row: ValueRow) => ReactNode;
   /** The reference point of a picture (picture pixels, point A of the Calculate box); offers the viewer's "Fix reference point" toggle. */
   fixPoint?: (row: ValueRow) => { x: number; y: number } | null;
+  /** The reference picture (an Evaluation's picture nearest the nominal): shown while Space is held, in the same view. */
+  reference?: ValueRow | null;
 }
 
 function Viewer({ camera, rows, start, unit, onClose, onNominal, onCentre, info, extras }: { camera: string; rows: ValueRow[]; start: string; unit: string; onClose: () => void; onNominal?: (value: number) => void; onCentre?: (row: ValueRow) => void; info?: Info; extras?: ViewerExtras }) {
@@ -91,7 +93,34 @@ function Viewer({ camera, rows, start, unit, onClose, onNominal, onCentre, info,
     setFixed(on);
     try { localStorage.setItem(FIX_STORE, on ? "on" : "off"); } catch { /* not remembered */ }
   };
+  const reference = extras?.reference ?? null;
+  const [holding, setHolding] = useState(false);
+  useEffect(() => {
+    if (!reference) { setHolding(false); return; }
+    const typing = (t: EventTarget | null) => t instanceof HTMLElement && (t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName));
+    const down = (e: KeyboardEvent) => {
+      if (e.code !== "Space" || e.ctrlKey || e.metaKey || e.altKey || typing(e.target)) return;
+      e.preventDefault(); // no page scroll, no click on a focused button
+      e.stopPropagation();
+      setHolding(true);
+    };
+    const up = (e: KeyboardEvent) => {
+      if (e.code !== "Space") return;
+      e.preventDefault();
+      setHolding(false);
+    };
+    const release = () => setHolding(false);
+    window.addEventListener("keydown", down, true);
+    window.addEventListener("keyup", up, true);
+    window.addEventListener("blur", release);
+    return () => {
+      window.removeEventListener("keydown", down, true);
+      window.removeEventListener("keyup", up, true);
+      window.removeEventListener("blur", release);
+    };
+  }, [reference?.frame]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!row) return null;
+  const shown = holding && reference ? reference : row;
   return (
     <PictureViewer
       label="Full-size picture"
@@ -101,13 +130,14 @@ function Viewer({ camera, rows, start, unit, onClose, onNominal, onCentre, info,
       total={frames.length}
       onGo={go}
       onClose={onClose}
-      hint="Wheel zooms · drag pans · ← → browse · Esc closes"
+      hint={`Wheel zooms · drag pans · ← → browse${reference ? " · hold Space: reference picture" : ""} · Esc closes`}
       toolbar={
         <span data-testid="viewer-value" style={{ fontSize: 13 }}>
           {info ? info(row) : <><strong>{show(row, unit)}</strong> {row.verdict && <span className={`flow-verdict ${row.verdict}`}>{row.verdict}</span>}</>}{" "}
           {onNominal && row.value !== null && <button type="button" onClick={() => onNominal(row.value!)}>Use as nominal</button>}
           {onCentre && row.point && <button type="button" onClick={() => onCentre(row)}>Use as nominal</button>}
-          {extras?.note && <span className="muted"> · {extras.note(row)}</span>}
+          {holding && reference && <strong data-testid="viewer-reference"> · reference picture {reference.frame}</strong>}
+          {extras?.note && <span className="muted"> · {extras.note(shown)}</span>}
           {extras?.fixPoint && (
             <label style={{ marginLeft: 8, whiteSpace: "nowrap" }} title="Keep point A at the same place on screen while browsing; the picture moves under it">
               <input type="checkbox" checked={fixed} onChange={(e) => chooseFixed(e.target.checked)} /> Fix reference point
@@ -116,7 +146,12 @@ function Viewer({ camera, rows, start, unit, onClose, onNominal, onCentre, info,
         </span>
       }
     >
-      {(width) => <FramePane camera={camera} frame={frame} width={width} imageUrl={extras?.imageUrl?.(frame)} overlay={extras?.overlay ? (size) => extras.overlay!(row, size) : undefined} fixPoint={extras?.fixPoint ? { on: fixed, point: extras.fixPoint(row) } : undefined} />}
+      {(width) => (
+        <>
+          <FramePane camera={camera} frame={shown.frame} width={width} imageUrl={extras?.imageUrl?.(shown.frame)} overlay={extras?.overlay ? (size) => extras.overlay!(shown, size) : undefined} fixPoint={extras?.fixPoint ? { on: fixed, point: extras.fixPoint(shown) } : undefined} />
+          {reference && !holding && <img src={extras?.imageUrl?.(reference.frame) ?? frameImageUrl(camera, reference.frame)} alt="" style={{ display: "none" }} />}
+        </>
+      )}
     </PictureViewer>
   );
 }
