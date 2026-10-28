@@ -3,13 +3,14 @@ name: MEMORY
 description: Portable index of project memory files
 status: current
 document_type: index
-last_updated: 2026-10-27
+last_updated: 2026-10-28
 ---
 
 # Project Memory Index
 
 Portable memory for the *Picture Sorter for NN Training* project. Kept inside the project (not `~/.claude/`) so it travels if the folder is moved to another machine.
 
+- [Session 2026-10-28: Classifier scope, Verdict boxes, Chain look, Merge box, 1.120.0-1.124.0](2026-10-28-classifier-scope-verdict-boxes-merge-session.md) — a line hands over what the box passes on, Verdict boxes + dimmed cards, blue Classifier / corner icons / counters, Merge box (any/all, meaning from first line); decisions, open items.
 - [Session 2026-10-27: Evaluation, Export box, Classifier region, 1.109.0-1.119.0](2026-10-27-evaluation-export-classifier-region-session.md) — Evaluation dots and heat map, Export box (OK/NG sink), Dedup without labels, no margin, Classifier region (no default rectangle), detector-fed Classifier, Evaluation line labels a Classifier (pass = OK, fail = NG, only Goldens chosen); decisions, open items; unverified in a browser.
 - [Session 2026-10-27: several elements per target, boxes as Classifier pictures, 1.107.0-1.108.3](2026-10-27-detector-count-and-box-samples-session.md) — detector count 1-4, one Classifier picture per found box (sample ids file#n), decisions and open items.
 - [Session 2026-10-25: Logging, 1.101.0-1.104.1](2026-10-25-logging-session.md) — structured logs (file + separate log database), request ids, frontend error reporter, Log page, swallowed-error sweep; decisions, how to read a log, mistakes (log DB committed once), open items.
