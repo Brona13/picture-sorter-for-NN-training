@@ -11,6 +11,10 @@ Rules (see plans/project-verdict-plan.md):
 * Deleted pictures are left out. Pictures muted by Dedup that have no verdict are counted as ``duplicates``
   instead of ``open``; their verdict, when they have one, is untouched.
 
+* A picture shown on the Verdict page carries ``boxes``: the rectangle each labelling Classifier uses on it (where the
+  detector found its box, for an anchored one), coloured by that Classifier's class. A Classifier with no rectangle on the
+  picture (no box found, none drawn yet, or it reads a Picture edits box, whose rectangle is not in picture terms) has none.
+
 Everything except the decisions is derived on read, so there is nothing to keep in sync.
 """
 from __future__ import annotations
@@ -164,6 +168,33 @@ def summary(camera: str) -> dict:
     return {"frames": frames, "total": len(records), "deleted": deleted, **counts}
 
 
+def boxes_for(camera: str, frame: str, inputs: list[dict], hashes: dict[str, str] | None = None) -> list[dict]:
+    """The rectangles (fractions of the whole picture) of the Classifiers that labelled ``frame``, with their class."""
+    if not inputs:
+        return []
+    import engine  # noqa: PLC0415
+    import roi_input  # noqa: PLC0415
+    from PIL import Image  # noqa: PLC0415
+
+    path = datamodel.unsorted_dir(camera) / frame
+    try:
+        with Image.open(path) as picture:
+            width, height = picture.size
+    except OSError:
+        return []
+    hashes = hashes if hashes is not None else labels.hash_map(camera)
+    out = []
+    for i in inputs:
+        feature = i["feature"]
+        if roi_input.get_input(camera, feature) or datamodel.get_roi(camera, feature) is None:
+            continue
+        placed = engine.resolve_roi_for_frame(camera, feature, hashes.get(frame, ""), width, height)
+        if placed is None or (placed.w >= 0.98 and placed.h >= 0.98):  # nothing found / the whole picture says nothing
+            continue
+        out.append({"feature": feature, "short_name": i["short_name"], "cls": i["cls"], "x": placed.x, "y": placed.y, "w": placed.w, "h": placed.h})
+    return out
+
+
 def listing(camera: str, status: str = "all", page: int = 1, per_page: int = 24) -> dict:
     if status != "all" and status not in STATUSES:
         raise VerdictError(f"Unknown status: {status}")
@@ -178,14 +209,19 @@ def listing(camera: str, status: str = "all", page: int = 1, per_page: int = 24)
         "per_page": per_page,
         "n_pages": n_pages,
         "total": len(records),
-        "items": records[start : start + per_page],
+        "items": with_boxes(camera, records[start : start + per_page]),
     }
+
+
+def with_boxes(camera: str, records: list[dict]) -> list[dict]:
+    hashes = labels.hash_map(camera)
+    return [{**r, "boxes": boxes_for(camera, r["frame"], r["inputs"], hashes)} for r in records]
 
 
 def record_for(camera: str, frame: str) -> dict | None:
     for r in evaluate(camera):
         if r["frame"] == frame:
-            return r
+            return with_boxes(camera, [r])[0]
     return None
 
 

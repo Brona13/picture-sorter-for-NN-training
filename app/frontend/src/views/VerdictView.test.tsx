@@ -28,7 +28,7 @@ beforeEach(() => {
       calls.push({ url, method: init?.method ?? "GET", body: init?.body ? JSON.parse(init.body as string) : undefined });
       const ok = (b: unknown) => new Response(JSON.stringify(b), { status: 200 });
       if (url.includes("/verdicts/summary")) return ok(summary());
-      if (url.includes("/verdicts/decision")) return ok({ item: item("a.png", { status: "ng", verdict: "NG", kind: "manual", decision: "NG" }), summary: summary() });
+      if (url.includes("/verdicts/decision")) return ok({ item: item(JSON.parse(init?.body as string).frame, { status: "ng", bucket: "ng", verdict: "NG", kind: "manual", decision: "NG" }), summary: summary() });
       if (url.includes("/verdicts?")) return ok(list(url));
       return new Response("{}", { status: 404 });
     }),
@@ -56,13 +56,36 @@ test("a label without a recorded page says so", async () => {
   expect(await screen.findByText(/page unknown/)).toBeInTheDocument();
 });
 
-test("deciding sends the class and reloads", async () => {
+test("deciding sends the class; the card stays, dimmed, until Refresh", async () => {
   render(<VerdictView camera="camA" />);
   const card = await screen.findByTestId("verdict-card-a.png");
-  const before = calls.filter((c) => c.url.includes("/verdicts?")).length;
+  const reloads = () => calls.filter((c) => c.url.includes("/verdicts?")).length;
+  const before = reloads();
   await userEvent.click(within(card).getByRole("button", { name: "Decide NG for a.png" }));
   await waitFor(() => expect(calls.find((c) => c.url.includes("/verdicts/decision"))?.body).toEqual({ frame: "a.png", cls: "NG" }));
-  await waitFor(() => expect(calls.filter((c) => c.url.includes("/verdicts?")).length).toBeGreaterThan(before));
+  await waitFor(() => expect(screen.getByTestId("verdict-card-a.png")).toHaveAttribute("data-dimmed", "true"));
+  expect(within(screen.getByTestId("verdict-card-a.png")).getByTestId("status-a.png")).toHaveTextContent("NG · my decision");
+  expect(reloads()).toBe(before); // the list was not reloaded under the hand
+  list = () => ({ status: "contradiction", page: 1, per_page: 24, n_pages: 1, total: 0, items: [] });
+  await userEvent.click(screen.getByRole("button", { name: "Refresh" }));
+  await waitFor(() => expect(screen.queryByTestId("verdict-card-a.png")).not.toBeInTheDocument());
+});
+
+test("a card draws the rectangle of each labelling Classifier in its class colour", async () => {
+  list = () => ({
+    status: "contradiction", page: 1, per_page: 24, n_pages: 1, total: 1,
+    items: [item("a.png", { boxes: [
+      { feature: "roi1", short_name: "roi1", cls: "OK", x: 0.1, y: 0.2, w: 0.3, h: 0.4 },
+      { feature: "roi2", short_name: "roi2", cls: "NG", x: 0.5, y: 0.5, w: 0.2, h: 0.2 },
+    ] })],
+  });
+  render(<VerdictView camera="camA" />);
+  const ok = await screen.findByTestId("box-a.png-roi1");
+  const ng = screen.getByTestId("box-a.png-roi2");
+  expect(ok.style.left).toBe("10%");
+  expect(ok.style.height).toBe("40%");
+  expect(ok.style.border).toContain("rgb(26, 127, 55)"); // OK green
+  expect(ng.style.border).toContain("rgb(198, 40, 40)"); // NG red
 });
 
 test("clicking a picture opens the shared viewer: keys decide, the file name sits under the picture", async () => {
@@ -100,7 +123,7 @@ test("holding 1, 2 or 0 and sweeping the mouse over the cards paints them, and n
   expect(cursor()).toBeNull();
   fireEvent.keyDown(window, { key: "0" });
   for (const f of ["a.png", "b.png", "c.png"]) sweep(f);
-  await waitFor(() => expect(decisions()).toEqual(["a.png:OK", "c.png:OK", "b.png:null"])); // only the card with a decision of yours is cleared
+  await waitFor(() => expect(decisions()).toEqual(["a.png:OK", "c.png:OK", "a.png:null", "b.png:null", "c.png:null"])); // the cards now hold decisions of yours (they stay in place), so 0 clears all three
   fireEvent.keyUp(window, { key: "0" });
 });
 

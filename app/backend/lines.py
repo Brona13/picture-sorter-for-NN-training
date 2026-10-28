@@ -34,6 +34,7 @@ GIVES = {
     "calc": {VALUE},
     "evaluation": {VERDICT, FRAMES, PICTURE},  # its pass / fail / all dots pass the pictures it judged
     "dedup": {FRAMES, PICTURE},  # the pictures it sees, minus the ones it muted
+    "merge": {FRAMES, PICTURE},  # the pictures of the dots it collects, together (any) or in common (all)
 }
 TAKES = {
     "roi": {FRAMES, PICTURE},
@@ -43,11 +44,12 @@ TAKES = {
     "calc": {POINT},
     "evaluation": {VALUE},
     "dedup": {FRAMES, PICTURE},
+    "merge": {FRAMES, PICTURE},
     "export": {FRAMES, PICTURE},  # two inputs, OK and NG; it gives nothing (the end of the chain)
 }
 NAMES = {
     "ingest": "Ingest", "roi": "a Classifier", "classify": "a Classify box", "crop": "Picture edits",
-    "detector": "a detector", "calc": "Calculate", "evaluation": "Evaluation", "dedup": "a Dedup box", "export": "Export",
+    "detector": "a detector", "calc": "Calculate", "evaluation": "Evaluation", "dedup": "a Dedup box", "merge": "a Merge", "export": "Export",
 }
 TYPE_NAMES = {FRAMES: "frames", PICTURE: "a picture", POINT: "a target point", VALUE: "a number", VERDICT: "a verdict"}
 

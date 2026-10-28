@@ -335,17 +335,65 @@ def frames_of_product(camera: str, product: str | None) -> list[str]:
     return _snapshot_value(("product_frames", camera, product), load)
 
 
+_resolving: ContextVar[frozenset] = ContextVar("datamodel_input_scope", default=frozenset())
+
+
+def _input_scope(camera: str, feature: str) -> set[str] | None:
+    """The pictures the line into a Classifier gives it, or ``None`` when no line restricts it.
+
+    A line into a Classifier hands over exactly what the box on the other end passes on (``flow.node_frames``): the
+    detector it is anchored to, the Picture edits box it reads, the Dedup box it reads through. Deleted pictures stay in
+    (the callers filter them, as for every feature). A Classifier whose own dot feeds the box it reads (a loop) is not
+    restricted by that line."""
+    if feature == config.WHOLE_FRAME_FEATURE or feature.startswith("dedup:") or (camera, feature) in _resolving.get():
+        return None
+    import anchor  # noqa: PLC0415  (these import this module)
+    import dedup_box  # noqa: PLC0415
+    import flow  # noqa: PLC0415
+    import roi_input  # noqa: PLC0415
+
+    boxes = []
+    spec = anchor.get_anchor(camera, feature)
+    if spec:
+        boxes.append(spec["detector"])
+    spec = roi_input.get_input(camera, feature)
+    if spec:
+        boxes.append(spec["box"])
+    dedup = dedup_box.input_of(camera, feature)
+    if dedup:
+        boxes.append(dedup)
+    graph = flow.load_graph(camera)
+    token = _resolving.set(_resolving.get() | {(camera, feature)})
+    try:
+        scope: set[str] | None = None
+        for box in boxes:
+            if box not in graph["nodes"]:
+                continue  # a stale setting of a box that is gone
+            given = set(flow.node_frames(camera, box, graph))
+            scope = given if scope is None else scope & given
+    finally:
+        _resolving.reset(token)
+    return None if scope is None else scope | db.deleted_frames_of(camera)
+
+
 def frames_for_feature(camera: str, feature: str) -> list[str]:
     """Frame filenames this feature applies to.
 
     A product-scoped feature ``"<product>::<roi>"`` sees only that product's
     frames — the nesting's "teeth". A **shared** camera-level ROI sees the union
-    of the products it lists. Everything else sees the whole inbox.
+    of the products it lists. Everything else sees the whole inbox. A Classifier
+    fed by a line from a detector, Picture edits or Dedup box sees only what that
+    line gives it (``_input_scope``), on top of the rules above.
     """
     def load():
+        scope = _input_scope(camera, feature)
+
+        def narrow(files: list[str]) -> list[str]:
+            return files if scope is None else [f for f in files if f in scope]
+
         product = split_feature(feature)[0]
         if product:
-            return _as_samples(camera, feature, frames_of_product(camera, product))
+            return _as_samples(camera, feature, narrow(frames_of_product(camera, product)))
 
         shared = feature_products(camera, feature)
         if shared:
@@ -353,12 +401,12 @@ def frames_for_feature(camera: str, feature: str) -> list[str]:
             for selected_product in shared:
                 allowed.update(frames_of_product(camera, selected_product))
             # keep the inbox order rather than the products' order
-            return _as_samples(camera, feature, [
+            return _as_samples(camera, feature, narrow([
                 frame for frame in frames_of_product(camera, None)
                 if frame in allowed
-            ])
+            ]))
 
-        return _as_samples(camera, feature, frames_of_product(camera, None))
+        return _as_samples(camera, feature, narrow(frames_of_product(camera, None)))
 
     return _snapshot_value(("feature_frames", camera, feature), load)
 

@@ -274,6 +274,17 @@ export interface VerdictInput {
   updated: number;
 }
 
+/** The rectangle a labelling Classifier uses on a picture, in fractions of the whole picture. */
+export interface VerdictBox {
+  feature: string;
+  short_name: string;
+  cls: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 export interface VerdictItem {
   frame: string;
   status: "ok" | "ng" | "open" | "contradiction" | "stale";
@@ -283,6 +294,7 @@ export interface VerdictItem {
   decision: "OK" | "NG" | null;
   inputs: VerdictInput[];
   muted_in: string[];
+  boxes?: VerdictBox[];
 }
 
 export interface VerdictList {
@@ -350,7 +362,7 @@ export interface CameraDeletePreview {
 /** One box of the chain canvas: Ingest, a Classifier (one ROI with its labeling) or a measurement box (see `chain.py`). */
 export interface ChainNode {
   id: string;
-  kind: "ingest" | "roi" | "classify" | "crop" | "detector" | "calc" | "evaluation" | "dedup" | "export";
+  kind: "ingest" | "roi" | "classify" | "crop" | "detector" | "calc" | "evaluation" | "dedup" | "export" | "merge";
   /** The ROI's feature name (null for Ingest). */
   ref: string | null;
   label: string;
@@ -441,6 +453,13 @@ export interface FlowSummary {
   ok?: number;
   ng?: number;
   both?: number;
+  /** Export: pictures left out because they are not golden (while Golden only is on). */
+  not_golden?: number;
+  goldens_only?: boolean;
+  /** A Merge: what it collects (OK, NG, a class; null while it has no lines), how it combines them and how many lines and pictures it has. */
+  meaning?: string | null;
+  merge_mode?: "any" | "all";
+  inputs?: number;
   uses_product?: boolean;
   frozen?: number | null;
   changed?: boolean | null;
@@ -1385,7 +1404,7 @@ export const api = {
   chain: (camera: string) => request<ChainCanvas>(`/cameras/${encodeURIComponent(camera)}/chain`),
   saveChainLayout: (camera: string, layout: ChainLayout) =>
     request<ChainCanvas>(`/cameras/${encodeURIComponent(camera)}/chain/layout`, send("PUT", layout)),
-  flowCreate: (camera: string, kind: "crop" | "detector" | "calc" | "evaluation" | "dedup" | "export") =>
+  flowCreate: (camera: string, kind: "crop" | "detector" | "calc" | "evaluation" | "dedup" | "export" | "merge") =>
     request<{ id: string }>(`/cameras/${encodeURIComponent(camera)}/flow/nodes`, send("POST", { kind })),
   flowNode: (camera: string, id: string) =>
     request<FlowNodeDetail>(`/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}`),

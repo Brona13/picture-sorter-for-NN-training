@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
@@ -64,8 +64,13 @@ test("draws a box for Ingest and one Classifier per ROI with its class counts, t
   expect(product).toHaveTextContent("B1");
   expect(product).toHaveTextContent("all3");
   expect(product.querySelector(".chain-node-counters")).toHaveTextContent("● 3○ 1🗑 2");
-  expect(product).toHaveTextContent("Product · 3/4 labeled");
-  expect(screen.getByTestId("chain-node-roi:seal")).toHaveTextContent("Feature · A · 3/4 labeled");
+  expect(product.querySelector(".chain-node-scope")).toHaveAttribute("title", "Product · 3/4 labeled"); // the sentence is the tooltip; the body shows icons and numbers
+  expect(product.querySelector(".chain-node-scope")).toHaveTextContent("Product▦ 4");
+  const seal = screen.getByTestId("chain-node-roi:seal");
+  expect(seal.querySelector(".chain-node-scope")).toHaveAttribute("title", "Feature · A · 3/4 labeled");
+  expect(seal.querySelector(".chain-node-chip")).toHaveTextContent("A");
+  expect(within(product).getByTestId("kind-icon-classifier")).toBeInTheDocument(); // the corner icon is the palette's
+  expect(within(screen.getByTestId("chain-node-ingest")).getByTestId("kind-icon-ingest")).toBeInTheDocument();
   expect(screen.queryByTestId("chain-node-classify:type")).not.toBeInTheDocument();
 });
 
@@ -203,7 +208,9 @@ test("a detector box shows its targets and run state, and has a delete that asks
   });
   renderView();
   const box = await screen.findByTestId("chain-node-det:1");
-  expect(box).toHaveTextContent("2 targets · not run");
+  expect(box).toHaveTextContent("◎ 2"); // two targets, as an icon and a number
+  expect(within(box).getByTitle("Not run yet")).toBeInTheDocument();
+  expect(box).not.toHaveTextContent("2 targets · not run"); // the sentence is only the tooltip
   fireEvent.click(box);
   await user.click(await screen.findByRole("button", { name: /Delete…/ }));
   const dialog = await screen.findByRole("alertdialog");
@@ -266,4 +273,31 @@ test("double-clicking a box opens its page: a feature Classifier on Classify, th
   expect(onOpenRoi).toHaveBeenCalledWith("seal", "classify");
   fireEvent.doubleClick(screen.getByTestId("chain-node-roi:type"));
   expect(onOpenRoi).toHaveBeenCalledWith("type", "roi");
+});
+
+test("a Merge is a small square whose arrow is grey while it collects nothing and green for OK, red for NG; its panel switches any / all", async () => {
+  current = canvas();
+  current.nodes.push(
+    node({ id: "merge:1", kind: "merge", ref: null, label: "Merge 1", x: 900, y: 0, role: null, scope: null, classes: [], flow: { inputs: 0, meaning: null, merge_mode: "any", frames: 0 } }),
+    node({ id: "merge:2", kind: "merge", ref: null, label: "Merge 2", x: 900, y: 100, role: null, scope: null, classes: [], flow: { inputs: 2, meaning: "OK", merge_mode: "any", frames: 6 } }),
+    node({ id: "merge:3", kind: "merge", ref: null, label: "Merge 3", x: 900, y: 200, role: null, scope: null, classes: [], flow: { inputs: 1, meaning: "NG", merge_mode: "all", frames: 2 } }),
+  );
+  vi.mocked(fetch).mockImplementation(async (url: any, init?: RequestInit) => {
+    const method = init?.method ?? "GET";
+    calls.push({ url, method, body: init?.body ? JSON.parse(init.body as string) : undefined });
+    if (String(url).endsWith("/chain")) return new Response(JSON.stringify(current));
+    return new Response("{}");
+  });
+  renderView();
+  const neutral = await screen.findByTestId("chain-node-merge:1");
+  expect(neutral).toHaveClass("merge-neutral");
+  expect(screen.getByTestId("chain-node-merge:2")).toHaveClass("merge-ok");
+  expect(screen.getByTestId("chain-node-merge:3")).toHaveClass("merge-ng");
+  expect(screen.getByTestId("chain-node-merge:2")).toHaveTextContent("∪ 2");
+  expect(screen.getByTestId("chain-node-merge:3")).toHaveTextContent("∩ 1");
+  expect(within(neutral).getByTestId("kind-icon-merge")).toBeInTheDocument();
+  fireEvent.click(screen.getByTestId("chain-node-merge:2"));
+  expect(await screen.findByTestId("merge-meaning")).toHaveTextContent("Collects OK");
+  await userEvent.selectOptions(screen.getByLabelText("Merge mode"), "all");
+  await waitFor(() => expect(calls.find((c) => c.url.includes("/flow/nodes/merge%3A2") && c.method === "PUT")?.body).toEqual({ mode: "all" }));
 });

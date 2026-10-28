@@ -37,7 +37,7 @@ const isClear = (e: { key: string }) => e.key === "0" || e.key === "x" || e.key 
 
 const DEFAULT_SETTINGS = { per_page: 24, cols: 4, per_page_options: [12, 24, 48, 96], cols_options: [3, 4, 5, 6, 8] };
 
-function Card({ camera, item, busy, onDecide, onOpen }: { camera: string; item: VerdictItem; busy: boolean; onDecide: (cls: "OK" | "NG" | null) => void; onOpen: () => void }) {
+function Card({ camera, item, busy, dimmed, onDecide, onOpen }: { camera: string; item: VerdictItem; busy: boolean; dimmed: boolean; onDecide: (cls: "OK" | "NG" | null) => void; onOpen: () => void }) {
   const verdict = item.verdict;
   // The shared grid-card behaviour (`useGridCard`), as on Classify: keys act on the card under the mouse (1 = OK, 2 = NG,
   // 0 = clear my decision) and holding one while moving the mouse paints the cards. Painting never overrides a decision
@@ -68,7 +68,9 @@ function Card({ camera, item, busy, onDecide, onOpen }: { camera: string; item: 
     <article
       data-testid={`verdict-card-${item.frame}`}
       {...props}
-      style={{ border: "1px solid var(--border)", borderRadius: "var(--radius)", background: "var(--panel)", padding: 8, minWidth: 0, boxSizing: "border-box" }}
+      data-dimmed={dimmed ? "true" : undefined}
+      title={dimmed ? "No longer matches the filter; it leaves the list when you refresh." : undefined}
+      style={{ border: "1px solid var(--border)", borderRadius: "var(--radius)", background: "var(--panel)", padding: 8, minWidth: 0, boxSizing: "border-box", opacity: dimmed ? 0.45 : 1 }}
     >
       <button
         type="button"
@@ -80,12 +82,25 @@ function Card({ camera, item, busy, onDecide, onOpen }: { camera: string; item: 
         }}
         style={{ display: "block", width: "100%", padding: 0, border: 0, background: "none", lineHeight: 0, cursor: "pointer" }}
       >
-        <img
-          src={`/api/cameras/${encodeURIComponent(camera)}/frames/${encodeURIComponent(item.frame)}/thumb`}
-          alt={item.frame}
-          loading="lazy"
-          style={{ width: "100%", display: "block" }}
-        />
+        <span style={{ position: "relative", display: "block" }}>
+          <img
+            src={`/api/cameras/${encodeURIComponent(camera)}/frames/${encodeURIComponent(item.frame)}/thumb`}
+            alt={item.frame}
+            loading="lazy"
+            style={{ width: "100%", display: "block" }}
+          />
+          {(item.boxes ?? []).map((b) => (
+            <span
+              key={b.feature}
+              data-testid={`box-${item.frame}-${b.short_name}`}
+              data-cls={b.cls}
+              title={`${b.short_name}: ${b.cls}`}
+              style={{ position: "absolute", left: `${b.x * 100}%`, top: `${b.y * 100}%`, width: `${b.w * 100}%`, height: `${b.h * 100}%`, border: `2px solid ${classColor(b.cls)}`, boxSizing: "border-box", pointerEvents: "none" }}
+            >
+              <span style={{ position: "absolute", left: -2, bottom: "100%", background: classColor(b.cls), color: "#fff", fontSize: 10, lineHeight: "12px", padding: "0 3px", whiteSpace: "nowrap" }}>{b.short_name}</span>
+            </span>
+          ))}
+        </span>
       </button>
       <div style={{ fontSize: 12, margin: "4px 0", wordBreak: "break-all" }}>{item.frame}</div>
       <div style={{ margin: "2px 0" }}>
@@ -219,6 +234,7 @@ export default function VerdictView({ camera }: { camera: string }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<Set<string>>(new Set()); // the frames whose decision is being saved (per frame, so a sweep is not held up)
   const [viewing, setViewing] = useState<string | null>(null);
+  const [dimmed, setDimmed] = useState<Set<string>>(new Set()); // decided cards that no longer match the filter: they stay, dimmed, until a refresh
 
   const load = useCallback(() => {
     if (!camera) return;
@@ -226,6 +242,7 @@ export default function VerdictView({ camera }: { camera: string }) {
       .then(([l, s]) => {
         setList(l);
         setSummary(s);
+        setDimmed(new Set());
         setError(null);
         if (l.page !== page) setPage(l.page);
       })
@@ -255,8 +272,17 @@ export default function VerdictView({ camera }: { camera: string }) {
       });
     mark(true);
     try {
-      await api.verdictDecide(camera, frame, cls);
-      load();
+      const { item, summary: fresh } = await api.verdictDecide(camera, frame, cls);
+      setSummary(fresh); // the card stays where it is (painting needs a steady grid); a refresh or another filter drops it
+      if (item) {
+        setList((l) => (l ? { ...l, items: l.items.map((i) => (i.frame === frame ? item : i)) } : l));
+        setDimmed((d) => {
+          const n = new Set(d);
+          if (status !== "all" && item.bucket !== status) n.add(frame);
+          else n.delete(frame);
+          return n;
+        });
+      }
     } catch (e) {
       setError(msg(e));
     } finally {
@@ -292,7 +318,11 @@ export default function VerdictView({ camera }: { camera: string }) {
             ))}
           </select>
         </label>{" "}
-        {list && <span>{list.total} picture(s)</span>}
+        {list && <span>{list.total} picture(s)</span>}{" "}
+        <button type="button" onClick={load} title="Reload the list: decided cards that no longer match the filter leave it.">
+          Refresh
+        </button>
+        {dimmed.size > 0 && <span style={{ fontSize: 12 }}> {dimmed.size} decided card(s) no longer match this filter (dimmed); Refresh removes them.</span>}
       </p>
       {list && list.items.length === 0 && <p>Nothing here.</p>}
       {list && list.items.length > 0 && (
@@ -306,7 +336,7 @@ export default function VerdictView({ camera }: { camera: string }) {
             page={page}
             onPage={setPage}
             container="div"
-            renderCard={(item) => <Card camera={camera} item={item} busy={busy.has(item.frame)} onDecide={(c) => void decide(item.frame, c)} onOpen={() => setViewing(item.frame)} />}
+            renderCard={(item) => <Card camera={camera} item={item} busy={busy.has(item.frame)} dimmed={dimmed.has(item.frame)} onDecide={(c) => void decide(item.frame, c)} onOpen={() => setViewing(item.frame)} />}
           />
           {viewing && (
             <VerdictViewer camera={camera} items={list.items} start={viewing} busyFrames={busy} onDecide={(f, c) => void decide(f, c)} onClose={() => setViewing(null)} />

@@ -104,7 +104,7 @@ test("describeNode", () => {
   expect(describeNode(canvas.nodes[4])).toBe("Feature · B · 1/4 labeled");
 });
 
-import { flowConnect } from "./chainModel";
+import { flowConnect, isMergeLineEdge, mergeLineOf } from "./chainModel";
 
 const flowCanvas: ChainCanvas = {
   ...canvas,
@@ -316,4 +316,47 @@ test("Export boxes: a Classifier or Evaluation dot or a passing box feeds the OK
 test("describeFlow: an Export box says its lines, counts and freeze", () => {
   expect(describeFlow("export", { lines: { ok: 0, ng: 0 } } as any)).toBe("connect lines to OK or NG");
   expect(describeFlow("export", { lines: { ok: 1, ng: 1 }, ok: 5, ng: 2, frozen: 3, changed: true } as any)).toBe("5 OK · 2 NG · frozen v3 (changed)");
+});
+
+const mergeCanvas: ChainCanvas = {
+  ...flowCanvas,
+  nodes: [
+    ...flowCanvas.nodes,
+    node({ id: "merge:1", kind: "merge", ref: null, role: null, scope: null, label: "Merge 1" }),
+    node({ id: "merge:2", kind: "merge", ref: null, role: null, scope: null, label: "Merge 2" }),
+    node({ id: "export:1", kind: "export", ref: null, role: null, scope: null, label: "Export 1" }),
+  ],
+};
+
+test("a Classifier class dot, an Evaluation pass or fail and another Merge can be dropped on a Merge", () => {
+  expect(flowConnect(mergeCanvas, { source: "roi:seal", sourceHandle: "p:OK", target: "merge:1" })).toEqual({ mergeLine: { box: "merge:1", ref: { feature: "seal", dot: "OK" } } });
+  expect(flowConnect(mergeCanvas, { source: "eval:1", sourceHandle: "p:fail", target: "merge:1" })).toEqual({ mergeLine: { box: "merge:1", ref: { box: "eval:1", dot: "fail" } } });
+  expect(flowConnect(mergeCanvas, { source: "merge:2", sourceHandle: null, target: "merge:1" })).toEqual({ mergeLine: { box: "merge:1", ref: { from: "merge:2" } } });
+});
+
+test("a Merge refuses what has no single meaning, with the reason", () => {
+  const all = flowConnect(mergeCanvas, { source: "roi:seal", sourceHandle: "all", target: "merge:1" });
+  expect(all).toHaveProperty("error");
+  expect((all as { error: string }).error).toMatch(/all dot has no single meaning/);
+  expect(flowConnect(mergeCanvas, { source: "eval:1", sourceHandle: "all", target: "merge:1" })).toHaveProperty("error");
+  expect(flowConnect(mergeCanvas, { source: "det:1", sourceHandle: null, target: "merge:1" })).toHaveProperty("error");
+  expect(flowConnect(mergeCanvas, { source: "merge:1", sourceHandle: null, target: "merge:1" })).toHaveProperty("error");
+});
+
+test("a Merge feeds Export, Dedup, Picture edits and a detector, one line out", () => {
+  expect(flowConnect(mergeCanvas, { source: "merge:1", sourceHandle: null, target: "export:1", targetHandle: "in:ok" })).toEqual({ exportLine: { box: "export:1", input: "ok", ref: { from: "merge:1" } } });
+  for (const t of ["det:1"]) expect(flowConnect(mergeCanvas, link("merge:1", t))).toEqual({ source: "merge:1", target: t });
+  expect(flowConnect(mergeCanvas, link("merge:1", "calc:1"))).toHaveProperty("error");
+});
+
+test("the stored line of an edge into a Merge", () => {
+  const edge = { id: "e", source: "roi:seal", source_handle: "p:NG", target: "merge:1", locked: false };
+  expect(isMergeLineEdge(mergeCanvas, edge)).toBe(true);
+  expect(mergeLineOf(mergeCanvas, edge)).toEqual({ feature: "seal", dot: "NG" });
+  expect(mergeLineOf(mergeCanvas, { ...edge, source: "eval:1", source_handle: "p:pass" })).toEqual({ box: "eval:1", dot: "pass" });
+});
+
+test("describeNode tells what a Merge collects", () => {
+  expect(describeNode(node({ kind: "merge", flow: { inputs: 0 } }))).toBe("drop OK or NG dots here");
+  expect(describeNode(node({ kind: "merge", flow: { inputs: 3, meaning: "OK", merge_mode: "all", frames: 7 } }))).toBe("OK · in every line · 3 lines · 7 pictures");
 });

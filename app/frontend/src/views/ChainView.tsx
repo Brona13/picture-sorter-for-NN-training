@@ -16,9 +16,12 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, ChainCanvas, ChainDeletePreview, ChainEdge, ChainNode, ChainViewport, FlowDeletePreview } from "../api";
-import { ALL_HANDLE, INGEST_ID, targetHandle, targetOfHandle, connectAction, describeNode, disconnectAction, exportLineOf, flowConnect, freshName, isAnchorEdge, isDedupInputEdge, isEvaluationLabelEdge, isDedupSourceEdge, isExportLineEdge, isRoiInputEdge, isFlowKind, layoutOf, productHandle } from "../chain/chainModel";
+import { ALL_HANDLE, INGEST_ID, targetHandle, targetOfHandle, connectAction, describeNode, disconnectAction, exportLineOf, flowConnect, freshName, isAnchorEdge, isMergeLineEdge, mergeLineOf, isDedupInputEdge, isEvaluationLabelEdge, isDedupSourceEdge, isExportLineEdge, isRoiInputEdge, isFlowKind, layoutOf, productHandle } from "../chain/chainModel";
 import ClassifierMode from "../chain/ClassifierMode";
+import Counter from "../chain/Counter";
+import { KindIcon } from "../chain/kindIcons";
 import LineConfirm from "../chain/LineConfirm";
+import MergePanel from "../chain/MergePanel";
 import Palette, { PALETTE_DRAG } from "../chain/Palette";
 import { BOX_SIZE, HUE, dropPosition, freeSpot, paletteItem, type PaletteKind } from "../chain/palette";
 import StepIcons from "../chain/StepIcons";
@@ -34,12 +37,49 @@ type BoxNode = Node<BoxData, "box">;
 
 const hueOf = (n: ChainNode) => HUE[n.kind];
 
+/** Where a Classifier gets its pictures, as icons and chips instead of a sentence (the sentence stays in the tooltip). */
+function ScopeChips({ node }: { node: ChainNode }) {
+  if (node.role === "classify") return <span title="Sorts every picture into products">Product</span>;
+  if (node.anchor || node.input) return <span title={node.anchor ? "Reads the box a detector found" : "Reads a Picture edits box"}>{node.anchor ? "◎" : "▭"}</span>;
+  const names = node.scope === "name" ? [node.product ?? ""] : node.scope === "products" ? node.products : [];
+  if (!names.length) return <span title="Whole camera">🖼</span>;
+  return (
+    <>
+      {names.map((n) => (
+        <span className="chain-node-chip" key={n} title={`Only pictures of product ${n}`}>{n}</span>
+      ))}
+    </>
+  );
+}
+
 /** A box of the chain: a rounded two-tone rectangle. Double-click opens its page; it is renamed in the right panel. */
 function Box({ data, selected }: NodeProps<BoxNode>) {
   const { node } = data;
   const isClassifier = node.kind === "roi";
   const productMode = node.role === "classify";
   const isEdits = node.kind === "crop"; // a Picture edits box has one fixed size and shows icons, not its step list
+  if (node.kind === "merge") {
+    // A small square: lines in on the left, one line out on the right. The arrow is grey while it collects nothing, green for OK, red for NG.
+    const meaning = node.flow?.meaning ?? null;
+    const tone = meaning?.toUpperCase() === "OK" ? "ok" : meaning?.toUpperCase() === "NG" ? "ng" : meaning ? "other" : "neutral";
+    const all = node.flow?.merge_mode === "all";
+    return (
+      <div
+        className={`chain-node chain-node-merge merge-${tone}${selected ? " selected" : ""}`}
+        title={`${node.label}: ${describeNode(node)}`}
+        style={{ ["--hue" as string]: hueOf(node) }}
+        data-testid={`chain-node-${node.id}`}
+        data-meaning={meaning ?? ""}
+      >
+        <Handle type="target" position={Position.Left} />
+        <KindIcon kind="merge" size={26} />
+        <span className="chain-merge-badge" title={all ? "A picture passes only if every line passes it" : "A picture passes if any line passes it"}>
+          {all ? "∩" : "∪"} {node.flow?.inputs ?? 0}
+        </span>
+        <Handle type="source" position={Position.Right} />
+      </div>
+    );
+  }
   return (
     <div
       className={`chain-node chain-node-${node.kind}${isEdits ? " chain-node-fixed" : ""}${selected ? " selected" : ""}`}
@@ -48,6 +88,7 @@ function Box({ data, selected }: NodeProps<BoxNode>) {
       data-testid={`chain-node-${node.id}`}
     >
       {node.kind !== "ingest" && node.kind !== "export" && <Handle type="target" position={Position.Left} />}
+      <KindIcon kind={node.kind} className="chain-node-kind" />
       <div className="chain-node-title">{node.label}</div>
       {node.kind === "export" ? (
         <>
@@ -60,34 +101,50 @@ function Box({ data, selected }: NodeProps<BoxNode>) {
             </div>
           ))}
           <div className="chain-node-counters" aria-label="Counters" title={describeNode(node)}>
-            <span title="Pictures that would be exported">▦ {node.flow?.total ?? 0}</span>
-            <span title="Left out: reach both OK and NG">⇄ {node.flow?.both ?? 0}</span>
+            <Counter icon="▦" value={node.flow?.total ?? 0} title="Pictures that would be exported" />
+            <Counter icon="⇄" value={node.flow?.both ?? 0} title="Left out: reach both OK and NG" />
+            {node.flow?.goldens_only && <Counter icon="☆" value={node.flow?.not_golden ?? 0} title="Left out because they are not golden (Golden only is on in this box's panel)" />}
             <span title="Last freeze">{node.flow?.frozen ? `❄ v${node.flow.frozen}${node.flow.changed ? " ≠" : ""}` : "❄ –"}</span>
           </div>
         </>
       ) : node.kind === "dedup" ? (
         <div className="chain-node-counters" aria-label="Counters" title={describeNode(node)}>
-          <span title="Pictures it sees">▦ {node.flow?.frames ?? 0}</span>
-          <span title="Muted by this box">🔇 {node.flow?.muted ?? 0}</span>
-          <span title="In the bin (deleted)">🗑 {node.flow?.deleted ?? 0}</span>
+          <Counter icon="▦" value={node.flow?.frames ?? 0} title="Pictures it sees" />
+          <Counter icon="🔇" value={node.flow?.muted ?? 0} title="Muted by this box" />
+          <Counter icon="🗑" value={node.flow?.deleted ?? 0} title="In the bin (deleted)" />
         </div>
       ) : node.kind === "detector" ? (
         <>
-        <div className="chain-node-sub chain-node-line" title={describeNode(node)}>{describeNode(node)}</div>
         <div className="chain-node-counters" aria-label="Counters" title={describeNode(node)}>
           <span title={node.flow?.area === "edited" ? "Searches the picture a Picture edits box cut" : "Searches the whole picture"}>{node.flow?.area === "edited" ? "▭" : "🖼"}</span>
-          <span title="Pictures it works on">▦ {node.flow?.in_scope ?? 0}</span>
-          <span title="Pictures where every target was found">✓ {node.flow?.complete ?? 0}</span>
-          <span title="Pictures to look at: a target has no box">⚠ {node.flow?.review ?? 0}</span>
+          <Counter icon="◎" value={node.flow?.targets?.length ?? 0} title="Targets it looks for" />
+          <Counter icon="▦" value={node.flow?.in_scope ?? 0} title="Pictures it works on" />
+          <Counter icon="✓" value={node.flow?.complete ?? 0} title="Pictures where every target was found" />
+          <Counter icon="⚠" value={node.flow?.review ?? 0} title="Pictures to look at: a target has no box" />
+          {node.flow?.status !== "fresh" && <span title={node.flow?.status === "stale" ? "Run again: something changed since the last run" : "Not run yet"}>{node.flow?.status === "stale" ? "↻" : "⏵"}</span>}
         </div>
         </>
       ) : node.kind === "evaluation" ? (
         <div className="chain-node-counters" aria-label="Counters" title={describeNode(node)}>
-          <span title="Pass">✔ {node.flow?.counts?.pass ?? 0}</span>
-          <span title="Fail">✖ {node.flow?.counts?.fail ?? 0}</span>
-          <span title="No value to judge">? {node.flow?.counts?.undetermined ?? 0}</span>
+          <Counter icon="✔" value={node.flow?.counts?.pass ?? 0} title="Pass" />
+          <Counter icon="✖" value={node.flow?.counts?.fail ?? 0} title="Fail" />
+          <Counter icon="?" value={node.flow?.counts?.undetermined ?? 0} title="No value to judge" />
         </div>
-      ) : isEdits ? <StepIcons steps={node.flow?.steps} /> : <div className="chain-node-sub chain-node-line" title={describeNode(node)}>{describeNode(node)}</div>}
+      ) : isEdits ? <StepIcons steps={node.flow?.steps} /> : node.kind === "ingest" ? (
+        <div className="chain-node-scope" title={describeNode(node)}>
+          <Counter icon="▦" value={node.frames} title="Pictures in the camera's inbox" />
+        </div>
+      ) : node.kind === "calc" ? (
+        <div className="chain-node-scope" title={describeNode(node)}>
+          <span title={node.flow?.op === "distance" ? "Distance" : "Angle"}>{node.flow?.op === "distance" ? "↔" : "∠"}</span>
+          {node.flow?.a && node.flow?.b ? <span>{node.flow.a} → {node.flow.b}</span> : <span title={describeNode(node)}>⚠ needs two points</span>}
+        </div>
+      ) : isClassifier ? (
+        <div className="chain-node-scope" title={describeNode(node)}>
+          <ScopeChips node={node} />
+          <Counter icon="▦" value={node.frames} title="Pictures it works on" />
+        </div>
+      ) : null}
       {isClassifier && (
         <>
           {/* One row and one dot per class; the "all" dot passes every classified picture and never an unlabeled one. */}
@@ -283,6 +340,9 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
     } else if ("exportLine" in flowArrow) {
       const a = flowArrow.exportLine; // a dot or box dropped on the OK or NG input of an Export box: one more line into it
       run = () => void applyFlow(() => api.flowUpdate(camera, a.box, { add_line: { input: a.input, ref: a.ref } }));
+    } else if ("mergeLine" in flowArrow) {
+      const a = flowArrow.mergeLine; // a Classifier class dot or an Evaluation's pass / fail dropped on a Merge: one more line it collects
+      run = () => void applyFlow(() => api.flowUpdate(camera, a.box, { add_line: a.ref }));
     } else if ("dedupSource" in flowArrow) {
       const a = flowArrow.dedupSource; // a Classifier or Evaluation dot dropped on a Dedup, Picture edits or detector box: the box reads only the pictures on that dot
       run = () => void applyFlow(() => api.flowUpdate(camera, a.box, { source: a.evaluation ? { box: a.evaluation, dot: a.dot } : { feature: a.feature, dot: a.dot } }));
@@ -324,7 +384,10 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
     if (!canvas) return;
     const targetNode = canvas.nodes.find((n) => n.id === edge.target);
     const ends = [edge.source, edge.target].map((id) => canvas.nodes.find((n) => n.id === id)?.kind);
-    if (isExportLineEdge(canvas, edge)) {
+    if (isMergeLineEdge(canvas, edge)) {
+      const ref = mergeLineOf(canvas, edge);
+      if (ref) void applyFlow(() => api.flowUpdate(camera, edge.target, { remove_line: ref }));
+    } else if (isExportLineEdge(canvas, edge)) {
       const line = exportLineOf(canvas, edge);
       if (line) void applyFlow(() => api.flowUpdate(camera, edge.target, { remove_line: line }));
     } else if (isDedupSourceEdge(canvas, edge)) void applyFlow(() => api.flowUpdate(camera, edge.target, { source: null }));
@@ -414,7 +477,7 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
     return freeSpot(taken, dropPosition(middle, box), box);
   };
 
-  const addFlowBox = async (kind: "crop" | "detector" | "calc" | "evaluation" | "dedup" | "export", at?: { x: number; y: number }) => {
+  const addFlowBox = async (kind: "crop" | "detector" | "calc" | "evaluation" | "dedup" | "export" | "merge", at?: { x: number; y: number }) => {
     await applyFlow(async () => {
       const made = await api.flowCreate(camera, kind);
       setSelectedId(made.id);
@@ -471,6 +534,7 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
   /** Opens the page of a box: Ingest, the Classifier (the product one for its names, a feature one on Classify), a Dedup box, or the flow page. */
   const openNode = (n: ChainNode) => {
     if (n.kind === "dedup") navigate(`/dedup/grid?box=${encodeURIComponent(n.id)}`); // the Dedup pages work on one box
+    else if (n.kind === "merge") setSelectedId(n.id); // a Merge has no page: its settings are in the panel
     else if (isFlowKind(n.kind)) onOpenFlow ? onOpenFlow(n.id) : navigate(`/flow?focus=${encodeURIComponent(n.id)}`);
     else openPage(n, n.role === "classify" ? "roi" : "classify");
   };
@@ -483,7 +547,7 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
         taken={{}}
         onAdd={(kind) => addFromPalette(kind)}
       />
-      <h3>Selected box</h3>
+      <h3 className="chain-panel-title">{selectedLive && <KindIcon kind={selectedLive.kind} />}Selected box</h3>
       {!selectedLive && <p className="muted">Click a box, double-click it to open its page. Drag from a handle to draw an arrow; click an arrow and press Delete to remove it (Enter confirms, Esc cancels).</p>}
       {selectedLive && (
         <div className="chain-selected">
@@ -509,9 +573,10 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
               onError={setError}
             />
           )}
+          {selectedLive.kind === "merge" && <MergePanel camera={camera} node={selectedLive} onChanged={() => { setError(null); void reload(); }} onError={setError} />}
           {isFlowKind(selectedLive.kind) && (
             <>
-              <button
+              {selectedLive.kind !== "merge" && <button
                 type="button"
                 onClick={() =>
                   selectedLive.kind === "dedup"
@@ -520,7 +585,7 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
                 }
               >
                 {FLOW_PAGE[selectedLive.kind as keyof typeof FLOW_PAGE]}
-              </button>
+              </button>}
               <button type="button" className="danger" onClick={() => requestDelete(selectedLive.id)}>
                 Delete…
               </button>

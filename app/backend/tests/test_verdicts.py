@@ -161,3 +161,42 @@ class SchemaV8MigrationTests(ApiTestCase):
             con.execute("SELECT * FROM verdict_decisions").fetchall()
         finally:
             con.close()
+
+
+class VerdictBoxTests(VerdictTests):
+    """The rectangles a picture's labelling Classifiers use on it (v1.121.0)."""
+
+    def boxes(self, frame: str) -> list[dict]:
+        return self.item(frame)["boxes"]
+
+    def test_a_labelling_classifier_draws_its_rectangle_in_its_class(self) -> None:
+        f = self.frames
+        self.label("roi1", f[0], "OK")
+        self.label("roi2", f[0], "NG")
+        got = {b["short_name"]: b for b in self.boxes(f[0])}
+        self.assertEqual({k: v["cls"] for k, v in got.items()}, {"roi1": "OK", "roi2": "NG"})
+        self.assertEqual((got["roi1"]["x"], got["roi1"]["y"], got["roi1"]["w"], got["roi1"]["h"]), (0.1, 0.2, 0.3, 0.4))
+
+    def test_a_classifier_that_did_not_label_the_picture_draws_nothing(self) -> None:
+        self.label("roi1", self.frames[0], "OK")
+        self.assertEqual([b["short_name"] for b in self.boxes(self.frames[0])], ["roi1"])
+        self.assertEqual(self.boxes(self.frames[1]), [])
+
+    def test_a_rectangle_over_the_whole_picture_is_not_drawn(self) -> None:
+        self.client.put("/api/cameras/camA/rois", json={"x": 0, "y": 0, "w": 1, "h": 1, "name": "roi3"})
+        self.label("roi3", self.frames[0], "OK")
+        self.assertEqual(self.boxes(self.frames[0]), [])
+
+    def test_an_anchored_classifier_is_drawn_only_where_the_detector_found_a_box(self) -> None:
+        import json
+
+        import flow
+        det = flow.create_node("camA", "detector")
+        db.set_setting("camA", "roi.anchor.roi1", json.dumps({"detector": det, "target": "t", "mode": "box", "follow_rotation": False}))
+        self.label("roi1", self.frames[0], "OK")
+        self.assertEqual(self.boxes(self.frames[0]), [])  # the detector has stored no box for this picture
+
+    def test_the_decision_answer_carries_the_boxes_too(self) -> None:
+        self.label("roi1", self.frames[0], "OK")
+        r = self.client.put("/api/cameras/camA/verdicts/decision", json={"frame": self.frames[0], "cls": "NG"})
+        self.assertEqual(len(r.json()["item"]["boxes"]), 1)

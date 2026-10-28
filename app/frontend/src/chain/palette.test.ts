@@ -7,7 +7,7 @@ test("every box type has one colour and one fixed size", () => {
 });
 
 test("the palette is grouped by in / out type and offers every box the Chain can add", () => {
-  expect(PALETTE.flatMap((g) => g.items.map((i) => i.kind)).sort()).toEqual(["calc", "classifier", "crop", "dedup", "detector", "evaluation", "export"]);
+  expect(PALETTE.flatMap((g) => g.items.map((i) => i.kind)).sort()).toEqual(["calc", "classifier", "crop", "dedup", "detector", "evaluation", "export", "merge"]);
   expect(paletteItem("classifier").box).toBe("roi");
 });
 
@@ -22,4 +22,9 @@ test("a free spot is the wanted one, or the first one below that overlaps nothin
   expect(moved.x).toBe(10);
   expect(moved.y).toBeGreaterThanOrEqual(20 + 86 + 24);
   expect(freeSpot(taken, { x: 400, y: 20 }, "calc")).toEqual({ x: 400, y: 20 }); // beside it is free
+});
+
+test("a Merge is a small square, in its own group", () => {
+  expect(BOX_SIZE.merge).toEqual({ w: 64, h: 64 });
+  expect(PALETTE.find((g) => g.items.some((i) => i.kind === "merge"))?.group).toBe("Collects lines");
 });

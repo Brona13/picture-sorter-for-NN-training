@@ -235,16 +235,20 @@ def _flow_nodes(camera: str, graph: dict, stored: dict) -> list[dict]:
                 "deleted": len(db.deleted_frames_of(camera)),
                 "feeds": dedup_box.fed_by(camera).get(node_id, []),
             }
+        elif kind == "merge":
+            refs = flow.merge_lines(node)
+            summary = {"meaning": flow.merge_meaning(graph, node_id), "merge_mode": node.get("mode", "any"), "inputs": len(refs),
+                       "frames": len(flow.node_frames(camera, node_id, graph))}
         elif kind == "export":
             st = export_box.state(camera, node_id)
             summary = {"lines": st["lines"], "folders": st["folders"], "total": st["total"], "ok": st["ok"], "ng": st["ng"], "both": st["both"],
-                       "uses_product": st["uses_product"], "frozen": (st["latest"] or {}).get("number"), "changed": (st["latest"] or {}).get("changed"),
+                       "uses_product": st["uses_product"], "not_golden": st["not_golden"], "goldens_only": st["goldens_only"], "frozen": (st["latest"] or {}).get("number"), "changed": (st["latest"] or {}).get("changed"),
                        "exported": (st["latest"] or {}).get("exported")}
         else:
             state = flow.evaluation_state(camera, node_id)
             summary = {"nominal": node["nominal"], "tolerance": node["tolerance"], "unit": state["unit"], "counts": state["counts"],
                        "mode": state["mode"], "zone": state["zone"]}
-        default = {"crop": "Picture edits", "detector": "Detector", "calc": "Calculate", "evaluation": "Evaluation", "dedup": "Dedup", "export": "Export"}[kind]
+        default = {"crop": "Picture edits", "detector": "Detector", "calc": "Calculate", "evaluation": "Evaluation", "dedup": "Dedup", "export": "Export", "merge": "Merge"}[kind]
         entry = stored.get(node_id, {})
         nodes.append({
             "id": node_id, "kind": kind, "ref": None, "label": entry.get("label") or f"{default} {node_id.split(':')[1]}",
@@ -261,7 +265,7 @@ def overview_flow(camera: str, picture_frame: str | None) -> dict | None:
     if not graph["nodes"]:
         return None
     stored = load_layout(camera)["nodes"]
-    order = {"crop": 0, "detector": 1, "calc": 2, "evaluation": 3, "dedup": 4, "export": 5}
+    order = {"crop": 0, "detector": 1, "calc": 2, "evaluation": 3, "dedup": 4, "export": 5, "merge": 6}
     nodes = sorted(_flow_nodes(camera, graph, stored), key=lambda n: (order[n["kind"]], n["id"]))
     boxes: list[dict] = []
     size = None
@@ -308,7 +312,7 @@ def _column(node: dict) -> int:
         return 2
     if node["kind"] == "evaluation":
         return 3
-    if node["kind"] == "export":
+    if node["kind"] in ("export", "merge"):
         return 4
     return 1 if node["role"] == "classify" else 3
 
@@ -397,6 +401,18 @@ def get_canvas(camera: str) -> dict:
                     source, handle = roi_node_id(ref["feature"]), (ALL_HANDLE if ref["dot"] == ALL_HANDLE else product_handle(ref["dot"]))
                 if source in known:
                     edges.append({"id": f"{source}#{handle or ''}->{box_id}#in:{where}", "source": source, "source_handle": handle, "target": box_id, "target_handle": f"in:{where}", "locked": False})
+    for box_id, node in sorted(graph["nodes"].items()):  # the lines into a Merge: one per dot it collects
+        if node["kind"] != "merge" or box_id not in known:
+            continue
+        for ref in flow.merge_lines(node):
+            if ref.get("from"):
+                source, handle = ref["from"], None
+            elif ref.get("box"):
+                source, handle = ref["box"], (ALL_HANDLE if ref["dot"] == ALL_HANDLE else product_handle(ref["dot"]))
+            else:
+                source, handle = roi_node_id(ref["feature"]), (ALL_HANDLE if ref["dot"] == ALL_HANDLE else product_handle(ref["dot"]))
+            if source in known:
+                edges.append({"id": f"{source}#{handle or ''}->{box_id}", "source": source, "source_handle": handle, "target": box_id, "locked": False})
     for roi in rois:  # a Classifier read through a Dedup box hangs from it
         box = dedup_box.input_of(camera, roi.name)
         if box and box in known:

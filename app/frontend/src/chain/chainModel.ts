@@ -133,6 +133,11 @@ function describeFlowBox(kind: string, f: FlowSummary | undefined): string {
     const frozen = f?.frozen ? ` · frozen v${f.frozen}${f.changed ? " (changed)" : ""}` : "";
     return `${f?.ok ?? 0} OK · ${f?.ng ?? 0} NG${frozen}`;
   }
+  if (kind === "merge") {
+    const n = f?.inputs ?? 0;
+    if (!n) return "drop OK or NG dots here";
+    return `${f?.meaning ?? "?"} · ${f?.merge_mode === "all" ? "in every line" : "in any line"} · ${n} line${n === 1 ? "" : "s"} · ${f?.frames ?? 0} pictures`;
+  }
   if (kind === "dedup") {
     const where = f?.source ? `${f.source.feature} · ${f.source.dot}` : f?.eval_source ? `${evalName(f.eval_source.box)} · ${f.eval_source.dot}` : "whole camera";
     return `${where} · ${f?.frames ?? 0} pictures · ${f?.muted ?? 0} muted`;
@@ -160,7 +165,7 @@ export function describeNode(n: ChainNode): string {
   return `Feature · ${where} · ${n.labeled}/${n.frames} labeled`;
 }
 
-export const FLOW_KINDS = ["crop", "detector", "calc", "evaluation", "dedup", "export"] as const;
+export const FLOW_KINDS = ["crop", "detector", "calc", "evaluation", "dedup", "export", "merge"] as const;
 export const isFlowKind = (kind: string | undefined): boolean => !!kind && (FLOW_KINDS as readonly string[]).includes(kind);
 
 /**
@@ -172,7 +177,7 @@ export const isFlowKind = (kind: string | undefined): boolean => !!kind && (FLOW
 export const targetHandle = (target: string) => `t:${target}`;
 export const targetOfHandle = (handle: string | null | undefined): string | null => (handle && handle.startsWith("t:") ? handle.slice(2) : null);
 
-export type FlowLink = { exportLine: { box: string; input: "ok" | "ng"; ref: ExportRef } } | { source: string; target: string; point?: string } | { dedupSource: { box: string; feature?: string; evaluation?: string; dot: string } } | { dedupInput: { feature: string; box: string } } | { evaluationOf: { feature: string; box: string } } | { anchor: { feature: string; detector: string; target: string } } | { roiInput: { feature: string; box: string } } | { error: string } | null;
+export type FlowLink = { mergeLine: { box: string; ref: ExportRef } } | { exportLine: { box: string; input: "ok" | "ng"; ref: ExportRef } } | { source: string; target: string; point?: string } | { dedupSource: { box: string; feature?: string; evaluation?: string; dot: string } } | { dedupInput: { feature: string; box: string } } | { evaluationOf: { feature: string; box: string } } | { anchor: { feature: string; detector: string; target: string } } | { roiInput: { feature: string; box: string } } | { error: string } | null;
 
 export function flowConnect(canvas: ChainCanvas, c: Connection): FlowLink {
   const source = featureOf(canvas, c.source);
@@ -192,11 +197,30 @@ export function flowConnect(canvas: ChainCanvas, c: Connection): FlowLink {
       if (!dot || !["pass", "fail", ALL_HANDLE].includes(dot)) return { error: "Drag from one of the Evaluation's dots (pass, fail or all)." };
       return { exportLine: { box: target.id, input, ref: { box: source.id, dot } } };
     }
-    if (source.kind === "ingest" || source.kind === "crop" || source.kind === "dedup" || (source.kind === "detector" && !c.sourceHandle)) {
+    if (source.kind === "ingest" || source.kind === "crop" || source.kind === "dedup" || source.kind === "merge" || (source.kind === "detector" && !c.sourceHandle)) {
       if (c.sourceHandle) return { error: `Use ${source.label}'s main dot.` };
       return { exportLine: { box: target.id, input, ref: { from: source.id } } };
     }
-    return { error: `${source.label} passes no pictures on: feed Export from a Classifier or Evaluation dot, Ingest, Picture edits, a detector or Dedup.` };
+    return { error: `${source.label} passes no pictures on: feed Export from a Classifier or Evaluation dot, Ingest, Picture edits, a detector, Dedup or a Merge.` };
+  }
+  if (target.kind === "merge") {
+    // A dot dropped on a Merge: one more line it collects. Only dots that mean something (a class, pass, fail) can be collected.
+    if (source.kind === "roi") {
+      const dot = productOfHandle(c.sourceHandle);
+      if (c.sourceHandle === ALL_HANDLE || !dot || !source.ref) return { error: "Drag from one of the Classifier's class dots (OK, NG, ...) to a Merge; the all dot has no single meaning." };
+      return { mergeLine: { box: target.id, ref: { feature: source.ref, dot } } };
+    }
+    if (source.kind === "evaluation") {
+      const dot = productOfHandle(c.sourceHandle);
+      if (!dot || !["pass", "fail"].includes(dot)) return { error: "Drag from the Evaluation's pass or fail dot to a Merge." };
+      return { mergeLine: { box: target.id, ref: { box: source.id, dot } } };
+    }
+    if (source.kind === "merge") {
+      if (c.sourceHandle) return { error: "Use the Merge's main dot." };
+      if (c.source === c.target) return { error: "A box cannot feed itself." };
+      return { mergeLine: { box: target.id, ref: { from: source.id } } };
+    }
+    return { error: `${source.label} gives no OK / NG dot: a Merge collects Classifier class dots, an Evaluation's pass or fail, or another Merge.` };
   }
   if (source.kind === "detector" && target.kind === "roi" && target.ref) {
     // A detector target's dot dropped on an ROI feature anchors the ROI to that target's box.
@@ -261,7 +285,8 @@ export function flowConnect(canvas: ChainCanvas, c: Connection): FlowLink {
   const ok =
     ((source.kind === "ingest" || source.kind === "crop") && (target.kind === "crop" || target.kind === "detector" || target.kind === "dedup")) ||
     (source.kind === "detector" && (target.kind === "detector" || target.kind === "calc" || target.kind === "crop" || target.kind === "dedup")) ||
-    (source.kind === "calc" && target.kind === "evaluation");
+    (source.kind === "calc" && target.kind === "evaluation") ||
+    (source.kind === "merge" && (target.kind === "crop" || target.kind === "detector" || target.kind === "dedup"));
   if (!ok) {
     return {
       error: `${source.label} cannot feed ${target.label}. Ingest or a Picture edits box feeds a Picture edits box, a detector or a Dedup box, a detector (one target) feeds a Picture edits box, a detector feeds a detector or Calculate, Calculate feeds Evaluation, and an Evaluation's dots (pass, fail, all) feed a Dedup box, Picture edits or a detector. An Evaluation is picked in a Classifier's panel, not drawn to it.`,
@@ -295,6 +320,19 @@ export const isDedupSourceEdge = (canvas: ChainCanvas, edge: ChainEdge): boolean
 /** A line from an Evaluation to a Classifier: the verdicts are the Classifier's labels (stored as the Classifier's Evaluation). */
 export const isEvaluationLabelEdge = (canvas: ChainCanvas, edge: ChainEdge): boolean =>
   canvas.nodes.find((n) => n.id === edge.source)?.kind === "evaluation" && canvas.nodes.find((n) => n.id === edge.target)?.kind === "roi";
+
+/** A line into a Merge is one of the dots it collects (stored in the Merge, like an Export line). */
+export const isMergeLineEdge = (canvas: ChainCanvas, edge: ChainEdge): boolean => canvas.nodes.find((n) => n.id === edge.target)?.kind === "merge";
+
+/** The stored line an edge into a Merge stands for, as `flowUpdate` takes it for `remove_line`. */
+export function mergeLineOf(canvas: ChainCanvas, edge: ChainEdge): ExportRef | null {
+  const source = canvas.nodes.find((n) => n.id === edge.source);
+  if (!source) return null;
+  const dot = productOfHandle(edge.source_handle) ?? "";
+  if (source.kind === "roi") return source.ref ? { feature: source.ref, dot } : null;
+  if (source.kind === "evaluation") return { box: source.id, dot };
+  return { from: source.id };
+}
 
 /** A line from a Dedup box to a Classifier is the Classifier's Dedup input (stored with the Classifier). */
 export const isDedupInputEdge = (canvas: ChainCanvas, edge: ChainEdge): boolean =>

@@ -1,7 +1,7 @@
 import type { ChainNode } from "../api";
 
 /** One colour per box type (the hue of its border, fill and palette tile). */
-export const HUE = { ingest: 160, roi: 30, classify: 145, crop: 100, detector: 265, calc: 200, evaluation: 340, dedup: 55, export: 20 } as const;
+export const HUE = { ingest: 160, roi: 225, classify: 145, crop: 100, detector: 265, calc: 200, evaluation: 340, dedup: 55, export: 20, merge: 215 } as const;
 
 /** One fixed size per box type, in canvas pixels. A box never changes size with what it holds; only the rows that are
  *  classes (Classify box) or targets (detector) make a box taller, because each row carries its own dot. */
@@ -9,16 +9,17 @@ export const BOX_SIZE: Record<ChainNode["kind"], { w: number; h: number }> = {
   ingest: { w: 170, h: 64 },
   roi: { w: 200, h: 84 },
   classify: { w: 200, h: 84 },
-  crop: { w: 200, h: 66 },
+  crop: { w: 170, h: 66 },
   detector: { w: 200, h: 86 },
   calc: { w: 200, h: 86 },
   evaluation: { w: 200, h: 150 },
   dedup: { w: 200, h: 86 },
   export: { w: 200, h: 110 },
+  merge: { w: 64, h: 64 },
 };
 
 /** What the palette can add. One Classifier tile: its mode (Product or Feature) is chosen in the panel. */
-export type PaletteKind = "classifier" | "crop" | "detector" | "calc" | "evaluation" | "dedup" | "export";
+export type PaletteKind = "classifier" | "crop" | "detector" | "calc" | "evaluation" | "dedup" | "export" | "merge";
 
 export interface PaletteItem {
   kind: PaletteKind;
@@ -50,6 +51,10 @@ export const PALETTE: { group: string; items: PaletteItem[] }[] = [
     items: [
       { kind: "classifier", label: "Classifier", box: "roi", hint: "Labels pictures into classes. Choose Feature (OK / NG) or Product in its panel." },
     ],
+  },
+  {
+    group: "Collects lines",
+    items: [{ kind: "merge", label: "Merge", box: "merge", hint: "Collects Classifier or Evaluation dots of one meaning (OK, NG, ...) into one line." }],
   },
   {
     group: "Picture sink",

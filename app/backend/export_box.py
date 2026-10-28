@@ -24,25 +24,8 @@ import versions
 
 
 def _line_frames(camera: str, graph: dict, ref: dict, live: set[str]) -> set[str]:
-    """The pictures one line passes on (deleted and muted ones never)."""
-    if ref.get("from"):
-        box = ref["from"]
-        if box == flow.INGEST_ID:
-            return set(live)
-        if box not in graph["nodes"]:
-            return set()
-        names = set(flow.node_frames(camera, box, graph))
-        if flow.kind_of(box) == "dedup":
-            names -= db.muted_frames(camera, box)
-        return names & live
-    if ref.get("box"):
-        if ref["box"] not in graph["nodes"]:
-            return set()
-        return set(flow.verdict_frames(camera, ref["box"], ref["dot"])) & live
-    try:
-        return set(lines.frames_on_dot(camera, ref["feature"], ref["dot"])) & live
-    except ValueError:  # a class that went away passes nothing
-        return set()
+    """The pictures one line passes on (deleted and muted ones never); the same reading as a Merge's lines."""
+    return flow.ref_frames(camera, graph, ref, live)
 
 
 def selection(camera: str, node_id: str, graph: dict | None = None) -> dict[str, set[str] | None]:

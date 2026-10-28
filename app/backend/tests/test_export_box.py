@@ -140,6 +140,7 @@ class ExportBoxTests(ApiTestCase):
         self.assertEqual(node["kind"], "export")
         self.assertEqual(node["flow"]["total"], 4)
         self.assertEqual(node["flow"]["lines"], {"ok": 1, "ng": 1})
+        self.assertEqual((node["flow"]["goldens_only"], node["flow"]["not_golden"]), (True, 2))  # the box says why pictures are left out (v1.122.0)
 
     def test_deleting_a_box_a_line_came_from_cuts_the_line(self) -> None:
         ev = flow.create_node(CAM, "evaluation")

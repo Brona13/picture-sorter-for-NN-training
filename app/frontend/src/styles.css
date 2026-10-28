@@ -351,7 +351,8 @@ button[aria-pressed="true"] { background: var(--info-bg); color: var(--info-fg);
 .chain-node-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .chain-node-line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .chain-node-ingest { width: 170px; height: 64px; min-width: 0; overflow: hidden; }
-.chain-node-crop, .chain-node-calc { width: 200px; height: 84px; min-width: 0; overflow: hidden; }
+.chain-node-calc { width: 200px; height: 84px; min-width: 0; overflow: hidden; }
+.chain-node-crop { width: 170px; height: 84px; min-width: 0; overflow: hidden; } /* as wide as Ingest */
 .chain-node-evaluation { width: 200px; min-height: 84px; min-width: 0; } /* grows with its three dots: pass, fail, all */
 .chain-node-crop { height: 66px; }
 .chain-node-calc { height: 86px; }
@@ -380,3 +381,21 @@ button[aria-pressed="true"] { background: var(--info-bg); color: var(--info-fg);
 .export-work { display: flex; flex-direction: column; gap: 6px; max-width: 640px; }
 .export-lines ul { margin: 2px 0 6px; padding-left: 18px; }
 .export-changed { color: var(--danger-fg); }
+
+/* The kind icon in the top right corner of every box (v1.122.0): the same drawing as the palette tile. It sits left of the detector's main output dot. */
+.chain-node { position: relative; }
+.chain-node-kind { position: absolute; top: 7px; right: 16px; display: flex; color: color-mix(in srgb, hsl(var(--hue) 70% 52%) 80%, var(--fg)); }
+.chain-node-title { padding-right: 22px; }
+.chain-node-scope { display: flex; align-items: center; gap: 4px; margin-top: 4px; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.chain-node-chip { padding: 0 6px; border-radius: 9px; border: 1px solid hsl(var(--hue) 55% 48%); color: var(--fg); max-width: 70px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chain-panel-title { display: flex; align-items: center; gap: 6px; }
+
+/* Merge box (v1.124.0): a small square, lines in on the left, one out on the right; the arrow is grey / green / red by what it collects. */
+.chain-node-merge { width: 64px; height: 64px; min-width: 0; padding: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border-color: hsl(var(--hue) 14% 52%); background: color-mix(in srgb, hsl(var(--hue) 20% 60%) 12%, var(--panel)); }
+.chain-node-merge.merge-neutral svg { color: var(--muted); }
+.chain-node-merge.merge-ok { border-color: #1a7f37; }
+.chain-node-merge.merge-ok svg { color: #1a7f37; }
+.chain-node-merge.merge-ng { border-color: #c62828; }
+.chain-node-merge.merge-ng svg { color: #c62828; }
+.chain-node-merge.merge-other svg { color: hsl(var(--hue) 60% 50%); }
+.chain-merge-badge { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }

@@ -99,6 +99,7 @@ class DedupBoxTests(ApiTestCase):
 
     def test_a_classifier_behind_a_box_loses_its_muted_frames_and_only_those(self) -> None:
         self.mute(self.d1, [self.frames[0]])
+        flow.connect(CAM, "ingest", self.d1)  # a box with no line gives its Classifier no pictures (v1.120.0)
         dedup_box.set_input(CAM, "seal", self.d1)
         self.assertEqual(db.muted_frames(CAM, "seal"), {self.frames[0]})
         self.assertEqual(db.muted_frames(CAM, "type"), set())  # another Classifier is not behind the box
@@ -111,6 +112,7 @@ class DedupBoxTests(ApiTestCase):
 
     def test_the_dot_of_a_classifier_behind_a_box_does_not_pass_muted_frames(self) -> None:
         self.mute(self.d1, [self.frames[0]])
+        flow.connect(CAM, "ingest", self.d1)
         dedup_box.set_input(CAM, "type", self.d1)
         self.assertEqual(sorted(lines.frames_on_dot(CAM, "type", "A")), [self.frames[1]])
         self.assertEqual(sorted(lines.frames_on_dot(CAM, "type", lines.ALL_DOT)), sorted(self.frames[1:4]))

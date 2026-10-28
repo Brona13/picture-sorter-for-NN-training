@@ -39,8 +39,8 @@ _log = applog.get("flow")
 GRAPH_KEY = "flow.graph"
 RESULTS_PREFIX = "flow.det."
 INGEST_ID = "ingest"
-KINDS = ("crop", "detector", "calc", "evaluation", "dedup", "export")
-PREFIX = {"crop": "crop", "detector": "det", "calc": "calc", "evaluation": "eval", "dedup": "dedup", "export": "export"}
+KINDS = ("crop", "detector", "calc", "evaluation", "dedup", "export", "merge")
+PREFIX = {"crop": "crop", "detector": "det", "calc": "calc", "evaluation": "eval", "dedup": "dedup", "export": "export", "merge": "merge"}
 KIND_OF = {v: k for k, v in PREFIX.items()}
 PICTURE_KINDS = ("crop", "detector")  # boxes that read a picture (a box with no line reads the whole picture)
 ALGORITHM = 1  # bump when detection changes, so stored boxes are recomputed
@@ -510,6 +510,8 @@ def _default_config(kind: str) -> dict:
         return {"op": "angle", "a": None, "b": None, "clockwise": False}
     if kind == "export":
         return {"lines": {"ok": [], "ng": []}, "goldens_only": True}  # what feeds each dot (see ``export_box.py``)
+    if kind == "merge":
+        return {"lines": [], "mode": "any"}  # the dots it collects (see ``merge_meaning``); any = union, all = intersection
     if kind == "dedup":
         return {"source": None}  # None: the whole camera (or the box a line comes from); else {"feature", "dot"} of a Classifier
     return {"nominal": None, "tolerance": 3.0, "zone": clean_zone(None)}
@@ -609,8 +611,8 @@ def edge_allowed(graph: dict, source: str, target: str) -> str | None:
     why = lines.line_error(ks, kt)
     if why:
         return why
-    if (ks, kt) not in {("ingest", "crop"), ("crop", "crop"), ("crop", "detector"), ("ingest", "detector"), ("detector", "detector"), ("detector", "crop"), ("detector", "calc"), ("calc", "evaluation"), ("evaluation", "classify"), ("ingest", "dedup"), ("crop", "dedup"), ("detector", "dedup"), ("dedup", "detector"), ("dedup", "crop")}:
-        names = {"ingest": "Ingest", "crop": "Picture edits", "detector": "a detector", "calc": "Calculate", "evaluation": "Evaluation", "classify": "a Classify box", "dedup": "a Dedup box"}
+    if (ks, kt) not in {("ingest", "crop"), ("crop", "crop"), ("crop", "detector"), ("ingest", "detector"), ("detector", "detector"), ("detector", "crop"), ("detector", "calc"), ("calc", "evaluation"), ("evaluation", "classify"), ("ingest", "dedup"), ("crop", "dedup"), ("detector", "dedup"), ("dedup", "detector"), ("dedup", "crop"), ("merge", "dedup"), ("merge", "crop"), ("merge", "detector")}:
+        names = {"ingest": "Ingest", "crop": "Picture edits", "detector": "a detector", "calc": "Calculate", "evaluation": "Evaluation", "classify": "a Classify box", "dedup": "a Dedup box", "merge": "a Merge"}
         return f"{names.get(ks, ks)} cannot feed {names.get(kt, kt)}."
     if is_flow_id(source) and source not in graph["nodes"]:
         return f"Unknown box: {source}"
@@ -718,6 +720,8 @@ def delete_node(camera: str, node_id: str) -> None:
         if other.get("kind") == "export":  # an Export box loses the lines that came from the deleted box
             stored = other.get("lines") or {}
             other["lines"] = {k: [r for r in stored.get(k, []) if node_id not in (r.get("box"), r.get("from"))] for k in EXPORT_INPUTS}
+        if other.get("kind") == "merge":  # a Merge loses the lines that came from the deleted box
+            other["lines"] = [r for r in merge_lines(other) if node_id not in (r.get("box"), r.get("from"))]
     save_graph(camera, graph)
     _drop_results(camera, node_id)
 
@@ -862,12 +866,37 @@ def update_node(camera: str, node_id: str, raw: dict) -> dict:
             node["source"] = _dedup_source(camera, node_id, raw["source"])
             if node["source"]:
                 graph["edges"] = [e for e in graph["edges"] if e["target"] != node_id]  # one input: the Classifier dot replaces the line
+    elif kind == "merge":
+        node.setdefault("lines", [])
+        if "add_line" in raw:
+            ref = _export_ref(camera, graph, raw["add_line"])
+            if ref.get("from") and (ref["from"] == node_id or node_id in _upstream_ids(graph, ref["from"])):
+                raise FlowError("That would make a loop.")
+            meaning = _ref_meaning(graph, ref)
+            have = merge_meaning(graph, node_id)
+            if have and have.casefold() != meaning.casefold():
+                raise FlowError(f"This Merge collects {have}; that line is {meaning}.")
+            if ref not in node["lines"]:
+                node["lines"] = node["lines"] + [ref]
+        if "remove_line" in raw:
+            kept = [r for r in node["lines"] if r != raw["remove_line"]]
+            if len(kept) == len(node["lines"]):
+                raise FlowError("There is no such line.")
+            node["lines"] = kept
+        if "mode" in raw:
+            if raw["mode"] not in MERGE_MODES:
+                raise FlowError("A Merge passes a picture if any input passes it, or only if all of them do.")
+            node["mode"] = raw["mode"]
     elif kind == "export":
         node.setdefault("lines", {"ok": [], "ng": []})
         if "add_line" in raw:
             spec = raw["add_line"] if isinstance(raw["add_line"], dict) else {}
             where = _export_input(spec.get("input"))
             ref = _export_ref(camera, graph, spec.get("ref"))
+            if ref.get("from") and kind_of(ref["from"]) == "merge":
+                meaning = merge_meaning(graph, ref["from"])
+                if meaning and meaning.upper() in ("OK", "NG") and meaning.upper() != where.upper():
+                    raise FlowError(f"{ref['from']} collects {meaning}; the {where.upper()} input takes {where.upper()}.")
             if ref not in node["lines"][where]:
                 node["lines"][where] = node["lines"][where] + [ref]
         if "remove_line" in raw:
@@ -911,7 +940,7 @@ def _export_ref(camera: str, graph: dict, raw: object) -> dict:
         raise FlowError("A line into Export comes from a Classifier or Evaluation dot, or from a box.")
     if raw.get("from"):
         box = str(raw["from"])
-        if box != INGEST_ID and (kind_of(box) not in ("crop", "detector", "dedup") or box not in graph["nodes"]):
+        if box != INGEST_ID and (kind_of(box) not in ("crop", "detector", "dedup", "merge") or box not in graph["nodes"]):
             raise FlowError(f"{box} cannot feed Export: it passes no pictures on.")
         return {"from": box}
     if raw.get("box"):
@@ -935,10 +964,86 @@ def export_lines(graph: dict, node_id: str) -> dict[str, list[dict]]:
     return {k: list(stored.get(k) or []) for k in EXPORT_INPUTS}
 
 
+MERGE_MODES = ("any", "all")
+
+
+def merge_lines(node: dict) -> list[dict]:
+    """The dots a Merge collects: ``{"feature", "dot"}``, ``{"box", "dot"}`` (an Evaluation's pass / fail) or ``{"from": merge id}``."""
+    return list(node.get("lines") or [])
+
+
+def _ref_meaning(graph: dict, ref: dict) -> str:
+    """What a line says: a Classifier class dot is that class (OK, NG, a product...), an Evaluation's pass is OK and fail is NG,
+    a Merge is what it collects. A dot with no single meaning (``all``, a whole box) is refused."""
+    if ref.get("from"):
+        box = ref["from"]
+        if kind_of(box) == "merge":
+            meaning = merge_meaning(graph, box)
+            if meaning:
+                return meaning
+            raise FlowError(f"{box} has no lines yet, so it collects nothing.")
+        raise FlowError("A Merge collects dots that mean something (a class, pass or fail), not a whole box.")
+    dot = ref.get("dot")
+    if dot == lines.ALL_DOT:
+        raise FlowError("The all dot has no single meaning; a Merge collects one class, pass or fail.")
+    if ref.get("box"):
+        return "OK" if dot == "pass" else "NG"
+    return str(dot)
+
+
+def merge_meaning(graph: dict, node_id: str, _seen: frozenset = frozenset()) -> str | None:
+    """What a Merge collects (OK, NG or another class), set by its first line; ``None`` while it has no lines."""
+    refs = merge_lines(graph["nodes"].get(node_id) or {})
+    if not refs or node_id in _seen:
+        return None
+    first = refs[0]
+    if first.get("from") and kind_of(first["from"]) == "merge":
+        return merge_meaning(graph, first["from"], _seen | {node_id})
+    try:
+        return _ref_meaning(graph, first)
+    except FlowError:
+        return None
+
+
+def ref_frames(camera: str, graph: dict, ref: dict, live: set[str], _seen: frozenset = frozenset()) -> set[str]:
+    """The pictures one line passes on (deleted and muted ones never): a Classifier or Evaluation dot, or a whole box."""
+    if ref.get("from"):
+        box = ref["from"]
+        if box == INGEST_ID:
+            return set(live)
+        if box not in graph["nodes"]:
+            return set()
+        names = set(node_frames(camera, box, graph, _seen))
+        if kind_of(box) == "dedup":
+            names -= db.muted_frames(camera, box)
+        return names & live
+    if ref.get("box"):
+        if ref["box"] not in graph["nodes"]:
+            return set()
+        return set(verdict_frames(camera, ref["box"], ref["dot"])) & live
+    try:
+        return set(lines.frames_on_dot(camera, ref["feature"], ref["dot"])) & live
+    except ValueError:  # a class that went away passes nothing
+        return set()
+
+
+def _merge_frames(camera: str, node_id: str, graph: dict, seen: frozenset) -> list[str]:
+    node = graph["nodes"].get(node_id) or {}
+    live = _live_frames(camera)
+    sets = [ref_frames(camera, graph, r, set(live), seen | {node_id}) for r in merge_lines(node)]
+    if not sets:
+        return []
+    got = set.union(*sets) if node.get("mode", "any") == "any" else set.intersection(*sets)
+    return [f for f in live if f in got]
+
+
 def _export_readers(graph: dict, box: str) -> int:
-    """How many lines into Export boxes come from ``box`` (what deleting it would cut)."""
-    return sum(1 for n_id, n in graph["nodes"].items() if n.get("kind") == "export"
-               for refs in export_lines(graph, n_id).values() for r in refs if box in (r.get("box"), r.get("from")))
+    """How many lines into Export boxes and Merges come from ``box`` (what deleting it would cut)."""
+    exports = sum(1 for n_id, n in graph["nodes"].items() if n.get("kind") == "export"
+                  for refs in export_lines(graph, n_id).values() for r in refs if box in (r.get("box"), r.get("from")))
+    merges = sum(1 for n in graph["nodes"].values() if n.get("kind") == "merge"
+                 for r in merge_lines(n) if box in (r.get("box"), r.get("from")))
+    return exports + merges
 
 
 def _upstream_ids(graph: dict, node_id: str, _seen: set[str] | None = None) -> set[str]:
@@ -948,6 +1053,7 @@ def _upstream_ids(graph: dict, node_id: str, _seen: set[str] | None = None) -> s
     read = ((graph["nodes"].get(node_id) or {}).get("source") or {}).get("box") if isinstance((graph["nodes"].get(node_id) or {}).get("source"), dict) else None
     if read:
         parents.append(read)
+    parents += [r.get("box") or r["from"] for r in merge_lines(graph["nodes"].get(node_id) or {}) if r.get("box") or r.get("from")]  # a Merge reads the boxes its lines come from
     for parent in parents:
         if parent not in seen:
             seen.add(parent)
@@ -1347,7 +1453,7 @@ def has_input(graph: dict, node_id: str) -> bool:
     """Whether anything feeds the box: a Classifier or Evaluation dot or a line from Ingest, Picture edits, a detector or a Dedup box."""
     if node_source(graph, node_id) or node_eval_source(graph, node_id):
         return True
-    return any(e["target"] == node_id and kind_of(e["source"]) in ("ingest", "crop", "detector", "dedup") for e in graph["edges"])
+    return any(e["target"] == node_id and kind_of(e["source"]) in ("ingest", "crop", "detector", "dedup", "merge") for e in graph["edges"])
 
 
 def node_frames(camera: str, node_id: str, graph: dict | None = None, _seen: frozenset = frozenset()) -> list[str]:
@@ -1355,6 +1461,8 @@ def node_frames(camera: str, node_id: str, graph: dict | None = None, _seen: fro
     it reads passes on (Ingest: every live picture; a Dedup box: its pictures minus the ones it muted). A box with no
     line into it has no pictures. Deleted and removed pictures never; a class that went away gives none."""
     graph = graph or load_graph(camera)
+    if kind_of(node_id) == "merge":
+        return _merge_frames(camera, node_id, graph, _seen)  # the union (any) or intersection (all) of what its lines pass
     live = _live_frames(camera)
     judged = node_eval_source(graph, node_id)
     if judged:
@@ -1371,7 +1479,7 @@ def node_frames(camera: str, node_id: str, graph: dict | None = None, _seen: fro
         keep = set(live)
         return [f for f in names if f in keep]
     seen = _seen | {node_id}
-    line = next((e for e in graph["edges"] if e["target"] == node_id and kind_of(e["source"]) in ("ingest", "crop", "detector", "dedup")), None)
+    line = next((e for e in graph["edges"] if e["target"] == node_id and kind_of(e["source"]) in ("ingest", "crop", "detector", "dedup", "merge")), None)
     if line is None:
         return []
     upstream = line["source"]
@@ -2028,6 +2136,8 @@ def node_detail(camera: str, node_id: str, graph: dict | None = None) -> dict:
     elif kind == "dedup":
         parent = next((e["source"] for e in graph["edges"] if e["target"] == node_id), None)
         detail.update({"input_box": parent, "source": node.get("source")})
+    elif kind == "merge":
+        detail.update({"lines": merge_lines(node), "mode": node.get("mode", "any"), "meaning": merge_meaning(graph, node_id)})
     elif kind == "export":
         detail.update({"lines": export_lines(graph, node_id), "goldens_only": node.get("goldens_only", True)})
     elif kind == "evaluation":
