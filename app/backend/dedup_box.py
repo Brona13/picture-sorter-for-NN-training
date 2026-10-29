@@ -60,8 +60,8 @@ def label_source(camera: str, feature: str) -> str:
 @applog.timed("dedup.frames")
 def frames(camera: str, box: str) -> list[str]:
     """The pictures the box sees: what its input passes on (Ingest, a Picture edits box, a detector, or one dot of a
-    Classifier); no line into it, no pictures. Deleted ones never."""
-    return flow.node_frames(camera, box)
+    Classifier); no line into it, no pictures. Deleted ones never. Worked out once per Chain canvas (render snapshot)."""
+    return datamodel._snapshot_value(("dedup_frames", camera, box), lambda: flow.node_frames(camera, box))
 
 
 def input_of(camera: str, feature: str) -> str | None:

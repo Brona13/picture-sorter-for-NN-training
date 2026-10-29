@@ -353,7 +353,16 @@ def _place_missing(nodes: list[dict]) -> None:
 
 @applog.timed("chain.canvas")
 def get_canvas(camera: str) -> dict:
-    """The canvas as the UI draws it: boxes (stored layout + live status) and the arrows derived from the ROIs."""
+    """The canvas as the UI draws it: boxes (stored layout + live status) and the arrows derived from the ROIs.
+
+    Read-only, so it runs in one render snapshot: the picture folder, each Classifier's pictures, each Evaluation's
+    verdicts and each Dedup box's pictures are worked out once per canvas, however many boxes ask for them (v1.128.0;
+    before, one Chain load computed the class-line scope three times, 5.2 s on a real camera)."""
+    with db.shared_connection(), datamodel.render_snapshot():
+        return _canvas(camera)
+
+
+def _canvas(camera: str) -> dict:
     graph = flow.load_graph(camera)  # first: an old graph is migrated here, together with the stored layout
     layout = load_layout(camera)
     rois = datamodel.load_rois(camera)

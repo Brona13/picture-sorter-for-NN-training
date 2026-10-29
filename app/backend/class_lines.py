@@ -150,6 +150,10 @@ def _line_frames(camera: str, ln: dict, graph: dict, live: set[str]) -> set[str]
 @applog.timed("class_lines.by_class")
 def by_class(camera: str, feature: str) -> dict[str, set[str]]:
     """class -> the pictures its dot receives (every line into the dot must pass a picture). Empty without lines."""
+    return datamodel._snapshot_value(("class_by_class", camera, feature), lambda: _by_class(camera, feature))
+
+
+def _by_class(camera: str, feature: str) -> dict[str, set[str]]:
     stored = get(camera, feature)
     if not stored:
         return {}

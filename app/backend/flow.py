@@ -1424,6 +1424,7 @@ def status(camera: str, node_id: str, graph: dict | None = None) -> str:
     return "fresh" if stored["sig"] == signature(graph, node_id) else "stale"
 
 
+@applog.timed("flow.live_frames")
 def _live_frames(camera: str) -> list[str]:
     deleted = db.deleted_frames_of(camera)
     return [p.name for p in datamodel.list_unsorted(camera) if p.name not in deleted]
@@ -1456,6 +1457,7 @@ def has_input(graph: dict, node_id: str) -> bool:
     return any(e["target"] == node_id and kind_of(e["source"]) in ("ingest", "crop", "detector", "dedup", "merge") for e in graph["edges"])
 
 
+@applog.timed("flow.node_frames")
 def node_frames(camera: str, node_id: str, graph: dict | None = None, _seen: frozenset = frozenset()) -> list[str]:
     """The pictures a box works on, resolved up the chain (v1.107.0): the pictures on its Classifier dot, or what the box
     it reads passes on (Ingest: every live picture; a Dedup box: its pictures minus the ones it muted). A box with no
@@ -1921,7 +1923,13 @@ def _zone_state(camera: str, node: dict, calc_id: str, graph: dict) -> dict:
 @applog.timed("flow.evaluation_state")
 def evaluation_state(camera: str, eval_id: str) -> dict:
     """Per-frame value and verdict of an Evaluation box, with counts and a histogram of the values. Behind an Offset
-    the box judges (dx, dy) by its zone instead (``mode`` "zone", ``points``)."""
+    the box judges (dx, dy) by its zone instead (``mode`` "zone", ``points``).
+
+    Inside a render snapshot (the Chain canvas) the answer is worked out once per box and shared: treat it as read-only."""
+    return datamodel._snapshot_value(("eval_state", camera, eval_id), lambda: _evaluation_state(camera, eval_id))
+
+
+def _evaluation_state(camera: str, eval_id: str) -> dict:
     graph = load_graph(camera)
     node = _node(graph, eval_id)
     calc_id = evaluation_source(graph, eval_id)
@@ -1932,16 +1940,19 @@ def evaluation_state(camera: str, eval_id: str) -> dict:
     if calc["op"] == "offset":
         return _zone_state(camera, node, calc_id, graph)
     wrap = calc["op"] == "angle"
-    by_key = calc_values(camera, calc_id, graph)
-    hmap = labels.hash_map(camera)
+    with applog.timed("flow.eval.calc_values"):
+        by_key = calc_values(camera, calc_id, graph)
+    with applog.timed("flow.eval.hash_map"):
+        hmap = labels.hash_map(camera)
     values: dict[str, float | None] = {}
     verdicts: dict[str, str] = {}
-    for frame in _live_frames(camera):
-        key = hmap.get(frame)
-        if key not in by_key:
-            continue
-        values[frame] = by_key[key]
-        verdicts[frame] = judge(by_key[key], node, wrap)
+    with applog.timed("flow.eval.judge"):
+        for frame in _live_frames(camera):
+            key = hmap.get(frame)
+            if key not in by_key:
+                continue
+            values[frame] = by_key[key]
+            verdicts[frame] = judge(by_key[key], node, wrap)
     counts = {"pass": 0, "fail": 0, "undetermined": 0}
     for v in verdicts.values():
         counts[v] += 1

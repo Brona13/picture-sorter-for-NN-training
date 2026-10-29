@@ -75,3 +75,34 @@ class ClassLineTests(ApiTestCase):
         self.put("NG", self.eval, "fail")
         edges = self.client.get(f"{self.base}/chain").json()["edges"]
         self.assertTrue(any(e["source"] == self.eval and e["source_handle"] == "p:fail" and e["target"] == "roi:seal" and e["target_handle"] == "in:NG" for e in edges))
+
+
+class CanvasWorkedOutOnceTests(ApiTestCase):
+    """One Chain load works out each Evaluation's verdicts, each class-line scope and each Dedup box's pictures once (v1.128.0)."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.frames = write_frames("camOnce", 8)
+        datamodel.save_rois("camOnce", [ROI("seal", 0, 0, 1, 1, role="classify", classes=["OK", "NG"])])
+        self.eval = flow.create_node("camOnce", "evaluation")
+        self.dedup = flow.create_node("camOnce", "dedup")
+        verdicts = {**{f: "pass" for f in self.frames[:5]}, **{f: "fail" for f in self.frames[5:7]}}
+        self.state = {"verdicts": verdicts, "unit": "px", "mode": "tolerance", "zone": None, "counts": {"pass": 5, "fail": 2, "undetermined": 1}}
+        flow.update_node("camOnce", self.dedup, {"source": {"box": self.eval, "dot": "pass"}})
+        class_lines.add("camOnce", "seal", "OK", self.dedup)
+        class_lines.add("camOnce", "seal", "NG", self.eval, "fail")
+
+    def test_the_canvas_asks_each_evaluation_and_scope_once_and_gives_the_same_numbers(self) -> None:
+        with mock.patch.object(flow, "_evaluation_state", return_value=self.state) as state, \
+                mock.patch.object(class_lines, "_by_class", wraps=class_lines._by_class) as scope:
+            nodes = self.client.get("/api/cameras/camOnce/chain").json()["nodes"]
+        self.assertEqual(state.call_count, 1)
+        self.assertEqual(scope.call_count, 1)
+        seal = next(n for n in nodes if n["id"] == "roi:seal")
+        self.assertEqual(seal["frames"], 7)  # the pictures the two class dots give (the unmeasured one is not among them)
+
+    def test_outside_a_canvas_nothing_is_remembered(self) -> None:
+        with mock.patch.object(flow, "_evaluation_state", return_value=self.state) as state:
+            flow.evaluation_state("camOnce", self.eval)
+            flow.evaluation_state("camOnce", self.eval)
+        self.assertEqual(state.call_count, 2)
