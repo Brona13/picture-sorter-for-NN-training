@@ -727,8 +727,16 @@ function ValuesWork(p: {
   const src = calc?.point_sources;
   const detectorId = calc?.input ?? (calc?.same_picture && src ? src.a[0] : null);
   const detectorB = calc && !calc.input && calc.same_picture && src && src.b[0] !== src.a[0] ? src.b[0] : null;
+  // Two detectors behind different crops: their boxes are in different pictures, so the server moves both onto the whole picture.
+  const wholePicture = !!calc && !!src && !detectorId;
   useEffect(() => {
-    if (!detectorId) { setFoundBoxes({}); return; }
+    if (!wholePicture || !calcId) return;
+    let current = true;
+    api.flowCalcBoxes(camera, calcId).then((r) => { if (current) setFoundBoxes(r.boxes); }).catch(() => { if (current) setFoundBoxes({}); });
+    return () => { current = false; };
+  }, [camera, calcId, wholePicture, stamp, p.version]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!detectorId) { if (!wholePicture) setFoundBoxes({}); return; }
     let current = true;
     const second = detectorB ? api.flowBoxes(camera, detectorB) : Promise.resolve(null);
     Promise.all([api.flowBoxes(camera, detectorId), second]).then(([first, other]) => {
@@ -758,13 +766,14 @@ function ValuesWork(p: {
     return all.find((r) => r.frame === frame) ?? null;
   }, [tolerance, data]);
   const viewer = useMemo<ViewerExtras | undefined>(() => {
-    if (!calc || !detectorId || !calc.a || !calc.b) return undefined;
+    // Only the reference picture (hold Space) when no boxes can be drawn: it needs just the nominal, not the detectors.
+    if (!calc || !calc.a || !calc.b || (!detectorId && !wholePicture)) return reference ? { reference } : undefined;
     const names: [string, string] = [calc.a, calc.b];
-    const cropped = (calc.crops ?? []).length > 0;
+    const cropped = !!detectorId && (calc.crops ?? []).length > 0;
     return {
       reference,
-      // boxes are in the picture the detector works on: the cut-out, when a Crop box is above it
-      imageUrl: cropped ? (frame) => flowPictureUrl(camera, detectorId, frame, { key: calc.crops }) : undefined,
+      // boxes are in the picture the detector works on: the cut-out, when a Crop box is above it (on the whole picture for two detectors behind different crops)
+      imageUrl: cropped ? (frame) => flowPictureUrl(camera, detectorId!, frame, { key: calc.crops }) : undefined,
       // point A of the Calculate box on this picture: what the viewer's "Fix reference point" keeps in place
       fixPoint: (row) => {
         const a = foundBoxes[row.frame]?.[names[0]];
@@ -779,7 +788,7 @@ function ValuesWork(p: {
         return missing.length ? `not found here: ${missing.join(", ")}` : `${calc.operations[calc.op] ?? calc.op}: ${names[0]} → ${names[1]}`;
       },
     };
-  }, [calc, detectorId, foundBoxes, camera, evalSpec, reference]);
+  }, [calc, detectorId, wholePicture, foundBoxes, camera, evalSpec, reference]);
 
   const counts = data?.counts ?? tolerance?.counts;
   // The cards show the whole picture (the cut-out when a Picture edits box is above the detector), not the camera's centre-cropped square.

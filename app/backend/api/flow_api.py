@@ -277,6 +277,13 @@ def get_boxes(camera: str, node_id: str, only_review: bool = False) -> dict:
     return {"boxes": boxes, "review": review}
 
 
+@router.get("/cameras/{camera}/flow/nodes/{node_id}/calc-boxes")
+def get_calc_boxes(camera: str, node_id: str) -> dict:
+    """The two boxes of a Calculate box on the whole picture, by frame name (they may come from detectors behind different crops)."""
+    _known(camera, node_id)
+    return {"boxes": flow.calc_boxes(camera, node_id)}
+
+
 @router.put("/cameras/{camera}/flow/nodes/{node_id}/box")
 def put_box(camera: str, node_id: str, body: BoxBody) -> dict:
     _known(camera, node_id)

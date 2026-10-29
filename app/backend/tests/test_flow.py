@@ -150,6 +150,14 @@ class FlowTests(ApiTestCase):
         width, height = cv2.imread(str(datamodel.unsorted_dir(CAM) / self.names[0])).shape[1::-1]
         ox, _ = flow.rect_offset([[0.25, 0.5, 0.5, 0.5]], width, height)
         self.assertAlmostEqual(flow.calc_values(CAM, calc)[key], (10.0 + ox) - 100.0)
+        # the overlay gets both boxes on the whole picture; the second one is moved by the crop above its detector
+        _, oy = flow.rect_offset([[0.25, 0.5, 0.5, 0.5]], width, height)
+        boxes = flow.calc_boxes(CAM, calc)[self.names[0]]
+        first, second = boxes[f"{d1}/P"], boxes[f"{d2}/P"]
+        self.assertEqual((first["x"], first["y"]), (100.0, 50.0))
+        self.assertAlmostEqual(second["x"], 10.0 + ox)
+        self.assertAlmostEqual(second["y"], 20.0 + oy)
+        self.assertEqual(self.client.get(f"{self.base}/nodes/{calc}/calc-boxes").json()["boxes"][self.names[0]][f"{d2}/P"]["x"], second["x"])
 
     # --- a Crop that follows a detector target ---------------------------------------------------
     def _following_crop(self):

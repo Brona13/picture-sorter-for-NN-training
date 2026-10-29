@@ -1843,6 +1843,38 @@ def _calc_pairs(camera: str, calc_id: str, graph: dict) -> dict[str, tuple[tuple
     return pairs
 
 
+def calc_boxes(camera: str, calc_id: str, graph: dict | None = None) -> dict[str, dict[str, dict]]:
+    """The two boxes a Calculate box measures, by frame name, on the whole picture: ``{frame: {point key: box}}``.
+    The detectors may work behind different crops; each stored box is moved (and turned) by the crops above its
+    detector, like the points in :func:`_calc_pairs`. A frame where a point is missing keeps the box it has."""
+    graph = graph or load_graph(camera)
+    keys = point_keys(graph, calc_id)
+    a, b = effective_points(graph, calc_id)
+    if a is None or b is None:
+        return {}
+    sizes = _frame_sizes(camera)
+    hmap = labels.hash_map(camera)
+    finder = Finder(camera)
+    stored: dict[str, dict] = {}
+    out: dict[str, dict[str, dict]] = {}
+    for point in (a, b):
+        det, name = keys[point]
+        rects = input_rects(graph, det)
+        stored.setdefault(det, load_stored(camera, det)["frames"])
+        for frame in _live_frames(camera):
+            key = hmap.get(frame)
+            box = stored[det].get(key, {}).get(name) if key else None
+            if not box or key not in sizes:
+                continue
+            try:
+                m = rect_map(rects, *sizes[key], found=finder.for_frame(key) if has_follow(rects) else None)
+            except NoCrop:
+                continue
+            x, y = m.point(box["x"], box["y"])
+            out.setdefault(frame, {})[point] = {**box, "x": x, "y": y, "angle": float(box.get("angle", 0.0)) + m.turn}
+    return out
+
+
 def calc_values(camera: str, calc_id: str, graph: dict | None = None) -> dict[str, float | None]:
     """The measured number by frame hash (None when a point is missing), measured on the whole picture."""
     graph = graph or load_graph(camera)

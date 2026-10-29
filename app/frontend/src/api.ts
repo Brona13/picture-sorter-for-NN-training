@@ -1541,6 +1541,9 @@ export const api = {
   flowRun: (camera: string, id: string) =>
     request<Job<unknown>>(`/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/run`, post()),
   flowRunAll: (camera: string) => request<Job<unknown>>(`/cameras/${encodeURIComponent(camera)}/flow/run`, post()),
+  /** The two boxes of a Calculate box on the whole picture, keyed by the box's point names. */
+  flowCalcBoxes: (camera: string, id: string) =>
+    request<{ boxes: Record<string, Record<string, FlowBox>> }>(`/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/calc-boxes`),
   flowBoxes: (camera: string, id: string, onlyReview = false) =>
     request<FlowBoxes>(
       `/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/boxes${onlyReview ? "?only_review=true" : ""}`,
