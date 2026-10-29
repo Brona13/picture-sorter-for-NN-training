@@ -13,11 +13,17 @@ function ghost(item: PaletteItem): HTMLElement {
   el.style.setProperty("--hue", String(HUE[item.box]));
   el.style.width = `${w}px`;
   el.style.height = `${h}px`;
+  // Inside the window, behind the page: Chrome on Windows draws an element parked outside the window as bare text (or
+  // nothing) in the drag image; Linux did not mind.
   el.style.position = "fixed";
-  el.style.top = "-1000px";
+  el.style.top = "0";
+  el.style.left = "0";
+  el.style.zIndex = "-1";
+  el.style.pointerEvents = "none";
   el.textContent = item.label;
   document.body.appendChild(el);
-  window.setTimeout(() => el.remove(), 0);
+  el.getBoundingClientRect(); // laid out before the browser takes its picture
+  window.setTimeout(() => el.remove(), 100);
   return el;
 }
 

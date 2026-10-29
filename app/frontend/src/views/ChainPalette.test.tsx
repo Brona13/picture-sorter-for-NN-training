@@ -70,6 +70,8 @@ test("dragging a tile shows a ghost the size of the box and carries the kind", a
   const ghost = dt.setDragImage.mock.calls[0][0] as HTMLElement;
   expect(ghost.style.width).toBe("200px");
   expect(ghost.textContent).toBe("Detector");
+  expect(ghost.style.top).toBe("0px"); // inside the window: Chrome on Windows does not draw an element outside it
+  expect(ghost.style.left).toBe("0px");
 });
 
 test("dropping a tile makes the box where it is dropped and draws no line", async () => {
