@@ -1,4 +1,4 @@
-import type { LogRecord } from "../api";
+import type { LogRecord, TimingRow } from "../api";
 
 /** One record as compact text, the form that is pasted into a Claude session. */
 export function recordText(r: LogRecord): string {
@@ -14,4 +14,15 @@ export function recordText(r: LogRecord): string {
 export function logsText(records: LogRecord[], header = ""): string {
   const body = [...records].reverse().map(recordText).join("\n\n");
   return header ? `${header}\n\n${body}` : body;
+}
+
+/** The "where the time went" table as plain text for a chat (slowest total first, as it arrives). */
+export function timingText(rows: TimingRow[], header = ""): string {
+  const name = Math.max(4, ...rows.map((r) => r.name.length));
+  const line = (a: string, b: string[]) => `${a.padEnd(name)}  ${b.map((x) => x.padStart(9)).join(" ")}`;
+  const body = [
+    line("what", ["times", "total ms", "avg ms", "95% ms", "max ms"]),
+    ...rows.map((r) => line(`${r.kind === "step" ? "· " : ""}${r.name}`.padEnd(name), [r.count, r.total_ms, r.avg_ms, r.p95_ms, r.max_ms].map(String))),
+  ].join("\n");
+  return `${header ? header + "\n\n" : ""}Where the time went (since app restart)\n${body}`;
 }

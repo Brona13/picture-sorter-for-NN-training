@@ -1,23 +1,51 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, LogRecord, TimingRow } from "../api";
 import CopyButton from "../CopyButton";
-import { logsText, recordText } from "./logText";
+import { logsText, recordText, timingText } from "./logText";
 
 const LEVELS = ["DEBUG", "INFO", "WARNING", "ERROR"];
+const STORE = "picture-sorter.log-filters";
+
+type Filters = { level: string; source: string; thisCamera: boolean; sinceRestart: boolean };
+const DEFAULTS: Filters = { level: "WARNING", source: "", thisCamera: false, sinceRestart: false };
+
+/** The filters the person chose last time (this browser only; the page works without storage). */
+function storedFilters(): Filters {
+  try {
+    const raw = JSON.parse(localStorage.getItem(STORE) ?? "{}") as Partial<Filters>;
+    return {
+      level: LEVELS.includes(raw.level ?? "") ? raw.level! : DEFAULTS.level,
+      source: raw.source === "backend" || raw.source === "frontend" ? raw.source : DEFAULTS.source,
+      thisCamera: raw.thisCamera === true,
+      sinceRestart: raw.sinceRestart === true,
+    };
+  } catch {
+    return DEFAULTS;
+  }
+}
 
 /** The log database: filter by level, source, camera or request id; copy records as text for Claude. */
 export default function LogView({ camera }: { camera: string }) {
   const [records, setRecords] = useState<LogRecord[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [level, setLevel] = useState("WARNING");
-  const [source, setSource] = useState("");
-  const [thisCamera, setThisCamera] = useState(false);
+  const [initial] = useState(storedFilters);
+  const [level, setLevel] = useState(initial.level);
+  const [source, setSource] = useState(initial.source);
+  const [thisCamera, setThisCamera] = useState(initial.thisCamera);
   const [requestId, setRequestId] = useState("");
-  const [sinceRestart, setSinceRestart] = useState(false);
+  const [sinceRestart, setSinceRestart] = useState(initial.sinceRestart);
   const [open, setOpen] = useState<number | null>(null);
   const [version, setVersion] = useState("");
   const [debug, setDebug] = useState(false);
   const [timing, setTiming] = useState<TimingRow[] | null>(null);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORE, JSON.stringify({ level, source, thisCamera, sinceRestart }));
+    } catch {
+      /* storage blocked: the filters are simply not remembered */
+    }
+  }, [level, source, thisCamera, sinceRestart]);
 
   const load = useCallback(() => {
     api
@@ -56,6 +84,7 @@ export default function LogView({ camera }: { camera: string }) {
         </label>{" "}
         {debug && <button type="button" onClick={loadTiming}>Where the time went</button>}
       </p>
+      {timing && timing.length > 0 && <p><CopyButton text={timingText(timing, version)} label="Copy timing for Claude" /></p>}
       {timing && (
         <table className="log-table" aria-label="Where the time went" style={{ borderCollapse: "collapse", marginBottom: 12 }}>
           <thead>

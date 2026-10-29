@@ -2,13 +2,16 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, test, vi } from "vitest";
 import LogView from "./LogView";
-import { logsText } from "./logText";
+import { logsText, timingText } from "./logText";
 
 const rec = (id: number, over = {}) => ({
   id, ts: 1_761_400_000 + id, level: "ERROR", source: "backend", logger: "http", message: `msg ${id}`, request_id: `req${id}`,
   camera: "camA", job_id: null, duration_ms: 12.5, exc: id === 1 ? "Traceback...\nValueError: x" : null, extra: null, audit: 0, ...over,
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  localStorage.clear();
+});
 
 function stub(rows: unknown[]) {
   const fetchMock = vi.fn(async (url: string) => new Response(JSON.stringify(url.startsWith("/api/version") ? { version: "1.2.3" } : rows)));
@@ -68,4 +71,29 @@ test("the debug switch is sent to the backend and opens the timing table", async
   await userEvent.click(await screen.findByRole("button", { name: "Where the time went" }));
   expect(await screen.findByText(/chain\.canvas/)).toBeInTheDocument();
   expect(fetchMock.mock.calls.some(([u, i]) => String(u).startsWith("/api/logs/debug") && (i as RequestInit | undefined)?.method === "PUT")).toBe(true);
+});
+
+test("the filters are remembered the next time the page opens", async () => {
+  stub([rec(1)]);
+  const first = render(<LogView camera="camA" />);
+  await screen.findByText("msg 1");
+  await userEvent.selectOptions(screen.getByLabelText("Level"), "DEBUG");
+  await userEvent.selectOptions(screen.getByLabelText("Source"), "backend");
+  await userEvent.click(screen.getByLabelText(/only camA/));
+  await userEvent.click(screen.getByLabelText(/since app restart/));
+  first.unmount();
+  const fetchMock = stub([rec(1)]);
+  render(<LogView camera="camA" />);
+  await screen.findByText("msg 1");
+  expect(screen.getByLabelText("Level")).toHaveValue("DEBUG");
+  expect(screen.getByLabelText("Source")).toHaveValue("backend");
+  expect(screen.getByLabelText(/only camA/)).toBeChecked();
+  expect(screen.getByLabelText(/since app restart/)).toBeChecked();
+  expect(fetchMock.mock.calls.some(([u]) => String(u).includes("level=DEBUG") && String(u).includes("since_restart=true"))).toBe(true);
+});
+
+test("the timing table can be copied as text", () => {
+  const text = timingText([{ kind: "step", name: "chain.canvas", count: 3, total_ms: 900, avg_ms: 300, p95_ms: 410, max_ms: 410 }], "Picture Sorter 1.2.3");
+  expect(text).toContain("Picture Sorter 1.2.3");
+  expect(text).toMatch(/· chain\.canvas\s+3\s+900\s+300\s+410\s+410/);
 });
