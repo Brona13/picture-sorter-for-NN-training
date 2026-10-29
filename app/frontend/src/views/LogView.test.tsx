@@ -55,3 +55,17 @@ test("an empty log says so", async () => {
   render(<LogView camera="" />);
   expect(await screen.findByText("No records for this filter.")).toBeInTheDocument();
 });
+
+test("the debug switch is sent to the backend and opens the timing table", async () => {
+  const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    if (url.startsWith("/api/logs/debug")) return new Response(JSON.stringify({ on: init?.method === "PUT" }));
+    if (url.startsWith("/api/logs/timing")) return new Response(JSON.stringify([{ kind: "step", name: "chain.canvas", count: 3, total_ms: 900, avg_ms: 300, p95_ms: 410, max_ms: 410 }]));
+    return new Response(JSON.stringify(url.startsWith("/api/version") ? { version: "1.2.3" } : []));
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  render(<LogView camera="camA" />);
+  await userEvent.click(await screen.findByLabelText(/Debug mode/));
+  await userEvent.click(await screen.findByRole("button", { name: "Where the time went" }));
+  expect(await screen.findByText(/chain\.canvas/)).toBeInTheDocument();
+  expect(fetchMock.mock.calls.some(([u, i]) => String(u).startsWith("/api/logs/debug") && (i as RequestInit | undefined)?.method === "PUT")).toBe(true);
+});

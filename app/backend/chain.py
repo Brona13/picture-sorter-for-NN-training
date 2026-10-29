@@ -134,6 +134,11 @@ def _live_names(camera: str, feature: str) -> set[str]:
 
 
 def _roi_node(camera: str, roi: datamodel.ROI, stored: dict) -> dict:
+    with applog.timed("chain.roi_node", roi=roi.name):
+        return _roi_node_inner(camera, roi, stored)
+
+
+def _roi_node_inner(camera: str, roi: datamodel.ROI, stored: dict) -> dict:
     """A Classifier box: the ROI and its labeling in one. ``mode`` is "product" for the product-sorting ROI, else "feature"."""
     owner, short = datamodel.split_feature(roi.name)
     if roi.role == "classify":
@@ -177,6 +182,7 @@ def _roi_node(camera: str, roi: datamodel.ROI, stored: dict) -> dict:
     }
 
 
+@applog.timed("chain.edges")
 def _edges(camera: str, rois: list[datamodel.ROI], classify: str | None) -> list[dict]:
     edges: list[dict] = []
 
@@ -213,6 +219,7 @@ def _edges(camera: str, rois: list[datamodel.ROI], classify: str | None) -> list
     return edges
 
 
+@applog.timed("chain.flow_nodes")
 def _flow_nodes(camera: str, graph: dict, stored: dict) -> list[dict]:
     """The detector / Calculate / Evaluation boxes, with a light summary each (details come from the flow API)."""
     nodes = []
@@ -344,6 +351,7 @@ def _place_missing(nodes: list[dict]) -> None:
         bottoms[column] = node["y"]
 
 
+@applog.timed("chain.canvas")
 def get_canvas(camera: str) -> dict:
     """The canvas as the UI draws it: boxes (stored layout + live status) and the arrows derived from the ROIs."""
     graph = flow.load_graph(camera)  # first: an old graph is migrated here, together with the stored layout

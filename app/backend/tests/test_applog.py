@@ -216,3 +216,53 @@ class RequestLineDetailTests(ApiTestCase):
             self.assertIn("Unknown", extra["detail"])
         finally:
             applog.shutdown()
+
+
+class DebugTimingTests(ApiTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        self.dir = applog.setup(config.DATA_DIR / "logs")
+        self.addCleanup(applog.shutdown)
+
+    def test_timed_steps_and_all_requests_are_stored_only_while_debug_is_on(self) -> None:
+        with applog.timed("step.off"):
+            pass
+        self.client.get("/api/health")
+        applog.flush()
+        self.assertEqual([r for r in applog.query(self.dir, level="DEBUG") if r["duration_ms"] is not None], [])
+        self.assertEqual(self.client.put("/api/logs/debug", json={"on": True}).json(), {"on": True})
+        self.assertTrue((self.dir / applog.DEBUG_FLAG).exists())
+        with applog.timed("step.outer"):
+            with applog.timed("step.inner", roi="seal"):
+                pass
+        self.client.get("/api/health")
+        applog.flush()
+        rows = {r["message"]: r for r in applog.query(self.dir, level="DEBUG")}
+        self.assertIn("step.outer", rows)
+        self.assertEqual(json.loads(rows["step.inner"]["extra"]), {"depth": 2, "roi": "seal"})
+        self.assertEqual(json.loads(rows["step.outer"]["extra"])["depth"], 1)
+        self.assertIn("GET /api/health -> 200", rows)
+        summary = {r["name"]: r for r in self.client.get("/api/logs/timing").json()}
+        self.assertEqual(summary["step.inner"]["count"], 1)
+        self.assertIn("GET /api/health", summary)
+        self.client.put("/api/logs/debug", json={"on": False})
+        self.assertFalse((self.dir / applog.DEBUG_FLAG).exists())
+        self.assertFalse(self.client.get("/api/logs/debug").json()["on"])
+
+    def test_the_switch_survives_a_restart(self) -> None:
+        applog.set_debug(True)
+        applog.setup(self.dir)
+        self.assertTrue(applog.is_debug())
+        applog.set_debug(False)
+        applog.setup(self.dir)
+        self.assertFalse(applog.is_debug())
+
+    def test_a_decorated_function_is_timed_per_call(self) -> None:
+        @applog.timed("step.decorated")
+        def work() -> int:
+            return 7
+
+        applog.set_debug(True)
+        self.assertEqual((work(), work()), (7, 7))
+        applog.flush()
+        self.assertEqual(sum(1 for r in applog.query(self.dir, level="DEBUG") if r["message"] == "step.decorated"), 2)

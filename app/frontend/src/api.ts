@@ -68,6 +68,17 @@ export interface LogRecord {
   audit: number;
 }
 
+/** One line of "where the time went" (`GET /api/logs/timing`): a request path or a timed step. */
+export interface TimingRow {
+  kind: "request" | "step";
+  name: string;
+  count: number;
+  total_ms: number;
+  avg_ms: number;
+  p95_ms: number;
+  max_ms: number;
+}
+
 export interface LogQuery {
   level?: string;
   source?: string;
@@ -1246,6 +1257,9 @@ export const api = {
     for (const [k, v] of Object.entries(q)) if (v !== undefined && v !== "") params.set(k, String(v));
     return request<LogRecord[]>(`/logs?${params}`);
   },
+  logDebug: () => request<{ on: boolean }>("/logs/debug"),
+  setLogDebug: (on: boolean) => request<{ on: boolean }>("/logs/debug", send("PUT", { on })),
+  logTiming: (sinceRestart = true) => request<TimingRow[]>(`/logs/timing${sinceRestart ? "?since_restart=true" : ""}`),
   version: () => request<{ version: string; released: string }>("/version"),
   device: () => request<DeviceInfo>("/device"),
   configMethods: () => request<MethodsConfig>("/config/methods"),

@@ -14,6 +14,7 @@ one. A box has no labels of its own: marks (label, golden) come from the Classif
 """
 from __future__ import annotations
 
+import applog
 import config
 import datamodel
 import db
@@ -56,6 +57,7 @@ def label_source(camera: str, feature: str) -> str:
     return feature
 
 
+@applog.timed("dedup.frames")
 def frames(camera: str, box: str) -> list[str]:
     """The pictures the box sees: what its input passes on (Ingest, a Picture edits box, a detector, or one dot of a
     Classifier); no line into it, no pictures. Deleted ones never."""

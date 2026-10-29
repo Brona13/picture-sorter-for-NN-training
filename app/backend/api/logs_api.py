@@ -46,6 +46,28 @@ def report(batch: ClientBatch) -> dict[str, int]:
     return {"stored": len(taken)}
 
 
+class DebugBody(BaseModel):
+    on: bool
+
+
+@router.get("/logs/debug")
+def debug_state() -> dict[str, bool]:
+    return {"on": applog.is_debug()}
+
+
+@router.put("/logs/debug")
+def debug_set(body: DebugBody) -> dict[str, bool]:
+    """Debug mode: log every request and timed step with its duration (survives a restart)."""
+    return {"on": applog.set_debug(body.on)}
+
+
+@router.get("/logs/timing")
+def timing(since_restart: bool = False) -> list[dict[str, Any]]:
+    """Requests and steps grouped by name with count, average, 95th percentile and maximum (needs debug mode)."""
+    applog.flush()
+    return applog.timing_summary(since=applog.STARTED if since_restart else None)
+
+
 @router.get("/logs")
 def read(level: str | None = None, source: str | None = None, camera: str | None = None,
          request_id: str | None = None, since_restart: bool = False, limit: int = 200) -> list[dict[str, Any]]:

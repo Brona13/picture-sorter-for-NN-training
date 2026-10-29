@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 
+import applog
 import datamodel
 import db
 import flow
@@ -146,6 +147,7 @@ def _line_frames(camera: str, ln: dict, graph: dict, live: set[str]) -> set[str]
     return names - db.muted_frames(camera, ln["box"]) if flow.kind_of(ln["box"]) == "dedup" else names  # a Dedup box passes what it did not mute
 
 
+@applog.timed("class_lines.by_class")
 def by_class(camera: str, feature: str) -> dict[str, set[str]]:
     """class -> the pictures its dot receives (every line into the dot must pass a picture). Empty without lines."""
     stored = get(camera, feature)

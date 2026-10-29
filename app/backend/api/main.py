@@ -100,7 +100,7 @@ def create_app() -> FastAPI:
         finally:
             ms = round((time.perf_counter() - started) * 1000, 1)
             level = 40 if status >= 500 else 30 if status >= 400 or ms >= SLOW_REQUEST_MS else 20 if request.method != "GET" else 10
-            if request.url.path.startswith("/api") and request.url.path != "/api/logs":  # a report is not itself worth a line
+            if request.url.path.startswith("/api") and not request.url.path.startswith("/api/logs"):  # a report is not itself worth a line
                 _log.log(level, "%s %s -> %s", request.method, request.url.path, status,
                          extra=applog.fields(method=request.method, path=request.url.path, query=request.url.query or None, status=status, duration_ms=ms, detail=info.get("detail")))
             if request.url.path.startswith("/api") and request.method == "GET" and "cache-control" not in response.headers:

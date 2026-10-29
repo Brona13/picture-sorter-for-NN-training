@@ -1918,6 +1918,7 @@ def _zone_state(camera: str, node: dict, calc_id: str, graph: dict) -> dict:
             "histogram": None, "wrap": False, "unit": "px"}
 
 
+@applog.timed("flow.evaluation_state")
 def evaluation_state(camera: str, eval_id: str) -> dict:
     """Per-frame value and verdict of an Evaluation box, with counts and a histogram of the values. Behind an Offset
     the box judges (dx, dy) by its zone instead (``mode`` "zone", ``points``)."""
@@ -2019,6 +2020,7 @@ def set_feature_evaluation(camera: str, feature: str, box: str | None) -> None:
         labels.release_evaluation(camera, feature)
 
 
+@applog.timed("flow.sync_labels")
 def sync_evaluation_labels(camera: str, feature: str) -> dict:
     """Make the labels of a Classifier that is wired to pictures with a known class follow them: an Evaluation's verdicts
     (pass is OK, fail is NG) and the lines into its class dots (``class_lines``). A picture the Evaluation cannot judge

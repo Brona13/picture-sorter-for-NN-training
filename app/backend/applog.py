@@ -12,6 +12,7 @@ never contend with label writes and a database reset does not erase the evidence
 """
 from __future__ import annotations
 
+import contextlib
 import contextvars
 import json
 import logging
@@ -29,7 +30,7 @@ import config
 ROOT = "picturesorter"
 RETENTION_DAYS = 14
 RETENTION_ROWS = 50_000
-_DB_LEVEL = logging.WARNING  # records below this reach logs.db only when marked as audit
+_DB_LEVEL = logging.WARNING  # records below this reach logs.db only when marked as audit (DEBUG while the debug switch is on)
 _PRUNE_EVERY = 500  # writes between retention passes
 
 request_id: contextvars.ContextVar[str | None] = contextvars.ContextVar("request_id", default=None)
@@ -137,7 +138,7 @@ class SqliteHandler(logging.Handler):
         self._thread.start()
 
     def emit(self, record: logging.LogRecord) -> None:
-        if record.levelno < _DB_LEVEL and not getattr(record, "audit", False):
+        if record.levelno < (logging.DEBUG if _state["debug"] else _DB_LEVEL) and not getattr(record, "audit", False):
             return
         try:
             self._queue.put_nowait(_record_dict(record))
@@ -219,7 +220,8 @@ def _prune(conn: sqlite3.Connection) -> None:
     conn.execute("DELETE FROM logs WHERE id <= (SELECT MAX(id) FROM logs) - ?", (RETENTION_ROWS,))
 
 
-_state: dict[str, Any] = {"dir": None, "db": None, "file": None}
+_state: dict[str, Any] = {"dir": None, "db": None, "file": None, "debug": False, "level": logging.INFO}
+DEBUG_FLAG = "debug.flag"  # a file in the log directory: the debug switch survives a restart
 
 
 def log_dir() -> Path:
@@ -236,16 +238,114 @@ def setup(directory: Path | None = None, level: int | str | None = None) -> Path
     directory = Path(directory or os.environ.get("CURATION_LOG_DIR") or log_dir())
     directory.mkdir(parents=True, exist_ok=True)
     root = logging.getLogger(ROOT)
-    root.setLevel(level or os.environ.get("CURATION_LOG_LEVEL", "INFO").upper())
+    base = level or os.environ.get("CURATION_LOG_LEVEL", "INFO").upper()
+    root.setLevel(base)
+    _state["level"] = root.level
+    _state["debug"] = (directory / DEBUG_FLAG).exists() or root.level <= logging.DEBUG
+    if _state["debug"]:
+        root.setLevel(logging.DEBUG)
     root.propagate = False
     file_handler = logging.handlers.RotatingFileHandler(directory / "app.jsonl", maxBytes=10_000_000, backupCount=4, encoding="utf-8")
     file_handler.setFormatter(JsonFormatter())
-    file_handler.setLevel(logging.INFO)
+    file_handler.setLevel(logging.DEBUG if _state["debug"] else logging.INFO)
     db_handler = SqliteHandler(directory / "logs.db")
     root.addHandler(file_handler)
     root.addHandler(db_handler)
     _state.update(dir=directory, db=db_handler, file=file_handler)
     return directory
+
+
+def is_debug() -> bool:
+    return bool(_state["debug"])
+
+
+def set_debug(on: bool) -> bool:
+    """Switch the debug mode: every request (also the fast GETs) and every timed step (``timed``) is written to the
+    file and to the log database with its duration. Off, only warnings, errors and audit events reach the database.
+    The switch is remembered in the log directory (``debug.flag``), so it survives a restart."""
+    root = logging.getLogger(ROOT)
+    _state["debug"] = bool(on)
+    root.setLevel(logging.DEBUG if on else _state["level"])
+    if _state["file"] is not None:
+        _state["file"].setLevel(logging.DEBUG if on else logging.INFO)
+    directory = _state["dir"]
+    if directory is not None:
+        flag = Path(directory) / DEBUG_FLAG
+        try:
+            if on:
+                flag.touch()
+            else:
+                flag.unlink(missing_ok=True)
+        except OSError:
+            pass
+    get("log").info("debug mode %s", "on" if on else "off", extra=audit(debug=bool(on)))
+    return bool(on)
+
+
+_depth: contextvars.ContextVar[int] = contextvars.ContextVar("span_depth", default=0)
+
+
+class timed(contextlib.ContextDecorator):  # noqa: N801 - used like a function: ``with applog.timed("chain.canvas"):``
+    """Time a step. Nothing happens (one flag check) unless the debug mode is on; then a DEBUG record ``name`` with
+    ``duration_ms`` (and ``depth``: how many timed steps it sits inside, so the log reads as a tree) is written.
+    Also usable as a decorator: ``@applog.timed("flow.sync")``. ``detail`` is stored with the record."""
+
+    def __init__(self, name: str, **detail: Any) -> None:
+        self.name = name
+        self.detail = detail
+        self._token = None
+        self._t0 = 0.0
+
+    def _recreate_cm(self) -> "timed":
+        return timed(self.name, **self.detail)  # a decorated function may run in several threads at once: one object per call
+
+    def __enter__(self) -> "timed":
+        if _state["debug"]:
+            self._t0 = time.perf_counter()
+            self._token = _depth.set(_depth.get() + 1)
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        if self._token is None:
+            return
+        ms = round((time.perf_counter() - self._t0) * 1000, 1)
+        _depth.reset(self._token)
+        self._token = None
+        get("timing").debug(self.name, extra=fields(duration_ms=ms, depth=_depth.get() + 1, **self.detail))
+
+
+def timing_summary(directory: Path | None = None, *, since: float | None = None, limit: int = 8000) -> list[dict[str, Any]]:
+    """Where the time went: records with a duration grouped by what they measured (a request path or a timed step),
+    slowest total first. Needs the debug mode to have been on."""
+    path = Path(directory or _state["dir"] or log_dir()) / "logs.db"
+    if not path.exists():
+        return []
+    sql = "SELECT logger, message, duration_ms, extra FROM logs WHERE duration_ms IS NOT NULL"
+    args: list[Any] = []
+    if since is not None:
+        sql += " AND ts >= ?"
+        args.append(since)
+    sql += " ORDER BY id DESC LIMIT ?"
+    groups: dict[tuple[str, str], list[float]] = {}
+    with _open(path) as conn:
+        for row in conn.execute(sql, (*args, limit)):
+            name = row["message"]
+            if row["logger"] == "http":
+                try:
+                    info = json.loads(row["extra"] or "{}")
+                    name = f"{info.get('method', '')} {info.get('path', name)}".strip()
+                except ValueError:
+                    pass
+            groups.setdefault((row["logger"], name), []).append(row["duration_ms"])
+    out = []
+    for (logger, name), values in groups.items():
+        values.sort()
+        out.append({
+            "kind": "request" if logger == "http" else "step", "name": name, "count": len(values),
+            "total_ms": round(sum(values), 1), "avg_ms": round(sum(values) / len(values), 1),
+            "p95_ms": values[min(len(values) - 1, int(len(values) * 0.95))], "max_ms": values[-1],
+        })
+    return sorted(out, key=lambda r: r["total_ms"], reverse=True)[:60]
 
 
 def shutdown() -> None:
@@ -258,6 +358,7 @@ def shutdown() -> None:
             handler.close()
         _state[key] = None
     _state["dir"] = None
+    _state["debug"] = False
 
 
 def flush() -> None:

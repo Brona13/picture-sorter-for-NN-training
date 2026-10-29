@@ -16,6 +16,7 @@ from contextvars import ContextVar
 from pathlib import Path
 from typing import Callable, Iterator, TypeVar
 
+import applog
 import config
 import db
 import perf
@@ -338,6 +339,7 @@ def frames_of_product(camera: str, product: str | None) -> list[str]:
 _resolving: ContextVar[frozenset] = ContextVar("datamodel_input_scope", default=frozenset())
 
 
+@applog.timed("datamodel.input_scope")
 def _input_scope(camera: str, feature: str) -> set[str] | None:
     """The pictures the line into a Classifier gives it, or ``None`` when no line restricts it.
 
@@ -377,6 +379,7 @@ def _input_scope(camera: str, feature: str) -> set[str] | None:
     return None if scope is None else scope | db.deleted_frames_of(camera)
 
 
+@applog.timed("datamodel.frames_for_feature")
 def frames_for_feature(camera: str, feature: str) -> list[str]:
     """Frame filenames this feature applies to.
 

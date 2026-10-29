@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, LogRecord } from "../api";
+import { api, LogRecord, TimingRow } from "../api";
 import CopyButton from "../CopyButton";
 import { logsText, recordText } from "./logText";
 
@@ -16,6 +16,8 @@ export default function LogView({ camera }: { camera: string }) {
   const [sinceRestart, setSinceRestart] = useState(false);
   const [open, setOpen] = useState<number | null>(null);
   const [version, setVersion] = useState("");
+  const [debug, setDebug] = useState(false);
+  const [timing, setTiming] = useState<TimingRow[] | null>(null);
 
   const load = useCallback(() => {
     api
@@ -29,6 +31,18 @@ export default function LogView({ camera }: { camera: string }) {
 
   useEffect(load, [load]);
   useEffect(() => {
+    api.logDebug().then((d) => setDebug(d.on === true)).catch(() => {});
+  }, []);
+  const switchDebug = (on: boolean) => {
+    api.setLogDebug(on).then((d) => {
+      setDebug(d.on);
+      if (d.on) setLevel("DEBUG");
+    }).catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
+  };
+  const loadTiming = () => {
+    api.logTiming(true).then(setTiming).catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
+  };
+  useEffect(() => {
     fetch("/api/version").then((r) => r.json()).then((v) => setVersion(`Picture Sorter ${v.version}`)).catch(() => {});
   }, []);
 
@@ -36,6 +50,32 @@ export default function LogView({ camera }: { camera: string }) {
     <section>
       <h2>Log</h2>
       <p>Errors and events the app recorded, from the backend and from this browser. Click a request id to see everything that belongs to one action.</p>
+      <p>
+        <label title="Records every request and every timed step with its duration, also the fast ones. Costs a little speed and disk; switch it off when done. It stays on after a restart.">
+          <input type="checkbox" checked={debug} onChange={(e) => switchDebug(e.target.checked)} /> Debug mode (log how long actions take)
+        </label>{" "}
+        {debug && <button type="button" onClick={loadTiming}>Where the time went</button>}
+      </p>
+      {timing && (
+        <table className="log-table" aria-label="Where the time went" style={{ borderCollapse: "collapse", marginBottom: 12 }}>
+          <thead>
+            <tr><th align="left">What</th><th align="right">Times</th><th align="right">Total ms</th><th align="right">Average</th><th align="right">95%</th><th align="right">Max</th></tr>
+          </thead>
+          <tbody>
+            {timing.length === 0 && <tr><td colSpan={6}>Nothing measured yet: use the app for a while with debug mode on, then press the button again.</td></tr>}
+            {timing.map((t) => (
+              <tr key={`${t.kind}:${t.name}`} style={{ borderTop: "1px solid #8884" }}>
+                <td>{t.kind === "step" ? "· " : ""}{t.name}</td>
+                <td align="right">{t.count}</td>
+                <td align="right">{t.total_ms}</td>
+                <td align="right">{t.avg_ms}</td>
+                <td align="right">{t.p95_ms}</td>
+                <td align="right">{t.max_ms}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
         <label>
           Level{" "}
@@ -73,7 +113,7 @@ export default function LogView({ camera }: { camera: string }) {
       ) : (
         <table className="log-table" style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
-            <tr><th align="left">Time</th><th align="left">Level</th><th align="left">Source</th><th align="left">Message</th><th align="left">Request</th></tr>
+            <tr><th align="left">Time</th><th align="right">ms</th><th align="left">Level</th><th align="left">Source</th><th align="left">Message</th><th align="left">Request</th></tr>
           </thead>
           <tbody>
             {records.map((r) => (
@@ -87,11 +127,13 @@ export default function LogView({ camera }: { camera: string }) {
 }
 
 function FragmentRow({ r, open, onToggle, onRequest }: { r: LogRecord; open: boolean; onToggle: () => void; onRequest: (id: string) => void }) {
-  const when = new Date(r.ts * 1000).toLocaleString();
+  const d = new Date(r.ts * 1000);
+  const when = `${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour12: false })}.${String(d.getMilliseconds()).padStart(3, "0")}`;
   return (
     <>
       <tr data-testid={`log-row-${r.id}`} style={{ borderTop: "1px solid #8884", color: r.level === "ERROR" || r.level === "CRITICAL" ? "#c0392b" : undefined }}>
         <td style={{ whiteSpace: "nowrap" }}>{when}</td>
+        <td align="right">{r.duration_ms ?? ""}</td>
         <td>{r.level}</td>
         <td>{r.source}/{r.logger}</td>
         <td>
@@ -101,7 +143,7 @@ function FragmentRow({ r, open, onToggle, onRequest }: { r: LogRecord; open: boo
       </tr>
       {open && (
         <tr>
-          <td colSpan={5}>
+          <td colSpan={6}>
             <pre style={{ whiteSpace: "pre-wrap", margin: 0 }}>{recordText(r)}</pre>
             <CopyButton text={recordText(r)} label="Copy this record" />
           </td>
