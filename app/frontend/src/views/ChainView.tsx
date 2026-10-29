@@ -18,6 +18,7 @@ import { useNavigate } from "react-router-dom";
 import { api, ChainCanvas, ChainDeletePreview, ChainEdge, ChainNode, ChainViewport, FlowDeletePreview } from "../api";
 import { ALL_HANDLE, INGEST_ID, targetHandle, targetOfHandle, connectAction, describeNode, disconnectAction, exportLineOf, flowConnect, freshName, isAnchorEdge, isMergeLineEdge, mergeLineOf, isDedupInputEdge, isEvaluationLabelEdge, isDedupSourceEdge, isExportLineEdge, isRoiInputEdge, isFlowKind, layoutOf, productHandle } from "../chain/chainModel";
 import ClassifierMode from "../chain/ClassifierMode";
+import InfoTip from "../InfoTip";
 import Counter from "../chain/Counter";
 import { KindIcon } from "../chain/kindIcons";
 import LineConfirm from "../chain/LineConfirm";
@@ -539,16 +540,34 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
     else openPage(n, n.role === "classify" ? "roi" : "classify");
   };
 
+  /** What a box delete will remove, for the overlay (Enter confirms, Esc cancels). */
+  const boxDeleteNote: LineNote | null = flowPreview
+    ? {
+        title: `Delete ${flowPreview.node}? This cannot be undone.`,
+        lines: [
+          `${flowPreview.arrows} arrows`,
+          ...(flowPreview.kind === "detector" ? [`${flowPreview.detections} pictures with stored boxes`] : []),
+          ...(flowPreview.kind === "dedup" ? [`${flowPreview.mutes ?? 0} muted pictures come back; its clusters and map are forgotten`] : []),
+        ],
+      }
+    : preview
+      ? {
+          title: `Delete ${preview.feature}? This cannot be undone.`,
+          lines: [
+            ...(preview.role === "classify" ? ["The product labels go with it."] : []),
+            `${preview.counts.labels} labels`,
+            `${preview.counts.goldens} goldens`,
+            `${preview.counts.detections} detections`,
+            `${preview.counts.versions} versions`,
+            ...(preview.dependents.length > 0 ? [`The product-scoped ROIs ${preview.dependents.join(", ")} are separate boxes and stay.`] : []),
+          ],
+        }
+      : null;
+
   const panel = (
     <div className="chain-panel">
-      <h3>Add</h3>
-      <Palette
-        disabled={!canvas}
-        taken={{}}
-        onAdd={(kind) => addFromPalette(kind)}
-      />
       <h3 className="chain-panel-title">{selectedLive && <KindIcon kind={selectedLive.kind} />}Selected box</h3>
-      {!selectedLive && <p className="muted">Click a box, double-click it to open its page. Drag from a handle to draw an arrow; click an arrow and press Delete to remove it (Enter confirms, Esc cancels).</p>}
+      {!selectedLive && <p className="muted">Click a box to see its options.</p>}
       {selectedLive && (
         <div className="chain-selected">
           <label>
@@ -563,7 +582,40 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
             />
           </label>
           <p className="muted">{describeNode(selectedLive)}</p>
-          {selectedLive.ref && <p className="muted">ROI: {selectedLive.ref}</p>}
+          <div className="chain-actions">
+            {isFlowKind(selectedLive.kind) && selectedLive.kind !== "merge" && (
+              <button
+                type="button"
+                onClick={() =>
+                  selectedLive.kind === "dedup"
+                    ? navigate(`/dedup/grid?box=${encodeURIComponent(selectedLive.id)}`) // the Dedup pages work on one box
+                    : onOpenFlow ? onOpenFlow(selectedLive.id) : navigate(`/flow?focus=${encodeURIComponent(selectedLive.id)}`)
+                }
+              >
+                {FLOW_PAGE[selectedLive.kind as keyof typeof FLOW_PAGE]}
+              </button>
+            )}
+            {selectedLive.kind === "ingest" && (
+              <button type="button" onClick={() => openPage(selectedLive, "roi")}>
+                Ingest
+              </button>
+            )}
+            {selectedLive.kind === "roi" && (
+              <button type="button" onClick={() => openPage(selectedLive, "roi")}>
+                ROI editor
+              </button>
+            )}
+            {selectedLive.kind === "roi" && (
+              <button type="button" onClick={() => openPage(selectedLive, "classify")}>
+                Classify
+              </button>
+            )}
+            {(isFlowKind(selectedLive.kind) || selectedLive.kind === "roi") && (
+              <button type="button" className="danger" onClick={() => requestDelete(selectedLive.id)}>
+                Delete…
+              </button>
+            )}
+          </div>
           {selectedLive.kind === "roi" && selectedLive.ref && (
             <ClassifierMode
               camera={camera}
@@ -574,38 +626,6 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
             />
           )}
           {selectedLive.kind === "merge" && <MergePanel camera={camera} node={selectedLive} onChanged={() => { setError(null); void reload(); }} onError={setError} />}
-          {isFlowKind(selectedLive.kind) && (
-            <>
-              {selectedLive.kind !== "merge" && <button
-                type="button"
-                onClick={() =>
-                  selectedLive.kind === "dedup"
-                    ? navigate(`/dedup/grid?box=${encodeURIComponent(selectedLive.id)}`) // the Dedup pages work on one box
-                    : onOpenFlow ? onOpenFlow(selectedLive.id) : navigate(`/flow?focus=${encodeURIComponent(selectedLive.id)}`)
-                }
-              >
-                {FLOW_PAGE[selectedLive.kind as keyof typeof FLOW_PAGE]}
-              </button>}
-              <button type="button" className="danger" onClick={() => requestDelete(selectedLive.id)}>
-                Delete…
-              </button>
-            </>
-          )}
-          {selectedLive.kind === "ingest" && (
-            <button type="button" onClick={() => openPage(selectedLive, "roi")}>
-              Ingest
-            </button>
-          )}
-          {selectedLive.kind === "roi" && (
-            <button type="button" onClick={() => openPage(selectedLive, "roi")}>
-              ROI editor
-            </button>
-          )}
-          {selectedLive.kind === "roi" && (
-            <button type="button" onClick={() => openPage(selectedLive, "classify")}>
-              Classify
-            </button>
-          )}
           {selectedLive.kind === "roi" && selectedLive.ref && (
             <label className="chain-evaluation">
               Reads through Dedup box
@@ -621,7 +641,7 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
           )}
           {selectedLive.kind === "roi" && selectedLive.ref && (
             <label className="chain-evaluation">
-              Evaluation labeling this Classifier (pass = OK, fail = NG)
+              <span>Evaluation labels it <InfoTip label="Evaluation labeling">An Evaluation box labels this Classifier: pass = OK, fail = NG.</InfoTip></span>
               <select
                 aria-label="Evaluation"
                 value={selectedLive.evaluation ?? ""}
@@ -632,40 +652,6 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
               </select>
             </label>
           )}
-          {selectedLive.kind === "roi" && (
-            <button type="button" className="danger" onClick={() => requestDelete(selectedLive.id)}>
-              Delete…
-            </button>
-          )}
-        </div>
-      )}
-      {flowPreview && (
-        <div className="chain-delete" role="alertdialog" aria-label="Confirm delete">
-          <p><strong>Delete {flowPreview.node}?</strong> This cannot be undone.</p>
-          <ul>
-            <li>{flowPreview.arrows} arrows</li>
-            {flowPreview.kind === "detector" && <li>{flowPreview.detections} pictures with stored boxes</li>}
-            {flowPreview.kind === "dedup" && <li>{flowPreview.mutes ?? 0} muted pictures come back; its clusters and map are forgotten</li>}
-          </ul>
-          <button type="button" className="danger" onClick={() => void confirmFlowDelete()}>Delete box</button>
-          <button type="button" onClick={() => setFlowPreview(null)}>Keep it</button>
-        </div>
-      )}
-      {preview && (
-        <div className="chain-delete" role="alertdialog" aria-label="Confirm delete">
-          <p><strong>Delete {preview.feature}?</strong> This cannot be undone.</p>
-          {preview.role === "classify" && <p>The product labels go with it.</p>}
-          <ul>
-            <li>{preview.counts.labels} labels</li>
-            <li>{preview.counts.goldens} goldens</li>
-            <li>{preview.counts.detections} detections</li>
-            <li>{preview.counts.versions} versions</li>
-          </ul>
-          {preview.dependents.length > 0 && (
-            <p>The product-scoped ROIs {preview.dependents.join(", ")} are separate boxes and stay.</p>
-          )}
-          <button type="button" className="danger" onClick={() => void confirmDelete()}>Delete everything</button>
-          <button type="button" onClick={() => setPreview(null)}>Keep it</button>
         </div>
       )}
     </div>
@@ -686,8 +672,19 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
           onCancel={() => setLineDialog(null)}
         />
       )}
+      {boxDeleteNote && (
+        <LineConfirm
+          label="Confirm delete"
+          notes={[boxDeleteNote]}
+          confirmLabel={flowPreview ? "Delete box" : "Delete everything"}
+          cancelLabel="Keep it"
+          onConfirm={() => void (flowPreview ? confirmFlowDelete() : confirmDelete())}
+          onCancel={() => { setFlowPreview(null); setPreview(null); }}
+        />
+      )}
       {!canvas && !error && <p className="muted">Loading…</p>}
       {canvas && (
+        <>
         <div
           className="chain-canvas"
           data-testid="chain-canvas"
@@ -695,6 +692,7 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
           onDragOver={(e) => { if (e.dataTransfer.types.includes(PALETTE_DRAG)) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; } }}
           onDrop={onPaletteDrop}
         >
+          <Palette disabled={false} taken={{}} onAdd={(kind) => addFromPalette(kind)} />
           <ReactFlow
             key={camera}
             nodes={shownNodes}
@@ -730,9 +728,11 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
             proOptions={{ hideAttribution: true }}
           >
             <Background />
-            <Controls showInteractive={false} />
+            <Controls showInteractive={false} position="bottom-right" />
           </ReactFlow>
         </div>
+        <p className="muted chain-help">Click a box, double-click it to open its page. Drag from a handle to draw an arrow; click an arrow and press Delete to remove it (Enter confirms, Esc cancels).</p>
+        </>
       )}
     </SidePanel>
   );

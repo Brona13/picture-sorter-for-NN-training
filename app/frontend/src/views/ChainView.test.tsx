@@ -83,7 +83,7 @@ test("deleting a box first shows what would be lost, and only then deletes", asy
   expect(dialog).toHaveTextContent("7 labels");
   expect(dialog).toHaveTextContent("1 versions");
   expect(calls.some((c) => c.method === "DELETE")).toBe(false);
-  await user.click(screen.getByRole("button", { name: "Delete everything" }));
+  await user.click(screen.getByRole("button", { name: /Delete everything/ }));
   await waitFor(() => expect(calls.some((c) => c.method === "DELETE" && c.url.endsWith("/rois/seal"))).toBe(true));
 });
 
@@ -92,7 +92,7 @@ test("Keep it closes the confirmation without deleting", async () => {
   renderView();
   fireEvent.click(await screen.findByTestId("chain-node-roi:seal"));
   await user.click(screen.getByRole("button", { name: /Delete…/ }));
-  await user.click(await screen.findByRole("button", { name: "Keep it" }));
+  await user.click(await screen.findByRole("button", { name: /Keep it/ }));
   expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   expect(calls.some((c) => c.method === "DELETE")).toBe(false);
 });
@@ -300,4 +300,31 @@ test("a Merge is a small square whose arrow is grey while it collects nothing an
   expect(await screen.findByTestId("merge-meaning")).toHaveTextContent("Collects OK");
   await userEvent.selectOptions(screen.getByLabelText("Merge mode"), "all");
   await waitFor(() => expect(calls.find((c) => c.url.includes("/flow/nodes/merge%3A2") && c.method === "PUT")?.body).toEqual({ mode: "all" }));
+});
+
+test("the delete confirmation is an overlay, Enter confirms it and Esc cancels, and the right pane holds no confirmation", async () => {
+  const user = userEvent.setup();
+  renderView();
+  fireEvent.click(await screen.findByTestId("chain-node-roi:seal"));
+  await user.click(screen.getByRole("button", { name: /Delete…/ }));
+  const dialog = await screen.findByRole("alertdialog", { name: "Confirm delete" });
+  expect(dialog.closest(".right-panel")).toBeNull();
+  await user.keyboard("{Escape}");
+  expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  expect(calls.some((c) => c.method === "DELETE")).toBe(false);
+  await user.click(screen.getByRole("button", { name: /Delete…/ }));
+  await screen.findByRole("alertdialog", { name: "Confirm delete" });
+  await user.keyboard("{Enter}");
+  await waitFor(() => expect(calls.some((c) => c.method === "DELETE" && c.url.endsWith("/rois/seal"))).toBe(true));
+});
+
+test("the palette sits on the canvas, not in the right pane, and the help text is under the canvas", async () => {
+  renderView();
+  const canvas = await screen.findByTestId("chain-canvas");
+  const tile = screen.getByRole("button", { name: "Add Detector" });
+  expect(canvas.contains(tile)).toBe(true);
+  expect(tile.closest(".right-panel")).toBeNull();
+  const help = screen.getByText(/double-click it to open its page/);
+  expect(canvas.contains(help)).toBe(false);
+  expect(help.closest(".right-panel")).toBeNull();
 });

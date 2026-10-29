@@ -232,7 +232,7 @@ figure { background: var(--panel); border: 1px solid var(--border); border-radiu
 ul[style*="grid"] > li { min-width: 0; overflow-wrap: anywhere; }
 
 /* --- Chain canvas ------------------------------------------------------------------------------------------- */
-.chain-canvas { height: calc(100vh - 220px); min-height: 420px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel); }
+.chain-canvas { position: relative; height: calc(100vh - 250px); min-height: 420px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel); }
 .chain-node { min-width: 150px; padding: 8px 12px; border-radius: 12px; border: 2px solid hsl(var(--hue) 55% 48%); background: color-mix(in srgb, hsl(var(--hue) 80% 60%) 14%, var(--panel)); color: var(--fg); font-size: 13px; }
 .chain-node.selected { box-shadow: 0 0 0 3px color-mix(in srgb, hsl(var(--hue) 80% 60%) 45%, transparent); }
 .chain-node-title { font-weight: 600; cursor: text; }
@@ -243,8 +243,8 @@ ul[style*="grid"] > li { min-width: 0; overflow-wrap: anywhere; }
 .chain-panel h3 { margin: 12px 0 6px; font-size: 13px; }
 .chain-palette, .chain-selected, .chain-delete, .chain-form { display: flex; flex-direction: column; gap: 6px; }
 .chain-form label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
-.chain-delete { margin-top: 10px; padding: 8px; border-radius: var(--radius); background: var(--danger-bg); color: var(--danger-fg); }
-.chain-delete ul { margin: 0; padding-left: 18px; }
+.chain-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.chain-help { margin: 6px 0 0; font-size: 12px; }
 .camera-delete { display: flex; flex-direction: column; gap: 6px; flex-basis: 100%; margin-top: 8px; padding: 10px; border-radius: var(--radius); background: var(--danger-bg); color: var(--danger-fg); }
 .camera-delete ul, .camera-delete p { margin: 0; }
 .camera-delete label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
@@ -337,10 +337,12 @@ button[aria-pressed="true"] { background: var(--info-bg); color: var(--info-fg);
 .chain-step-badge { position: absolute; bottom: -6px; right: -9px; min-width: 15px; padding: 0 3px; border-radius: 8px; background: hsl(var(--hue) 55% 38%); color: #fff; font-size: 10px; line-height: 15px; text-align: center; }
 
 /* Module palette (v1.90.0): square tiles in the Chain's right panel. */
-.chain-palette-groups { display: flex; flex-direction: column; gap: 8px; }
-.chain-palette-groups h4 { margin: 0 0 3px; font-size: 10px; font-weight: 600; color: var(--muted); }
-.chain-palette-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(59px, 1fr)); gap: 4px; }
-.chain-tile { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; aspect-ratio: 1 / 1; padding: 4px; border-radius: 7px; border: 1.5px solid hsl(var(--hue) 55% 48%); background: color-mix(in srgb, hsl(var(--hue) 80% 60%) 14%, var(--panel)); color: hsl(var(--hue) 55% 34%); font-size: 9px; line-height: 1.15; text-align: center; cursor: grab; }
+/* v1.125.0: the palette is a vertical strip on the canvas's left edge; every tile keeps one fixed size. */
+.chain-palette-groups { position: absolute; top: 8px; left: 8px; z-index: 5; display: flex; flex-direction: column; gap: 6px; width: 62px; padding: 4px; overflow-y: auto; border: 1px solid var(--border); border-radius: 9px; background: color-mix(in srgb, var(--panel) 92%, transparent); box-sizing: border-box; pointer-events: auto; height: fit-content; max-height: calc(100% - 16px); }
+.chain-palette-groups h4 { display: none; }
+.chain-palette-groups section + section { padding-top: 6px; border-top: 1px solid var(--border); }
+.chain-palette-tiles { display: flex; flex-direction: column; gap: 4px; }
+.chain-tile { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; flex: none; width: 50px; height: 50px; padding: 2px; overflow: hidden; border-radius: 7px; border: 1.5px solid hsl(var(--hue) 55% 48%); background: color-mix(in srgb, hsl(var(--hue) 80% 60%) 14%, var(--panel)); color: hsl(var(--hue) 55% 34%); font-size: 9px; line-height: 1.15; text-align: center; cursor: grab; }
 .chain-tile:disabled { opacity: 0.45; cursor: not-allowed; }
 .chain-tile span { color: var(--fg); }
 .chain-ghost { display: flex; align-items: center; justify-content: center; font-weight: 600; }

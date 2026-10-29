@@ -2,17 +2,22 @@ import { useEffect, useRef } from "react";
 import type { LineNote } from "./lineEffects";
 
 /**
- * The overlay shown before a line is deleted or replaced. Enter confirms, Esc cancels. The keys are taken in the
- * capture phase so the canvas under the overlay (Delete, Backspace) never acts as well.
+ * The overlay shown before a line or a box is deleted, or a line is replaced. Enter confirms, Esc cancels. The keys
+ * are taken in the capture phase so the canvas under the overlay (Delete, Backspace) never acts as well.
  */
 export default function LineConfirm({
   notes,
   confirmLabel,
+  cancelLabel = "Cancel",
+  label = "Confirm line change",
   onConfirm,
   onCancel,
 }: {
   notes: LineNote[];
   confirmLabel: string;
+  cancelLabel?: string;
+  /** The dialog's accessible name. */
+  label?: string;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -36,7 +41,7 @@ export default function LineConfirm({
 
   return (
     <div className="line-confirm-backdrop" onClick={onCancel}>
-      <div className="line-confirm" role="alertdialog" aria-modal="true" aria-label="Confirm line change" onClick={(e) => e.stopPropagation()}>
+      <div className="line-confirm" role="alertdialog" aria-modal="true" aria-label={label} onClick={(e) => e.stopPropagation()}>
         {notes.map((n, i) => (
           <div key={i} className="line-confirm-note">
             <p><strong>{n.title}</strong></p>
@@ -52,7 +57,7 @@ export default function LineConfirm({
             {confirmLabel} <span className="muted">Enter</span>
           </button>
           <button type="button" onClick={onCancel}>
-            Cancel <span className="muted">Esc</span>
+            {cancelLabel} <span className="muted">Esc</span>
           </button>
         </div>
       </div>
