@@ -10,6 +10,7 @@ last_updated: 2026-10-29
 
 Portable memory for the *Picture Sorter for NN Training* project. Kept inside the project (not `~/.claude/`) so it travels if the folder is moved to another machine.
 
+- [Session 2026-10-29 Linux: start-up screen, Calculate overlay with two detectors, 1.131.0-1.131.2](2026-10-29-linux-startup-screen-calc-overlay-session.md) — termui start-up screen, overlay for same-input and different-crop detectors, Space reference fix, dead tests in test_flow revived; lessons ("same picture" misread, check UI in a browser first).
 - [Browser testing plan (2026-10-29)](browser-testing-plan.md) — not built: reusable no-interaction headless-browser harness (`tools/browser_check/`), Playwright leaning for Linux + Windows, current ad hoc CDP method, open decisions.
 - [Work on Win machine 2026-10-29: palette strip, class dots, Log tables, start-up, 1.125.0-1.130.0](2026-10-29-windows-work-chain-palette-log-startup-session.md) — what each version did, how the patches reached git (rebase skipped already-pushed ones), push-gate lesson; browser check open.
 - [Session 2026-10-28: Classifier scope, Verdict boxes, Chain look, Merge box, 1.120.0-1.124.0](2026-10-28-classifier-scope-verdict-boxes-merge-session.md) — a line hands over what the box passes on, Verdict boxes + dimmed cards, blue Classifier / corner icons / counters, Merge box (any/all, meaning from first line); decisions, open items.
