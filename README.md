@@ -71,7 +71,7 @@ From the project root:
 
 then open <http://127.0.0.1:8999>. `run.sh` checks the virtual environment, builds
 the frontend on first use, and starts the FastAPI server (uvicorn) from `.venv`.
-Extra arguments go to uvicorn, e.g. `./run.sh --port 8510`.
+Extra arguments go to uvicorn, e.g. `./run.sh --port 8510`. The terminal shows a start-up screen instead of uvicorn's per-request lines (they are on the Log page); `PICTURE_SORTER_VERBOSE=1 ./run.sh` brings the uvicorn lines back.
 
 | Command | What it does |
 |---|---|

@@ -105,8 +105,18 @@ case "$mode" in
             echo "Frontend not built yet - building it first..." >&2
             build_frontend
         fi
+        # The start-up screen (startup.py) replaces uvicorn's own start-up and per-request lines in the terminal;
+        # every request is still in data/logs/ and on the Log page. PICTURE_SORTER_VERBOSE=1 brings them back.
+        port=8999
+        args=("$@")
+        for i in "${!args[@]}"; do
+            [ "${args[$i]}" = "--port" ] && port="${args[$((i + 1))]:-8999}"
+        done
+        export PICTURE_SORTER_URL="http://127.0.0.1:$port"
+        quiet=(--log-level warning)
+        [ -n "${PICTURE_SORTER_VERBOSE:-}" ] && quiet=()
         echo "Using $VENV_NAME" >&2
         exec "$VENV_PYTHON" -m uvicorn api.main:app --app-dir "$BACKEND_DIR" \
-            --host 127.0.0.1 --port 8999 "$@"
+            --host 127.0.0.1 --port 8999 ${quiet[@]+"${quiet[@]}"} "$@"
         ;;
 esac

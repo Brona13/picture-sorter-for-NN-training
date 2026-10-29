@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+import re
 from contextlib import redirect_stdout
 
 import appinfo
@@ -50,3 +51,30 @@ class StartupTests(ApiTestCase):
         self.run_steps([("a", "Looks at itself", look)])
         self.assertFalse(seen["ready"])
         self.assertEqual(seen["steps"][0]["status"], "running")
+
+
+class FancyScreenTests(ApiTestCase):
+    """The terminal screen (boxes, spinner) is cosmetic but must not change what the steps do or break on a failing step."""
+
+    def test_box_is_as_wide_as_its_longest_plain_row(self) -> None:
+        import termui
+
+        lines = termui.box([("short", "\033[1mshort\033[0m"), ("a longer row", "a longer row")], "").splitlines()
+        plain = [re.sub(r"\033\[[0-9;]*m", "", line) for line in lines]
+        self.assertEqual({len(line) for line in plain}, {len(plain[0])})
+
+    def test_fancy_run_shows_the_url_and_still_reports_a_failing_step(self) -> None:
+        import termui
+        from unittest import mock
+
+        def boom() -> str:
+            raise RuntimeError("no disk")
+
+        out = io.StringIO()
+        with mock.patch.object(termui, "fancy", return_value=True), redirect_stdout(out):
+            startup.run([("a", "Loading thing (takes a while)", boom), ("b", "Fine", lambda: "ok")])
+        text = out.getvalue()
+        self.assertIn("failed: RuntimeError: no disk", text)
+        self.assertIn("Ready", text)
+        self.assertIn("http://127.0.0.1:8999", text)
+        self.assertEqual([s["status"] for s in startup.snapshot()["steps"]], ["failed", "done"])

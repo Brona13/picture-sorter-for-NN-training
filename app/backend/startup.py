@@ -8,6 +8,7 @@ server's lifespan starts it).
 """
 from __future__ import annotations
 
+import os
 import threading
 import time
 from typing import Callable
@@ -15,6 +16,7 @@ from typing import Callable
 import appinfo
 import applog
 import config
+import termui
 
 _log = applog.get("startup")
 _lock = threading.Lock()
@@ -24,6 +26,61 @@ _state: dict = {"ready": False, "version": appinfo.VERSION, "steps": [], "starte
 def _say(text: str) -> None:
     """One line in the terminal the app was started from (the server's own banner does the same)."""
     print(text, flush=True)
+
+
+def banner() -> None:
+    """The first thing the terminal shows: what is starting. Plain text unless the terminal can do more."""
+    if not termui.fancy():
+        _say(f"Picture Sorter {appinfo.VERSION} ({appinfo.RELEASED}): starting. Not ready until the line saying so appears below.")
+        return
+    title = f"◉ Picture Sorter   v{appinfo.VERSION} · {appinfo.RELEASED}"
+    sub = "curating image datasets for camera vision"
+    _say("\n" + termui.box([(title, termui.paint("◉ ", termui.CYAN) + termui.paint("Picture Sorter", termui.BOLD) + termui.paint(f"   v{appinfo.VERSION} · {appinfo.RELEASED}", termui.GREY)), (sub, termui.paint(sub, termui.DIM))], termui.BLUE) + "\n")
+
+
+def _url() -> str:
+    return os.environ.get("PICTURE_SORTER_URL", "http://127.0.0.1:8999")
+
+
+def _split_label(label: str) -> tuple[str, str]:
+    """"Loading PyTorch (about 6 s ...)" -> ("Loading PyTorch", "about 6 s ...")."""
+    head, sep, tail = label.partition(" (")
+    return head, tail.rstrip(")") if sep else ""
+
+
+def _run_fancy(steps: list[tuple[str, str, Callable[[], str]]], t0: float) -> None:
+    total = len(steps)
+    shorts = [_split_label(label)[0] for _, label, _ in steps]
+    pad = max(len(s) for s in shorts) + 2
+    for i, (key, label, work) in enumerate(steps):
+        short, hint = _split_label(label)
+        _set(i, status="running")
+        began = time.perf_counter()
+        text = f"{short.ljust(pad)}" + (termui.paint(hint, termui.DIM) + " " if hint else "")
+        with termui.Spinner(text):
+            try:
+                detail, status = work(), "done"
+            except Exception as exc:  # noqa: BLE001 - a start-up step must never stop the app
+                detail, status = f"failed: {type(exc).__name__}: {exc}", "failed"
+                _log.warning("start-up step %s failed", key, exc_info=True)
+        seconds = round(time.perf_counter() - began, 1)
+        _set(i, status=status, detail=detail, seconds=seconds)
+        mark = termui.paint("✔", termui.GREEN) if status == "done" else termui.paint("✖", termui.RED)
+        shade = termui.GREEN if status == "done" else termui.RED
+        _say(f"  {mark} {short.ljust(pad)}{termui.paint(detail, shade)}  {termui.paint(f'{seconds} s', termui.GREY)}")
+        _log.info("start-up step %s", key, extra=applog.fields(step=key, status=status, detail=detail, duration_ms=round(seconds * 1000)))
+    took = round(time.perf_counter() - t0, 1)
+    with _lock:
+        _state.update(ready=True, seconds=took)
+    url = _url()
+    ready = f"● Ready in {took} s - you can use it now"
+    _say("")
+    _say(termui.box([
+        (ready, termui.paint("● Ready", termui.BOLD, termui.GREEN) + termui.paint(f" in {took} s - you can use it now", termui.DIM)),
+        (f"➜ Open  {url}", termui.paint("➜ ", termui.CYAN) + "Open  " + termui.paint(termui.link(url), termui.BOLD, termui.CYAN)),
+        ("  Ctrl+C to stop", termui.paint("  Ctrl+C to stop", termui.GREY)),
+    ], termui.GREEN) + "\n")
+    _log.info("ready", extra=applog.audit(version=appinfo.VERSION, seconds=took))
 
 
 def snapshot() -> dict:
@@ -73,6 +130,8 @@ def run(steps: list[tuple[str, str, Callable[[], str]]] | None = None) -> None:
     t0 = time.perf_counter()
     with _lock:
         _state.update(ready=False, started=time.time(), seconds=None, steps=[{"key": k, "label": label, "status": "waiting", "detail": "", "seconds": None} for k, label, _ in steps])
+    if termui.fancy():
+        return _run_fancy(steps, t0)
     total = len(steps)
     for i, (key, label, work) in enumerate(steps):
         _set(i, status="running")

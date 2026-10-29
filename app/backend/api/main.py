@@ -60,7 +60,7 @@ _log = applog.get("http")
 async def _lifespan(_: FastAPI):
     """Logging starts with the server, not at import, so tests never write into the real data directory."""
     directory = applog.setup()
-    print(f"Picture Sorter {appinfo.VERSION} ({appinfo.RELEASED}): starting. Not ready until the line saying so appears below.", flush=True)  # the terminal the app was started from
+    startup.banner()  # the terminal the app was started from
     _log.info("started", extra=applog.audit(version=appinfo.VERSION, schema=db.SCHEMA_VERSION, log_dir=str(directory)))
     startup.start()  # PyTorch and the device are loaded now, in the background, not in the middle of the first request that needs them
     try:
