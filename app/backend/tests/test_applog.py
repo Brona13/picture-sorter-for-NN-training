@@ -266,3 +266,58 @@ class DebugTimingTests(ApiTestCase):
         self.assertEqual((work(), work()), (7, 7))
         applog.flush()
         self.assertEqual(sum(1 for r in applog.query(self.dir, level="DEBUG") if r["message"] == "step.decorated"), 2)
+
+
+class LogPageTests(ApiTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        self.dir = applog.setup(config.DATA_DIR / "logs")
+        self.addCleanup(applog.shutdown)
+        applog.set_debug(True)
+
+    def make_request(self, rid: str, path: str, steps: list[tuple[str, float, int]], ms: float) -> None:
+        from api.main import _log
+        token = applog.request_id.set(rid)
+        try:
+            for name, step_ms, depth in steps:
+                applog.get("timing").debug(name, extra=applog.fields(duration_ms=step_ms, depth=depth))
+            _log.warning("GET %s -> 200", path, extra=applog.fields(method="GET", path=path, status=200, duration_ms=ms))
+        finally:
+            applog.request_id.reset(token)
+
+    def test_a_page_has_a_total_an_order_and_filters(self) -> None:
+        self.make_request("r1", "/api/cameras/c/chain", [("chain.canvas", 90.0, 1), ("chain.edges", 5.0, 2)], 100.0)
+        self.make_request("r2", "/api/cameras/c/frames/a.jpg/thumb", [], 300.0)
+        applog.get("jobs").error("boom")
+        applog.flush()
+        everything = self.client.get("/api/logs/page", params={"level": "DEBUG", "limit": 2}).json()
+        self.assertEqual(everything["total"], 6)  # 2 steps + 2 requests + the error + the debug-on audit record
+        self.assertEqual(len(everything["rows"]), 2)
+        slowest = self.client.get("/api/logs/page", params={"level": "DEBUG", "order": "ms", "desc": "true"}).json()["rows"]
+        self.assertEqual(slowest[0]["duration_ms"], 300.0)
+        only = self.client.get("/api/logs/page", params={"level": "DEBUG", "min_ms": 95}).json()
+        self.assertEqual(sorted(r["duration_ms"] for r in only["rows"]), [100.0, 300.0])
+        by_text = self.client.get("/api/logs/page", params={"level": "DEBUG", "text": "chain."}).json()
+        self.assertEqual(by_text["total"], 2)  # the two steps; a request path "/chain" has no dot
+        by_area = self.client.get("/api/logs/page", params={"level": "DEBUG", "area": "jobs"}).json()
+        self.assertEqual([r["message"] for r in by_area["rows"]], ["boom"])
+        second = self.client.get("/api/logs/page", params={"level": "DEBUG", "limit": 4, "offset": 4}).json()
+        self.assertEqual(len(second["rows"]), 2)
+
+    def test_nested_lists_requests_and_gives_the_steps_of_one_on_demand(self) -> None:
+        self.make_request("r1", "/api/cameras/c/chain", [("chain.edges", 5.0, 2), ("chain.canvas", 90.0, 1)], 100.0)
+        applog.flush()
+        top = self.client.get("/api/logs/page", params={"level": "DEBUG", "nested": "true"}).json()["rows"]
+        request = next(r for r in top if r["logger"] == "http")
+        self.assertEqual(request["children"], 2)
+        self.assertNotIn("chain.canvas", [r["message"] for r in top])
+        steps = self.client.get("/api/logs/page", params={"children_of": "r1"}).json()["rows"]
+        self.assertEqual([r["message"] for r in steps], ["chain.canvas", "chain.edges"])  # started first, listed first
+
+    def test_facets_and_grouped_thumbnail_paths(self) -> None:
+        self.make_request("r1", "/api/cameras/c/frames/a.jpg/thumb", [], 300.0)
+        self.make_request("r2", "/api/cameras/c/frames/b.jpg/thumb", [], 200.0)
+        applog.flush()
+        self.assertIn("http", self.client.get("/api/logs/facets").json()["areas"])
+        rows = {r["name"]: r for r in self.client.get("/api/logs/timing").json()}
+        self.assertEqual(rows["GET /api/cameras/c/frames/*/thumb"]["count"], 2)

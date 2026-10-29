@@ -88,6 +88,29 @@ export interface LogQuery {
   limit?: number;
 }
 
+/** A page of the log table (`GET /api/logs/page`). `children` is the number of steps stored for a request row (nested listing). */
+export interface LogPage {
+  total: number;
+  rows: (LogRecord & { children?: number })[];
+}
+
+export interface LogPageQuery {
+  level?: string;
+  source?: string;
+  area?: string;
+  camera?: string;
+  request_id?: string;
+  since_restart?: boolean;
+  text?: string;
+  min_ms?: number;
+  order?: string;
+  desc?: boolean;
+  offset?: number;
+  limit?: number;
+  nested?: boolean;
+  children_of?: string;
+}
+
 export interface FeatureStatus {
   feature: string;
   short_name: string;
@@ -1265,6 +1288,12 @@ export const api = {
     for (const [k, v] of Object.entries(q)) if (v !== undefined && v !== "") params.set(k, String(v));
     return request<LogRecord[]>(`/logs?${params}`);
   },
+  logPage: (q: LogPageQuery = {}) => {
+    const params = new URLSearchParams();
+    for (const [k, v] of Object.entries(q)) if (v !== undefined && v !== "" && v !== false) params.set(k, String(v));
+    return request<LogPage>(`/logs/page?${params}`);
+  },
+  logFacets: () => request<{ areas: string[]; sources: string[] }>("/logs/facets"),
   logDebug: () => request<{ on: boolean }>("/logs/debug"),
   setLogDebug: (on: boolean) => request<{ on: boolean }>("/logs/debug", send("PUT", { on })),
   logTiming: (sinceRestart = true) => request<TimingRow[]>(`/logs/timing${sinceRestart ? "?since_restart=true" : ""}`),

@@ -68,6 +68,24 @@ def timing(since_restart: bool = False) -> list[dict[str, Any]]:
     return applog.timing_summary(since=applog.STARTED if since_restart else None)
 
 
+@router.get("/logs/facets")
+def facets() -> dict[str, list[str]]:
+    applog.flush()
+    return applog.facets()
+
+
+@router.get("/logs/page")
+def page(level: str | None = None, source: str | None = None, area: str | None = None, camera: str | None = None,
+         request_id: str | None = None, since_restart: bool = False, text: str | None = None, min_ms: float | None = None,
+         order: str = "time", desc: bool = True, offset: int = 0, limit: int = 50, nested: bool = False,
+         children_of: str | None = None) -> dict[str, Any]:
+    """The log as a table page: filters, order, paging, and (``nested``) one row per request with its steps on demand."""
+    applog.flush()
+    return applog.query_page(level=level, source=source, area=area, camera_name=camera, request=request_id,
+                             since=applog.STARTED if since_restart else None, text=text, min_ms=min_ms, order=order,
+                             descending=desc, offset=offset, limit=limit, nested=nested, children_of=children_of)
+
+
 @router.get("/logs")
 def read(level: str | None = None, source: str | None = None, camera: str | None = None,
          request_id: str | None = None, since_restart: bool = False, limit: int = 200) -> list[dict[str, Any]]:

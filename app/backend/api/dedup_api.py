@@ -97,7 +97,8 @@ def drop_deleted(camera: str, frames: list[str]) -> None:
 
 def _sklearn_available() -> bool:
     try:
-        from sklearn.cluster import DBSCAN  # noqa: F401, PLC0415
+        with applog.timed("dedup.import_sklearn"):  # the first import after a start takes seconds on a slow disk
+            from sklearn.cluster import DBSCAN  # noqa: F401, PLC0415
     except Exception:  # noqa: BLE001
         _log.info("scikit-learn is not available", exc_info=True)
         return False
@@ -126,7 +127,9 @@ def _saved_params(camera: str, feature: str, backbones: list[str]) -> dict:
 
 
 def _availability() -> str | None:
-    if not embedding.backbones():
+    with applog.timed("dedup.embedding_backbones"):  # waits for the PyTorch load when it is still running
+        found = embedding.backbones()
+    if not found:
         return "no_embeddings"
     if not methods_config.active_backbones():
         return "methods_off"
@@ -201,24 +204,44 @@ def _validate(camera: str, p: Params) -> None:
 
 @router.get("/cameras/{camera}/dedup/state")
 def state(camera: str, feature: str) -> dict:
-    require_embeddable(camera, feature)
-    scatter.prewarm()  # UMAP's first use imports and compiles for ~20 s: do it while the user is on this page
-    backbones = methods_config.active_backbones()
-    result = _current_result(camera, feature)
+    with applog.timed("dedup.state.require"):
+        require_embeddable(camera, feature)
+    with applog.timed("dedup.state.prewarm"):
+        scatter.prewarm()  # UMAP's first use imports and compiles for ~20 s: do it while the user is on this page
+    with applog.timed("dedup.state.backbones"):
+        backbones = methods_config.active_backbones()
+    with applog.timed("dedup.state.result"):
+        result = _current_result(camera, feature)
+    with applog.timed("dedup.state.source"):
+        source = dedup_box.label_source(camera, feature)  # the feature the picture actions (label, delete) go through
+    with applog.timed("dedup.state.availability"):
+        reason = _availability()
+    with applog.timed("dedup.state.params"):
+        params = _saved_params(camera, feature, backbones)
+    with applog.timed("dedup.state.frames"):
+        frames = len(dedup.live_frames(camera, feature))
+    with applog.timed("dedup.state.device"):  # imports PyTorch if it is not loaded yet
+        device, device_label = embedding.active_device(), embedding.device_label()
+    with applog.timed("dedup.state.muted"):
+        muted = len(db.muted_frames(camera, feature))
+    with applog.timed("dedup.state.describe"):
+        described = _describe(camera, feature, result) if result else None
+    with applog.timed("dedup.state.grid"):
+        grid = _grid_settings(camera, feature)
     return {
         "feature": feature,
-        "source": dedup_box.label_source(camera, feature),  # the feature the picture actions (label, delete) go through
-        "reason": _availability(),
+        "source": source,
+        "reason": reason,
         "backbones": backbones,
-        "params": _saved_params(camera, feature, backbones),
+        "params": params,
         "ranges": {"epsilon": EPSILON_RANGE, "min_points": MIN_POINTS_RANGE},
-        "frames": len(dedup.live_frames(camera, feature)),
-        "device": embedding.active_device(),
-        "device_label": embedding.device_label(),
-        "muted_count": len(db.muted_frames(camera, feature)),
+        "frames": frames,
+        "device": device,
+        "device_label": device_label,
+        "muted_count": muted,
         "projections": list(scatter.SUPPORTED_METHODS),
-        "result": _describe(camera, feature, result) if result else None,
-        "grid": _grid_settings(camera, feature),
+        "result": described,
+        "grid": grid,
     }
 
 

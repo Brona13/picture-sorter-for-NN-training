@@ -16,6 +16,19 @@ export function logsText(records: LogRecord[], header = ""): string {
   return header ? `${header}\n\n${body}` : body;
 }
 
+/** The rows on screen as text for a chat: in time order, a request's opened steps right after it, with a version header. */
+export function pageText(rows: (LogRecord & { children?: number })[], steps: Record<string, LogRecord[] | "loading">, header = ""): string {
+  const ordered = [...rows].sort((a, b) => a.ts - b.ts || a.id - b.id);
+  const parts: string[] = [];
+  for (const r of ordered) {
+    parts.push(recordText(r));
+    const kids = r.request_id ? steps[r.request_id] : undefined;
+    if (Array.isArray(kids)) for (const k of kids) parts.push(recordText(k).split("\n").map((l) => "    " + l).join("\n"));
+  }
+  const body = parts.join("\n\n");
+  return header ? `${header}\n\n${body}` : body;
+}
+
 /** The "where the time went" table as plain text for a chat (slowest total first, as it arrives). */
 export function timingText(rows: TimingRow[], header = ""): string {
   const name = Math.max(4, ...rows.map((r) => r.name.length));

@@ -18,6 +18,7 @@ import json
 import logging
 import logging.handlers
 import queue
+import re
 import sqlite3
 import threading
 import time
@@ -314,6 +315,14 @@ class timed(contextlib.ContextDecorator):  # noqa: N801 - used like a function: 
         get("timing").debug(self.name, extra=fields(duration_ms=ms, depth=_depth.get() + 1, **self.detail))
 
 
+_FRAME_PATH = re.compile(r"/frames/[^/]+/")
+
+
+def _group_path(path: str) -> str:
+    """A request path with the picture name replaced by ``*``, so the hundreds of thumbnail requests are one row."""
+    return _FRAME_PATH.sub("/frames/*/", str(path))
+
+
 def timing_summary(directory: Path | None = None, *, since: float | None = None, limit: int = 8000) -> list[dict[str, Any]]:
     """Where the time went: records with a duration grouped by what they measured (a request path or a timed step),
     slowest total first. Needs the debug mode to have been on."""
@@ -333,7 +342,7 @@ def timing_summary(directory: Path | None = None, *, since: float | None = None,
             if row["logger"] == "http":
                 try:
                     info = json.loads(row["extra"] or "{}")
-                    name = f"{info.get('method', '')} {info.get('path', name)}".strip()
+                    name = f"{info.get('method', '')} {_group_path(info.get('path', name))}".strip()
                 except ValueError:
                     pass
             groups.setdefault((row["logger"], name), []).append(row["duration_ms"])
@@ -345,7 +354,7 @@ def timing_summary(directory: Path | None = None, *, since: float | None = None,
             "total_ms": round(sum(values), 1), "avg_ms": round(sum(values) / len(values), 1),
             "p95_ms": values[min(len(values) - 1, int(len(values) * 0.95))], "max_ms": values[-1],
         })
-    return sorted(out, key=lambda r: r["total_ms"], reverse=True)[:60]
+    return sorted(out, key=lambda r: r["total_ms"], reverse=True)[:200]
 
 
 def shutdown() -> None:
@@ -395,3 +404,76 @@ def query(directory: Path | None = None, *, level: str | None = None, source: st
     sql = "SELECT * FROM logs" + (" WHERE " + " AND ".join(where) if where else "") + " ORDER BY id DESC LIMIT ?"
     with _open(path) as conn:
         return [dict(r) for r in conn.execute(sql, (*args, max(1, min(int(limit), 1000))))]
+
+
+_ORDER = {
+    "time": "ts",
+    "ms": "duration_ms",
+    "level": "CASE level WHEN 'DEBUG' THEN 0 WHEN 'INFO' THEN 1 WHEN 'WARNING' THEN 2 WHEN 'ERROR' THEN 3 ELSE 4 END",
+    "source": "source",
+    "area": "logger",
+    "message": "message",
+}
+
+
+def facets(directory: Path | None = None) -> dict[str, list[str]]:
+    """The values the log can be filtered by: areas (``logger``) and sources that occur in the database."""
+    path = Path(directory or _state["dir"] or log_dir()) / "logs.db"
+    if not path.exists():
+        return {"areas": [], "sources": []}
+    with _open(path) as conn:
+        areas = [r[0] for r in conn.execute("SELECT DISTINCT logger FROM logs ORDER BY logger")]
+        sources = [r[0] for r in conn.execute("SELECT DISTINCT source FROM logs ORDER BY source")]
+    return {"areas": areas, "sources": sources}
+
+
+def query_page(directory: Path | None = None, *, level: str | None = None, source: str | None = None, area: str | None = None,
+               camera_name: str | None = None, request: str | None = None, since: float | None = None, text: str | None = None,
+               min_ms: float | None = None, order: str = "time", descending: bool = True, offset: int = 0, limit: int = 50,
+               nested: bool = False, children_of: str | None = None) -> dict[str, Any]:
+    """One page of the log as a table: ``{"total", "rows"}``.
+
+    ``nested`` lists a request once (its ``http`` record) and leaves out the steps that belong to it; the steps of one
+    request come from ``children_of=<request id>`` (oldest start first, so they read as a tree with their ``depth``).
+    Rows of a nested listing carry ``children``, the number of steps stored for that request."""
+    path = Path(directory or _state["dir"] or log_dir()) / "logs.db"
+    if not path.exists():
+        return {"total": 0, "rows": []}
+    levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+    where: list[str] = []
+    args: list[Any] = []
+    if children_of:
+        where.append("request_id = ? AND logger != 'http'")
+        args.append(children_of)
+        order_sql = "ts - COALESCE(duration_ms, 0) / 1000.0 ASC, id ASC"
+        limit, offset = 1000, 0
+    else:
+        if level and level.upper() in levels:
+            keep = levels[levels.index(level.upper()):]
+            where.append(f"level IN ({', '.join('?' * len(keep))})")
+            args += keep
+        for column, value in (("source", source), ("logger", area), ("camera", camera_name), ("request_id", request)):
+            if value:
+                where.append(f"{column} = ?")
+                args.append(value)
+        if since is not None:
+            where.append("ts >= ?")
+            args.append(since)
+        if text:
+            where.append("(message LIKE ? OR extra LIKE ? OR exc LIKE ?)")
+            args += [f"%{text}%"] * 3
+        if min_ms is not None:
+            where.append("duration_ms >= ?")
+            args.append(float(min_ms))
+        if nested:
+            where.append("(request_id IS NULL OR logger = 'http')")
+        order_sql = f"{_ORDER.get(order, 'ts')} {'DESC' if descending else 'ASC'}, id {'DESC' if descending else 'ASC'}"
+    clause = " WHERE " + " AND ".join(where) if where else ""
+    kids = ", (SELECT COUNT(*) FROM logs c WHERE c.request_id = logs.request_id AND c.logger != 'http') AS children" if nested and not children_of else ""
+    with _open(path) as conn:
+        total = conn.execute("SELECT COUNT(*) FROM logs" + clause, args).fetchone()[0]
+        rows = [dict(r) for r in conn.execute(
+            f"SELECT *{kids} FROM logs{clause} ORDER BY {order_sql} LIMIT ? OFFSET ?",
+            (*args, max(1, min(int(limit), 1000)), max(0, int(offset))),
+        )]
+    return {"total": total, "rows": rows}

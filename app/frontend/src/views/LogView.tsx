@@ -1,114 +1,189 @@
-import { useCallback, useEffect, useState } from "react";
-import { api, LogRecord, TimingRow } from "../api";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { api, LogPage, LogRecord, TimingRow } from "../api";
 import CopyButton from "../CopyButton";
-import { logsText, recordText, timingText } from "./logText";
+import { pageText, recordText } from "./logText";
+import TimingPanel from "./TimingPanel";
 
+type Row = LogRecord & { children?: number };
 const LEVELS = ["DEBUG", "INFO", "WARNING", "ERROR"];
+const PER_PAGE = [25, 50, 100, 200];
 const STORE = "picture-sorter.log-filters";
+type Order = "time" | "ms" | "level" | "area" | "message";
 
-type Filters = { level: string; source: string; thisCamera: boolean; sinceRestart: boolean };
-const DEFAULTS: Filters = { level: "WARNING", source: "", thisCamera: false, sinceRestart: false };
+type Settings = {
+  level: string;
+  source: string;
+  area: string;
+  thisCamera: boolean;
+  sinceRestart: boolean;
+  text: string;
+  minMs: string;
+  order: Order;
+  desc: boolean;
+  perPage: number;
+  nested: boolean;
+};
+const DEFAULTS: Settings = { level: "WARNING", source: "", area: "", thisCamera: false, sinceRestart: false, text: "", minMs: "", order: "time", desc: true, perPage: 50, nested: false };
 
-/** The filters the person chose last time (this browser only; the page works without storage). */
-function storedFilters(): Filters {
+/** What the person chose last time (this browser only; the page works without storage). */
+function storedSettings(): Settings {
   try {
-    const raw = JSON.parse(localStorage.getItem(STORE) ?? "{}") as Partial<Filters>;
+    const raw = JSON.parse(localStorage.getItem(STORE) ?? "{}") as Partial<Settings>;
     return {
       level: LEVELS.includes(raw.level ?? "") ? raw.level! : DEFAULTS.level,
-      source: raw.source === "backend" || raw.source === "frontend" ? raw.source : DEFAULTS.source,
+      source: typeof raw.source === "string" ? raw.source : DEFAULTS.source,
+      area: typeof raw.area === "string" ? raw.area : DEFAULTS.area,
       thisCamera: raw.thisCamera === true,
       sinceRestart: raw.sinceRestart === true,
+      text: typeof raw.text === "string" ? raw.text : "",
+      minMs: typeof raw.minMs === "string" ? raw.minMs : "",
+      order: (["time", "ms", "level", "area", "message"] as Order[]).includes(raw.order as Order) ? (raw.order as Order) : DEFAULTS.order,
+      desc: raw.desc !== false,
+      perPage: PER_PAGE.includes(raw.perPage ?? 0) ? raw.perPage! : DEFAULTS.perPage,
+      nested: raw.nested === true,
     };
   } catch {
     return DEFAULTS;
   }
 }
 
-/** The log database: filter by level, source, camera or request id; copy records as text for Claude. */
+const depthOf = (r: LogRecord): number => {
+  try {
+    return Number((JSON.parse(r.extra ?? "{}") as { depth?: number }).depth ?? 1);
+  } catch {
+    return 1;
+  }
+};
+
+/** The log database as a table: filter, order, page, and (grouped) one row per request with its steps below it. */
 export default function LogView({ camera }: { camera: string }) {
-  const [records, setRecords] = useState<LogRecord[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [initial] = useState(storedFilters);
-  const [level, setLevel] = useState(initial.level);
-  const [source, setSource] = useState(initial.source);
-  const [thisCamera, setThisCamera] = useState(initial.thisCamera);
+  const [initial] = useState(storedSettings);
+  const [s, setS] = useState<Settings>(initial);
+  const [textInput, setTextInput] = useState(initial.text);
+  const [msInput, setMsInput] = useState(initial.minMs);
   const [requestId, setRequestId] = useState("");
-  const [sinceRestart, setSinceRestart] = useState(initial.sinceRestart);
+  const [offset, setOffset] = useState(0);
+  const [page, setPage] = useState<LogPage | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<number | null>(null);
+  const [expanded, setExpanded] = useState<Record<string, Row[] | "loading">>({});
+  const [facets, setFacets] = useState<{ areas: string[]; sources: string[] }>({ areas: [], sources: [] });
   const [version, setVersion] = useState("");
   const [debug, setDebug] = useState(false);
   const [timing, setTiming] = useState<TimingRow[] | null>(null);
+  const change = (patch: Partial<Settings>) => {
+    setS((old) => ({ ...old, ...patch }));
+    setOffset(0);
+  };
 
   useEffect(() => {
     try {
-      localStorage.setItem(STORE, JSON.stringify({ level, source, thisCamera, sinceRestart }));
+      localStorage.setItem(STORE, JSON.stringify(s));
     } catch {
-      /* storage blocked: the filters are simply not remembered */
+      /* storage blocked: the settings are simply not remembered */
     }
-  }, [level, source, thisCamera, sinceRestart]);
+  }, [s]);
 
+  // The search and minimum-time boxes apply a moment after the last key.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      if (textInput !== s.text || msInput !== s.minMs) change({ text: textInput, minMs: msInput });
+    }, 350);
+    return () => clearTimeout(t);
+  }, [textInput, msInput]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const seq = useRef(0);
   const load = useCallback(() => {
+    const mine = ++seq.current;
+    const minMs = Number(s.minMs);
     api
-      .logs({ level, source, camera: thisCamera ? camera : "", request_id: requestId.trim(), since_restart: sinceRestart || undefined, limit: 300 })
+      .logPage({
+        level: s.level,
+        source: s.source,
+        area: s.area,
+        camera: s.thisCamera ? camera : "",
+        request_id: requestId.trim(),
+        since_restart: s.sinceRestart || undefined,
+        text: s.text.trim(),
+        min_ms: s.minMs.trim() !== "" && Number.isFinite(minMs) ? minMs : undefined,
+        order: s.order,
+        desc: s.desc,
+        offset,
+        limit: s.perPage,
+        nested: s.nested || undefined,
+      })
       .then((r) => {
-        setRecords(r);
+        if (mine !== seq.current) return;
+        setPage(r);
+        setExpanded({});
         setError(null);
       })
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
-  }, [level, source, thisCamera, camera, requestId, sinceRestart]);
-
+      .catch((e: unknown) => mine === seq.current && setError(e instanceof Error ? e.message : String(e)));
+  }, [s, camera, requestId, offset]);
   useEffect(load, [load]);
+
   useEffect(() => {
+    api.logFacets().then((f) => setFacets({ areas: f.areas ?? [], sources: f.sources ?? [] })).catch(() => {});
     api.logDebug().then((d) => setDebug(d.on === true)).catch(() => {});
+    fetch("/api/version").then((r) => r.json()).then((v) => setVersion(`Picture Sorter ${v.version}`)).catch(() => {});
   }, []);
+
+  const fail = (e: unknown) => setError(e instanceof Error ? e.message : String(e));
   const switchDebug = (on: boolean) => {
     api.setLogDebug(on).then((d) => {
       setDebug(d.on);
-      if (d.on) setLevel("DEBUG");
-    }).catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
+      if (d.on) change({ level: "DEBUG" });
+    }).catch(fail);
   };
-  const loadTiming = () => {
-    api.logTiming(true).then(setTiming).catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
+  const loadTiming = () => api.logTiming(true).then(setTiming).catch(fail);
+
+  const toggleRequest = (r: Row) => {
+    const id = r.request_id;
+    if (!id) return;
+    if (expanded[id]) {
+      setExpanded(({ [id]: _drop, ...rest }) => rest);
+      return;
+    }
+    setExpanded((e) => ({ ...e, [id]: "loading" }));
+    api.logPage({ children_of: id }).then((p) => setExpanded((e) => ({ ...e, [id]: p.rows }))).catch((err) => {
+      setExpanded(({ [id]: _drop, ...rest }) => rest);
+      fail(err);
+    });
   };
-  useEffect(() => {
-    fetch("/api/version").then((r) => r.json()).then((v) => setVersion(`Picture Sorter ${v.version}`)).catch(() => {});
-  }, []);
+
+  const sortBy = (order: Order) => change(s.order === order ? { desc: !s.desc } : { order, desc: order === "time" || order === "ms" });
+  const head = (order: Order, label: string, right = false) => (
+    <th align={right ? "right" : "left"} aria-sort={s.order === order ? (s.desc ? "descending" : "ascending") : "none"}>
+      <button type="button" className="link" onClick={() => sortBy(order)}>{label}{s.order === order ? (s.desc ? " ▼" : " ▲") : ""}</button>
+    </th>
+  );
+
+  const total = page?.total ?? 0;
+  const first = total === 0 ? 0 : offset + 1;
+  const last = Math.min(total, offset + s.perPage);
+  const rows = page?.rows ?? [];
+  const reset = () => {
+    setTextInput("");
+    setMsInput("");
+    setRequestId("");
+    setS({ ...DEFAULTS, perPage: s.perPage });
+    setOffset(0);
+  };
 
   return (
     <section>
       <h2>Log</h2>
-      <p>Errors and events the app recorded, from the backend and from this browser. Click a request id to see everything that belongs to one action.</p>
+      <p>Errors and events the app recorded, from the backend and from this browser. Click a column to sort; with "Group by request" each request is one row and its steps open below it.</p>
       <p>
         <label title="Records every request and every timed step with its duration, also the fast ones. Costs a little speed and disk; switch it off when done. It stays on after a restart.">
           <input type="checkbox" checked={debug} onChange={(e) => switchDebug(e.target.checked)} /> Debug mode (log how long actions take)
-        </label>{" "}
-        {debug && <button type="button" onClick={loadTiming}>Where the time went</button>}
+        </label>
       </p>
-      {timing && timing.length > 0 && <p><CopyButton text={timingText(timing, version)} label="Copy timing for Claude" /></p>}
-      {timing && (
-        <table className="log-table" aria-label="Where the time went" style={{ borderCollapse: "collapse", marginBottom: 12 }}>
-          <thead>
-            <tr><th align="left">What</th><th align="right">Times</th><th align="right">Total ms</th><th align="right">Average</th><th align="right">95%</th><th align="right">Max</th></tr>
-          </thead>
-          <tbody>
-            {timing.length === 0 && <tr><td colSpan={6}>Nothing measured yet: use the app for a while with debug mode on, then press the button again.</td></tr>}
-            {timing.map((t) => (
-              <tr key={`${t.kind}:${t.name}`} style={{ borderTop: "1px solid #8884" }}>
-                <td>{t.kind === "step" ? "· " : ""}{t.name}</td>
-                <td align="right">{t.count}</td>
-                <td align="right">{t.total_ms}</td>
-                <td align="right">{t.avg_ms}</td>
-                <td align="right">{t.p95_ms}</td>
-                <td align="right">{t.max_ms}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+      <TimingPanel rows={timing} version={version} onReload={() => void loadTiming()} />
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
         <label>
           Level{" "}
-          <select value={level} onChange={(e) => setLevel(e.target.value)}>
+          <select value={s.level} onChange={(e) => change({ level: e.target.value })}>
             {LEVELS.map((l) => (
               <option key={l} value={l}>{l === "DEBUG" ? "all (DEBUG+)" : `${l}+`}</option>
             ))}
@@ -116,63 +191,116 @@ export default function LogView({ camera }: { camera: string }) {
         </label>
         <label>
           Source{" "}
-          <select value={source} onChange={(e) => setSource(e.target.value)}>
+          <select value={s.source} onChange={(e) => change({ source: e.target.value })}>
             <option value="">both</option>
-            <option value="backend">backend</option>
-            <option value="frontend">frontend</option>
+            {[...new Set(["backend", "frontend", ...facets.sources])].map((x) => <option key={x} value={x}>{x}</option>)}
           </select>
         </label>
         <label>
-          <input type="checkbox" checked={thisCamera} onChange={(e) => setThisCamera(e.target.checked)} disabled={!camera} /> only {camera || "this camera"}
-        </label>
-        <label title="Only what was recorded after the backend was last started">
-          <input type="checkbox" checked={sinceRestart} onChange={(e) => setSinceRestart(e.target.checked)} /> since app restart
+          Area{" "}
+          <select value={s.area} onChange={(e) => change({ area: e.target.value })}>
+            <option value="">all</option>
+            {facets.areas.map((x) => <option key={x} value={x}>{x}</option>)}
+          </select>
         </label>
         <label>
-          Request id <input value={requestId} onChange={(e) => setRequestId(e.target.value)} size={14} />
+          <input type="checkbox" checked={s.thisCamera} onChange={(e) => change({ thisCamera: e.target.checked })} disabled={!camera} /> only {camera || "this camera"}
+        </label>
+        <label title="Only what was recorded after the backend was last started">
+          <input type="checkbox" checked={s.sinceRestart} onChange={(e) => change({ sinceRestart: e.target.checked })} /> since app restart
+        </label>
+        <label>
+          Find text <input value={textInput} onChange={(e) => setTextInput(e.target.value)} size={14} aria-label="Find text" />
+        </label>
+        <label title="Only records that took at least this many milliseconds">
+          Slower than <input value={msInput} onChange={(e) => setMsInput(e.target.value)} size={5} inputMode="decimal" aria-label="Slower than (ms)" /> ms
+        </label>
+        <label>
+          Request id <input value={requestId} onChange={(e) => { setRequestId(e.target.value); setOffset(0); }} size={14} />
+        </label>
+        <label title="One row per request; its timed steps open below it">
+          <input type="checkbox" checked={s.nested} onChange={(e) => change({ nested: e.target.checked })} /> Group by request
+        </label>
+        <label>
+          Per page{" "}
+          <select value={s.perPage} onChange={(e) => change({ perPage: Number(e.target.value) })}>
+            {PER_PAGE.map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
         </label>
         <button type="button" onClick={load}>Refresh</button>
-        {records && records.length > 0 && <CopyButton text={logsText(records, version)} label={`Copy ${records.length} for Claude`} />}
+        <button type="button" onClick={reset}>Reset filters</button>
+        {rows.length > 0 && <CopyButton text={pageText(rows, expanded, version)} label={`Copy ${rows.length} for Claude`} />}
       </div>
       {error && <p role="alert">{error}</p>}
-      {!records ? (
+      {!page ? (
         <p>Loading…</p>
-      ) : records.length === 0 ? (
+      ) : rows.length === 0 ? (
         <p>No records for this filter.</p>
       ) : (
-        <table className="log-table" style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead>
-            <tr><th align="left">Time</th><th align="right">ms</th><th align="left">Level</th><th align="left">Source</th><th align="left">Message</th><th align="left">Request</th></tr>
-          </thead>
-          <tbody>
-            {records.map((r) => (
-              <FragmentRow key={r.id} r={r} open={open === r.id} onToggle={() => setOpen(open === r.id ? null : r.id)} onRequest={setRequestId} />
-            ))}
-          </tbody>
-        </table>
+        <>
+          <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 6 }} aria-label="Pages">
+            <button type="button" onClick={() => setOffset(Math.max(0, offset - s.perPage))} disabled={offset === 0}>‹ Previous</button>
+            <span>{first}–{last} of {total}</span>
+            <button type="button" onClick={() => setOffset(offset + s.perPage)} disabled={last >= total}>Next ›</button>
+          </div>
+          <table className="log-table" style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr>
+                {s.nested && <th aria-label="Steps" />}
+                {head("time", "Time")}
+                {head("ms", "ms", true)}
+                {head("level", "Level")}
+                {head("area", "Source")}
+                {head("message", "Message")}
+                <th align="left">Request</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <Fragment key={r.id}>
+                  <LogRow r={r} nested={s.nested} open={open === r.id} onToggle={() => setOpen(open === r.id ? null : r.id)} onRequest={(id) => { setRequestId(id); setOffset(0); }}
+                    stepsOpen={!!r.request_id && !!expanded[r.request_id]} onSteps={() => toggleRequest(r)} />
+                  {r.request_id && Array.isArray(expanded[r.request_id]) && (expanded[r.request_id] as Row[]).map((c) => (
+                    <LogRow key={c.id} r={c} child depth={depthOf(c)} nested={s.nested} open={open === c.id} onToggle={() => setOpen(open === c.id ? null : c.id)} onRequest={(id) => { setRequestId(id); setOffset(0); }} />
+                  ))}
+                  {r.request_id && expanded[r.request_id] === "loading" && <tr><td colSpan={7}>Loading steps…</td></tr>}
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
+        </>
       )}
     </section>
   );
 }
 
-function FragmentRow({ r, open, onToggle, onRequest }: { r: LogRecord; open: boolean; onToggle: () => void; onRequest: (id: string) => void }) {
+function LogRow({ r, nested, open, onToggle, onRequest, child = false, depth = 0, stepsOpen = false, onSteps }: {
+  r: Row; nested: boolean; open: boolean; onToggle: () => void; onRequest: (id: string) => void; child?: boolean; depth?: number; stepsOpen?: boolean; onSteps?: () => void;
+}) {
   const d = new Date(r.ts * 1000);
   const when = `${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour12: false })}.${String(d.getMilliseconds()).padStart(3, "0")}`;
   return (
     <>
-      <tr data-testid={`log-row-${r.id}`} style={{ borderTop: "1px solid #8884", color: r.level === "ERROR" || r.level === "CRITICAL" ? "#c0392b" : undefined }}>
+      <tr data-testid={`log-row-${r.id}`} style={{ borderTop: "1px solid #8884", color: r.level === "ERROR" || r.level === "CRITICAL" ? "#c0392b" : undefined, opacity: child ? 0.9 : 1 }}>
+        {nested && (
+          <td style={{ width: 24 }}>
+            {!child && (r.children ?? 0) > 0 && (
+              <button type="button" className="link" onClick={onSteps} aria-expanded={stepsOpen} aria-label={`${stepsOpen ? "Hide" : "Show"} ${r.children} steps`} title={`${r.children} steps`}>{stepsOpen ? "▾" : "▸"}</button>
+            )}
+          </td>
+        )}
         <td style={{ whiteSpace: "nowrap" }}>{when}</td>
         <td align="right">{r.duration_ms ?? ""}</td>
         <td>{r.level}</td>
         <td>{r.source}/{r.logger}</td>
-        <td>
-          <button type="button" className="link" onClick={onToggle} aria-expanded={open} style={{ textAlign: "left" }}>{r.message}</button>
+        <td style={child ? { paddingLeft: 12 + depth * 16 } : undefined}>
+          <button type="button" className="link" onClick={onToggle} aria-expanded={open} style={{ textAlign: "left" }}>{child ? "↳ " : ""}{r.message}</button>
         </td>
-        <td>{r.request_id && <button type="button" className="link" title="Show this request only" onClick={() => onRequest(r.request_id!)}>{r.request_id}</button>}</td>
+        <td>{!child && r.request_id && <button type="button" className="link" title="Show this request only" onClick={() => onRequest(r.request_id!)}>{r.request_id}</button>}</td>
       </tr>
       {open && (
         <tr>
-          <td colSpan={6}>
+          <td colSpan={nested ? 7 : 6}>
             <pre style={{ whiteSpace: "pre-wrap", margin: 0 }}>{recordText(r)}</pre>
             <CopyButton text={recordText(r)} label="Copy this record" />
           </td>
