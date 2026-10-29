@@ -8,6 +8,7 @@ import ProductSelect from "./ProductSelect";
 import { RankContext } from "./RankContext";
 import RankSelect from "./RankSelect";
 import { FeatureContext } from "./SharedFeature";
+import StartupBanner from "./StartupBanner";
 import StatusBar from "./StatusBar";
 import ToolIcon from "./ToolIcon";
 import StepBar from "./StepBar";
@@ -252,6 +253,7 @@ export default function App() {
     <FeatureContext.Provider value={{ feature, setFeature: (f) => { lastSession.setFeature(camera, f); setSelected({ camera, feature: f }); } }}>
     <RankContext.Provider value={{ rank }}>
     <div className="app">
+      <StartupBanner />
       <header className="topbar" ref={topbarRef}>
         <nav aria-label="Sections" className="topbar-row">
           <h1>Picture Sorter</h1>

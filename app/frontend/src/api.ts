@@ -780,6 +780,13 @@ const send = (method: string, body?: unknown): RequestInit => ({
   body: body === undefined ? undefined : JSON.stringify(body),
 });
 
+/** What the backend is still loading after a start (`GET /api/startup`). */
+export interface StartupState {
+  ready: boolean;
+  version: string;
+  steps: { key: string; label: string; status: "waiting" | "running" | "done" | "failed"; detail: string; seconds: number | null }[];
+}
+
 export interface DeviceInfo {
   kind: "amd" | "nvidia" | "cpu";
   label: string;
@@ -1252,6 +1259,7 @@ export const api = {
     return res.blob();
   },
   health: () => request<{ status: string }>("/health"),
+  startup: () => request<StartupState>("/startup"),
   logs: (q: LogQuery = {}) => {
     const params = new URLSearchParams();
     for (const [k, v] of Object.entries(q)) if (v !== undefined && v !== "") params.set(k, String(v));

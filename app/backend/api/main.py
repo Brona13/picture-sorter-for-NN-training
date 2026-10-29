@@ -25,6 +25,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException  # noqa
 import applog  # noqa: E402
 import appinfo  # noqa: E402
 import db  # noqa: E402
+import startup  # noqa: E402
 import labels  # noqa: E402
 from api import cameras, chain_api, classify_api, config_api, dedup_api, flow_api, frames_api, ingest_api, insights_api, jobs, logs_api, motion_api, outliers_api, overview_api, roi_api, rules_api, similar_api, status, verdicts_api, versions_api, vision_api  # noqa: E402
 
@@ -59,8 +60,9 @@ _log = applog.get("http")
 async def _lifespan(_: FastAPI):
     """Logging starts with the server, not at import, so tests never write into the real data directory."""
     directory = applog.setup()
-    print(f"Picture Sorter {appinfo.VERSION} ({appinfo.RELEASED})", flush=True)  # the terminal the app was started from
+    print(f"Picture Sorter {appinfo.VERSION} ({appinfo.RELEASED}): starting. Not ready until the line saying so appears below.", flush=True)  # the terminal the app was started from
     _log.info("started", extra=applog.audit(version=appinfo.VERSION, schema=db.SCHEMA_VERSION, log_dir=str(directory)))
+    startup.start()  # PyTorch and the device are loaded now, in the background, not in the middle of the first request that needs them
     try:
         yield
     finally:
@@ -125,6 +127,11 @@ def create_app() -> FastAPI:
     @app.get("/api/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/api/startup")
+    def startup_progress() -> dict:
+        """What the backend is still loading after a start (steps with status and seconds) and whether it is ready."""
+        return startup.snapshot()
 
     @app.get("/api/version")
     def version() -> dict[str, str]:
