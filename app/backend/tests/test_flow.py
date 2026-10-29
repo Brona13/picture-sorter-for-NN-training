@@ -23,6 +23,14 @@ RIGHT_HOLE = [152, 102, 36, 36]
 ANGLES = [0.0, 2.0, 30.0, 358.0]
 
 
+def width_of(case: "FlowTests") -> int:
+    return cv2.imread(str(datamodel.unsorted_dir(CAM) / case.names[0])).shape[1]
+
+
+def height_of(case: "FlowTests") -> int:
+    return cv2.imread(str(datamodel.unsorted_dir(CAM) / case.names[0])).shape[0]
+
+
 class FlowTests(ApiTestCase):
     def setUp(self) -> None:
         super().setUp()
@@ -844,14 +852,6 @@ class FlowTests(ApiTestCase):
         self.assertNotIn("hole", flow.load_stored(CAM, d2)["frames"][gone])
         self.assertIn(self.names[1], flow.review_frames(CAM, d2))
 
-
-def width_of(case: "FlowTests") -> int:
-    return cv2.imread(str(datamodel.unsorted_dir(CAM) / case.names[0])).shape[1]
-
-
-def height_of(case: "FlowTests") -> int:
-    return cv2.imread(str(datamodel.unsorted_dir(CAM) / case.names[0])).shape[0]
-
     def _anchored_setup(self):
         d1 = self.detector({"A": LEFT_BOX})
         self.run_all()
@@ -933,13 +933,22 @@ def height_of(case: "FlowTests") -> int:
 
     def test_calculate_detail_names_its_detector_and_the_crops_above_it(self) -> None:
         crop, width, height = self._crop([20, 30, 200, 150])
-        det = self.node("detector")
-        self.post("/edges", {"source": crop, "target": det})
+        det = self.detector({"A": LEFT_BOX, "B": RIGHT_BOX}, parent=crop)  # a Calculate box needs two points to name a detector
         calc = self.node("calc")
         self.post("/edges", {"source": det, "target": calc})
         detail = self.node_detail(calc)
         self.assertEqual(detail["input"], det)
         self.assertEqual(len(detail["crops"]), 1)
+
+    def test_calculate_detail_lets_two_detectors_on_the_same_picture_draw_together(self) -> None:
+        d1, d2, calc, _ = self.chain()
+        self.post("/edges/remove", {"source": d2, "target": calc}, status=200)
+        self.post("/edges", {"source": d2, "target": calc, "point": "A"})
+        self.post("/edges", {"source": d1, "target": calc, "point": "B"})
+        detail = self.node_detail(calc)
+        self.assertIsNone(detail["input"])  # two detectors: no single input, but the overlay still has both
+        self.assertEqual(detail["point_sources"], {"a": [d2, "A"], "b": [d1, "B"]})
+        self.assertTrue(detail["same_picture"])
 
 
 class LargeExampleTests(ApiTestCase):

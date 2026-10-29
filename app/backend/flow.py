@@ -1755,6 +1755,14 @@ def effective_points(graph: dict, calc_id: str) -> tuple[str | None, str | None]
     return a, b
 
 
+def calc_point_sources(graph: dict, calc_id: str) -> dict[str, tuple[str, str]] | None:
+    """``{"a": (detector, target), "b": (detector, target)}`` for the two points a Calculate box uses (they may come from
+    two detectors), or None while it lacks one."""
+    keys = point_keys(graph, calc_id)
+    a, b = effective_points(graph, calc_id)
+    return {"a": keys[a], "b": keys[b]} if a in keys and b in keys else None
+
+
 def calc_detector(graph: dict, calc_id: str) -> str | None:
     """The one detector both points come from, or None when they come from different detectors (or are missing)."""
     keys = point_keys(graph, calc_id)
@@ -2154,6 +2162,12 @@ def node_detail(camera: str, node_id: str, graph: dict | None = None) -> dict:
             "input": parent,  # the one detector both points come from (None when they come from two), and the crops above it
             "crops": input_rects(graph, parent) if parent else [],
         })
+        sources = calc_point_sources(graph, node_id)
+        if sources:
+            same = sources["a"][0] == sources["b"][0] or input_rects(graph, sources["a"][0]) == input_rects(graph, sources["b"][0])
+            detail.update(point_sources=sources, same_picture=same)
+            if same and not parent:
+                detail["crops"] = input_rects(graph, sources["a"][0])  # two detectors on the same picture: the cut-out both boxes are in
     elif kind == "dedup":
         parent = next((e["source"] for e in graph["edges"] if e["target"] == node_id), None)
         detail.update({"input_box": parent, "source": node.get("source")})

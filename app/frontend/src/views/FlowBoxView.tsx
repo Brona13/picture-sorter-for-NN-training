@@ -723,11 +723,28 @@ function ValuesWork(p: {
     if (!calcId) { setCalc(null); return; }
     api.flowNode(camera, calcId).then((d) => setCalc(d.kind === "calc" ? d : null)).catch(() => setCalc(null)); // cosmetic
   }, [camera, calcId, stamp, p.version]); // eslint-disable-line react-hooks/exhaustive-deps
-  const detectorId = calc?.input ?? null;
+  // One detector gives both points, or two detectors that work on the same picture (their boxes are drawn together).
+  const src = calc?.point_sources;
+  const detectorId = calc?.input ?? (calc?.same_picture && src ? src.a[0] : null);
+  const detectorB = calc && !calc.input && calc.same_picture && src && src.b[0] !== src.a[0] ? src.b[0] : null;
   useEffect(() => {
     if (!detectorId) { setFoundBoxes({}); return; }
-    api.flowBoxes(camera, detectorId).then((b) => setFoundBoxes(b.boxes)).catch(() => setFoundBoxes({}));
-  }, [camera, detectorId, p.version]);
+    let current = true;
+    const second = detectorB ? api.flowBoxes(camera, detectorB) : Promise.resolve(null);
+    Promise.all([api.flowBoxes(camera, detectorId), second]).then(([first, other]) => {
+      if (!current) return;
+      if (!other || !src || !calc) { setFoundBoxes(first.boxes); return; }
+      // two detectors: each point keeps its own target's box, keyed by the point's name so the drawing finds it
+      const merged: Record<string, Record<string, FlowBox>> = {};
+      for (const [frame, boxes] of Object.entries(first.boxes)) {
+        const a = boxes[src.a[1]];
+        const b = other.boxes[frame]?.[src.b[1]];
+        merged[frame] = { ...(a && calc.a ? { [calc.a]: a } : {}), ...(b && calc.b ? { [calc.b]: b } : {}) };
+      }
+      setFoundBoxes(merged);
+    }).catch(() => { if (current) setFoundBoxes({}); });
+    return () => { current = false; };
+  }, [camera, detectorId, detectorB, p.version]); // eslint-disable-line react-hooks/exhaustive-deps
   // On an Evaluation page the viewer also draws the pass region of the rule (zone, angle wedge, distance ring, dx / dy band).
   const evalSpec = useMemo<EvalSpec | null>(
     () => (tolerance && calc ? { mode: tolerance.mode, op: calc.op, zone: tolerance.zone, nominal: tolerance.nominal, tolerance: tolerance.tolerance, clockwise: calc.clockwise, unit: tolerance.unit } : null),

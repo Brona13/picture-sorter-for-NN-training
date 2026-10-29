@@ -581,6 +581,10 @@ export interface FlowCalc {
   /** The detector the two points come from, and the crops above it (the picture its boxes are in). */
   input?: string | null;
   crops?: FlowStep[];
+  /** Where points A and B come from, as [detector, target]; they may be two detectors. */
+  point_sources?: { a: [string, string]; b: [string, string] };
+  /** Both detectors work on the same picture, so their boxes can be drawn together. */
+  same_picture?: boolean;
 }
 /** The zone of an Evaluation behind an Offset: pixels from point A (see `zoneGeometry.ts`). */
 export interface FlowZone {
