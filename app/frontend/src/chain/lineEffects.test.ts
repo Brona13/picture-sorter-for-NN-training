@@ -91,12 +91,8 @@ test("a line from Ingest onto a product-scoped ROI says it replaces the product 
 });
 
 
-test("an Evaluation line onto a Classifier asks first: the verdicts replace hand labels", () => {
+test("an Evaluation line onto a Classifier or a class dot asks nothing: pass is OK, fail is NG", () => {
   const c = canvas(base, []);
-  const link = { evaluationOf: { feature: "f", box: "eval:1" } };
-  const note = replaceNote(c, { source: "eval:1", sourceHandle: "all", target: "roi:f" }, link)!;
-  expect(note.title).toContain("Label seal from Evaluation 1");
-  expect(note.lines.join(" ")).toMatch(/pass is OK, fail is NG/);
-  const again = canvas(base.map((x) => (x.id === "roi:f" ? { ...x, evaluation: "eval:1" } : x)), []);
-  expect(replaceNote(again, { source: "eval:1", sourceHandle: "all", target: "roi:f" }, link)).toBeNull();
+  expect(replaceNote(c, { source: "eval:1", sourceHandle: "all", target: "roi:f" }, { evaluationOf: { feature: "f", box: "eval:1" } })).toBeNull();
+  expect(replaceNote(c, { source: "eval:1", sourceHandle: "p:pass", target: "roi:f", targetHandle: "in:OK" }, { classLine: { feature: "f", cls: "OK", box: "eval:1", dot: "pass" } })).toBeNull();
 });

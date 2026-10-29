@@ -267,6 +267,12 @@ test("an Evaluation dot feeds Dedup, Picture edits or a detector, and nothing el
   expect(flowConnect(withBoxes, { source: "eval:1", sourceHandle: "p:pass", target: "roi:seal" })).toEqual({ evaluationOf: { feature: "seal", box: "eval:1" } });
   expect(flowConnect(withBoxes, { source: "eval:1", sourceHandle: "all", target: "roi:seal" })).toEqual({ evaluationOf: { feature: "seal", box: "eval:1" } });
   expect(describeFlow("dedup", { eval_source: { box: "eval:1", dot: "pass" } } as never)).toContain("pass");
+  // onto one class dot: the class comes from the source and must match
+  expect(flowConnect(withBoxes, { source: "eval:1", sourceHandle: "p:pass", target: "roi:seal", targetHandle: "in:OK" })).toEqual({ classLine: { feature: "seal", cls: "OK", box: "eval:1", dot: "pass" } });
+  expect(flowConnect(withBoxes, { source: "eval:1", sourceHandle: "p:fail", target: "roi:seal", targetHandle: "in:OK" })).toHaveProperty("error");
+  expect(flowConnect(withBoxes, { source: "eval:1", sourceHandle: "all", target: "roi:seal", targetHandle: "in:NG" })).toHaveProperty("error");
+  expect(flowConnect(withBoxes, { source: "dedup:7", sourceHandle: null, target: "roi:seal", targetHandle: "in:OK" })).toEqual({ classLine: { feature: "seal", cls: "OK", box: "dedup:7" } });
+  expect(flowConnect(withBoxes, { source: "crop:7", sourceHandle: null, target: "roi:seal", targetHandle: "in:OK" })).toHaveProperty("error");
 });
 
 test("Calculate says how many points it has and what it needs", () => {

@@ -1310,10 +1310,26 @@ DETACHED_KEY = "roi.detached."  # setting roi.detached.<feature> = "1": a featur
 DEDUP_INPUT_KEY = "roi.dedup."  # setting roi.dedup.<feature> = the Dedup box a Classifier reads through
 
 
+CLASS_LINES_KEY = "class.lines."  # setting class.lines.<feature> = the lines into a Classifier's class dots (class_lines.py)
+
+
 def feeding_boxes(camera: str, feature: str) -> list[str]:
-    """The Dedup boxes whose mutes hide frames of ``feature`` (a Classifier fed by a Dedup box)."""
+    """The Dedup boxes whose mutes hide frames of ``feature``: the one it reads through, and the ones with a line into a class dot."""
+    boxes: list[str] = []
     box = get_setting(camera, f"{DEDUP_INPUT_KEY}{feature}")
-    return [box] if box else []
+    if box:
+        boxes.append(box)
+    raw = get_setting(camera, f"{CLASS_LINES_KEY}{feature}")
+    if raw:
+        try:
+            stored = json.loads(raw)
+        except ValueError:
+            stored = []
+        for line in stored if isinstance(stored, list) else []:
+            other = line.get("box") if isinstance(line, dict) else None
+            if isinstance(other, str) and other.startswith("dedup:") and other not in boxes:
+                boxes.append(other)
+    return boxes
 
 
 def muted_frames(camera: str, feature: str) -> set[str]:

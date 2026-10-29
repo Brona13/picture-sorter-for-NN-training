@@ -16,9 +16,8 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, ChainCanvas, ChainDeletePreview, ChainEdge, ChainNode, ChainViewport, FlowDeletePreview } from "../api";
-import { ALL_HANDLE, INGEST_ID, targetHandle, targetOfHandle, connectAction, describeNode, disconnectAction, exportLineOf, flowConnect, freshName, isAnchorEdge, isMergeLineEdge, mergeLineOf, isDedupInputEdge, isEvaluationLabelEdge, isDedupSourceEdge, isExportLineEdge, isRoiInputEdge, isFlowKind, layoutOf, productHandle } from "../chain/chainModel";
+import { ALL_HANDLE, INGEST_ID, targetHandle, targetOfHandle, connectAction, describeNode, disconnectAction, classLineOf, exportLineOf, flowConnect, isClassLineEdge, freshName, isAnchorEdge, isMergeLineEdge, mergeLineOf, isDedupInputEdge, isEvaluationLabelEdge, isDedupSourceEdge, isExportLineEdge, isRoiInputEdge, isFlowKind, layoutOf, productHandle } from "../chain/chainModel";
 import ClassifierMode from "../chain/ClassifierMode";
-import InfoTip from "../InfoTip";
 import Counter from "../chain/Counter";
 import { KindIcon } from "../chain/kindIcons";
 import LineConfirm from "../chain/LineConfirm";
@@ -151,6 +150,7 @@ function Box({ data, selected }: NodeProps<BoxNode>) {
           {/* One row and one dot per class; the "all" dot passes every classified picture and never an unlabeled one. */}
           {node.classes.map((cls) => (
             <div className="chain-node-product" key={cls} title={`${cls}: ${node.product_counts[cls] ?? 0} pictures`}>
+              <Handle type="target" position={Position.Left} id={`in:${cls}`} isConnectable title={`Pictures that belong to ${cls}`} />
               <span className="chain-node-class">{cls}</span>
               <span className="chain-node-count">{node.product_counts[cls] ?? 0}</span>
               <Handle type="source" position={Position.Right} id={productHandle(cls)} isConnectable />
@@ -225,10 +225,6 @@ export function toFlowEdge(e: ChainCanvas["edges"][number]): Edge {
     className: e.locked ? "chain-edge-locked" : undefined,
   };
 }
-
-/** The Dedup box that has a line into this Classifier, if any. */
-const dedupInputOf = (canvas: ChainCanvas | null, id: string): string | null =>
-  canvas?.edges.find((e) => e.target === id && canvas.nodes.find((n) => n.id === e.source)?.kind === "dedup")?.source ?? null;
 
 type OpenRoi = (feature: string, view: "roi" | "classify") => void;
 
@@ -338,6 +334,9 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
     } else if ("error" in flowArrow) {
       setError(flowArrow.error);
       return;
+    } else if ("classLine" in flowArrow) {
+      const a = flowArrow.classLine; // an Evaluation's pass / fail dot or a Dedup box dropped on a class dot of a Classifier
+      run = () => void applyFlow(() => api.setClassLine(camera, a.feature, { cls: a.cls, box: a.box, dot: a.dot }));
     } else if ("exportLine" in flowArrow) {
       const a = flowArrow.exportLine; // a dot or box dropped on the OK or NG input of an Export box: one more line into it
       run = () => void applyFlow(() => api.flowUpdate(camera, a.box, { add_line: { input: a.input, ref: a.ref } }));
@@ -385,7 +384,10 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
     if (!canvas) return;
     const targetNode = canvas.nodes.find((n) => n.id === edge.target);
     const ends = [edge.source, edge.target].map((id) => canvas.nodes.find((n) => n.id === id)?.kind);
-    if (isMergeLineEdge(canvas, edge)) {
+    if (isClassLineEdge(canvas, edge)) {
+      const line = classLineOf(canvas, edge);
+      if (line) void applyFlow(() => api.setClassLine(camera, line.feature, { cls: line.cls, box: line.box, dot: line.dot, remove: true }));
+    } else if (isMergeLineEdge(canvas, edge)) {
       const ref = mergeLineOf(canvas, edge);
       if (ref) void applyFlow(() => api.flowUpdate(camera, edge.target, { remove_line: ref }));
     } else if (isExportLineEdge(canvas, edge)) {
@@ -626,32 +628,6 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
             />
           )}
           {selectedLive.kind === "merge" && <MergePanel camera={camera} node={selectedLive} onChanged={() => { setError(null); void reload(); }} onError={setError} />}
-          {selectedLive.kind === "roi" && selectedLive.ref && (
-            <label className="chain-evaluation">
-              Reads through Dedup box
-              <select
-                aria-label="Dedup box"
-                value={dedupInputOf(canvas, selectedLive.id) ?? ""}
-                onChange={(e) => void applyFlow(() => api.setChainDedup(camera, selectedLive.ref!, e.target.value || null))}
-              >
-                <option value="">None</option>
-                {(canvas?.nodes ?? []).filter((n) => n.kind === "dedup").map((n) => <option key={n.id} value={n.id}>{n.label}</option>)}
-              </select>
-            </label>
-          )}
-          {selectedLive.kind === "roi" && selectedLive.ref && (
-            <label className="chain-evaluation">
-              <span>Evaluation labels it <InfoTip label="Evaluation labeling">An Evaluation box labels this Classifier: pass = OK, fail = NG.</InfoTip></span>
-              <select
-                aria-label="Evaluation"
-                value={selectedLive.evaluation ?? ""}
-                onChange={(e) => void applyFlow(() => api.setChainEvaluation(camera, selectedLive.ref!, e.target.value || null))}
-              >
-                <option value="">None</option>
-                {(canvas?.nodes ?? []).filter((n) => n.kind === "evaluation").map((n) => <option key={n.id} value={n.id}>{n.label}</option>)}
-              </select>
-            </label>
-          )}
         </div>
       )}
     </div>

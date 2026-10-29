@@ -63,16 +63,15 @@ def frames(camera: str, box: str) -> list[str]:
 
 
 def input_of(camera: str, feature: str) -> str | None:
-    """The Dedup box a Classifier reads through, or ``None``."""
-    return (db.feeding_boxes(camera, feature) or [None])[0]
+    """The Dedup box a Classifier reads through (its plain input), or ``None``. Boxes with a line into a class dot are in ``db.feeding_boxes``."""
+    return db.get_setting(camera, f"{INPUT_KEY}{feature}") or None
 
 
 def fed_by(camera: str) -> dict[str, list[str]]:
     """box id -> the Classifiers it feeds."""
     out: dict[str, list[str]] = {}
     for roi in datamodel.load_rois(camera):
-        box = input_of(camera, roi.name)
-        if box:
+        for box in db.feeding_boxes(camera, roi.name):
             out.setdefault(box, []).append(roi.name)
     return out
 

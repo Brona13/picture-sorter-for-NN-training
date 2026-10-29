@@ -348,6 +348,7 @@ def _input_scope(camera: str, feature: str) -> set[str] | None:
     if feature == config.WHOLE_FRAME_FEATURE or feature.startswith("dedup:") or (camera, feature) in _resolving.get():
         return None
     import anchor  # noqa: PLC0415  (these import this module)
+    import class_lines  # noqa: PLC0415
     import dedup_box  # noqa: PLC0415
     import flow  # noqa: PLC0415
     import roi_input  # noqa: PLC0415
@@ -365,7 +366,7 @@ def _input_scope(camera: str, feature: str) -> set[str] | None:
     graph = flow.load_graph(camera)
     token = _resolving.set(_resolving.get() | {(camera, feature)})
     try:
-        scope: set[str] | None = None
+        scope: set[str] | None = class_lines.scope(camera, feature)  # what the class dots give; None without lines into them
         for box in boxes:
             if box not in graph["nodes"]:
                 continue  # a stale setting of a box that is gone

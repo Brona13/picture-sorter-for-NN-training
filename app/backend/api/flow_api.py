@@ -4,9 +4,11 @@ from __future__ import annotations
 import json
 
 import anchor
+import class_lines
 import db
 import dedup_box
 import export_box
+import labels
 import versions
 import roi_input
 import cv2
@@ -115,6 +117,9 @@ def delete_node(camera: str, node_id: str) -> dict:
     _guard(flow.delete_node, camera, node_id)
     if flow.kind_of(node_id) == "dedup":
         dedup_box.drop_box(camera, node_id)  # its mutes come back to the pictures; the Classifiers it fed read the whole set again
+    for feature in class_lines.drop_box(camera, node_id):  # a Classifier that had a line from it into a class dot keeps those labels as hand labels
+        labels.release_evaluation(camera, feature)
+        flow.sync_evaluation_labels(camera, feature)
     anchor.drop_for_detector(camera, node_id)  # a ROI anchored to it goes back to its static rectangle
     roi_input.drop_for_box(camera, node_id)  # and a ROI that read this box reads the whole picture again
     return {"removed": node_id}
@@ -311,7 +316,6 @@ def get_labeling(camera: str, node_id: str, feature: str | None = None) -> dict:
     """What an Evaluation page needs to label its pictures: the Classifiers (ROIs) that show this Evaluation on their cards,
     and, for the chosen one (the first when none is given), its classes and the labels / goldens of the pictures here."""
     import datamodel  # noqa: PLC0415
-    import labels  # noqa: PLC0415
 
     _known(camera, node_id)
     graph = flow.load_graph(camera)

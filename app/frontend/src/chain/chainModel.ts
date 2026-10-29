@@ -177,7 +177,10 @@ export const isFlowKind = (kind: string | undefined): boolean => !!kind && (FLOW
 export const targetHandle = (target: string) => `t:${target}`;
 export const targetOfHandle = (handle: string | null | undefined): string | null => (handle && handle.startsWith("t:") ? handle.slice(2) : null);
 
-export type FlowLink = { mergeLine: { box: string; ref: ExportRef } } | { exportLine: { box: string; input: "ok" | "ng"; ref: ExportRef } } | { source: string; target: string; point?: string } | { dedupSource: { box: string; feature?: string; evaluation?: string; dot: string } } | { dedupInput: { feature: string; box: string } } | { evaluationOf: { feature: string; box: string } } | { anchor: { feature: string; detector: string; target: string } } | { roiInput: { feature: string; box: string } } | { error: string } | null;
+export type FlowLink = { classLine: { feature: string; cls: string; box: string; dot?: string } } | { mergeLine: { box: string; ref: ExportRef } } | { exportLine: { box: string; input: "ok" | "ng"; ref: ExportRef } } | { source: string; target: string; point?: string } | { dedupSource: { box: string; feature?: string; evaluation?: string; dot: string } } | { dedupInput: { feature: string; box: string } } | { evaluationOf: { feature: string; box: string } } | { anchor: { feature: string; detector: string; target: string } } | { roiInput: { feature: string; box: string } } | { error: string } | null;
+
+/** The class an Evaluation verdict gives its pictures. */
+const CLASS_OF_VERDICT: Record<string, string> = { pass: "OK", fail: "NG" };
 
 export function flowConnect(canvas: ChainCanvas, c: Connection): FlowLink {
   const source = featureOf(canvas, c.source);
@@ -202,6 +205,23 @@ export function flowConnect(canvas: ChainCanvas, c: Connection): FlowLink {
       return { exportLine: { box: target.id, input, ref: { from: source.id } } };
     }
     return { error: `${source.label} passes no pictures on: feed Export from a Classifier or Evaluation dot, Ingest, Picture edits, a detector, Dedup or a Merge.` };
+  }
+  if (target.kind === "roi" && c.targetHandle?.startsWith("in:")) {
+    // A line onto one class dot of a Classifier: these pictures are in it and belong to that class (the class comes from the source).
+    const cls = c.targetHandle.slice(3);
+    if (!target.ref) return { error: "Unknown box." };
+    if (source.kind === "evaluation") {
+      const dot = productOfHandle(c.sourceHandle);
+      if (dot !== "pass" && dot !== "fail") return { error: "Drag from the Evaluation's pass or fail dot: the all dot has no single class. Use the Classifier's main input to label OK and NG at once." };
+      if (CLASS_OF_VERDICT[dot] !== cls) return { error: `The Evaluation's ${dot} dot is ${CLASS_OF_VERDICT[dot]}, not ${cls}.` };
+      return { classLine: { feature: target.ref, cls, box: source.id, dot } };
+    }
+    if (source.kind === "dedup") {
+      if (c.sourceHandle) return { error: "Use the Dedup box's main dot." };
+      if (source.flow?.source?.feature === target.ref) return { error: `${source.label} reads ${target.label}, so it cannot feed it back.` };
+      return { classLine: { feature: target.ref, cls, box: source.id } };
+    }
+    return { error: "Only an Evaluation's pass or fail dot or a Dedup box can feed a class dot." };
   }
   if (target.kind === "merge") {
     // A dot dropped on a Merge: one more line it collects. Only dots that mean something (a class, pass, fail) can be collected.
@@ -317,9 +337,21 @@ export const isDedupSourceEdge = (canvas: ChainCanvas, edge: ChainEdge): boolean
   return (from === "roi" || from === "evaluation") && (kind === "dedup" || kind === "crop" || kind === "detector");
 };
 
+/** A line into one class dot of a Classifier (`in:<class>`): stored with the Classifier as a class line. */
+export const isClassLineEdge = (canvas: ChainCanvas, edge: ChainEdge): boolean =>
+  !!edge.target_handle?.startsWith("in:") && canvas.nodes.find((n) => n.id === edge.target)?.kind === "roi";
+
+/** The stored class line an edge into a class dot stands for, as `setClassLine` takes it. */
+export function classLineOf(canvas: ChainCanvas, edge: ChainEdge): { feature: string; cls: string; box: string; dot?: string } | null {
+  const target = canvas.nodes.find((n) => n.id === edge.target);
+  if (!target?.ref || !edge.target_handle) return null;
+  const dot = productOfHandle(edge.source_handle);
+  return { feature: target.ref, cls: edge.target_handle.slice(3), box: edge.source, ...(dot ? { dot } : {}) };
+}
+
 /** A line from an Evaluation to a Classifier: the verdicts are the Classifier's labels (stored as the Classifier's Evaluation). */
 export const isEvaluationLabelEdge = (canvas: ChainCanvas, edge: ChainEdge): boolean =>
-  canvas.nodes.find((n) => n.id === edge.source)?.kind === "evaluation" && canvas.nodes.find((n) => n.id === edge.target)?.kind === "roi";
+  !isClassLineEdge(canvas, edge) && canvas.nodes.find((n) => n.id === edge.source)?.kind === "evaluation" && canvas.nodes.find((n) => n.id === edge.target)?.kind === "roi";
 
 /** A line into a Merge is one of the dots it collects (stored in the Merge, like an Export line). */
 export const isMergeLineEdge = (canvas: ChainCanvas, edge: ChainEdge): boolean => canvas.nodes.find((n) => n.id === edge.target)?.kind === "merge";
@@ -336,7 +368,7 @@ export function mergeLineOf(canvas: ChainCanvas, edge: ChainEdge): ExportRef | n
 
 /** A line from a Dedup box to a Classifier is the Classifier's Dedup input (stored with the Classifier). */
 export const isDedupInputEdge = (canvas: ChainCanvas, edge: ChainEdge): boolean =>
-  canvas.nodes.find((n) => n.id === edge.source)?.kind === "dedup" && canvas.nodes.find((n) => n.id === edge.target)?.kind === "roi";
+  !isClassLineEdge(canvas, edge) && canvas.nodes.find((n) => n.id === edge.source)?.kind === "dedup" && canvas.nodes.find((n) => n.id === edge.target)?.kind === "roi";
 
 /** An arrow from a Picture edits box to an ROI box is the ROI's input (stored with the ROI, not in the flow graph). */
 export const isRoiInputEdge = (canvas: ChainCanvas, edge: ChainEdge): boolean =>

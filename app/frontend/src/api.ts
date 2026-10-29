@@ -1382,6 +1382,9 @@ export const api = {
     request<ChainCanvas>(`/cameras/${encodeURIComponent(camera)}/chain/${encodeURIComponent(feature)}/dedup`, send("PUT", { box })),
   setChainEvaluation: (camera: string, feature: string, box: string | null) =>
     request<ChainCanvas>(`/cameras/${encodeURIComponent(camera)}/chain/${encodeURIComponent(feature)}/evaluation`, send("PUT", { box })),
+  /** A line into (or, with `remove`, out of) one class dot of a Classifier: the pictures of `box` (its `dot`) belong to `cls` there. */
+  setClassLine: (camera: string, feature: string, line: { cls: string; box: string; dot?: string; remove?: boolean }) =>
+    request<ChainCanvas>(`/cameras/${encodeURIComponent(camera)}/chain/${encodeURIComponent(feature)}/class-lines`, send("PUT", line)),
   /** Draw a feature Classifier without its line from Ingest (it still reads the whole camera), or draw the line again. */
   setChainDetached: (camera: string, feature: string, detached: boolean) =>
     request<ChainCanvas>(`/cameras/${encodeURIComponent(camera)}/chain/${encodeURIComponent(feature)}/detached`, send("PUT", { detached })),

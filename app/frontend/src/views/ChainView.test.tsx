@@ -131,18 +131,19 @@ test("every Classifier offers ROI editor and Classify; Ingest only Ingest", asyn
   }
 });
 
-test("the Evaluation of a Classifier is picked in its panel and cleared with None", async () => {
-  const user = userEvent.setup();
+test("the panel has no Dedup or Evaluation selector: the lines say it", async () => {
   current = canvas();
   current.nodes.push(node({ id: "eval:1", kind: "evaluation", ref: null, label: "Evaluation 1", x: 600, y: 300, role: null, scope: null, classes: [], flow: { nominal: 1, tolerance: 1 } }));
   renderView();
   fireEvent.click(await screen.findByTestId("chain-node-roi:seal"));
-  const pick = screen.getByRole("combobox", { name: "Evaluation" });
-  expect(pick).toHaveValue("");
-  await user.selectOptions(pick, "eval:1");
-  await waitFor(() => expect(calls.some((c) => c.method === "PUT" && c.url.endsWith("/chain/seal/evaluation") && c.body.box === "eval:1")).toBe(true));
-  await user.selectOptions(screen.getByRole("combobox", { name: "Evaluation" }), "");
-  await waitFor(() => expect(calls.some((c) => c.method === "PUT" && c.url.endsWith("/chain/seal/evaluation") && c.body.box === null)).toBe(true));
+  expect(screen.queryByRole("combobox", { name: "Evaluation" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("combobox", { name: "Dedup box" })).not.toBeInTheDocument();
+});
+
+test("a Classifier has one input dot per class", async () => {
+  renderView();
+  const feature = await screen.findByTestId("chain-node-roi:seal");
+  expect([...feature.querySelectorAll(".target")].map((h) => h.getAttribute("data-handleid")).filter((h) => h?.startsWith("in:"))).toEqual(["in:OK", "in:NG"]);
 });
 
 test("Ingest has no Delete button", async () => {

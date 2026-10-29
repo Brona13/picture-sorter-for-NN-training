@@ -2020,24 +2020,32 @@ def set_feature_evaluation(camera: str, feature: str, box: str | None) -> None:
 
 
 def sync_evaluation_labels(camera: str, feature: str) -> dict:
-    """Make the labels of a Classifier wired to an Evaluation follow its verdicts: pass is OK, fail is NG. A picture the
-    Evaluation cannot judge (no value, or no box) keeps no verdict label. Only writes what differs, so it is cheap to
-    call whenever the Classifier is read; Goldens are left alone (a golden follows a changed verdict, as always)."""
+    """Make the labels of a Classifier that is wired to pictures with a known class follow them: an Evaluation's verdicts
+    (pass is OK, fail is NG) and the lines into its class dots (``class_lines``). A picture the Evaluation cannot judge
+    (no value, or no box) keeps no verdict label. Only writes what differs, so it is cheap to call whenever the
+    Classifier is read; Goldens are left alone (a golden follows a changed verdict, as always)."""
+    import class_lines  # noqa: PLC0415  (it imports this module)
+
     box = feature_evaluation(camera, feature)
-    if box is None:
+    wanted: dict[str, str] = {}
+    if box is not None:
+        classes = datamodel.classes_for(camera, feature)
+        if any(c not in classes for c in VERDICT_CLASS.values()):
+            box = None
+        else:
+            verdicts = evaluation_state(camera, box)["verdicts"]
+            wanted = {f: VERDICT_CLASS[v] for f, v in verdicts.items() if v in VERDICT_CLASS}
+    wanted.update(class_lines.desired(camera, feature))  # the lines into the class dots (the same class where both say something)
+    if box is None and not class_lines.get(camera, feature):
         return {"labeled": 0, "cleared": 0}
-    classes = datamodel.classes_for(camera, feature)
-    if any(c not in classes for c in VERDICT_CLASS.values()):
-        return {"labeled": 0, "cleared": 0}
-    verdicts = evaluation_state(camera, box)["verdicts"]
     in_scope = set(datamodel.frames_for_feature(camera, feature))
     have = labels.current_labels(camera, feature)
     locked = labels.locked_frames(camera, feature)
     labeled = 0
-    for verdict, cls in VERDICT_CLASS.items():
-        todo = [f for f, v in verdicts.items() if v == verdict and f in in_scope and (have.get(f) != cls or f not in locked)]
-        labeled += labels.set_labels_bulk(camera, feature, todo, cls, source=labels.EVALUATION, via="Evaluation")
-    stale = [f for f in locked if verdicts.get(f) not in VERDICT_CLASS or f not in in_scope]
+    for cls in sorted(set(wanted.values())):
+        todo = [f for f, c in wanted.items() if c == cls and f in in_scope and (have.get(f) != cls or f not in locked)]
+        labeled += labels.set_labels_bulk(camera, feature, todo, cls, source=labels.EVALUATION, via="Evaluation" if box else "Line")
+    stale = [f for f in locked if f not in wanted or f not in in_scope]
     cleared = labels.clear_labels_bulk(camera, feature, stale, force=True)
     return {"labeled": labeled, "cleared": cleared}
 

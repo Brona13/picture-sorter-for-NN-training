@@ -5,10 +5,12 @@ Boxes are created, connected and deleted through the ROI endpoints; this router 
 from __future__ import annotations
 
 import chain
+import class_lines
 import datamodel
 import db
 import dedup_box
 import flow
+import labels
 from api.cameras import require_camera
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -90,5 +92,29 @@ def put_dedup_input(camera: str, feature: str, body: DedupInputBody) -> dict:
     try:
         dedup_box.set_input(camera, feature, body.box)
     except dedup_box.DedupBoxError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return chain.get_canvas(camera)
+
+
+class ClassLineBody(BaseModel):
+    cls: str
+    box: str
+    dot: str | None = None
+    remove: bool = False
+
+
+@router.put("/cameras/{camera}/chain/{feature:path}/class-lines")
+def put_class_line(camera: str, feature: str, body: ClassLineBody) -> dict:
+    """Add (or, with ``remove``, take away) a line into the ``cls`` dot of a Classifier: the pictures of ``box`` (an Evaluation's
+    pass / fail dot, or a Dedup box) are in this Classifier with that class. Removing a line keeps its labels as hand labels."""
+    require_camera(camera)
+    try:
+        if body.remove:
+            class_lines.remove(camera, feature, body.cls, body.box, body.dot)
+            labels.release_evaluation(camera, feature)
+        else:
+            class_lines.add(camera, feature, body.cls, body.box, body.dot)
+        flow.sync_evaluation_labels(camera, feature)
+    except (class_lines.ClassLineError, flow.FlowError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return chain.get_canvas(camera)

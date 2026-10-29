@@ -1,5 +1,5 @@
 import type { ChainCanvas, ChainEdge, ChainNode } from "../api";
-import { ALL_HANDLE, disconnectAction, isAnchorEdge, isDedupInputEdge, isDedupSourceEdge, isFlowKind, isRoiInputEdge, productOfHandle, targetOfHandle } from "./chainModel";
+import { ALL_HANDLE, disconnectAction, isAnchorEdge, isClassLineEdge, isDedupInputEdge, isDedupSourceEdge, isFlowKind, isRoiInputEdge, productOfHandle, targetOfHandle } from "./chainModel";
 import type { Connection, FlowLink } from "./chainModel";
 
 /** What the confirmation overlay says: a title and one line per effect. */
@@ -57,6 +57,10 @@ export function deleteNote(canvas: ChainCanvas, edge: ChainEdge): LineNote | nul
     if (node(canvas, edge.target)?.kind !== "dedup") return { title, lines: [`Only the line goes. ${target} reads the whole camera again instead of ${source}.`, "What it found or made stays; run it again for the other pictures."] };
     return { title, lines: [`Only the line goes. ${target} reads the whole camera again instead of ${source}.`, "What it muted stays muted. Its clusters are for the pictures it read; run the clustering again."] };
   }
+  if (isClassLineEdge(canvas, edge)) {
+    const cls = edge.target_handle?.slice(3);
+    return { title, lines: [`Only the line goes. The pictures it gave ${target} as ${cls} are no longer in it.`, "Their labels stay as hand labels: you can change them again."] };
+  }
   if (isDedupInputEdge(canvas, edge)) {
     return { title, lines: [`Only the line goes. ${target} no longer reads through ${source}: the pictures ${source} muted come back to ${target}.`, `${source} keeps its mutes.`] };
   }
@@ -79,7 +83,7 @@ export function deleteNote(canvas: ChainCanvas, edge: ChainEdge): LineNote | nul
 
 /** Why a line cannot be deleted at all, or null. */
 export function disconnectError(canvas: ChainCanvas, edge: ChainEdge): string | null {
-  if (isRoiInputEdge(canvas, edge) || isAnchorEdge(canvas, edge) || isDedupSourceEdge(canvas, edge) || isDedupInputEdge(canvas, edge)) return null;
+  if (isClassLineEdge(canvas, edge) || isRoiInputEdge(canvas, edge) || isAnchorEdge(canvas, edge) || isDedupSourceEdge(canvas, edge) || isDedupInputEdge(canvas, edge)) return null;
   if (isFlowKind(node(canvas, edge.source)?.kind) || isFlowKind(node(canvas, edge.target)?.kind)) return null;
   const result = disconnectAction(canvas, edge);
   return "error" in result ? result.error : null;
@@ -119,18 +123,7 @@ export function replaceNote(canvas: ChainCanvas, c: Connection, link: Exclude<Fl
       lines: [`${t} is fed by ${old} now. The new line replaces it.`, `${t} follows ${newSource} instead of ${old}.`, "Scores and thumbnails of this ROI are computed again."],
     };
   }
-  if ("evaluationOf" in link) {
-    if (target.evaluation === link.evaluationOf.box) return null; // the same line again
-    const box = name(canvas, c.source);
-    return {
-      title: `Label ${t} from ${box}?`,
-      lines: [
-        `The verdicts of ${box} become the labels of ${t}: pass is OK, fail is NG.`,
-        "Labels already set on those pictures are replaced, and they can no longer be changed by hand: only Goldens are chosen.",
-        target.evaluation ? `${t} stops being labeled by ${name(canvas, target.evaluation)}.` : "A picture the Evaluation cannot judge keeps no label from it.",
-      ],
-    };
-  }
+  if ("evaluationOf" in link || "classLine" in link) return null; // pass = OK and fail = NG apply by default: no question
   if ("dedupSource" in link) {
     const taken = canvas.edges.find((e) => e.target === c.target && !(e.source === c.source && (e.source_handle ?? null) === (c.sourceHandle ?? null)));
     if (!taken) return null;

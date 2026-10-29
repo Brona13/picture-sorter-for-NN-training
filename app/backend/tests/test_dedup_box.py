@@ -105,7 +105,7 @@ class DedupBoxTests(ApiTestCase):
         self.assertEqual(db.muted_frames(CAM, "type"), set())  # another Classifier is not behind the box
         self.assertIn((self.d1, None, "roi:seal"), self.edges())
         self.assertNotIn(("ingest", None, "roi:seal"), self.edges())  # it hangs from the box instead
-        self.assertEqual(self.node("roi:seal")["frames"], 6)
+        self.assertEqual(self.node("roi:seal")["frames"], 5)  # the box counts what the Classifier works with (v1.126.0)
         dedup_box.set_input(CAM, "seal", None)
         self.assertEqual(db.muted_frames(CAM, "seal"), set())
         self.assertIn(("ingest", None, "roi:seal"), self.edges())

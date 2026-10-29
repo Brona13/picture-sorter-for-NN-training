@@ -27,6 +27,7 @@ import region
 import roi_input
 import datamodel
 import db
+import class_lines
 import dedup_box
 import export_box
 import flow
@@ -125,6 +126,13 @@ def _frame_count(camera: str, feature: str | None) -> int:
     return len(datamodel.frames_for_feature(camera, feature))
 
 
+def _live_names(camera: str, feature: str) -> set[str]:
+    """The pictures a Classifier works with: what it applies to, leaving out the deleted ones and the ones muted for it."""
+    names = datamodel.frames_for_feature(camera, feature)
+    hidden = db.deleted_frames_of(camera) | db.muted_frames(camera, feature)
+    return {f for f in names if f not in hidden}
+
+
 def _roi_node(camera: str, roi: datamodel.ROI, stored: dict) -> dict:
     """A Classifier box: the ROI and its labeling in one. ``mode`` is "product" for the product-sorting ROI, else "feature"."""
     owner, short = datamodel.split_feature(roi.name)
@@ -136,10 +144,13 @@ def _roi_node(camera: str, roi: datamodel.ROI, stored: dict) -> dict:
         scope = "products"
     else:
         scope = "camera"
-    current = labels.current_labels(camera, roi.name)
     classes = list(datamodel.classes_for(camera, roi.name))
-    # The product-sorting ROI labels every picture of the camera; a feature ROI only those it applies to.
-    frames = _frame_count(camera, None if roi.role == "classify" else roi.name)
+    # The product-sorting ROI labels every picture of the camera; a feature ROI only those it applies to. The numbers
+    # count only what the Classifier works with: not the deleted pictures, not the ones a Dedup box muted for it, and no
+    # label on a picture outside it (the same rule as the numbers above the Classify grid).
+    shown = _live_names(camera, roi.name)
+    current = {f: c for f, c in labels.current_labels(camera, roi.name).items() if f in shown}
+    frames = len(shown)
     return {
         "id": roi_node_id(roi.name),
         "kind": "roi",
@@ -421,6 +432,13 @@ def get_canvas(camera: str) -> dict:
         judged = flow.feature_evaluation(camera, roi.name)
         if judged and judged in known:
             edges.append({"id": f"{judged}#{ALL_HANDLE}->{roi_node_id(roi.name)}", "source": judged, "source_handle": ALL_HANDLE, "target": roi_node_id(roi.name), "locked": False})
+    for roi in rois:  # the lines into a Classifier's class dots: an Evaluation's pass / fail dot, or a Dedup box
+        for line in class_lines.get(camera, roi.name):
+            if line["box"] not in known:
+                continue
+            handle = product_handle(line["dot"]) if line.get("dot") else None
+            target = roi_node_id(roi.name)
+            edges.append({"id": f"{line['box']}#{handle or ''}->{target}#in:{line['class']}", "source": line["box"], "source_handle": handle, "target": target, "target_handle": f"in:{line['class']}", "locked": False})
     for roi in rois:  # a ROI fed by a Picture edits box hangs from it
         spec = roi_input.get_input(camera, roi.name)
         if spec and spec["box"] in known:
