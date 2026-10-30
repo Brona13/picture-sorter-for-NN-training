@@ -82,7 +82,7 @@ Extra arguments go to uvicorn, e.g. `./run.sh --port 8510`. The terminal shows a
 The server binds `127.0.0.1` only and has **no authentication**; the folder-import
 feature reads any directory path it is given. Do not expose it to a network.
 
-On Windows use `.\run.ps1` instead (same modes and arguments); see [Running on Windows](#running-on-windows).
+On Windows use `.\run.ps1` instead (same modes and arguments); see [Running on Windows](#running-on-windows). It shows the same start-up screen; `$env:PICTURE_SORTER_VERBOSE=1; .\run.ps1` brings the uvicorn lines back.
 
 The application provides these views:
 

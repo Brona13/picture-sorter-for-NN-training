@@ -102,7 +102,16 @@ switch ($mode) {
             Write-Host "Frontend not built yet - building it first..."
             Build-Frontend
         }
-        & $VenvPython @uvicorn @rest
+        # The start-up screen (startup.py) replaces uvicorn's own start-up and per-request lines in the terminal;
+        # every request is still in data\logs\ and on the Log page. PICTURE_SORTER_VERBOSE=1 brings them back.
+        $port = $Port
+        for ($i = 0; $i -lt $rest.Count - 1; $i++) {
+            if ($rest[$i] -eq "--port") { $port = $rest[$i + 1] }
+        }
+        $env:PICTURE_SORTER_URL = "http://127.0.0.1:$port"
+        $quiet = @("--log-level", "warning")
+        if ($env:PICTURE_SORTER_VERBOSE) { $quiet = @() }
+        & $VenvPython @uvicorn @quiet @rest
         exit $LASTEXITCODE
     }
 }
