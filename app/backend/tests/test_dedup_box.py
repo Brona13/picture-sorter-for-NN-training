@@ -214,6 +214,24 @@ class DedupBoxTests(ApiTestCase):
         self.assertIn((self.d1, None, crops[2]), self.edges())
         self.assertIn("loop", flow.edge_allowed(flow.load_graph(CAM), self.d2, crops[0]) or "")
 
+    def test_a_dedup_box_can_feed_another_dedup_box_which_sees_what_the_first_kept(self) -> None:
+        crop = flow.create_node(CAM, "crop")
+        flow.connect(CAM, "ingest", crop)
+        flow.connect(CAM, crop, self.d1)
+        flow.connect(CAM, self.d1, self.d2)
+        self.mute(self.d1, self.frames[:2])
+        self.assertEqual(sorted(dedup_box.frames(CAM, self.d2)), sorted(self.frames[2:]))
+        self.assertEqual(flow.parent_of(flow.load_graph(CAM), self.d2), crop)  # it works on the picture the first box reads
+        self.mute(self.d2, self.frames[2:3])
+        det = flow.create_node(CAM, "detector")
+        flow.connect(CAM, self.d2, det)
+        self.assertEqual(sorted(flow.node_frames(CAM, det)), sorted(self.frames[3:]))
+        self.assertEqual(flow.parent_of(flow.load_graph(CAM), det), crop)
+        self.assertIn("loop", flow.edge_allowed(flow.load_graph(CAM), self.d2, self.d1) or "")
+        self.assertIn("itself", flow.edge_allowed(flow.load_graph(CAM), self.d1, self.d1) or "")
+        with self.assertRaises(flow.FlowError):
+            flow.connect(CAM, self.d2, self.d1)
+
     def test_a_box_page_lists_only_the_pictures_its_input_passes_on(self) -> None:
         crop = flow.create_node(CAM, "crop")
         base = f"{self.base}/flow/nodes/{crop}/frames"

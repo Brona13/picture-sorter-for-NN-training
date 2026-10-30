@@ -226,6 +226,9 @@ test("Dedup boxes: Ingest / Picture edits / a Classifier dot feed them, they fee
   expect(flowConnect(withBox, link("dedup:1", "roi:seal"))).toEqual({ dedupInput: { feature: "seal", box: "dedup:1" } });
   expect(flowConnect(withBox, link("dedup:1", "det:1"))).toEqual({ source: "dedup:1", target: "det:1" });
   expect(flowConnect(withBox, link("dedup:1", "crop:1"))).toEqual({ source: "dedup:1", target: "crop:1" });
+  const twoBoxes: ChainCanvas = { ...withBox, nodes: [...withBox.nodes, node({ id: "dedup:2", kind: "dedup", ref: null, role: null, scope: null, label: "Dedup 2" })] };
+  expect(flowConnect(twoBoxes, link("dedup:1", "dedup:2"))).toEqual({ source: "dedup:1", target: "dedup:2" }); // a Dedup box can feed another one
+  expect(flowConnect(twoBoxes, link("dedup:1", "dedup:1"))).toEqual({ error: "A box cannot feed itself." });
   for (const [s, t] of [["dedup:1", "calc:1"]]) {
     expect(flowConnect(withBox, link(s, t))).toHaveProperty("error");
   }

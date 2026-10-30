@@ -585,17 +585,22 @@ def parent_of(graph: dict, node_id: str) -> str | None:
     for e in graph["edges"]:
         if e["target"] == node_id and kind_of(e["source"]) in ("ingest", "crop", "detector", "calc"):
             return e["source"]
-        if e["target"] == node_id and kind_of(e["source"]) == "dedup" and kind_of(node_id) in ("detector", "crop"):
+        if e["target"] == node_id and kind_of(e["source"]) == "dedup" and kind_of(node_id) in ("detector", "crop", "dedup"):
             return _through_dedup(graph, e["source"])
     return None
 
 
-def _through_dedup(graph: dict, dedup_id: str) -> str | None:
-    """A detector or Picture edits box behind a Dedup box works on the picture the box reads: Ingest or a Picture edits box. A Dedup box
-    that reads a Classifier dot or one target of a detector hands on its pictures but not a different picture."""
+def _through_dedup(graph: dict, dedup_id: str, _seen: frozenset = frozenset()) -> str | None:
+    """A detector, Picture edits or Dedup box behind a Dedup box works on the picture the box reads: Ingest or a Picture edits box
+    (through any Dedup boxes in a row). A Dedup box that reads a Classifier dot or one target of a detector hands on its pictures
+    but not a different picture."""
     for e in graph["edges"]:
-        if e["target"] == dedup_id and e.get("point") is None and kind_of(e["source"]) in ("ingest", "crop"):
+        if e["target"] != dedup_id or e.get("point") is not None:
+            continue
+        if kind_of(e["source"]) in ("ingest", "crop"):
             return e["source"]
+        if kind_of(e["source"]) == "dedup" and e["source"] not in _seen:
+            return _through_dedup(graph, e["source"], _seen | {dedup_id})
     return None
 
 
@@ -611,14 +616,14 @@ def edge_allowed(graph: dict, source: str, target: str) -> str | None:
     why = lines.line_error(ks, kt)
     if why:
         return why
-    if (ks, kt) not in {("ingest", "crop"), ("crop", "crop"), ("crop", "detector"), ("ingest", "detector"), ("detector", "detector"), ("detector", "crop"), ("detector", "calc"), ("calc", "evaluation"), ("evaluation", "classify"), ("ingest", "dedup"), ("crop", "dedup"), ("detector", "dedup"), ("dedup", "detector"), ("dedup", "crop"), ("merge", "dedup"), ("merge", "crop"), ("merge", "detector")}:
+    if (ks, kt) not in {("ingest", "crop"), ("crop", "crop"), ("crop", "detector"), ("ingest", "detector"), ("detector", "detector"), ("detector", "crop"), ("detector", "calc"), ("calc", "evaluation"), ("evaluation", "classify"), ("ingest", "dedup"), ("crop", "dedup"), ("detector", "dedup"), ("dedup", "dedup"), ("dedup", "detector"), ("dedup", "crop"), ("merge", "dedup"), ("merge", "crop"), ("merge", "detector")}:
         names = {"ingest": "Ingest", "crop": "Picture edits", "detector": "a detector", "calc": "Calculate", "evaluation": "Evaluation", "classify": "a Classify box", "dedup": "a Dedup box", "merge": "a Merge"}
         return f"{names.get(ks, ks)} cannot feed {names.get(kt, kt)}."
     if is_flow_id(source) and source not in graph["nodes"]:
         return f"Unknown box: {source}"
     if is_flow_id(target) and target not in graph["nodes"]:
         return f"Unknown box: {target}"
-    if ks == "dedup" and kt in ("detector", "crop"):
+    if ks == "dedup" and kt in ("detector", "crop", "dedup"):
         seen: set[str] = set()
         ancestor = parent_of_any(graph, source)
         while ancestor and ancestor != INGEST_ID and ancestor not in seen:
