@@ -1,7 +1,8 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import DedupView, { drift } from "./DedupView";
+import DedupView, { drift, sweepRuns } from "./DedupView";
+import { niceAxis, nearestIndex } from "./DedupSweepChart";
 
 const params = { method: "resnet50", epsilon: 0.02, min_points: 2 };
 const result = {
@@ -33,11 +34,31 @@ const baseState = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
+const sweepResult = {
+  epsilons: [0.01, 0.02, 0.03, 0.04],
+  min_points: [2, 3],
+  lines: [
+    { min_points: 2, clusters: [1, 5, 3, 1], would_mute: [1, 9, 20, 30] },
+    { min_points: 3, clusters: [null, 2, 1, 1], would_mute: [null, 4, 12, 30] },
+  ],
+  window: { from: 0.01, to: 0.04 },
+  peak: { epsilon: 0.02, min_points: 2, clusters: 5 },
+  frames: 6,
+  method: "resnet50",
+};
+let heldSweep: any = null;
+
 let calls: { url: string; method: string; body?: any }[];
 let state: any;
 
 beforeEach(() => {
   calls = [];
+  heldSweep = null;
+  try {
+    localStorage.clear();
+  } catch {
+    /* none */
+  }
   state = baseState();
   vi.stubGlobal(
     "fetch",
@@ -50,6 +71,9 @@ beforeEach(() => {
         return ok({ frames: ["a.png", "b.png", "c.png"], muted: ["b.png"], source: "seal", classes: ["OK", "NG"], marks: {} });
       if (url.includes("/dedup/state")) return ok(state);
       if (url.includes("/dedup/settings")) return ok({ params });
+      if (url.endsWith("/dedup/sweep") && method === "POST") return ok({ id: "w1", status: "queued", progress: {} }, 202);
+      if (url.includes("/dedup/sweep")) return ok({ sweep: heldSweep });
+      if (url === "/api/jobs/w1") return ok({ id: "w1", status: "done", progress: {}, result: sweepResult, error: null });
       if (url.endsWith("/dedup/cluster")) return ok({ id: "c1", status: "queued", progress: {} }, 202);
       if (url === "/api/jobs/c1") return ok({ id: "c1", status: "done", progress: {}, result, error: null });
       if (url.endsWith("/dedup/outliers")) return ok({ id: "o1", status: "queued", progress: {}, result: null, error: null }, 202);
@@ -463,4 +487,68 @@ test("the Grid lists the box's pictures, hides muted ones until Show muted is ti
   await userEvent.click(screen.getByLabelText("Show muted"));
   await waitFor(() => expect(view).toHaveTextContent("3 pictures · 1 muted"));
   expect(view).toHaveTextContent("muted");
+});
+
+test("the sweep helpers: round axes, nearest Epsilon, number of runs", () => {
+  expect(niceAxis(0)).toEqual({ top: 1, ticks: [0, 1] });
+  expect(niceAxis(47).ticks).toEqual([0, 20, 40, 60]);
+  expect(niceAxis(9).top).toBeGreaterThanOrEqual(9);
+  expect(nearestIndex([10, 20, 30], 26)).toBe(2);
+  expect(sweepRuns({ eps_from: 0.005, eps_to: 0.03, eps_step: 0.001, mp_from: 2, mp_to: 4 })).toEqual({ values: 26, runs: 78 });
+  expect(sweepRuns({ eps_from: 0.005, eps_to: 0.03, eps_step: 0, mp_from: 2, mp_to: 4 }).runs).toBe(0);
+});
+
+test("Calculate chart sends the range, draws the chart above the grid and clusters at the peak", async () => {
+  render(<DedupView camera="camA" tool="clusters" />);
+  const group = await screen.findByTestId("clusters-controls");
+  expect(screen.queryByTestId("sweep-chart")).toBeNull();
+  expect(within(group).getByText("up to 78 runs")).toBeInTheDocument();
+  fireEvent.change(within(group).getByLabelText("Sweep Epsilon step"), { target: { value: "0.005" } });
+  await userEvent.click(within(group).getByRole("button", { name: /Calculate chart/ }));
+  await waitFor(() => expect(calls.find((c) => c.url.endsWith("/dedup/sweep") && c.method === "POST")?.body).toEqual({
+    feature: "seal", method: "resnet50", eps_from: 0.005, eps_to: 0.03, eps_step: 0.005, mp_from: 2, mp_to: 4,
+  }));
+  await screen.findByTestId("sweep-chart");
+  expect(screen.getByTestId("sweep-peak")).toBeInTheDocument();
+  expect(screen.getByRole("img", { name: /Clusters and frames/ })).toBeInTheDocument();
+  // the peak (ε 0.02, min points 2) goes to the sliders and the grid is clustered with it
+  await waitFor(() => expect(calls.filter((c) => c.url.endsWith("/dedup/cluster")).at(-1)?.body).toMatchObject({ epsilon: 0.02, min_points: 2 }));
+  expect(await screen.findByText(/Would mute/)).toBeInTheDocument();
+  // the range is remembered for the camera
+  expect(JSON.parse(localStorage.getItem("picturesorter.dedup.sweepRange.camA")!)).toMatchObject({ eps_step: 0.005 });
+});
+
+test("a held chart is shown on arrival, and a click takes the nearest Epsilon and line to the sliders and clusters there", async () => {
+  heldSweep = sweepResult;
+  render(<DedupView camera="camA" tool="clusters" />);
+  const chart = await screen.findByTestId("sweep-chart");
+  const svg = within(chart).getByRole("img");
+  // jsdom has no layout: x is the chart coordinate. Epsilons sit at 46 + i * (760-92)/3; y: left axis 0..top, bottom 246, top 14
+  const xs = [0.01, 0.02, 0.03, 0.04].map((_, i) => 46 + (i * (760 - 92)) / 3);
+  // third Epsilon (0.03): clusters 3 (min 2), 1 (min 3); would-mute lines are on the right axis. Click at the height of "clusters, min points 3" = 1.
+  const clusterAxisTop = niceAxis(5).top;
+  const y = 246 - (1 / clusterAxisTop) * (246 - 14);
+  fireEvent.click(svg, { clientX: xs[2] + 3, clientY: y + 1 });
+  await waitFor(() => expect(calls.filter((c) => c.url.endsWith("/dedup/cluster")).at(-1)?.body).toMatchObject({ epsilon: 0.03 }));
+  await waitFor(() => expect(calls.find((c) => c.url.includes("/dedup/settings"))?.body).toMatchObject({ epsilon: 0.03 }));
+});
+
+test("the sweep chart can be collapsed and stays collapsed", async () => {
+  heldSweep = sweepResult;
+  const { unmount } = render(<DedupView camera="camA" tool="clusters" />);
+  const chart = await screen.findByTestId("sweep-chart");
+  expect(chart).toHaveAttribute("open");
+  chart.removeAttribute("open");
+  fireEvent(chart, new Event("toggle"));
+  expect(localStorage.getItem("picturesorter.dedup.sweepOpen")).toBe("0");
+  unmount();
+  render(<DedupView camera="camA" tool="clusters" />);
+  expect(await screen.findByTestId("sweep-chart")).not.toHaveAttribute("open");
+});
+
+test("the chart is not on the other tools", async () => {
+  heldSweep = sweepResult;
+  render(<DedupView camera="camA" tool="grid" />);
+  await screen.findByTestId("grid-view");
+  expect(screen.queryByTestId("sweep-chart")).toBeNull();
 });

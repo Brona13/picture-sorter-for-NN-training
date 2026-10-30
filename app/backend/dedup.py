@@ -151,6 +151,115 @@ def cluster(
     return cluster_matrix(kept, matrix, epsilon=epsilon, min_points=min_points, method=method)
 
 
+# --- sweep: the clustering over a range of settings ---------------------------
+PRECOMPUTE_MAX = 6000  # up to this many pictures the pairwise distances are computed once (N x N float32, 144 MB at 6000)
+
+
+def sweep_epsilons(start: float, stop: float, step: float) -> list[float]:
+    """The Epsilon values of a sweep: ``start`` to ``stop`` inclusive in ``step``s, rounded so 0.015 stays 0.015."""
+    n = int(round((stop - start) / step + 1e-9))
+    return [round(start + i * step, 6) for i in range(n + 1)]
+
+
+def window_of(clusters: list[int], would_mute: list[int]) -> tuple[int, int] | None:
+    """Where something happens, as indexes into the Epsilon list: from the first Epsilon where anything would be muted
+    to the first one past the cluster-count peak where everything sits in one cluster (the last one when that never
+    happens). None when nothing is ever muted."""
+    start = next((i for i, m in enumerate(would_mute) if m > 0), None)
+    if start is None:
+        return None
+    top = max(range(start, len(clusters)), key=lambda i: (clusters[i], -i))  # the first highest count
+    end = next((i for i in range(top, len(clusters)) if clusters[i] <= 1), len(clusters) - 1)
+    return start, end
+
+
+def peak_of(lines: dict[int, dict[str, list[int | None]]], epsilons: list[float]) -> dict | None:
+    """The setting with the most clusters over every line; a tie goes to the smaller Epsilon, then the smaller Min points."""
+    best: tuple[int, float, int] | None = None
+    for mp, line in lines.items():
+        for eps, count in zip(epsilons, line["clusters"], strict=True):
+            if count is None or count <= 0:
+                continue
+            if best is None or (count, -eps, -mp) > (best[0], -best[1], -best[2]):
+                best = (count, eps, mp)
+    return None if best is None else {"epsilon": best[1], "min_points": best[2], "clusters": best[0]}
+
+
+def _counts(labels_: np.ndarray) -> tuple[int, int]:
+    """(clusters, would mute) of one DBSCAN labelling; would mute = clustered pictures minus one representative per cluster,
+    the same number the Clusters tool shows as "N frame(s) will be muted"."""
+    top = int(labels_.max()) if labels_.size else -1
+    if top < 0:
+        return 0, 0
+    clustered = int((labels_ >= 0).sum())
+    return top + 1, clustered - (top + 1)
+
+
+def sweep_matrix(
+    matrix: np.ndarray, *, epsilons: list[float], min_points: list[int], progress_cb=None,
+) -> dict:
+    """Cluster ``matrix`` at every setting of a sweep and count the clusters and the pictures that would be muted.
+
+    Round one runs the lowest Min points over every Epsilon and finds the window where something happens
+    (:func:`window_of`); the other Min points run only inside that window, their lines are None outside it. The pairwise
+    distances are computed once and every run reuses them (up to ``PRECOMPUTE_MAX`` pictures).
+    """
+    from sklearn.cluster import DBSCAN  # noqa: PLC0415  (optional dep, import lazily)
+    from sklearn.metrics import pairwise_distances  # noqa: PLC0415
+
+    mps = sorted(set(min_points))
+    n = int(matrix.shape[0])
+    lines: dict[int, dict[str, list[int | None]]] = {mp: {"clusters": [None] * len(epsilons), "would_mute": [None] * len(epsilons)} for mp in mps}
+    total = len(epsilons) * len(mps)
+    done = 0
+    if n == 0:
+        return {"epsilons": epsilons, "min_points": mps, "lines": lines, "window": None, "peak": None, "frames": 0}
+
+    if n <= PRECOMPUTE_MAX:
+        dist = np.clip(pairwise_distances(matrix, metric="cosine"), 0.0, None)
+        np.fill_diagonal(dist, 0.0)
+
+        def run(eps: float, mp: int) -> np.ndarray:
+            return DBSCAN(eps=eps, min_samples=mp, metric="precomputed").fit_predict(dist)
+    else:
+        def run(eps: float, mp: int) -> np.ndarray:
+            return DBSCAN(eps=eps, min_samples=mp, metric="cosine").fit_predict(matrix)
+
+    def fill(mp: int, i: int) -> None:
+        nonlocal done
+        c, m = _counts(run(epsilons[i], mp))
+        lines[mp]["clusters"][i], lines[mp]["would_mute"][i] = c, m
+        done += 1
+        if progress_cb:
+            progress_cb(done, total)
+
+    first = mps[0]
+    for i in range(len(epsilons)):
+        fill(first, i)
+    found = window_of(lines[first]["clusters"], lines[first]["would_mute"])  # type: ignore[arg-type]
+    window = None
+    if found is not None:
+        lo, hi = found
+        window = {"from": epsilons[lo], "to": epsilons[hi]}
+        total = len(epsilons) + (hi - lo + 1) * (len(mps) - 1)
+        for mp in mps[1:]:
+            for i in range(lo, hi + 1):
+                fill(mp, i)
+    return {"epsilons": epsilons, "min_points": mps, "lines": lines, "window": window, "peak": peak_of(lines, epsilons), "frames": n}
+
+
+def sweep(
+    camera: str, feature: str, *, method: str, epsilons: list[float], min_points: list[int],
+    embedding_progress=None, progress_cb=None,
+) -> dict:
+    """:func:`sweep_matrix` over the feature's frame-set embeddings (the same ones :func:`cluster` uses)."""
+    kept, matrix = fetch_embeddings(camera, feature, live_frames(camera, feature), method, embedding_progress)
+    out = sweep_matrix(matrix, epsilons=epsilons, min_points=min_points, progress_cb=progress_cb)
+    out["frames"] = len(kept)
+    out["method"] = method
+    return out
+
+
 def cluster_matrix(
     kept: list[str], matrix: np.ndarray, *, epsilon: float, min_points: int, method: str,
 ) -> ClusterResult:

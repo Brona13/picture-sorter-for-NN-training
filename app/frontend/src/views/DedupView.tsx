@@ -1,5 +1,5 @@
 import { ReactNode, useCallback, useEffect, useState } from "react";
-import { api, CardData, DedupParams, DedupResult, DedupState, OutlierResult } from "../api";
+import { api, CardData, DedupParams, DedupResult, DedupState, DedupSweep, DedupSweepRange, OutlierResult } from "../api";
 import PictureGrid from "../classify/PictureGrid";
 import ClusterBrowser, { Marks } from "../classify/ClusterBrowser";
 import { OutlierControls, OutlierResults, useOutliers } from "../classify/OutlierPanel";
@@ -9,7 +9,26 @@ import { effectiveColour, ProjectionProgress, ScatterMapView, useScatterMap } fr
 import InfoTip from "../InfoTip";
 import SidePanel from "../SidePanel";
 import WheelRange from "../WheelRange";
+import { lastSession } from "../lastSession";
 import { useJob } from "../useJob";
+import DedupSweepChart from "./DedupSweepChart";
+
+const DEFAULT_SWEEP: DedupSweepRange = { eps_from: 0.005, eps_to: 0.03, eps_step: 0.001, mp_from: 2, mp_to: 4 };
+
+/** The sweep range remembered for this camera, else the defaults. */
+function savedSweepRange(camera: string): DedupSweepRange {
+  try {
+    return { ...DEFAULT_SWEEP, ...JSON.parse(lastSession.sweepRange(camera) || "{}") };
+  } catch {
+    return DEFAULT_SWEEP;
+  }
+}
+
+/** How many Epsilon values and clustering runs (at most) a sweep range asks for. */
+export function sweepRuns(r: DedupSweepRange): { values: number; runs: number } {
+  const values = r.eps_step > 0 ? Math.floor((r.eps_to - r.eps_from) / r.eps_step + 1e-9) + 1 : 0;
+  return { values: Math.max(0, values), runs: Math.max(0, values) * Math.max(0, r.mp_to - r.mp_from + 1) };
+}
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -67,6 +86,9 @@ export default function DedupView({
   const [result, setResult] = useState<DedupResult | null>(null);
   const [picks, setPicks] = useState<Record<number, string>>({});
   const [clusterJob, setClusterJob] = useState<string | null>(null);
+  const [sweep, setSweep] = useState<DedupSweep | null>(null);
+  const [sweepJob, setSweepJob] = useState<string | null>(null);
+  const [sweepRange, setSweepRange] = useState<DedupSweepRange>(() => savedSweepRange(camera));
   const [marks, setMarks] = useState<Marks>({});
   const [outliers, setOutliers] = useState<OutlierResult | null>(null);
   const [colourBy, setColourBy] = useState<ColourBy>("label");
@@ -77,6 +99,8 @@ export default function DedupView({
   const [error, setError] = useState<string | null>(null);
   const cj = useJob<DedupResult>(clusterJob);
   const clustering = clusterJob !== null && (cj === null || cj.status === "queued" || cj.status === "running");
+  const sj = useJob<DedupSweep>(sweepJob);
+  const sweeping = sweepJob !== null && (sj === null || sj.status === "queued" || sj.status === "running");
   const map = useScatterMap({ camera, feature, method: params?.method ?? "", onError: setError });
   const { scatter, projecting, projection, setProjection } = map;
   useEffect(() => setMarks(result?.marks ?? {}), [result]);
@@ -113,10 +137,19 @@ export default function DedupView({
     setOutliers(null);
     setPicks({});
     setClusterJob(null);
+    setSweep(null);
+    setSweepJob(null);
     setNotice(null);
     setConfirmClear(false);
     load();
-  }, [load]);
+    if (camera && feature)
+      api
+        .dedupSweepGet(camera, feature)
+        .then((r) => setSweep(r.sweep))
+        .catch(() => undefined); // no held chart is not an error
+  }, [load]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => setSweepRange(savedSweepRange(camera)), [camera]);
 
   useEffect(() => {
     if (!camera || !feature || tool !== "grid") return;
@@ -130,6 +163,30 @@ export default function DedupView({
       if (map.scatter) map.run(); // its cluster colours follow the new clustering (the projection itself is cached)
     } else if (cj?.status === "error") setError(cj.error);
   }, [cj?.status]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function runCluster(p: DedupParams) {
+    setNotice(null);
+    api.dedupCluster(camera, feature, p).then((j) => setClusterJob(j.id)).catch((e: unknown) => setError(msg(e)));
+  }
+
+  function setRange(patch: Partial<DedupSweepRange>) {
+    const next = { ...sweepRange, ...patch };
+    setSweepRange(next);
+    lastSession.setSweepRange(camera, JSON.stringify(next));
+  }
+
+  // A finished sweep puts the sliders on its peak and clusters there, so the grid below shows what the chart points at.
+  useEffect(() => {
+    if (sj?.status === "done" && sj.result) {
+      setSweep(sj.result);
+      const peak = sj.result.peak;
+      if (peak && params) {
+        const next = { ...params, epsilon: peak.epsilon, min_points: peak.min_points };
+        change({ epsilon: peak.epsilon, min_points: peak.min_points });
+        runCluster(next);
+      } else setNotice("Nothing clusters in this range: widen the Epsilon range, or lower Min points.");
+    } else if (sj?.status === "error") setError(sj.error);
+  }, [sj?.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function change(patch: Partial<DedupParams>) {
     if (!params) return;
@@ -237,10 +294,7 @@ export default function DedupView({
               <div style={{ display: "flex", gap: 6, flexWrap: "nowrap", alignItems: "center", marginTop: 8 }}>
                 <button
                   disabled={clustering}
-                  onClick={() => {
-                    setNotice(null);
-                    api.dedupCluster(camera, feature, params).then((j) => setClusterJob(j.id)).catch((e: unknown) => setError(msg(e)));
-                  }}
+                  onClick={() => runCluster(params)}
                 >
                   🔍 Cluster
                 </button>
@@ -285,6 +339,39 @@ export default function DedupView({
                   {Number(progress.total ?? 0)}
                 </p>
               )}
+              <fieldset className="sweep-controls" style={{ border: 0, padding: 0, margin: "12px 0 0" }}>
+                <legend style={{ fontSize: 12, color: "var(--muted)", padding: 0 }}>Sweep chart</legend>
+                <div className="sweep-fields">
+                  <span>Epsilon</span>
+                  <input type="number" aria-label="Sweep Epsilon from" title="from" min={0.001} max={0.2} step={0.001} value={sweepRange.eps_from} onChange={(e) => setRange({ eps_from: Number(e.target.value) })} />
+                  <input type="number" aria-label="Sweep Epsilon to" title="to" min={0.001} max={0.2} step={0.001} value={sweepRange.eps_to} onChange={(e) => setRange({ eps_to: Number(e.target.value) })} />
+                  <span>Step</span>
+                  <input type="number" aria-label="Sweep Epsilon step" min={0.0001} step={0.0005} value={sweepRange.eps_step} onChange={(e) => setRange({ eps_step: Number(e.target.value) })} />
+                  <span />
+                  <span>Min points</span>
+                  <input type="number" aria-label="Sweep Min points from" title="from" min={2} max={10} step={1} value={sweepRange.mp_from} onChange={(e) => setRange({ mp_from: Number(e.target.value) })} />
+                  <input type="number" aria-label="Sweep Min points to" title="to" min={2} max={10} step={1} value={sweepRange.mp_to} onChange={(e) => setRange({ mp_to: Number(e.target.value) })} />
+                </div>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 6 }}>
+                  <button
+                    disabled={sweeping || clustering}
+                    title="Calculate the chart: cluster over the whole Epsilon range for the lowest Min points, then for the others only where something happens."
+                    onClick={() => {
+                      setNotice(null);
+                      api.dedupSweep(camera, feature, params.method, sweepRange).then((j) => setSweepJob(j.id)).catch((e: unknown) => setError(msg(e)));
+                    }}
+                  >
+                    📈 Calculate chart
+                  </button>
+                  <span style={{ fontSize: 12, color: "var(--muted)" }}>up to {sweepRuns(sweepRange).runs} runs</span>
+                </div>
+                {sweeping && (
+                  <p aria-live="polite">
+                    <progress value={Number(sj?.progress.done ?? 0)} max={Number(sj?.progress.total ?? 0) || undefined} />{" "}
+                    {sj?.progress.phase === "sweep" ? "Clustering" : "Embedding"} {Number(sj?.progress.done ?? 0)}/{Number(sj?.progress.total ?? 0)}
+                  </p>
+                )}
+              </fieldset>
               {result && result.clusters.length > 0 && (
                 <div data-testid="mute-status" style={{ fontSize: 12, marginTop: 4 }}>
                   {wouldMute} frame(s) will be muted
@@ -456,6 +543,19 @@ export default function DedupView({
           onDeleted={(frame) => {
             setNotice(`Deleted ${frame}. It stays on disk; see Classify → Show: Deleted.`);
             load();
+          }}
+        />
+      )}
+
+      {active === "clusters" && sweep && params && (
+        <DedupSweepChart
+          sweep={sweep}
+          epsilon={params.epsilon}
+          minPoints={params.min_points}
+          method={params.method}
+          onPick={(epsilon, min_points) => {
+            change({ epsilon, min_points });
+            runCluster({ ...params, epsilon, min_points });
           }}
         />
       )}

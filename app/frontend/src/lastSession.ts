@@ -43,6 +43,11 @@ export const lastSession = {
   /** The full-size viewer of a Dedup box: the cutout of the found box (default) or the whole picture. */
   viewerCutout: () => get("viewer.cutout") !== "0",
   setViewerCutout: (v: boolean) => set("viewer.cutout", v ? "1" : "0"),
+  /** The Dedup sweep chart is open unless collapsed (shared by every box), and its range is kept per camera as JSON. */
+  sweepOpen: () => get("dedup.sweepOpen") !== "0",
+  setSweepOpen: (v: boolean) => set("dedup.sweepOpen", v ? "1" : "0"),
+  sweepRange: (camera: string) => get(`dedup.sweepRange.${camera}`),
+  setSweepRange: (camera: string, v: string) => set(`dedup.sweepRange.${camera}`, v),
   panelCollapsed: () => get("panel.collapsed") === "1",
   setPanelCollapsed: (v: boolean) => set("panel.collapsed", v ? "1" : ""),
 };

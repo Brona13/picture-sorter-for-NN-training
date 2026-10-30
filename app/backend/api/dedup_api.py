@@ -67,6 +67,9 @@ def list_boxes(camera: str) -> list[dict]:
 _lock = threading.Lock()
 _results: dict[tuple[str, str], dedup.ClusterResult] = {}
 _epochs: dict[tuple[str, str], int] = {}  # vision_settings.epoch() when the result was computed
+_sweeps: dict[tuple[str, str], dict] = {}  # the last sweep chart per (camera, feature), with the epoch it was computed at
+SWEEP_MAX_EPSILONS = 400
+SWEEP_MAX_RUNS = 1500
 
 
 def _current_result(camera: str, feature: str) -> dedup.ClusterResult | None:
@@ -313,6 +316,82 @@ def run_cluster(camera: str, body: Params) -> dict:
         return _describe(camera, body.feature, result)
 
     return jobs.registry.submit("dedup_cluster", camera, work, feature=body.feature).to_dict()
+
+
+class SweepBody(BaseModel):
+    feature: str
+    method: str
+    eps_from: float
+    eps_to: float
+    eps_step: float
+    mp_from: int
+    mp_to: int
+
+
+def _sweep_grid(body: SweepBody) -> tuple[list[float], list[int]]:
+    lo, hi = EPSILON_RANGE
+    if not (lo <= body.eps_from <= hi and lo <= body.eps_to <= hi):
+        raise HTTPException(status_code=422, detail=f"Epsilon must be between {lo} and {hi}.")
+    if body.eps_to <= body.eps_from:
+        raise HTTPException(status_code=422, detail="Epsilon 'to' must be larger than 'from'.")
+    if body.eps_step < 0.0001:
+        raise HTTPException(status_code=422, detail="Epsilon step is too small (minimum 0.0001).")
+    if not (MIN_POINTS_RANGE[0] <= body.mp_from <= body.mp_to <= MIN_POINTS_RANGE[1]):
+        raise HTTPException(status_code=422, detail=f"Min points must be between {MIN_POINTS_RANGE[0]} and {MIN_POINTS_RANGE[1]}, 'from' not above 'to'.")
+    epsilons = dedup.sweep_epsilons(body.eps_from, body.eps_to, body.eps_step)
+    mps = list(range(body.mp_from, body.mp_to + 1))
+    if len(epsilons) > SWEEP_MAX_EPSILONS:
+        raise HTTPException(status_code=422, detail=f"{len(epsilons)} Epsilon values is too many (maximum {SWEEP_MAX_EPSILONS}): widen the step.")
+    if len(epsilons) * len(mps) > SWEEP_MAX_RUNS:
+        raise HTTPException(status_code=422, detail=f"{len(epsilons) * len(mps)} runs is too many (maximum {SWEEP_MAX_RUNS}): widen the step or lower the Min points range.")
+    return epsilons, mps
+
+
+@router.post("/cameras/{camera}/dedup/sweep", status_code=202)
+def run_sweep(camera: str, body: SweepBody) -> dict:
+    """Cluster over a range of Epsilon x Min points and hand back cluster / would-mute counts for the chart."""
+    _require_available()
+    _validate(camera, Params(feature=body.feature, method=body.method, epsilon=body.eps_from, min_points=body.mp_from))
+    epsilons, mps = _sweep_grid(body)
+    if not dedup.live_frames(camera, body.feature):
+        raise HTTPException(status_code=409, detail="This Dedup box has no pictures yet: ingest some, or label some for the Classifier it reads.")
+
+    def work(report):
+        epoch = vision_settings.epoch()
+
+        def embedding_progress(done: int, total: int) -> None:
+            report({"phase": "embedding", "done": done, "total": total})
+
+        def progress(done: int, total: int) -> None:
+            report({"phase": "sweep", "done": done, "total": total})
+
+        out = dedup.sweep(
+            camera, body.feature, method=body.method, epsilons=epsilons, min_points=mps,
+            embedding_progress=embedding_progress, progress_cb=progress,
+        )
+        out = _sweep_json(out)
+        with _lock:
+            _sweeps[(camera, body.feature)] = {"epoch": epoch, "sweep": out}
+        return out
+
+    return jobs.registry.submit("dedup_sweep", camera, work, feature=body.feature).to_dict()
+
+
+def _sweep_json(out: dict) -> dict:
+    """JSON-friendly sweep: the lines as a list (JSON objects have string keys, a list keeps Min points numeric)."""
+    return {**out, "lines": [{"min_points": mp, **out["lines"][mp]} for mp in out["min_points"]]}
+
+
+@router.get("/cameras/{camera}/dedup/sweep")
+def get_sweep(camera: str, feature: str) -> dict:
+    """The last sweep chart of this box, or ``{"sweep": null}`` when there is none or the settings changed since."""
+    require_embeddable(camera, feature)
+    with _lock:
+        held = _sweeps.get((camera, feature))
+        if held is not None and held["epoch"] != vision_settings.epoch():
+            _sweeps.pop((camera, feature), None)
+            held = None
+    return {"sweep": None if held is None else held["sweep"]}
 
 
 class ApplyBody(BaseModel):

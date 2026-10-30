@@ -27,6 +27,7 @@ class DedupApiTests(ApiTestCase):
         self.assertEqual(flow.create_node(CAM, "dedup"), FEAT)
         flow.connect(CAM, "ingest", FEAT)  # v1.107.0: a box with no line has no pictures
         dedup_api._results.clear()
+        dedup_api._sweeps.clear()
         # Fake embeddings: frames 0-2 are near-identical, 3-4 near-identical, 5 is unique.
         vecs = {0: [1, 0, 0], 1: [1, 0.001, 0], 2: [1, 0, 0.001], 3: [0, 1, 0], 4: [0, 1, 0.001], 5: [0, 0, 1]}
 
@@ -88,6 +89,38 @@ class DedupApiTests(ApiTestCase):
         self.assertEqual(job["progress"]["phase"], "embedding")
         st = self.client.get(f"{self.base}/state", params={"feature": FEAT}).json()
         self.assertEqual(st["result"]["summary"], res["summary"])
+
+    def sweep(self, **over):
+        body = {"feature": FEAT, "method": "resnet50", "eps_from": 0.005, "eps_to": 0.03, "eps_step": 0.005, "mp_from": 2, "mp_to": 3, **over}
+        r = self.client.post(f"{self.base}/sweep", json=body)
+        self.assertEqual(r.status_code, 202, r.text)
+        job = wait_for_job(self.client, r.json()["id"])
+        self.assertEqual(job["status"], "done", job)
+        return job["result"]
+
+    def test_sweep_counts_clusters_and_would_mute_per_setting(self) -> None:
+        res = self.sweep(eps_from=0.0005 + 0.0005, eps_to=0.01, eps_step=0.003)
+        self.assertEqual(res["min_points"], [2, 3])
+        self.assertEqual(res["frames"], 6)
+        first = res["lines"][0]
+        self.assertEqual(first["min_points"], 2)
+        self.assertEqual(len(first["clusters"]), len(res["epsilons"]))
+        self.assertEqual(first["clusters"][-1], 2)  # two near-duplicate groups at the widest Epsilon
+        self.assertEqual(first["would_mute"][-1], 3)  # (3-1) + (2-1), as the Clusters tool says
+        self.assertEqual(res["peak"]["clusters"], 2)
+        self.assertEqual(self.client.get(f"{self.base}/sweep", params={"feature": FEAT}).json()["sweep"]["peak"], res["peak"])
+
+    def test_sweep_is_dropped_when_the_vision_settings_change(self) -> None:
+        self.sweep()
+        with mock.patch.object(dedup_api.vision_settings, "epoch", return_value=10**9):
+            self.assertIsNone(self.client.get(f"{self.base}/sweep", params={"feature": FEAT}).json()["sweep"])
+
+    def test_sweep_rejects_ranges_that_are_out_of_bounds_or_too_big(self) -> None:
+        base = {"feature": FEAT, "method": "resnet50", "eps_from": 0.005, "eps_to": 0.03, "eps_step": 0.005, "mp_from": 2, "mp_to": 4}
+        for bad in ({"eps_to": 0.004}, {"eps_from": 0}, {"eps_to": 0.5}, {"eps_step": 0.00001}, {"mp_from": 5}, {"mp_to": 11},
+                    {"eps_from": 0.001, "eps_to": 0.2, "eps_step": 0.0001}):
+            self.assertEqual(self.client.post(f"{self.base}/sweep", json={**base, **bad}).status_code, 422, bad)
+        self.assertIsNone(self.client.get(f"{self.base}/sweep", params={"feature": FEAT}).json()["sweep"])
 
     def test_apply_mutes_non_representatives_only_and_keeps_sources(self) -> None:
         res = self.cluster()["result"]

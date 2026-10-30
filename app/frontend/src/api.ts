@@ -1064,6 +1064,33 @@ export interface DedupResult {
   marks: Record<string, { label: string | null; golden: string | null }>;
 }
 
+/** One Min points line of the sweep chart: a value per Epsilon, null where it was not calculated (outside the window). */
+export interface DedupSweepLine {
+  min_points: number;
+  clusters: (number | null)[];
+  would_mute: (number | null)[];
+}
+
+export interface DedupSweep {
+  epsilons: number[];
+  min_points: number[];
+  lines: DedupSweepLine[];
+  /** Where something happens (first Epsilon that would mute anything -> first with a single cluster); null when nothing clusters. */
+  window: { from: number; to: number } | null;
+  /** The setting with the most clusters; null when nothing clusters. */
+  peak: { epsilon: number; min_points: number; clusters: number } | null;
+  frames: number;
+  method: string;
+}
+
+export interface DedupSweepRange {
+  eps_from: number;
+  eps_to: number;
+  eps_step: number;
+  mp_from: number;
+  mp_to: number;
+}
+
 export interface DedupState {
   feature: string;
   /** The feature the picture actions go through: the Classifier the box reads, else the whole-frame feature. */
@@ -1668,6 +1695,10 @@ export const api = {
     request<{ params: DedupParams }>(`/cameras/${encodeURIComponent(camera)}/dedup/settings`, send("PUT", { feature, ...p })),
   dedupCluster: (camera: string, feature: string, p: DedupParams) =>
     request<Job<DedupResult>>(`/cameras/${encodeURIComponent(camera)}/dedup/cluster`, post({ feature, ...p })),
+  dedupSweep: (camera: string, feature: string, method: string, r: DedupSweepRange) =>
+    request<Job<DedupSweep>>(`/cameras/${encodeURIComponent(camera)}/dedup/sweep`, post({ feature, method, ...r })),
+  dedupSweepGet: (camera: string, feature: string) =>
+    request<{ sweep: DedupSweep | null }>(`/cameras/${encodeURIComponent(camera)}/dedup/sweep?feature=${encodeURIComponent(feature)}`),
   dedupGridSettings: (camera: string, feature: string, per_page: number, cols: number) =>
     request<DedupState["grid"]>(`/cameras/${encodeURIComponent(camera)}/dedup/grid-settings`, send("PUT", { feature, per_page, cols })),
   dedupApply: (camera: string, feature: string, picks: Record<number, string>) =>
