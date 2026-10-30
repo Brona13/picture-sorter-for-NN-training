@@ -19,6 +19,8 @@ interface Props {
   onLabel: (cls: string | null) => void;
   onGolden: (on: boolean) => void;
   onDelete: () => void;
+  /** The M key on the card: mutes it, or takes the mute away again (Dedup grid only). */
+  onMute?: () => void;
   onRestore: () => void;
   /** False when a deleted card cannot be restored from this grid (the button is then disabled and says where to restore it). */
   canRestore?: boolean;
@@ -58,11 +60,11 @@ const badge = (bg: string): React.CSSProperties => ({
 /**
  * Keyboard shortcuts act on the hovered card: 1-9 pick the class in that position (again to
  * remove it), 0 or X clears, the key left of 1 (``Backquote``, whatever it prints) toggles golden, and
- * Delete soft-deletes the frame. Held while the mouse moves over cards, the same keys sweep (see `paint.ts`).
+ * Delete soft-deletes the frame, M (Dedup grid) mutes it or takes the mute away. Held while the mouse moves over cards, the same keys sweep (see `paint.ts`).
  */
 export const MAX_SHORTCUT_CLASSES = 9;
 
-export default function Card({ camera, feature, pictureFeature, classes, labeling = true, methods, card, busy, onLabel, onGolden, onDelete, onRestore, canRestore = true, isRep, onSetRep, fullSize, onOpen, caption, onSimilar, thumb, edgeColor, extra }: Props) {
+export default function Card({ camera, feature, pictureFeature, classes, labeling = true, methods, card, busy, onLabel, onGolden, onDelete, onMute, onRestore, canRestore = true, isRep, onSetRep, fullSize, onOpen, caption, onSimilar, thumb, edgeColor, extra }: Props) {
   const { frame, label, golden, deleted, bars, leanings, cluster, edge, measure } = card;
   // Search results only: a picture outside this ROI's scope gets a red frame and cannot be labeled here until its
   // product fits (open it to change the product); a muted one gets a dark grey dashed frame.
@@ -80,6 +82,11 @@ export default function Card({ camera, feature, pictureFeature, classes, labelin
   // the mouse paints the cards. The page-specific part is only what a key does to a labeling card.
   const { props } = useGridCard(labelPainter, frame, {
     onKey: (e) => {
+      if (onMute && (e.key === "m" || e.key === "M") && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (busy || deleted || e.repeat) return true;
+        onMute();
+        return true;
+      }
       const isGoldenKey = e.code === "Backquote";
       const isDeleteKey = e.key === "Delete";
       const clear = isClearKey(e);

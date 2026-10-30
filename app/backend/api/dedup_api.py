@@ -408,6 +408,15 @@ def mute_frames(camera: str, body: MuteBody) -> dict:
     return dedup.mute_frames(camera, body.feature, body.frames)
 
 
+@router.post("/cameras/{camera}/dedup/unmute-frames")
+def unmute_frames(camera: str, body: MuteBody) -> dict:
+    """Take these pictures out of the box's mutes (the M key on a muted picture)."""
+    require_box(camera, body.feature)
+    if not body.frames:
+        raise HTTPException(status_code=422, detail="No frames to unmute.")
+    return dedup.unmute_frames(camera, body.feature, body.frames)
+
+
 class ApplyBody(BaseModel):
     feature: str
     picks: dict[int, str] = {}

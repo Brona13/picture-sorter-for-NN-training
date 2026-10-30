@@ -74,6 +74,7 @@ beforeEach(() => {
       if (url.includes("/classify/deleted?")) return ok({ items: [{ frame: "x.png", deleted_at: 1760000000, note: "" }] });
       if (url.endsWith("/classify/restore-bulk")) return ok({ restored: 1 });
       if (url.endsWith("/dedup/mute-frames")) return ok({ muted: 2, skipped_golden: 0, already: 0 });
+      if (url.endsWith("/dedup/unmute-frames")) return ok({ unmuted: 1 });
       if (url.endsWith("/dedup/sweep") && method === "POST") return ok({ id: "w1", status: "queued", progress: {} }, 202);
       if (url.includes("/dedup/sweep")) return ok({ sweep: heldSweep });
       if (url === "/api/jobs/w1") return ok({ id: "w1", status: "done", progress: {}, result: sweepResult, error: null });
@@ -490,6 +491,20 @@ test("the Grid lists the box's pictures, hides muted ones until Show muted is ti
   await userEvent.click(screen.getByLabelText("Show muted"));
   await waitFor(() => expect(view).toHaveTextContent("3 pictures · 1 muted"));
   expect(view).toHaveTextContent("muted");
+});
+
+test("M on a grid card mutes the picture, and on a muted one takes the mute away", async () => {
+  render(<DedupView camera="camA" box="seal" tool="grid" />);
+  const view = await screen.findByTestId("grid-view");
+  await waitFor(() => expect(view).toHaveTextContent("2 pictures · 1 muted"));
+  await userEvent.hover(screen.getByTestId("card-a.png"));
+  fireEvent.keyDown(window, { key: "m" });
+  await waitFor(() => expect(calls.find((c) => c.url.endsWith("/dedup/mute-frames"))?.body).toEqual({ feature: "seal", frames: ["a.png"] }));
+  expect(screen.getByTestId("card-a.png")).toBeInTheDocument(); // stays in place until the grid is turned
+  await userEvent.click(screen.getByLabelText("Show muted"));
+  await userEvent.hover(await screen.findByTestId("card-b.png"));
+  fireEvent.keyDown(window, { key: "M" });
+  await waitFor(() => expect(calls.find((c) => c.url.endsWith("/dedup/unmute-frames"))?.body).toEqual({ feature: "seal", frames: ["b.png"] }));
 });
 
 test("the sweep helpers: round axes, nearest Epsilon, number of runs", () => {

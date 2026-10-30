@@ -61,6 +61,21 @@ test("keys label, clear, golden and delete the frame on screen", () => {
   expect(onDelete).toHaveBeenLastCalledWith("b.png");
 });
 
+test("M mutes or unmutes the frame on screen when the grid can mute, and does nothing otherwise", () => {
+  const onMute = vi.fn();
+  setup({ onMute, isMuted: (f) => f === "b.png" });
+  fireEvent.keyDown(window, { key: "m" });
+  expect(onMute).toHaveBeenLastCalledWith("b.png");
+  expect(screen.getByRole("button", { name: "Unmute" })).toBeInTheDocument();
+});
+
+test("without a mute handler M is not a key of the viewer", () => {
+  const fns = setup();
+  fireEvent.keyDown(window, { key: "m" });
+  expect(fns.onDelete).not.toHaveBeenCalled();
+  expect(screen.queryByRole("button", { name: "Mute" })).toBeNull();
+});
+
 test("a golden needs a label, and nothing acts while busy", () => {
   const first = setup({ start: "a.png" });
   fireEvent.keyDown(window, { key: "`", code: "Backquote" });

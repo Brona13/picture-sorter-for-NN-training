@@ -78,6 +78,8 @@ export default function DedupView({
   const [gridPage, setGridPage] = useState(1);
   const [showMuted, setShowMuted] = useState(false);
   const [showDeleted, setShowDeleted] = useState(false);
+  // Pictures muted with M stay in the grid (dashed frame) until the grid is turned, so a run of M presses keeps its place.
+  const [justMuted, setJustMuted] = useState<Set<string>>(new Set());
   const [gridRev, setGridRev] = useState(0);
   // The pages work on one Dedup box of the Chain (its id is the "feature" of the API).
   const [features, setFeatures] = useState<{ feature: string; label: string }[]>([]);
@@ -264,7 +266,7 @@ export default function DedupView({
           </label>
           {active === "grid" && (
             <label>
-              <input type="checkbox" checked={showMuted} onChange={(e) => { setShowMuted(e.target.checked); setGridPage(1); }} /> Show muted
+              <input type="checkbox" checked={showMuted} onChange={(e) => { setShowMuted(e.target.checked); setJustMuted(new Set()); setGridPage(1); }} /> Show muted
             </label>
           )}
           {active === "grid" && (
@@ -482,12 +484,13 @@ export default function DedupView({
 
       {active === "grid" && !showDeleted && gridData && st && (() => {
         const mutedSet = new Set(gridData.muted);
-        const shownFrames = showMuted ? gridData.frames : gridData.frames.filter((f) => !mutedSet.has(f));
+        const shownFrames = showMuted ? gridData.frames : gridData.frames.filter((f) => !mutedSet.has(f) || justMuted.has(f));
         const cardOf = (frame: string): CardData => ({
           frame,
           label: gridData.marks[frame]?.label ?? null,
           golden: gridData.marks[frame]?.golden ?? null,
           deleted: false,
+          muted: mutedSet.has(frame),
           leanings: {},
           bars: null,
           cluster: null,
@@ -517,7 +520,26 @@ export default function DedupView({
                   .catch((e: unknown) => setError(msg(e)))
               }
               page={gridPage}
-              onPage={setGridPage}
+              onPage={(p) => {
+                setJustMuted(new Set());
+                setGridPage(p);
+              }}
+              mute={{
+                is: (f) => mutedSet.has(f),
+                toggle: async (f) => {
+                  if (mutedSet.has(f)) await api.dedupUnmuteFrames(camera, feature, [f]);
+                  else {
+                    const r = await api.dedupMuteFrames(camera, feature, [f]);
+                    if (r.muted === 0) {
+                      setNotice(r.skipped_golden ? "A golden picture is never muted." : "This picture is not in the box any more.");
+                      return;
+                    }
+                    setJustMuted((s) => new Set(s).add(f));
+                  }
+                  setGridRev((r) => r + 1);
+                  load();
+                },
+              }}
               where="grid"
               extras={(f) => (mutedSet.has(f) ? { caption: "muted" } : {})}
               onChanged={() => setGridRev((r) => r + 1)}

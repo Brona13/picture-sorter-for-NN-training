@@ -42,6 +42,9 @@ interface Props {
   note?: (frame: string) => ReactNode;
   /** Called whenever the shown frame changes, so the grid can turn to the page that holds it. */
   onShow?: (frame: string) => void;
+  /** Dedup grid: M mutes the picture on screen or takes its mute away; `isMuted` says which it is now. */
+  onMute?: (frame: string) => void;
+  isMuted?: (frame: string) => boolean;
   onClose: () => void;
 }
 
@@ -50,7 +53,7 @@ interface Props {
  * pan, the same pane the ROI editor uses), the ROI outline, and the card's own actions for the frame on screen
  * (1-9 label, 0 or X clear, the key left of 1 golden, Delete).
  */
-export default function FrameViewer({ camera, feature, pictureFeature, frames, start, classes, labeling = true, marks, busy, onLabel, onGolden, onDelete, deleted, onRestore, labelsLocked, lead, leadCaption, trail, note, onShow, onClose }: Props) {
+export default function FrameViewer({ camera, feature, pictureFeature, frames, start, classes, labeling = true, marks, busy, onLabel, onGolden, onDelete, deleted, onRestore, labelsLocked, lead, leadCaption, trail, note, onShow, onMute, isMuted, onClose }: Props) {
   const [roi, setRoi] = useState<RoiInfo | null>(null);
   const [showRoi, setShowRoi] = useState(true);
   useEffect(() => {
@@ -109,11 +112,15 @@ export default function FrameViewer({ camera, feature, pictureFeature, frames, s
   const outline = boxMode ? boxOutline : roi && showRoi ? (roi.anchored ? (placed && placed.frame === frame && placed.rect ? { ...roi, ...placed.rect } : null) : roi) : null;
   const noAnchor = !!roi?.anchored && placed?.frame === frame && placed.rect === null;
 
-  const latest = useRef({ frame, classes, labeling, busy, marks, onLabel, onGolden, onDelete, deleted, labelsLocked });
-  latest.current = { frame, classes, labeling, busy, marks, onLabel, onGolden, onDelete, deleted, labelsLocked };
+  const latest = useRef({ frame, classes, labeling, busy, marks, onLabel, onGolden, onDelete, deleted, labelsLocked, onMute });
+  latest.current = { frame, classes, labeling, busy, marks, onLabel, onGolden, onDelete, deleted, labelsLocked, onMute };
   // The label keys: 1-9 label, 0 clear, the key left of 1 golden, Delete deletes (the shell has Esc and the arrows).
   const onKey = (e: KeyboardEvent): boolean => {
     const cur = latest.current;
+    if (cur.onMute && (e.key === "m" || e.key === "M") && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      if (!e.repeat && !cur.busy && cur.frame && !cur.deleted?.(cur.frame)) cur.onMute(cur.frame);
+      return true;
+    }
     const isGolden = e.code === "Backquote";
     const isDelete = e.key === "Delete";
     const digit = /^[0-9]$/.test(e.key);
@@ -155,7 +162,7 @@ export default function FrameViewer({ camera, feature, pictureFeature, frames, s
       onGo={go}
       onClose={onClose}
       onKey={onKey}
-      hint={labeling ? "Wheel zooms · drag pans · ← → browse · 1-9 label · 0 / X clear · ` golden · Delete deletes · Esc closes" : "Wheel zooms · drag pans · ← → browse · Delete deletes · Esc closes"}
+      hint={labeling ? "Wheel zooms · drag pans · ← → browse · 1-9 label · 0 / X clear · ` golden · Delete deletes · Esc closes" : `Wheel zooms · drag pans · ← → browse · ${onMute ? "M mutes / unmutes · " : ""}Delete deletes · Esc closes`}
       toolbar={
         <div style={{ flex: 1 }}>
         <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
@@ -184,6 +191,11 @@ export default function FrameViewer({ camera, feature, pictureFeature, frames, s
           >
             {mark.golden ? "⭐" : "☆"}
           </button>}
+          {onMute && (
+            <button type="button" aria-pressed={!!isMuted?.(frame)} disabled={busy || isDeleted} title="Shortcut: press M." onClick={() => onMute(frame)}>
+              {isMuted?.(frame) ? "Unmute" : "Mute"}
+            </button>
+          )}
           {trail?.(frame)}
         </div>
         </div>

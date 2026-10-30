@@ -47,6 +47,7 @@ export default function PictureGrid({
   onChanged,
   onDeleted,
   onRestored,
+  mute,
   onError,
 }: {
   camera: string;
@@ -77,6 +78,8 @@ export default function PictureGrid({
   onDeleted: (frame: string, card: CardUpdate["card"]) => void;
   /** The tool can take a picture back into its list. When given, a card deleted here can be restored in place. */
   onRestored?: (frame: string, card: CardUpdate["card"]) => void;
+  /** Dedup grid: the M key (and a viewer button) mutes a picture or takes its mute away. `is` tells whether it is muted now. */
+  mute?: { is: (frame: string) => boolean; toggle: (frame: string) => Promise<void> };
   onError: (message: string) => void;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
@@ -122,6 +125,16 @@ export default function PictureGrid({
       setGhosts((g) => new Map(g).set(f, { ...before, ...c, label: null, golden: null, deleted: true }));
       onDeleted(f, c);
     });
+  const toggleMute = async (f: string) => {
+    setBusy(f);
+    try {
+      await mute!.toggle(f);
+    } catch (e) {
+      onError(msg(e));
+    } finally {
+      setBusy(null);
+    }
+  };
   const restore = (f: string) => {
     if (!canRestore || !(ghosts.has(f) || restorable)) return undefined;
     return act(f, () => api.restoreFrame(camera, feature, f), (c) => {
@@ -169,6 +182,7 @@ export default function PictureGrid({
               onLabel={(cls) => label(f, cls)}
               onGolden={(on) => golden(f, on)}
               onDelete={() => del(f)}
+              onMute={mute ? () => void toggleMute(f) : undefined}
               onRestore={() => restore(f)}
               canRestore={canRestore}
             />
@@ -192,6 +206,8 @@ export default function PictureGrid({
           onLabel={label}
           onGolden={golden}
           onDelete={del}
+          onMute={mute ? (f) => void toggleMute(f) : undefined}
+          isMuted={mute?.is}
           deleted={(f) => cardAt(f).deleted}
           onRestore={canRestore ? (f) => void restore(f) : undefined}
           onShow={(f) => {

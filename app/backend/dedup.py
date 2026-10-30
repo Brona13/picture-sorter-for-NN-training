@@ -452,6 +452,11 @@ def mute_frames(camera: str, feature: str, frames: list[str]) -> dict[str, int]:
     return {"muted": len(fresh), "skipped_golden": skipped_golden, "already": sum(1 for f in wanted if f in already)}
 
 
+def unmute_frames(camera: str, feature: str, frames: list[str]) -> dict[str, int]:
+    """Show pictures again that this box muted (the M key on a muted picture). Only the box's own mutes are touched."""
+    return {"unmuted": db.add_dedup_unmutes(camera, feature, list(dict.fromkeys(frames)))}
+
+
 def _save_snapshot(camera, feature, result: ClusterResult, picks: dict[int, str]) -> None:
     """Write one row into cluster_snapshot with every frame's cluster id + rep flag."""
     rep_set = set(picks.values())

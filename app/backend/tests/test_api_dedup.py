@@ -140,6 +140,17 @@ class DedupApiTests(ApiTestCase):
         flow.connect(CAM, FEAT, det)
         self.assertEqual(sorted(flow.node_frames(CAM, det)), sorted(self.frames[3:]))
 
+    def test_unmute_frames_takes_only_this_boxes_mutes_away(self) -> None:
+        other = flow.create_node(CAM, "dedup")
+        flow.connect(CAM, "ingest", other)
+        self.client.post(f"{self.base}/mute-frames", json={"feature": FEAT, "frames": self.frames[:2]})
+        db.add_dedup_mutes(CAM, other, [(self.frames[0], "", 1)])
+        r = self.client.post(f"{self.base}/unmute-frames", json={"feature": FEAT, "frames": self.frames[:3]})
+        self.assertEqual((r.status_code, r.json()), (200, {"unmuted": 2}))
+        self.assertEqual(db.muted_frames(CAM, FEAT), set())
+        self.assertEqual(db.muted_frames(CAM, other), {self.frames[0]})
+        self.assertEqual(self.client.post(f"{self.base}/unmute-frames", json={"feature": FEAT, "frames": []}).status_code, 422)
+
     def test_apply_mutes_non_representatives_only_and_keeps_sources(self) -> None:
         res = self.cluster()["result"]
         big = next(c for c in res["clusters"] if len(c["members"]) == 3)

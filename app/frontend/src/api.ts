@@ -1699,6 +1699,8 @@ export const api = {
     request<Job<DedupSweep>>(`/cameras/${encodeURIComponent(camera)}/dedup/sweep`, post({ feature, method, ...r })),
   dedupMuteFrames: (camera: string, feature: string, frames: string[]) =>
     request<{ muted: number; skipped_golden: number; already: number }>(`/cameras/${encodeURIComponent(camera)}/dedup/mute-frames`, post({ feature, frames })),
+  dedupUnmuteFrames: (camera: string, feature: string, frames: string[]) =>
+    request<{ unmuted: number }>(`/cameras/${encodeURIComponent(camera)}/dedup/unmute-frames`, post({ feature, frames })),
   dedupSweepGet: (camera: string, feature: string) =>
     request<{ sweep: DedupSweep | null }>(`/cameras/${encodeURIComponent(camera)}/dedup/sweep?feature=${encodeURIComponent(feature)}`),
   dedupGridSettings: (camera: string, feature: string, per_page: number, cols: number) =>
