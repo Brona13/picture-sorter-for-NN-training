@@ -67,6 +67,12 @@ test("with a mute handler, M on a hovered cluster card calls it and the card get
   await userEvent.hover(screen.getByTestId("card-m01.png"));
   fireEvent.keyDown(window, { key: "m" });
   await waitFor(() => expect(toggle).toHaveBeenCalledWith("m01.png"));
+  // the card has the Mute button (Unmute and dimmed once muted)
+  const card = await screen.findByTestId("card-m01.png");
+  expect(within(card).getByRole("button", { name: "Unmute frame" })).toBeInTheDocument();
+  expect(within(card).getByRole("img")).toHaveStyle({ opacity: "0.5" });
+  await userEvent.click(within(screen.getByTestId("card-m02.png")).getByRole("button", { name: "Mute frame" }));
+  expect(toggle).toHaveBeenCalledWith("m02.png");
 });
 
 test("without a mute handler M does nothing on a cluster card", async () => {

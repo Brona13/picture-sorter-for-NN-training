@@ -154,7 +154,7 @@ export default function Card({ camera, feature, pictureFeature, classes, labelin
             src={thumb ? thumb(frame) : thumbUrl(camera, frame, pictureFeature ?? feature)}
             alt={sampleLabel(frame)}
             loading="lazy"
-            style={{ width: "100%", display: "block", borderRadius: 4, opacity: deleted ? 0.5 : 1 }}
+            style={{ width: "100%", display: "block", borderRadius: 4, opacity: deleted || muted ? 0.5 : 1 }}
           />
         );
         return fullSize ? (
@@ -338,6 +338,16 @@ export default function Card({ camera, feature, pictureFeature, classes, labelin
             onClick={onSimilar}
           >
             🔍≈
+          </button>
+        )}
+        {onMute && (
+          <button
+            aria-label={muted ? "Unmute frame" : "Mute frame"}
+            disabled={busy || deleted}
+            title={muted ? "Muted in this Dedup box. Take the mute away (shortcut: hover and press M)." : "Mute in this Dedup box: the picture goes on no further from here (shortcut: hover and press M). The file stays on disk."}
+            onClick={onMute}
+          >
+            {muted ? "↺" : "🔇"}
           </button>
         )}
         <button
