@@ -158,7 +158,7 @@ function Box({ data, selected }: NodeProps<BoxNode>) {
           ))}
           <div className="chain-node-product chain-node-all" title="All classified pictures (no unlabeled one)">
             {/* The input for the rest: Ingest, Picture edits, a detector's target, an Evaluation or several Dedup boxes feed pictures here; it adds no label. */}
-            <Handle type="target" position={Position.Left} isConnectable title="Pictures to work on: Ingest, Picture edits, a detector target, an Evaluation (labels) or several Dedup boxes" />
+            <Handle type="target" position={Position.Left} id={MAIN_HANDLE} isConnectable title="Pictures to work on: Ingest, Picture edits, a detector target, an Evaluation (labels) or several Dedup boxes" />
             <span className="chain-node-class">all</span>
             <span className="chain-node-count">{node.labeled}</span>
             <Handle type="source" position={Position.Right} id={ALL_HANDLE} isConnectable />
@@ -204,6 +204,7 @@ function Box({ data, selected }: NodeProps<BoxNode>) {
 const nodeTypes = { box: Box };
 /** How far (px) from an anchor point a dragged arrow still snaps to it. */
 const CONNECT_RADIUS = 40;
+const MAIN_HANDLE = "main";
 const FLOW_PAGE = { crop: "Picture edits", detector: "Detector", calc: "Calculate", evaluation: "Evaluation", dedup: "Dedup", export: "Export" } as const;
 
 function toFlowNode(n: ChainNode, onRename: BoxData["onRename"], selected: boolean): BoxNode {
@@ -216,7 +217,7 @@ export function toFlowEdge(e: ChainCanvas["edges"][number]): Edge {
     source: e.source,
     sourceHandle: e.source_handle,
     target: e.target,
-    targetHandle: e.target_handle ?? undefined,
+    targetHandle: e.target_handle ?? (e.target.startsWith("roi:") ? MAIN_HANDLE : undefined), // a Classifier's plain input is the dot on its all row
     type: "smoothstep",
     deletable: !e.locked,
     className: e.locked ? "chain-edge-locked" : undefined,
