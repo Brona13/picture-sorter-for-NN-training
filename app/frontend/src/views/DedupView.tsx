@@ -1,7 +1,7 @@
 import { ReactNode, useCallback, useEffect, useState } from "react";
 import { api, CardData, DedupParams, DedupResult, DedupState, DedupSweep, DedupSweepRange, OutlierResult } from "../api";
 import DeletedByDay from "../classify/DeletedByDay";
-import PictureGrid from "../classify/PictureGrid";
+import PictureGrid, { type GridMute } from "../classify/PictureGrid";
 import ClusterBrowser, { Marks } from "../classify/ClusterBrowser";
 import { OutlierControls, OutlierResults, useOutliers } from "../classify/OutlierPanel";
 import { ColourBy } from "../classify/Scatter";
@@ -134,6 +134,31 @@ export default function DedupView({
       setError(msg(e));
     }
   }, [camera, feature]);
+  // The M key in Clusters, Outliers and the Scatter selection: those lists only hold pictures the box still sees, so a picture
+  // is muted there exactly when it was muted here by M (and not taken back since).
+  const [mutedByKey, setMutedByKey] = useState<{ box: string; frames: Set<string> }>({ box: "", frames: new Set() });
+  const keyMuted = mutedByKey.box === `${camera}/${feature}` ? mutedByKey.frames : new Set<string>();
+  const toolMute: GridMute = {
+    is: (f) => keyMuted.has(f),
+    toggle: async (f) => {
+      const was = keyMuted.has(f);
+      if (was) await api.dedupUnmuteFrames(camera, feature, [f]);
+      else {
+        const r = await api.dedupMuteFrames(camera, feature, [f]);
+        if (r.muted === 0) {
+          setNotice(r.skipped_golden ? "A golden picture is never muted." : "This picture is already muted or not in the box any more.");
+          return;
+        }
+      }
+      setMutedByKey(() => {
+        const next = new Set(keyMuted);
+        if (was) next.delete(f);
+        else next.add(f);
+        return { box: `${camera}/${feature}`, frames: next };
+      });
+      load();
+    },
+  };
 
   useEffect(() => {
     setSt(null);
@@ -562,6 +587,7 @@ export default function DedupView({
                 pictureFeature={feature}
                 labeling={false}
                 map={map}
+                mute={toolMute}
                 onMute={(frames) =>
                   api.dedupMuteFrames(camera, feature, frames).then((r) => {
                     setNotice(
@@ -593,6 +619,7 @@ export default function DedupView({
 
       {active === "outliers" && st && params && params.method && (
         <OutlierResults
+          mute={toolMute}
           o={outlierRun}
           labelFeature={act}
           labeling={false}
@@ -652,6 +679,7 @@ export default function DedupView({
           )}
           {st && (
             <ClusterBrowser
+              mute={toolMute}
               camera={camera}
               feature={act}
               pictureFeature={feature}

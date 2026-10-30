@@ -507,6 +507,14 @@ test("M on a grid card mutes the picture, and on a muted one takes the mute away
   await waitFor(() => expect(calls.find((c) => c.url.endsWith("/dedup/unmute-frames"))?.body).toEqual({ feature: "seal", frames: ["b.png"] }));
 });
 
+test("M on a cluster card mutes the picture in the box", async () => {
+  render(<DedupView camera="camA" box="seal" tool="clusters" />);
+  await userEvent.click(await screen.findByRole("button", { name: /Cluster$/ }));
+  await userEvent.hover(await screen.findByTestId("card-a.png"));
+  fireEvent.keyDown(window, { key: "m" });
+  await waitFor(() => expect(calls.find((c) => c.url.endsWith("/dedup/mute-frames"))?.body).toMatchObject({ feature: "seal" }));
+});
+
 test("the sweep helpers: round axes, nearest Epsilon, number of runs", () => {
   expect(niceAxis(0)).toEqual({ top: 1, ticks: [0, 1] });
   expect(niceAxis(47).ticks).toEqual([0, 20, 40, 60]);

@@ -3,7 +3,7 @@ import { api, CardData, OutlierResult } from "../api";
 import { useJob } from "../useJob";
 import WheelRange from "../WheelRange";
 import { PagerSettings } from "./Pager";
-import PictureGrid from "./PictureGrid";
+import PictureGrid, { type GridMute } from "./PictureGrid";
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const K_MIN = 1;
@@ -94,6 +94,7 @@ export function OutlierResults({
   onChanged,
   labelFeature,
   labeling = true,
+  mute,
 }: {
   o: OutlierState;
   grid: PagerSettings;
@@ -103,6 +104,8 @@ export function OutlierResults({
   onChanged?: () => void;
   /** The feature the picture actions go through, when it is not the one the outliers were run for (a Dedup box). */
   labelFeature?: string;
+  /** Dedup box: M mutes a picture or takes its mute away. */
+  mute?: GridMute;
   /** False in a Dedup box: the grid shows classes but does not label. */
   labeling?: boolean;
 }) {
@@ -159,6 +162,7 @@ export function OutlierResults({
           setMarks((m) => ({ ...m, [f]: { label: null, golden: null } }));
           onChanged?.();
         }}
+        mute={mute}
         onError={o.onError}
       />
     </div>

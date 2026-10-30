@@ -3,7 +3,7 @@ import { api, CardData, DeletePreview, DeleteResult, OutlierResult, ScatterPoint
 import { useJob } from "../useJob";
 import { classColor } from "./colors";
 import { PagerSettings } from "./Pager";
-import PictureGrid from "./PictureGrid";
+import PictureGrid, { type GridMute } from "./PictureGrid";
 import Scatter, { ColourBy, ScatterLegend } from "./Scatter";
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -127,11 +127,14 @@ export function ScatterMapView({
   onChanged,
   labeling = true,
   onMute,
+  mute,
 }: {
   camera: string;
   feature: string;
   /** In a Dedup box: mute these pictures in the box (shows the Mute button of the selection). */
   onMute?: (frames: string[]) => Promise<void>;
+  /** In a Dedup box: the M key on the selection's cards. */
+  mute?: GridMute;
   /** The feature whose cutout the cards show, when it differs from the one the picture actions go through (a Dedup box). */
   pictureFeature?: string;
   /** False in a Dedup box: the selection grid shows classes but does not label. */
@@ -160,6 +163,7 @@ export function ScatterMapView({
           classes={scatter.classes}
           labeling={labeling}
           onMute={onMute}
+          mute={mute}
           grid={grid}
           onGrid={onGrid}
           onMark={(frame, m) => setOverrides((o) => ({ ...o, [frame]: m }))}
@@ -224,11 +228,14 @@ export function ScatterSelection({
   onLabeled,
   onError,
   onMute,
+  mute,
 }: {
   camera: string;
   feature: string;
   /** In a Dedup box: mute the selection in the box. */
   onMute?: (frames: string[]) => Promise<void>;
+  /** In a Dedup box: the M key on the cards. */
+  mute?: GridMute;
   pictureFeature?: string;
   points: ScatterPoint[];
   classes: string[];
@@ -383,6 +390,7 @@ export function ScatterSelection({
             page={page}
             onPage={setPage}
             where="selection"
+            mute={mute}
             extras={(f) => {
               const p = points.find((q) => q.frame === f);
               return { caption: !p || p.cluster === null ? undefined : p.cluster < 0 ? "unique" : `cluster ${p.cluster}${p.representative ? " · rep" : ""}` };

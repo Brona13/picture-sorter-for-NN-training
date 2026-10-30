@@ -2,7 +2,7 @@ import { useState } from "react";
 import { CardData, DedupResult } from "../api";
 import { clusterColor } from "./colors";
 import { PagerSettings } from "./Pager";
-import PictureGrid from "./PictureGrid";
+import PictureGrid, { type GridMute } from "./PictureGrid";
 
 export type Marks = DedupResult["marks"];
 const UNIQUE = "unique";
@@ -25,6 +25,7 @@ export default function ClusterBrowser({
   onMarks,
   onGrid,
   onDeleted,
+  mute,
   onError,
 }: {
   camera: string;
@@ -39,6 +40,8 @@ export default function ClusterBrowser({
   onMarks: (frame: string, mark: { label: string | null; golden: string | null }) => void;
   onGrid: (perPage: number, cols: number) => void;
   onDeleted: (frame: string) => void;
+  /** Dedup box: M mutes a picture or takes its mute away. */
+  mute?: GridMute;
   onError: (message: string) => void;
 }) {
   const [selected, setSelected] = useState<string>("");
@@ -124,6 +127,7 @@ export default function ClusterBrowser({
           extras={(f) => ({ isRep: cur.id >= 0 && f === cur.rep, onSetRep: cur.id >= 0 ? () => onPick(cur.id, f) : undefined })}
           onChanged={(f, c) => onMarks(f, { label: c.label, golden: c.golden })}
           onDeleted={(f) => onDeleted(f)}
+          mute={mute}
           onError={onError}
         />
       </div>

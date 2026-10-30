@@ -60,6 +60,22 @@ const renderIt = (over: Record<string, unknown> = {}) =>
     />,
   );
 
+test("with a mute handler, M on a hovered cluster card calls it and the card gets the muted frame; without one M does nothing", async () => {
+  const muted = new Set<string>();
+  const toggle = vi.fn(async (f: string) => void (muted.has(f) ? muted.delete(f) : muted.add(f)));
+  renderIt({ mute: { is: (f: string) => muted.has(f), toggle } });
+  await userEvent.hover(screen.getByTestId("card-m01.png"));
+  fireEvent.keyDown(window, { key: "m" });
+  await waitFor(() => expect(toggle).toHaveBeenCalledWith("m01.png"));
+});
+
+test("without a mute handler M does nothing on a cluster card", async () => {
+  renderIt();
+  await userEvent.hover(screen.getByTestId("card-m01.png"));
+  fireEvent.keyDown(window, { key: "m" });
+  expect(calls).toHaveLength(0);
+});
+
 test("paging is remembered per cluster while the grid size is shared", async () => {
   renderIt();
   expect(screen.getAllByTestId(/^card-/)).toHaveLength(12);

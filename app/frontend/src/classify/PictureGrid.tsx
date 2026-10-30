@@ -7,6 +7,12 @@ import { PagerSettings } from "./Pager";
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
+/** The M key of a Dedup box's grids: `is` tells whether a picture is muted now, `toggle` mutes or unmutes it. */
+export interface GridMute {
+  is: (frame: string) => boolean;
+  toggle: (frame: string) => Promise<void>;
+}
+
 /** Per-card extras a tool can add: a caption under the file name, or the Dedup "representative" mark. */
 export interface GridExtras {
   caption?: string;
@@ -79,7 +85,7 @@ export default function PictureGrid({
   /** The tool can take a picture back into its list. When given, a card deleted here can be restored in place. */
   onRestored?: (frame: string, card: CardUpdate["card"]) => void;
   /** Dedup grid: the M key (and a viewer button) mutes a picture or takes its mute away. `is` tells whether it is muted now. */
-  mute?: { is: (frame: string) => boolean; toggle: (frame: string) => Promise<void> };
+  mute?: GridMute;
   onError: (message: string) => void;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
@@ -104,7 +110,10 @@ export default function PictureGrid({
   useEffect(() => {
     if (replaced) settle();
   }, [replaced]);
-  const cardAt = (f: string): CardData => ghosts.get(f) ?? cardOf(f);
+  const cardAt = (f: string): CardData => {
+    const card = ghosts.get(f) ?? cardOf(f);
+    return mute ? { ...card, muted: mute.is(f) } : card; // a muted picture shows its dashed frame
+  };
   const canRestore = restorable || !!onRestored;
 
   async function act(frame: string, call: () => Promise<CardUpdate>, then: (card: CardUpdate["card"]) => void) {
