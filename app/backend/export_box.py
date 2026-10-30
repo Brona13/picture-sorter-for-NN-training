@@ -111,17 +111,25 @@ def _versions_of(camera: str, node_id: str) -> list[dict]:
     return found
 
 
+def _where_exported(camera: str, v: dict) -> dict:
+    """Whether a frozen version has been exported, and the folder an export writes (relative to the camera folder)."""
+    dest = versions.export_dir(camera, v["number"], v["name"])
+    return {"exported": dest.exists(), "folder": str(dest.relative_to(datamodel.camera_dir(camera)))}
+
+
 def state(camera: str, node_id: str) -> dict:
-    """What the Export page shows: the plan's counts per folder and the latest freeze of this box."""
+    """What the Export page shows: the plan's counts per folder, every freeze of this box (``versions``, newest first)
+    and the newest one again as ``latest``. Only the newest freeze says whether the Chain would now pick other pictures
+    (``changed``); an older one is a record and is never compared."""
     p = plan(camera, node_id)
-    latest = None
-    frozen = _versions_of(camera, node_id)
-    if frozen:
-        v = frozen[0]
-        was = {(i["frame"], i["class"]) for i in versions.load_items(v["id"])}
-        latest = {**v, "changed": was != set(p["items"]), "exported": versions.export_dir(camera, v["number"], v["name"]).exists(),
-                  "folder": str(versions.export_dir(camera, v["number"], v["name"]).relative_to(datamodel.camera_dir(camera)))}
-    return {**{k: v for k, v in p.items() if k != "items"}, "total": len(p["items"]), "latest": latest}
+    rows = []
+    for n, v in enumerate(_versions_of(camera, node_id)):
+        row = {**v, **_where_exported(camera, v), "changed": False}
+        if n == 0:
+            was = {(i["frame"], i["class"]) for i in versions.load_items(v["id"])}
+            row["changed"] = was != set(p["items"])
+        rows.append(row)
+    return {**{k: v for k, v in p.items() if k != "items"}, "total": len(p["items"]), "latest": rows[0] if rows else None, "versions": rows}
 
 
 def freeze(camera: str, node_id: str, name: str = "", notes: str = "") -> dict:

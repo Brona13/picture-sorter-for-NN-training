@@ -618,9 +618,10 @@ export interface ExportLatest {
   id: number;
   number: number;
   name: string;
-  created: string;
+  /** Epoch seconds (the freeze time). */
+  created: number | string;
   counts: Record<string, number>;
-  /** The Chain would pick other pictures (or folders) than this freeze holds. */
+  /** The Chain would pick other pictures (or folders) than this freeze holds. Only the newest freeze is compared. */
   changed: boolean;
   exported: boolean;
   folder: string;
@@ -637,6 +638,8 @@ export interface ExportState {
   goldens_only: boolean;
   lines: { ok: number; ng: number };
   latest: ExportLatest | null;
+  /** Every freeze of this box, newest first (v1.131.4; an older backend sends only `latest`). */
+  versions?: ExportLatest[];
 }
 export type FlowNodeDetail = FlowCrop | FlowDetector | FlowCalc | FlowEvaluation | FlowExport;
 export interface FlowBox {

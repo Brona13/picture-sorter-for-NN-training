@@ -121,6 +121,25 @@ class ExportBoxTests(ApiTestCase):
         labels.mark_golden(CAM, "seal", self.frames[2], "OK")  # one more golden: the chain now picks another set
         self.assertTrue(self.client.get(f"{self.base}/flow/nodes/{self.box}/export").json()["latest"]["changed"])
 
+    def test_the_state_lists_every_freeze_of_the_box_newest_first(self) -> None:
+        self.wire()
+        url = f"{self.base}/flow/nodes/{self.box}/export"
+        self.assertEqual(self.client.get(url).json()["versions"], [])
+        first = self.client.post(f"{url}/freeze", json={"name": "first"}).json()
+        self.client.post(f"{self.base}/project-versions/{first['id']}/export")
+        labels.mark_golden(CAM, "seal", self.frames[2], "OK")  # the chain now picks another set than the first freeze
+        self.client.post(f"{url}/freeze", json={"name": "second"})
+        state = self.client.get(url).json()
+        rows = state["versions"]
+        self.assertEqual([r["name"] for r in rows], ["second", "first"])
+        self.assertEqual(state["latest"]["number"], rows[0]["number"])
+        self.assertEqual([r["exported"] for r in rows], [False, True])
+        self.assertTrue(all(r["folder"].endswith(f"v{r['number']:03d}__{r['name']}") for r in rows))
+        self.assertEqual([r["changed"] for r in rows], [False, False])  # only the newest is compared with the Chain
+        self.assertEqual(rows[1]["counts"]["ok"], 2)
+        labels.mark_golden(CAM, "seal", self.frames[5], "NG")
+        self.assertEqual([r["changed"] for r in self.client.get(url).json()["versions"]], [True, False])
+
     def test_nothing_to_freeze_is_refused_with_a_reason(self) -> None:
         r = self.client.post(f"{self.base}/flow/nodes/{self.box}/export/freeze", json={})
         self.assertEqual(r.status_code, 422)

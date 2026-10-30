@@ -380,9 +380,25 @@ button[aria-pressed="true"] { background: var(--info-bg); color: var(--info-fg);
 /* Export box: the OK and NG inputs sit on its left edge, one row each. */
 .chain-node-in { display: flex; align-items: center; gap: 6px; text-align: left; padding: 2px 8px 2px 14px; }
 .chain-node-in .react-flow__handle { left: -15px; }
-.export-work { display: flex; flex-direction: column; gap: 6px; max-width: 640px; }
-.export-lines ul { margin: 2px 0 6px; padding-left: 18px; }
-.export-changed { color: var(--danger-fg); }
+/* Export box page (v1.131.4): two cards, a preview table and a table of the frozen versions. */
+.export-work { display: flex; flex-direction: column; gap: 14px; max-width: 860px; }
+.export-card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px 14px; }
+.export-card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.export-card-head h3 { margin: 0; }
+.export-scroll { overflow-x: auto; }
+.export-card table { width: 100%; margin: 4px 0 0; }
+.export-card td.num, .export-card th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.export-card table.export-versions { min-width: 640px; }   /* a narrow window scrolls the table inside its card instead of squeezing it */
+.export-versions td:nth-child(3) { white-space: nowrap; }
+.export-versions td:nth-child(2) { min-width: 150px; }
+.export-leftout td { color: var(--muted); }
+.export-total td { font-weight: 600; background: var(--hover); }
+.export-freeze { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+.export-freeze input { flex: 1 1 200px; min-width: 160px; }
+.export-badge { display: inline-block; margin-right: 6px; padding: 1px 8px; border: 1px solid var(--border); border-radius: 999px; font-size: 12px; white-space: nowrap; }
+.export-badge.done { background: var(--info-bg); color: var(--info-fg); border-color: var(--accent); }
+.export-badge.warn { background: var(--danger-bg); color: var(--danger-fg); border-color: var(--danger-fg); }
+.export-folder { display: block; margin-top: 2px; font-size: 11.5px; color: var(--muted); overflow-wrap: anywhere; }
 
 /* The kind icon in the top right corner of every box (v1.122.0): the same drawing as the palette tile. It sits left of the detector's main output dot. */
 .chain-node { position: relative; }
