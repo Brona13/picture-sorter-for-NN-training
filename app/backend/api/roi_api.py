@@ -171,6 +171,8 @@ def upsert_roi(camera: str, body: RoiUpsert) -> dict:
     )
     updated.append(roi)
     datamodel.save_rois(camera, updated)
+    if existing is None and body.product is None and not shared:
+        db.set_setting(camera, f"{db.DETACHED_KEY}{full}", "1")  # v1.133.0: a new Classifier has no line from Ingest: the user draws it
     return _describe(camera, roi, len(datamodel.list_unsorted(camera)))
 
 
@@ -197,13 +199,17 @@ def set_applies_to(camera: str, feature: str, body: ProductsUpdate) -> dict:
     unknown = [p for p in body.products if p not in datamodel.products(camera)]
     if unknown:
         raise HTTPException(status_code=422, detail=f"Unknown products: {', '.join(unknown)}")
+    had_products = bool(roi.products)
     rois = datamodel.load_rois(camera)
     for r in rois:
         if r.name == feature:
             r.products = list(body.products) or None
             roi = r
     datamodel.save_rois(camera, rois)
-    db.delete_setting(camera, f"{db.DETACHED_KEY}{feature}")  # a line from Ingest or a product dot is drawn again
+    if roi.products:
+        db.delete_setting(camera, f"{db.DETACHED_KEY}{feature}")  # the product dots feed it
+    elif had_products:
+        db.set_setting(camera, f"{db.DETACHED_KEY}{feature}", "1")  # a plain Classifier again: no line until the user draws one
     return _describe(camera, roi, len(datamodel.list_unsorted(camera)))
 
 

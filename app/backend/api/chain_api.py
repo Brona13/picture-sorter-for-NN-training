@@ -70,7 +70,7 @@ def put_evaluation(camera: str, feature: str, body: EvaluationBody) -> dict:
 
 @router.put("/cameras/{camera}/chain/{feature:path}/detached")
 def put_detached(camera: str, feature: str, body: DetachedBody) -> dict:
-    """Draw a Classifier without its line from Ingest (it still reads the whole camera), or draw the line again."""
+    """Delete a Classifier's line from Ingest (with no other input it then has no pictures), or draw the line again."""
     require_camera(camera)
     if datamodel.get_roi(camera, feature) is None:
         raise HTTPException(status_code=404, detail="Unknown Classifier")

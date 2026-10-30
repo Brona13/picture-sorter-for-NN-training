@@ -78,11 +78,23 @@ class ChainApiTests(ApiTestCase):
         self.assertEqual(self.edges(), {("ingest", None, "roi:seal")})
         r = self.client.put(f"{self.base}/seal/detached", json={"detached": True})
         self.assertEqual(r.status_code, 200, r.text)
-        self.assertEqual(self.edges(), set())  # no line, and the Classifier still reads the whole camera
-        self.assertEqual(self.node("roi:seal")["frames"], 4)
-        self.client.patch(f"/api/cameras/{CAM}/rois/seal/products", json={"products": []})  # drawing a line from Ingest
+        self.assertEqual(self.edges(), set())  # no line, and so no pictures: nothing is assumed in the background
+        self.assertEqual(self.node("roi:seal")["frames"], 0)
+        self.assertEqual(datamodel.frames_for_feature(CAM, "seal"), [])
+        self.client.put(f"{self.base}/seal/detached", json={"detached": False})  # drawing the line from Ingest
         self.assertEqual(self.edges(), {("ingest", None, "roi:seal")})
+        self.assertEqual(self.node("roi:seal")["frames"], 4)
         self.assertEqual(self.client.put(f"{self.base}/nope/detached", json={"detached": True}).status_code, 404)
+
+    def test_a_new_classifier_has_no_line_and_no_pictures_until_one_is_drawn(self) -> None:
+        r = self.client.put(f"/api/cameras/{CAM}/rois", json={"name": "fresh", "x": 0, "y": 0, "w": 1, "h": 1})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertNotIn(("ingest", None, "roi:fresh"), self.edges())
+        self.assertEqual(self.node("roi:fresh")["frames"], 0)
+        self.client.put(f"/api/cameras/{CAM}/rois", json={"name": "fresh", "x": 0, "y": 0, "w": 0.5, "h": 0.5})  # saving it again changes nothing
+        self.assertEqual(self.node("roi:fresh")["frames"], 0)
+        self.client.put(f"{self.base}/fresh/detached", json={"detached": False})
+        self.assertEqual(self.node("roi:fresh")["frames"], 4)
 
     def test_without_classify_roi_features_hang_from_ingest(self) -> None:
         datamodel.save_rois(CAM, [ROI("seal", 0, 0, 1, 1)])

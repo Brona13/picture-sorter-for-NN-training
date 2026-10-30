@@ -369,14 +369,26 @@ def _input_scope(camera: str, feature: str) -> set[str] | None:
     token = _resolving.set(_resolving.get() | {(camera, feature)})
     try:
         scope: set[str] | None = class_lines.scope(camera, feature)  # what the class dots give; None without lines into them
+        wired = scope is not None
         for box in boxes:
             if box not in graph["nodes"]:
                 continue  # a stale setting of a box that is gone
+            wired = True
             given = set(flow.node_frames(camera, box, graph))
             scope = given if scope is None else scope & given
     finally:
         _resolving.reset(token)
+    if not wired and _reads_nothing(camera, feature):
+        return set()  # no line into it, so no pictures: nothing is assumed in the background
     return None if scope is None else scope | db.deleted_frames_of(camera)
+
+
+def _reads_nothing(camera: str, feature: str) -> bool:
+    """A plain Classifier whose line from Ingest was never drawn, or was deleted, has no input. (A product's feature and a
+    Classifier shared across products are fed by the dots of the product-sorting Classifier, so they always have a line.)"""
+    if split_feature(feature)[0] is not None or feature_products(camera, feature):
+        return False
+    return db.get_setting(camera, f"{db.DETACHED_KEY}{feature}") == "1"
 
 
 @applog.timed("datamodel.frames_for_feature")

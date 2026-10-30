@@ -125,6 +125,9 @@ class RoiApiTests(ApiTestCase):
         versions.freeze("camA", "seal", "first", "")
         row = self.client.get(self.url).json()["rois"][0]
         self.assertEqual((row["labeled"], row["goldens"], row["version_count"], row["active_version"]), (2, 0, 1, 1))
+        self.assertEqual((row["frames_seen"], row["inbox_total"]), (0, 4))  # a new Classifier has no line: no pictures
+        self.client.put("/api/cameras/camA/chain/seal/detached", json={"detached": False})  # the line from Ingest is drawn
+        row = self.client.get(self.url).json()["rois"][0]
         self.assertEqual((row["frames_seen"], row["inbox_total"]), (4, 4))
 
     def test_product_names_edit(self) -> None:
