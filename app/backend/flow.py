@@ -30,6 +30,7 @@ import datamodel
 import db
 import labels
 import lines
+import masking
 import preprocess
 import rotsearch
 import applog
@@ -77,8 +78,8 @@ def all_slots(node: dict, *, with_examples: bool = False) -> list[str]:
 def target_of(node: dict, name: str) -> dict | None:
     """The target a box name belongs to (the target itself, or one of its ``name N`` slots)."""
     return next((t for t in node.get("targets", []) if name in slot_names(t)), None)
-MAX_STEPS = 16  # picture edits (crop / filter) one box holds
-STEP_OPS = ("crop", "filter")
+MAX_STEPS = 16  # picture edits (crop / filter / mask) one box holds
+STEP_OPS = ("crop", "filter", "mask")
 MAX_EXAMPLES = 6
 MAX_EXAMPLE_SIDE = 400  # longest side (px) an example is matched at; a larger one is stored shrunk and the detector shrinks the picture the same way
 MIN_MATCH_SIDE = 8  # after that shrinking, the shorter side of the smallest example of a detector must stay at least this many pixels
@@ -129,8 +130,24 @@ def is_filter(step: object) -> bool:
     return isinstance(step, dict) and "filter" in step
 
 
+def is_mask(step: object) -> bool:
+    """A mask step: ``{"mask": {"shape": ..., "rel": ..., "ref_angle": ..., "turn": bool, "follow": {detector, target} | None}}``.
+    It blanks the picture outside a shape (pixels only, never the geometry); with ``follow`` the shape sits where the
+    detector found the target on each picture (``rel`` is the shape in pixels from the target's centre)."""
+    return isinstance(step, dict) and "mask" in step
+
+
+def step_follow(step: object) -> dict | None:
+    """``{detector, target}`` the step depends on: a Crop that follows a target, or a mask placed by one (else None)."""
+    if is_follow(step):
+        return step["follow"]
+    if is_mask(step):
+        return step["mask"].get("follow")
+    return None
+
+
 def has_follow(steps: list) -> bool:
-    return any(is_follow(s) for s in steps)
+    return any(step_follow(s) is not None for s in steps)
 
 
 class Finder:
@@ -159,8 +176,8 @@ class Finder:
 def step_box(step, width: int, height: int, found=None) -> tuple[int, int, int, int]:
     """The pixel box ``(x0, y0, x1, y1)`` a step cuts out of a ``width`` x ``height`` picture. Raises :class:`NoCrop`
     for a following step without a box on this picture or with a rectangle that is not wholly inside it."""
-    if is_filter(step):
-        raise FlowError("A filter has no rectangle.")
+    if is_filter(step) or is_mask(step):
+        raise FlowError("A filter or a mask has no rectangle.")
     if not is_follow(step):
         return _pixel_box(step, width, height)
     entry = found(step) if found else None
@@ -239,6 +256,12 @@ def _resolved(graph: dict, node_id: str) -> list[tuple[str, object]]:
             out.append((s["id"], None))  # switched off: the step keeps its place and is skipped when processing (v1.89.0)
         elif s["op"] == "filter":
             out.append((s["id"], {"filter": {"name": s["name"], "params": dict(s.get("params") or {})}}))
+        elif s["op"] == "mask":
+            if not s.get("shape"):
+                out.append((s["id"], None))  # nothing drawn yet: the picture passes on
+            else:
+                placed = bool(follow and s.get("rel"))  # placed by the target only when it was drawn relative to it
+                out.append((s["id"], {"mask": {"shape": s["shape"], "rel": s["rel"] if placed else None, "ref_angle": s.get("ref_angle", 0.0) if placed else 0.0, "turn": bool(s.get("turn")) and placed, "follow": dict(follow) if placed else None}}))
         elif follow and s["id"] == fid:
             spec = node.get("follow") or {}
             if not spec.get("size") or not spec.get("offset"):
@@ -311,21 +334,48 @@ def apply_rects(image: np.ndarray, rects: list, found=None) -> tuple[np.ndarray,
     meaningful while no step turns the picture, see :func:`rect_map`).
     ``found`` resolves the following steps on this picture (see :class:`Finder`); :class:`NoCrop` when one has no box."""
     ox = oy = 0
+    total = np.eye(3)  # where the picture now lies on the one that came in (see :class:`Map`), for the masks that follow a target
+    turn = 0.0
     for rect in rects:
         if is_filter(rect):
             image = preprocess.apply(image, rect["filter"]["name"], rect["filter"]["params"])
+            continue
+        if is_mask(rect):
+            image = _apply_mask(image, rect["mask"], found, total, turn)
             continue
         if is_straighten(rect):
             entry = found(rect) if found else None
             if entry is None:
                 f = rect["follow"]
                 raise NoCrop(f"{f['detector']} found no {f['target']} on this picture.")
+            total = total @ np.linalg.inv(_straighten_matrix(rect, entry))
+            turn += float(entry.get("angle", 0.0))
             image = _straighten(image, rect, entry)
             continue
         x0, y0, x1, y1 = step_box(rect, image.shape[1], image.shape[0], found)
         image = image[y0:y1, x0:x1]
         ox, oy = ox + x0, oy + y0
+        total = total @ np.array([[1.0, 0.0, x0], [0.0, 1.0, y0], [0.0, 0.0, 1.0]])
     return image, ox, oy
+
+
+def target_in_picture(entry: dict, total: np.ndarray, turn: float) -> tuple[float, float, float]:
+    """Where a found target (``entry``, in the picture that came in) lies in the picture reached through ``total`` and
+    ``turn`` (see :func:`apply_rects`): ``(x, y, angle)`` with ``x, y`` in pixel-edge coordinates and the angle in degrees,
+    counter-clockwise on screen, as that picture shows it."""
+    v = np.linalg.inv(total) @ np.array([float(entry["x"]), float(entry["y"]), 1.0])
+    return float(v[0]) + PIXEL_CENTRE, float(v[1]) + PIXEL_CENTRE, float(entry.get("angle", 0.0)) - turn
+
+
+def _apply_mask(image: np.ndarray, spec: dict, found, total: np.ndarray, turn: float) -> np.ndarray:
+    follow = spec.get("follow")
+    if not follow or not spec.get("rel"):
+        return masking.apply(image, spec["shape"])  # fixed: the shape stays where it was drawn
+    entry = found({"follow": follow}) if found else None
+    if entry is None:
+        raise NoCrop(f"{follow['detector']} found no {follow['target']} on this picture.")
+    x, y, angle = target_in_picture(entry, total, turn)
+    return masking.apply_relative(image, spec["rel"], (x, y), angle - float(spec.get("ref_angle", 0.0)) if spec.get("turn") else 0.0)
 
 
 class Map:
@@ -347,8 +397,8 @@ def rect_map(rects: list, width: int, height: int, found=None) -> Map:
     total = np.eye(3)
     turn = 0.0
     for rect in rects:
-        if is_filter(rect):
-            continue  # a filter changes pixels, not places
+        if is_filter(rect) or is_mask(rect):
+            continue  # a filter or a mask changes pixels, not places
         if is_straighten(rect):
             entry = found(rect) if found else None
             if entry is None:
@@ -368,7 +418,7 @@ def rect_offset(rects: list, width: int, height: int, found=None) -> tuple[int, 
     """Where the cropped picture starts inside a ``width`` x ``height`` frame (no pixels needed)."""
     ox = oy = 0
     for rect in rects:
-        if is_filter(rect):
+        if is_filter(rect) or is_mask(rect):
             continue
         x0, y0, x1, y1 = step_box(rect, width, height, found)
         ox, oy, width, height = ox + x0, oy + y0, x1 - x0, y1 - y0
@@ -394,7 +444,9 @@ def picture(camera: str, node_id: str, frame: str, stage: str = "input", straigh
     if draft is not None:
         if node["kind"] != "crop":
             raise FlowError("Only a Picture Edits box has steps.")
-        graph["nodes"][node_id] = {**node, "steps": clean_steps(draft, follow_of(graph, node_id) is not None)}
+        drafted = clean_steps(draft, follow_of(graph, node_id) is not None)
+        graph["nodes"][node_id] = {**node, "steps": drafted}
+        _place_masks(camera, graph, node_id, drafted, list(draft), follow_of(graph, node_id))  # the live preview follows the target while the shape is dragged
     follow = follow_of(graph, node_id) if kind_of(node_id) == "crop" else None
     if straighten and follow and crop_mode(graph, node_id) == "straighten":
         step, stage = follow_step_id(graph, node_id), "input"
@@ -414,7 +466,7 @@ def picture(camera: str, node_id: str, frame: str, stage: str = "input", straigh
 
 def clean_steps(raw: object, following: bool = False) -> list[dict]:
     """The steps of a Picture Edits box from a request: a list of ``{"op": "crop", "rect": [x, y, w, h] | None}`` and
-    ``{"op": "filter", "name": ..., "params": {...}}``, in the order they run; ``"enabled": false`` switches a step off
+    ``{"op": "filter", "name": ..., "params": {...}}`` and ``{"op": "mask", "shape": {...} | None, "turn": bool}``, in the order they run; ``"enabled": false`` switches a step off
     (it keeps its place and is skipped). Ids are kept (or given); a filter's
     parameters are checked against the filter catalogue and completed with its defaults. A box fed by a detector target
     keeps at least one crop step: the first one follows the target."""
@@ -425,13 +477,23 @@ def clean_steps(raw: object, following: bool = False) -> list[dict]:
     out: list[dict] = []
     for item in raw:
         if not isinstance(item, dict) or item.get("op") not in STEP_OPS:
-            raise FlowError("A step is a crop or a filter.")
+            raise FlowError("A step is a crop, a filter or a mask.")
         sid = item.get("id")
         if not isinstance(sid, str) or not sid or len(sid) > 20 or any(o["id"] == sid for o in out):
             sid = new_step_id(out + [{"id": i["id"]} for i in raw if isinstance(i, dict) and isinstance(i.get("id"), str)])
         off = {"enabled": False} if item.get("enabled") is False else {}  # stored only when off, so boxes made before keep their signature
         if item["op"] == "crop":
             out.append({"id": sid, "op": "crop", "rect": clean_rect(item.get("rect")), **off})
+            continue
+        if item["op"] == "mask":
+            try:
+                shape = None if item.get("shape") is None else masking.normalize(item["shape"])
+                rel = None if item.get("rel") is None else masking.clean_relative(item["rel"])
+            except masking.MaskError as exc:
+                raise FlowError(str(exc)) from exc
+            ref = _finite(item.get("ref_angle", 0.0), "The reference angle") if rel else 0.0
+            drawn_on = item.get("frame") if isinstance(item.get("frame"), str) and len(item["frame"]) <= 300 else None  # the picture the shape was drawn on
+            out.append({"id": sid, "op": "mask", "shape": shape, **({"rel": rel, "ref_angle": round(ref, 2), **({"frame": drawn_on} if drawn_on else {})} if shape and rel else {}), **({"turn": True} if item.get("turn") else {}), **off})
             continue
         try:
             name = item.get("name")
@@ -674,6 +736,7 @@ def connect(camera: str, source: str, target: str, point: str | None = None) -> 
             graph["nodes"][target]["source"] = None  # one input: a line from Ingest or Picture edits replaces a Classifier dot
         if kind_of(target) == "crop" and follow_of(graph, target) != before_follow:
             graph["nodes"][target]["follow"] = None  # the rectangle was drawn for another target
+            _forget_mask_anchors(graph["nodes"][target])
         if kind_of(target) == "crop" and follow_of(graph, target) is not None:
             node = graph["nodes"][target]
             steps = crop_steps(node)
@@ -696,6 +759,7 @@ def disconnect(camera: str, source: str, target: str, point: str | None = None) 
     graph["edges"] = kept  # a picture box with no arrow reads the whole picture, like one fed by Ingest
     if kind_of(target) == "crop" and target in graph["nodes"] and follow_of(graph, target) is None:
         graph["nodes"][target]["follow"] = None
+        _forget_mask_anchors(graph["nodes"][target])
     save_graph(camera, graph)
 
 
@@ -790,6 +854,46 @@ def _follow_settings(camera: str, graph: dict, crop_id: str, follow: dict, raw: 
     }
 
 
+def _mask_anchor(camera: str, graph: dict, node_id: str, step: dict, follow: dict, frame: object) -> dict:
+    """``rel`` and ``ref_angle`` of a mask step: its shape (drawn on the picture that enters the step, on ``frame``)
+    measured from the centre of the box the detector found for the target on that picture."""
+    if not isinstance(frame, str) or not frame:
+        raise FlowError("Send the picture the mask was drawn on.")
+    key = db.frame_hash_for(camera, frame)
+    entry = Finder(camera).box(follow["detector"], key, follow["target"]) if key else None
+    if entry is None:
+        raise FlowError(f"{follow['detector']} has not found {follow['target']} on {frame}; draw the mask on a picture where it did.")
+    rects = steps_before(graph, node_id, step["id"])
+    found = _found_for(camera, rects, frame)
+    original = _read(camera, frame)
+    image = apply_rects(original, rects, found)[0]
+    mp = rect_map(rects, original.shape[1], original.shape[0], found)
+    x, y, angle = target_in_picture(entry, mp.m, mp.turn)
+    try:
+        rel = masking.relative_shape(step["shape"], image.shape[1], image.shape[0], (x, y))
+    except masking.MaskError as exc:
+        raise FlowError(str(exc)) from exc
+    return {"rel": rel, "ref_angle": round(angle, 2), "frame": frame}
+
+
+def _place_masks(camera: str, graph: dict, node_id: str, steps: list[dict], raw_steps: list, follow: dict | None) -> None:
+    """Measure the masks of ``steps`` (already in the graph's box) that arrive with ``"anchor": {"frame": name}``: the
+    picture the shape was drawn on. Only a box fed by a detector target keeps masks relative to it."""
+    if not follow:
+        return
+    for st, item in zip(steps, raw_steps):
+        if st["op"] == "mask" and st.get("shape") and isinstance(item, dict) and isinstance(item.get("anchor"), dict):
+            st.update(_mask_anchor(camera, graph, node_id, st, follow, item["anchor"].get("frame")))
+
+
+def _forget_mask_anchors(node: dict) -> None:
+    """A line to another target (or none) makes the masks' places relative to the old target meaningless."""
+    for st in crop_steps(node):
+        st.pop("rel", None)
+        st.pop("ref_angle", None)
+        st.pop("frame", None)
+
+
 def update_node(camera: str, node_id: str, raw: dict) -> dict:
     """Change the settings of a box. Targets and examples of a detector have their own calls."""
     graph = load_graph(camera)
@@ -810,7 +914,14 @@ def update_node(camera: str, node_id: str, raw: dict) -> dict:
                 new_fid = next((st["id"] for st in steps if st["op"] == "crop"), None)
                 if new_fid != fid:
                     node["follow"] = None  # another crop step follows the target now: its rectangle is drawn again
+            old = {st["id"]: st for st in crop_steps(node)}
+            for st, item in zip(steps, raw["steps"]):
+                if st["op"] == "mask" and st.get("rel") and not (isinstance(item, dict) and item.get("anchor")) and (old.get(st["id"]) or {}).get("shape") != st["shape"]:
+                    st.pop("rel", None)  # the shape changed and was not placed on a picture again: it no longer matches its place relative to the target
+                    st.pop("ref_angle", None)
+                    st.pop("frame", None)
             set_steps(node, steps)
+            _place_masks(camera, graph, node_id, steps, raw["steps"], follow)
         if "rect" in raw:  # the single rectangle of the older Crop box: the first crop step's
             if follow:
                 raise FlowError("This crop step follows a target: draw its rectangle on a picture where the target was found.")
@@ -1384,7 +1495,7 @@ def signature(graph: dict, node_id: str) -> str:
         "rotate": node["rotate"],
         "range": node["angle_range"],
         "pad": node["pad"],
-        "crops": [{**c, "sig": signature(graph, c["follow"]["detector"])} if is_follow(c) and c["follow"]["detector"] in graph["nodes"] else c for c in input_rects(graph, node_id)],
+        "crops": [{**c, "sig": signature(graph, step_follow(c)["detector"])} if step_follow(c) and step_follow(c)["detector"] in graph["nodes"] else c for c in input_rects(graph, node_id)],
         "parent": signature(graph, parent) if parent and kind_of(parent) == "detector" else None,
     }
     return hashlib.sha1(json.dumps(material, sort_keys=True).encode()).hexdigest()[:16]
@@ -1581,8 +1692,9 @@ def run_detector(camera: str, node_id: str, report=None, frames: list[str] | Non
     parent_frames: dict = {}
     rects = input_rects(graph, node_id)
     for step in rects:
-        if is_follow(step) and status(camera, step["follow"]["detector"], graph) != "fresh":
-            raise FlowError(f"Run {step['follow']['detector']} first; the Picture edits box before this detector follows its boxes.")
+        f = step_follow(step)
+        if f and status(camera, f["detector"], graph) != "fresh":
+            raise FlowError(f"Run {f['detector']} first; the Picture edits box before this detector follows its boxes.")
     finder = Finder(camera)
     if parent:
         if status(camera, parent, graph) != "fresh":
@@ -2117,7 +2229,7 @@ def freeze_record(camera: str, feature: str) -> list[dict]:
 def frames_without_crop(camera: str, graph: dict, node_id: str) -> list[str]:
     """Live frames a following Crop above ``node_id`` has no box on (the detector found nothing there): they cannot be
     cut, so they are the ones to look at. Empty when no Crop above follows a detector."""
-    steps = [c for c in input_rects(graph, node_id) if is_follow(c)]
+    steps = [step_follow(c) for c in input_rects(graph, node_id) if step_follow(c)]
     if not steps:
         return []
     finder = Finder(camera)
@@ -2125,7 +2237,7 @@ def frames_without_crop(camera: str, graph: dict, node_id: str) -> list[str]:
     missing = []
     for frame in _live_frames(camera):
         key = hmap.get(frame)
-        if any(finder.box(c["follow"]["detector"], key, c["follow"]["target"]) is None for c in steps):
+        if any(finder.box(f["detector"], key, f["target"]) is None for f in steps):
             missing.append(frame)
     return missing
 

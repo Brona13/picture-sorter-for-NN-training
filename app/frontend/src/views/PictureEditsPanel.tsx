@@ -1,10 +1,12 @@
 import { DragEvent, useState } from "react";
 import { FLOW_OUTPUTS, FlowCrop, FlowEdit } from "../api";
 import { PanelSection } from "../SidePanel";
+import { addVertex, defaultShape, MaskShape, ShapeKind } from "../shapeGeometry";
 import FilterParams, { paramText } from "./FilterParams";
-import type { PictureEdits } from "./pictureEdits";
+import type { PictureEdits, StepOp } from "./pictureEdits";
 
-const OPS = { crop: "Crop", filter: "Filter" } as const;
+const OPS = { crop: "Crop", filter: "Filter", mask: "Mask" } as const;
+const SHAPE_LABELS: Record<ShapeKind, string> = { rect: "Rectangle", circle: "Circle", polygon: "Polygon" };
 
 /** One line for a step that is not the selected one. */
 export function describeEdit(s: FlowEdit, filters: PictureEdits["filters"], follows: boolean): string {
@@ -12,6 +14,10 @@ export function describeEdit(s: FlowEdit, filters: PictureEdits["filters"], foll
     const spec = filters[s.name];
     const params = Object.entries(s.params).map(([k, v]) => `${spec?.params[k]?.label ?? k} ${paramText(spec?.params[k], v)}`).join(", ");
     return `${spec?.label ?? s.name}${params ? ` · ${params}` : ""}`;
+  }
+  if (s.op === "mask") {
+    if (!s.shape) return "no shape chosen yet";
+    return `${SHAPE_LABELS[s.shape.shape]}${s.rel && s.turn ? " · follows the target and turns with it" : s.rel ? " · follows the target" : ""}`;
   }
   if (follows) return "follows the target";
   return s.rect ? `${Math.round(s.rect[2] * 100)} × ${Math.round(s.rect[3] * 100)} % of the picture` : "no crop drawn yet";
@@ -48,7 +54,7 @@ export default function PictureEditsPanel({ edits }: { edits: PictureEdits }) {
           const isOpen = s.id === selected; // only the selected step is open: it is the one the big picture shows
           const follows = !!following && s.id === followId;
           const on = s.enabled !== false;
-          const name = s.op === "filter" ? (filters[s.name]?.label ?? s.name) : OPS.crop;
+          const name = s.op === "filter" ? (filters[s.name]?.label ?? s.name) : OPS[s.op];
           return (
             <li
               key={s.id}
@@ -105,7 +111,7 @@ export default function PictureEditsPanel({ edits }: { edits: PictureEdits }) {
               {isOpen && (
                 <div style={{ marginTop: 6 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <select aria-label={`Step ${i + 1} operation`} value={s.op} onChange={(e) => edits.setOp(s.id, e.target.value as "crop" | "filter")}>
+                    <select aria-label={`Step ${i + 1} operation`} value={s.op} onChange={(e) => edits.setOp(s.id, e.target.value as StepOp)}>
                       {(Object.keys(OPS) as (keyof typeof OPS)[]).map((op) => <option key={op} value={op} disabled={follows && op !== "crop"}>{OPS[op]}</option>)}
                     </select>
                     <span style={{ marginLeft: "auto", display: "inline-flex", gap: 2 }}>
@@ -123,7 +129,7 @@ export default function PictureEditsPanel({ edits }: { edits: PictureEdits }) {
         })}
       </ol>
       <label style={{ display: "block", marginTop: 8 }}>
-        <select aria-label="Add step" value="" onChange={(e) => { if (e.target.value) edits.addStep(e.target.value as "crop" | "filter"); }}>
+        <select aria-label="Add step" value="" onChange={(e) => { if (e.target.value) edits.addStep(e.target.value as StepOp); }}>
           <option value="">Add step…</option>
           {(Object.keys(OPS) as (keyof typeof OPS)[]).map((op) => <option key={op} value={op}>{OPS[op]}</option>)}
         </select>
@@ -151,6 +157,7 @@ function StepBody({ step, edits, follows, detail }: { step: FlowEdit; edits: Pic
       </div>
     );
   }
+  if (step.op === "mask") return <MaskBody step={step} edits={edits} detail={detail} />;
   const f = detail?.follow;
   if (follows && f) {
     return (
@@ -199,6 +206,51 @@ function StepBody({ step, edits, follows, detail }: { step: FlowEdit; edits: Pic
           : "No crop drawn yet: the picture passes on unchanged."}
       </p>
       <button type="button" disabled={!r} onClick={() => edits.setRect(step.id, null)}>Clear crop</button>
+    </div>
+  );
+}
+
+/** The options of a mask step: the shape (drawn on the big picture), and, while a detector target feeds the box, how it follows it. */
+function MaskBody({ step, edits, detail }: { step: Extract<FlowEdit, { op: "mask" }>; edits: PictureEdits; detail: FlowCrop | null }) {
+  const f = detail?.follow ?? null;
+  const shape = step.shape;
+  const choose = (kind: ShapeKind) => edits.setShape(step.id, defaultShape(kind));
+  return (
+    <div style={{ marginTop: 6 }}>
+      <div role="group" aria-label="Shape" style={{ display: "inline-flex", gap: 4, flexWrap: "wrap" }}>
+        {(Object.keys(SHAPE_LABELS) as ShapeKind[]).map((kind) => (
+          <button key={kind} type="button" aria-pressed={shape?.shape === kind} onClick={() => choose(kind)} style={shape?.shape === kind ? { fontWeight: 600 } : undefined}>
+            {SHAPE_LABELS[kind]}
+          </button>
+        ))}
+      </div>
+      <p className="muted">
+        {shape
+          ? "Drag the shape to move it, or its handles to change it. Everything outside it turns dark grey; the picture keeps its size."
+          : "Choose a shape; it appears on the big picture. Everything outside it will turn dark grey."}
+      </p>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        {shape?.shape === "polygon" && <button type="button" onClick={() => edits.setShape(step.id, addVertex(shape as Extract<MaskShape, { shape: "polygon" }>))}>Add point</button>}
+        <button type="button" disabled={!shape} onClick={() => edits.setShape(step.id, null)}>Clear mask</button>
+      </div>
+      {f ? (
+        <>
+          <p className="muted">
+            A detector target feeds this box, so the shape is drawn once, on a picture where <strong>{f.target}</strong> of {f.detector} was found, and
+            then sits at the same place next to the found target on every picture.
+          </p>
+          <label style={{ display: "block" }}>
+            <input type="checkbox" checked={!!step.turn} disabled={!shape} onChange={(e) => edits.setTurn(step.id, e.target.checked)} />{" "}
+            Turn the mask with the target
+          </label>
+          <p className="muted">The detector's “The part can be turned” must be on for the target to have an angle. A picture where the target was not found gets no picture behind this step.</p>
+          <p className={step.rel ? "muted" : "flow-missing"} role="status">
+            {!shape ? "" : step.rel ? `Placed next to ${f.target} on ${step.frame ?? "the picture it was drawn on"}.` : "Not placed yet: draw or move the shape on a picture where the target was found."}
+          </p>
+        </>
+      ) : (
+        <p className="muted">No detector target feeds this box, so the shape stays where it is drawn, as a fraction of the picture.</p>
+      )}
     </div>
   );
 }

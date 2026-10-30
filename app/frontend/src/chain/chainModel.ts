@@ -114,7 +114,7 @@ function describeFlowBox(kind: string, f: FlowSummary | undefined): string {
       s.follows ? follows : s.rect ? `${alone ? "" : "crop "}${Math.round(s.rect[2] * 100)} × ${Math.round(s.rect[3] * 100)} %${alone ? " of the picture" : ""}` : null;
     const only = steps.length === 1 && steps[0].op === "crop" ? steps[0] : null; // a single crop reads as the Crop box always did
     if (only) return crop(only, true) ?? "no crop drawn yet";
-    const parts = steps.map((s) => (s.op === "filter" ? s.label : crop(s, false))).filter((t): t is string => !!t);
+    const parts = steps.map((s) => (s.op === "filter" ? s.label : s.op === "mask" ? (s.shape ? "mask" : null) : crop(s, false))).filter((t): t is string => !!t);
     return parts.length ? parts.join(" → ") : "no crop drawn yet";
   }
   if (kind === "detector") {

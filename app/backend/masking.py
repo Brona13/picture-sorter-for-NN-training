@@ -84,3 +84,69 @@ def apply(img: np.ndarray, shape: dict, offset: tuple[float, float] = (0.0, 0.0)
     out = np.full_like(img, BLANK_VALUE)
     out[inside] = img[inside]
     return out
+
+
+# --- a mask that follows something (a found target) ----------------------------------------------------------
+# A shape drawn on an example picture can be kept *relative to a point* (the centre of a found target) in pixels,
+# and put back on any other picture around that point's new place, optionally turned. It is stored as a polygon
+# (a rectangle becomes its four corners) or a circle, in pixels, measured from the point.
+
+def relative_shape(shape: dict, width: int, height: int, centre: tuple[float, float]) -> dict:
+    """``shape`` (normalised to a ``width`` x ``height`` picture) as pixels measured from ``centre`` (x, y, pixel-edge
+    coordinates). A rectangle becomes a polygon so it can be turned."""
+    s = normalize(shape)
+    cx0, cy0 = float(centre[0]), float(centre[1])
+    if s["shape"] == "circle":
+        return {"shape": "circle", "cx": round(s["cx"] * width - cx0, 2), "cy": round(s["cy"] * height - cy0, 2), "r": round(s["r"] * width, 2)}
+    if s["shape"] == "rect":
+        pts = [(s["x"], s["y"]), (s["x"] + s["w"], s["y"]), (s["x"] + s["w"], s["y"] + s["h"]), (s["x"], s["y"] + s["h"])]
+    else:
+        pts = [(p["x"], p["y"]) for p in s["points"]]
+    return {"shape": "polygon", "points": [{"x": round(x * width - cx0, 2), "y": round(y * height - cy0, 2)} for x, y in pts]}
+
+
+def turn_point(x: float, y: float, degrees: float) -> tuple[float, float]:
+    """``(x, y)`` (picture coordinates, y down) turned about the origin by ``degrees`` counter-clockwise as seen on screen."""
+    a = np.radians(degrees)
+    c, s = float(np.cos(a)), float(np.sin(a))
+    return x * c + y * s, -x * s + y * c
+
+
+def apply_relative(img: np.ndarray, rel: dict, centre: tuple[float, float], turn: float = 0.0) -> np.ndarray:
+    """Copy of ``img`` with everything outside ``rel`` blanked, ``rel`` (see :func:`relative_shape`) placed with its
+    origin at ``centre`` (x, y, pixel-edge coordinates) and turned by ``turn`` degrees counter-clockwise on screen."""
+    height, width = img.shape[:2]
+    canvas = np.zeros((height, width), np.uint8)
+    cx, cy = float(centre[0]), float(centre[1])
+    if rel["shape"] == "circle":
+        dx, dy = turn_point(rel["cx"], rel["cy"], turn)
+        cv2.circle(canvas, (round(cx + dx), round(cy + dy)), max(1, round(rel["r"])), 1, thickness=-1)
+    else:
+        pts = np.array([[round(cx + px), round(cy + py)] for px, py in (turn_point(p["x"], p["y"], turn) for p in rel["points"])], np.int32)
+        cv2.fillPoly(canvas, [pts], 1)
+    inside = canvas.astype(bool)
+    out = np.full_like(img, BLANK_VALUE)
+    out[inside] = img[inside]
+    return out
+
+
+def clean_relative(rel: object) -> dict:
+    """Validate a stored relative shape (pixels from the target; no 0-1 limits)."""
+    def num(v, what):
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or v != v or abs(v) > 1e6:
+            raise MaskError(f"{what} must be a number")
+        return float(v)
+
+    if not isinstance(rel, dict):
+        raise MaskError("Relative mask must be an object")
+    if rel.get("shape") == "circle":
+        r = num(rel.get("r"), "r")
+        if r <= 0:
+            raise MaskError("Circle radius must be positive")
+        return {"shape": "circle", "cx": num(rel.get("cx"), "cx"), "cy": num(rel.get("cy"), "cy"), "r": r}
+    if rel.get("shape") == "polygon":
+        pts = rel.get("points")
+        if not isinstance(pts, list) or len(pts) < MIN_POLYGON_POINTS:
+            raise MaskError(f"Polygon needs at least {MIN_POLYGON_POINTS} points")
+        return {"shape": "polygon", "points": [{"x": num(p.get("x"), "x"), "y": num(p.get("y"), "y")} for p in pts]}
+    raise MaskError("Unknown relative mask shape")

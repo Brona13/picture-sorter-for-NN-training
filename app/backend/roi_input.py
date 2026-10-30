@@ -138,7 +138,7 @@ def rule_key(camera: str, feature: str, con=None) -> str:
     graph = flow.load_graph(camera)
     rects = _rects(camera, feature, graph) or []
     material = [
-        {**r, "sig": flow.signature(graph, r["follow"]["detector"])} if flow.is_follow(r) and r["follow"]["detector"] in graph["nodes"] else r
+        {**r, "sig": flow.signature(graph, flow.step_follow(r)["detector"])} if flow.step_follow(r) and flow.step_follow(r)["detector"] in graph["nodes"] else r
         for r in rects
     ]
     return "pe=" + hashlib.sha1(json.dumps(material, sort_keys=True, default=str).encode()).hexdigest()[:12]

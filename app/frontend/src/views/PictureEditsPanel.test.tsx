@@ -7,6 +7,7 @@ import PictureEditsPanel, { describeEdit } from "./PictureEditsPanel";
 
 let calls: { url: string; method: string; body?: any }[];
 let saved: FlowEdit[];
+let extra: Partial<FlowCrop> = {}; // what the server's answers carry besides the steps (a followed target)
 
 const FILTERS = {
   gaussian: { label: "Gaussian blur", params: { sigma: { min: 0.1, max: 10, step: 0.1, default: 1.5 } } },
@@ -18,12 +19,13 @@ const base = (steps: FlowEdit[], over: Partial<FlowCrop> = {}): FlowCrop => ({ k
 
 beforeEach(() => {
   calls = [];
+  extra = {};
   vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
     const method = init?.method ?? "GET";
     calls.push({ url, method, body: init?.body ? JSON.parse(init.body as string) : undefined });
     if (url.includes("/vision/filters")) return new Response(JSON.stringify({ filters: FILTERS }));
     if (method === "PUT" && calls.at(-1)!.body.steps) saved = calls.at(-1)!.body.steps;
-    return new Response(JSON.stringify({ kind: "crop", steps: saved, input_box: "ingest", crops: [] }));
+    return new Response(JSON.stringify({ kind: "crop", steps: saved, input_box: "ingest", crops: [], ...extra }));
   }));
 });
 afterEach(() => vi.unstubAllGlobals());
@@ -205,4 +207,67 @@ test("a Picture edits box fed by a target: its crop step cannot be removed, and 
   expect(screen.getByRole("option", { name: "Position only" })).toBeEnabled();
   expect(screen.getByRole("option", { name: /Straighten.*tick Angle/ })).toBeDisabled();
   expect(screen.getByText(/its first Crop step is the one that follows the target/)).toBeInTheDocument();
+});
+
+// --- the mask step -------------------------------------------------------------------------------------------
+const mask = (id: string, over: Partial<Extract<FlowEdit, { op: "mask" }>> = {}): FlowEdit => ({ id, op: "mask", shape: null, ...over });
+const followDetail = (steps: FlowEdit[]): FlowCrop =>
+  base(steps, {
+    follow_step: "s1",
+    follow: { detector: "det:1", target: "A", mode: "keep", modes: [{ id: "keep", label: "Position only", enabled: true, needs: [] }], offered: ["position"], frame: null, size: null, offset: null, missing: [] },
+  });
+
+test("describeEdit: a mask says its shape, and whether it follows a target", () => {
+  expect(describeEdit(mask("s1"), FILTERS, false)).toBe("no shape chosen yet");
+  expect(describeEdit(mask("s1", { shape: { shape: "circle", cx: 0.5, cy: 0.5, r: 0.2 } }), FILTERS, false)).toBe("Circle");
+  expect(describeEdit(mask("s1", { shape: { shape: "rect", x: 0, y: 0, w: 1, h: 1 }, rel: {}, turn: true }), FILTERS, false)).toBe("Rectangle · follows the target and turns with it");
+});
+
+test("a mask step is added from the drop-down and starts with no shape", async () => {
+  await setup(base([crop("s1")]));
+  fireEvent.change(screen.getByRole("combobox", { name: "Add step" }), { target: { value: "mask" } });
+  await waitFor(() => expect(puts().length).toBeGreaterThan(0));
+  expect(puts().at(-1)!.body.steps.map((s: FlowEdit) => s.op)).toEqual(["crop", "mask"]);
+  expect(puts().at(-1)!.body.steps[1].shape).toBeNull();
+  expect(await screen.findByRole("button", { name: "Clear mask" })).toBeDisabled(); // nothing to clear yet
+});
+
+test("choosing a shape saves it; clearing the mask removes it", async () => {
+  await setup(base([mask("s1")]));
+  fireEvent.click(screen.getByRole("button", { name: "Circle" }));
+  await waitFor(() => expect(puts().at(-1)?.body.steps[0].shape).toEqual({ shape: "circle", cx: 0.5, cy: 0.5, r: 0.25 }), { timeout: 2000 });
+  fireEvent.click(await screen.findByRole("button", { name: "Clear mask" }));
+  await waitFor(() => expect(puts().at(-1)?.body.steps[0].shape).toBeNull(), { timeout: 2000 });
+});
+
+test("without a line from a detector the mask is fixed and says so; there is no turn option", async () => {
+  await setup(base([mask("s1", { shape: { shape: "rect", x: 0.2, y: 0.2, w: 0.5, h: 0.5 } })]));
+  expect(screen.getByText(/stays where it is drawn/)).toBeInTheDocument();
+  expect(screen.queryByLabelText("Turn the mask with the target")).not.toBeInTheDocument();
+});
+
+test("with a detector target feeding the box a shape change is sent with the picture it was drawn on, and the turn option appears", async () => {
+  const steps = [crop("s1"), mask("s2", { shape: { shape: "rect", x: 0.2, y: 0.2, w: 0.5, h: 0.5 } })];
+  saved = steps;
+  extra = { follow: followDetail(steps).follow, follow_step: "s1" };
+  function Both() {
+    const [d, setD] = useState<FlowNodeDetail>(followDetail(steps));
+    const edits = usePictureEdits("camA", "crop:1", d as FlowCrop, setD, () => {}, () => {});
+    return <><button onClick={() => edits.setFrame("p_1.png")}>frame</button><PictureEditsPanel edits={edits} /></>;
+  }
+  render(<Both />);
+  await waitFor(() => expect(calls.some((c) => c.url.includes("/vision/filters"))).toBe(true));
+  fireEvent.click(screen.getByRole("button", { name: "frame" }));
+  expect(await screen.findByLabelText("Turn the mask with the target")).toBeEnabled();
+  fireEvent.click(screen.getByRole("button", { name: "Polygon" }));
+  await waitFor(() => expect(puts().at(-1)?.body.steps[1].anchor).toEqual({ frame: "p_1.png" }), { timeout: 2000 });
+  expect(puts().at(-1)!.body.steps[1].shape.shape).toBe("polygon");
+  fireEvent.click(screen.getByLabelText("Turn the mask with the target"));
+  await waitFor(() => expect(puts().at(-1)?.body.steps[1].turn).toBe(true), { timeout: 2000 });
+});
+
+test("a mask placed relative to a target shows where it was drawn; one not placed yet asks to draw it on a picture with the target", async () => {
+  saved = [crop("s1"), mask("s2", { shape: { shape: "rect", x: 0.2, y: 0.2, w: 0.5, h: 0.5 } })];
+  render(<Harness detail={followDetail(saved)} />);
+  expect(await screen.findByText(/Not placed yet/)).toBeInTheDocument();
 });

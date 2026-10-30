@@ -220,3 +220,34 @@ test("behind a step that follows a target, a picture without the target says so 
   expect(await screen.findByRole("status")).toHaveTextContent("det:1 found no hole on this picture");
   expect(screen.queryByAltText("b.png")).toBeNull();
 });
+
+// --- the mask step -------------------------------------------------------------------------------------------
+const RECT_SHAPE = { shape: "rect" as const, x: 0.2, y: 0.2, w: 0.5, h: 0.5 };
+const maskStep = (over: Partial<Extract<FlowEdit, { op: "mask" }>> = {}, id = "s1"): FlowEdit => ({ id, op: "mask", shape: RECT_SHAPE, ...over });
+
+test("the picture that enters a mask does not reload while its shape is dragged", () => {
+  const blank = entering([maskStep({ turn: true, rel: {}, anchor: { frame: "a.png" } })], 0);
+  expect(blank).toEqual([{ id: "s1", op: "mask", shape: null }]);
+});
+
+test("a mask step opens on Before with the shape over the picture that enters it; After shows the masked picture", async () => {
+  setup(base([maskStep()]));
+  expect(await screen.findByTestId("mask-canvas")).toBeInTheDocument();
+  expect(screen.getByTestId("mask-outline")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Before" })).toHaveAttribute("aria-pressed", "true");
+  fireEvent.click(screen.getByRole("button", { name: "After" }));
+  const img = await screen.findByAltText("a.png");
+  expect(img.getAttribute("src")).toContain("stage=output");
+  expect(decodeURIComponent(img.getAttribute("src")!)).toContain('"op":"mask"');
+  expect(screen.queryByTestId("mask-canvas")).toBeNull();
+});
+
+test("a mask of a followed target is edited on the picture it was drawn on; on another picture only its result shows", async () => {
+  const follow = { detector: "det:1", target: "A", mode: "keep", modes: [], offered: [], frame: null, size: null, offset: null, missing: [] };
+  setup(base([crop(null, "s0"), maskStep({ rel: {}, frame: "b.png" }, "s1")], { follow, follow_step: "s0" }));
+  await waitFor(() => expect(screen.getByRole("combobox")).toHaveValue("b.png")); // selecting the step goes to its picture
+  expect(await screen.findByTestId("mask-canvas")).toBeInTheDocument();
+  fireEvent.change(screen.getByRole("combobox"), { target: { value: "a.png" } });
+  expect(await screen.findByText(/This mask was drawn on b.png/)).toBeInTheDocument();
+  expect(screen.queryByTestId("mask-canvas")).toBeNull();
+});

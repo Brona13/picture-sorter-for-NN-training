@@ -1,18 +1,18 @@
 import type { FlowSummaryStep } from "../api";
 
 /** The count of each step type of a Picture edits box, and whether every step of the type is off. A type that is not in the list is absent. */
-export function stepCounts(steps: FlowSummaryStep[] | undefined): { op: "crop" | "filter"; count: number; allOff: boolean }[] {
-  const out: { op: "crop" | "filter"; count: number; allOff: boolean }[] = [];
-  for (const op of ["crop", "filter"] as const) {
+export function stepCounts(steps: FlowSummaryStep[] | undefined): { op: "crop" | "filter" | "mask"; count: number; allOff: boolean }[] {
+  const out: { op: "crop" | "filter" | "mask"; count: number; allOff: boolean }[] = [];
+  for (const op of ["crop", "filter", "mask"] as const) {
     const of = (steps ?? []).filter((s) => s.op === op);
     if (of.length) out.push({ op, count: of.length, allOff: of.every((s) => s.enabled === false) });
   }
   return out;
 }
 
-const ICON_LABEL = { crop: "Crop", filter: "Filter" } as const;
+const ICON_LABEL = { crop: "Crop", filter: "Filter", mask: "Mask" } as const;
 
-/** Two small drawn icons (crop corners, filter sliders); a badge shows the number when a type is used more than once. */
+/** Small drawn icons (crop corners, filter sliders, mask shape); a badge shows the number when a type is used more than once. */
 export default function StepIcons({ steps }: { steps: FlowSummaryStep[] | undefined }) {
   const kinds = stepCounts(steps);
   if (kinds.length === 0) return <div className="chain-node-sub">no steps yet</div>;
@@ -30,6 +30,11 @@ export default function StepIcons({ steps }: { steps: FlowSummaryStep[] | undefi
               <>
                 <path d="M6 2v14a2 2 0 0 0 2 2h14" />
                 <path d="M2 6h14a2 2 0 0 1 2 2v14" />
+              </>
+            ) : op === "mask" ? (
+              <>
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+                <circle cx="12" cy="12" r="5" />
               </>
             ) : (
               <>

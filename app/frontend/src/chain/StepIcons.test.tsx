@@ -36,3 +36,13 @@ test("no steps: a short note and no icon; a list with only filters shows only th
   expect(screen.queryByTestId("step-icon-crop")).not.toBeInTheDocument();
   expect(screen.getByTestId("step-icon-filter")).toHaveClass("off");
 });
+
+test("a mask step has its own icon and count", () => {
+  const mask = (enabled = true): FlowSummaryStep => ({ op: "mask", shape: "rect", enabled });
+  expect(stepCounts([crop(), mask(), mask(false)])).toEqual([
+    { op: "crop", count: 1, allOff: false },
+    { op: "mask", count: 2, allOff: false },
+  ]);
+  render(<StepIcons steps={[mask(false)]} />);
+  expect(screen.getByTestId("step-icon-mask")).toHaveClass("off");
+});

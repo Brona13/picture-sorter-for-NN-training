@@ -446,7 +446,10 @@ export interface RoiAnchor {
 }
 
 /** One edit of a Picture Edits box in the light summary: a crop (its rectangle, or `follows` a detector target) or a filter. */
-export type FlowSummaryStep = { op: "crop"; rect?: [number, number, number, number] | null; follows?: boolean; enabled?: boolean } | { op: "filter"; label: string; enabled?: boolean };
+export type FlowSummaryStep =
+  | { op: "crop"; rect?: [number, number, number, number] | null; follows?: boolean; enabled?: boolean }
+  | { op: "filter"; label: string; enabled?: boolean }
+  | { op: "mask"; shape?: string | null; enabled?: boolean };
 
 export interface FlowSummary {
   /** A Picture Edits box: its steps in order. */
@@ -511,11 +514,27 @@ export interface FlowExample {
 export type FlowStep =
   | number[]
   | { follow: { detector: string; target: string; mode: string }; size: [number, number]; offset: [number, number] }
-  | { filter: { name: string; params: Record<string, number> } };
+  | { filter: { name: string; params: Record<string, number> } }
+  | { mask: { shape: MaskShape; rel: unknown; ref_angle: number; turn: boolean; follow: { detector: string; target: string } | null } };
 /** A step of a Picture Edits box, as stored: a crop (a rectangle as fractions, or none drawn) or a filter from the catalogue. */
 export type FlowEdit =
   | { id: string; op: "crop"; rect: [number, number, number, number] | null; enabled?: boolean }
-  | { id: string; op: "filter"; name: string; params: Record<string, number | string>; enabled?: boolean };
+  | { id: string; op: "filter"; name: string; params: Record<string, number | string>; enabled?: boolean }
+  | {
+      id: string;
+      op: "mask";
+      /** The shape (fractions of the picture that enters the step), or null until one is chosen: the picture passes on unchanged. */
+      shape: MaskShape | null;
+      /** Turn the shape with the followed target's angle (only while a detector target feeds the box). */
+      turn?: boolean;
+      /** Set by the server while a detector target feeds the box: the shape in pixels from the target's centre, the target's angle then, and the picture it was drawn on. */
+      rel?: unknown;
+      ref_angle?: number;
+      frame?: string;
+      /** Sent with a change while a detector target feeds the box: the picture the shape is drawn on, so the server places it relative to the target there. */
+      anchor?: { frame: string };
+      enabled?: boolean;
+    };
 /** A Crop fed by one target of a detector: the rectangle is drawn once and moves with the target on every picture. */
 export interface FlowFollow {
   detector: string;

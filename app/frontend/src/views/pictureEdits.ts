@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, FilterSpec, FlowCrop, FlowEdit, FlowNodeDetail } from "../api";
+import type { MaskShape } from "../shapeGeometry";
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -23,6 +24,15 @@ export function moveStep<T>(steps: T[], from: number, to: number): T[] {
   return next;
 }
 
+export type StepOp = "crop" | "filter" | "mask";
+
+/** A new step of the given kind: a crop with nothing drawn, a mask with no shape chosen, or a filter with the catalogue's defaults. */
+export function newStep(id: string, op: StepOp, catalogue: Record<string, FilterSpec>): FlowEdit {
+  if (op === "crop") return { id, op: "crop", rect: null };
+  if (op === "mask") return { id, op: "mask", shape: null };
+  return filterStep(id, Object.keys(catalogue)[0] ?? "gaussian", catalogue);
+}
+
 /** A filter step with the catalogue's default parameters. */
 export function filterStep(id: string, name: string, catalogue: Record<string, FilterSpec>): FlowEdit {
   const spec = catalogue[name];
@@ -43,14 +53,20 @@ export interface PictureEdits {
   /** Filter catalogue of the Detector page: name -> label and parameters. */
   filters: Record<string, FilterSpec>;
   detail: FlowCrop | null;
-  addStep: (op: "crop" | "filter") => void;
+  addStep: (op: StepOp) => void;
   removeStep: (id: string) => void;
   moveStep: (from: number, to: number) => void;
-  setOp: (id: string, op: "crop" | "filter") => void;
+  setOp: (id: string, op: StepOp) => void;
   /** Switch a step off (it keeps its place and is skipped) or on. The server stores the flag only while it is off. */
   setEnabled: (id: string, on: boolean) => void;
   setRect: (id: string, rect: [number, number, number, number] | null) => void;
   setFilter: (id: string, name: string) => void;
+  /** Change (or clear, `null`) the shape of a mask step. While a detector target feeds the box it is sent with the picture it is drawn on. */
+  setShape: (id: string, shape: MaskShape | null) => void;
+  /** Turn a mask with the followed target's angle, or not. */
+  setTurn: (id: string, turn: boolean) => void;
+  /** The picture the work area shows now: a mask drawn while a detector target feeds the box is placed relative to the target found on it. */
+  setFrame: (frame: string) => void;
   setParam: (id: string, key: string, value: number | string) => void;
   /** Any other change of the box (how a followed target is used, the rectangle of a following crop). */
   update: (body: Record<string, unknown>) => Promise<void>;
@@ -70,6 +86,7 @@ export function usePictureEdits(
   const timer = useRef<number | undefined>(undefined);
   const pending = useRef<{ camera: string; nodeId: string; steps: FlowEdit[] } | null>(null); // a draft that is not saved yet, and the box it belongs to
   const inflight = useRef(0);
+  const frame = useRef("");
   const latest = useRef({ camera, nodeId, setDetail, onChanged, onError });
   latest.current = { camera, nodeId, setDetail, onChanged, onError };
 
@@ -153,9 +170,7 @@ export function usePictureEdits(
     detail,
     addStep: (op) => {
       const id = newStepId(steps);
-      const first = Object.keys(filters)[0];
-      const step: FlowEdit = op === "crop" ? { id, op: "crop", rect: null } : filterStep(id, first ?? "gaussian", filters);
-      commit([...steps, step]);
+      commit([...steps, newStep(id, op, filters)]);
       setSelected(id);
     },
     removeStep: (id) => commit(steps.filter((s) => s.id !== id)),
@@ -166,8 +181,7 @@ export function usePictureEdits(
     setOp: (id, op) => {
       const at = steps.findIndex((s) => s.id === id);
       if (at < 0 || steps[at].op === op) return;
-      const first = Object.keys(filters)[0];
-      commit(steps.map((s) => (s.id === id ? (op === "crop" ? { id, op: "crop", rect: null } : filterStep(id, first ?? "gaussian", filters)) : s)));
+      commit(steps.map((s) => (s.id === id ? newStep(id, op, filters) : s)));
     },
     setEnabled: (id, on) =>
       patch(id, (s) => {
@@ -176,6 +190,19 @@ export function usePictureEdits(
       }),
     setRect: (id, rect) => patch(id, (s) => (s.op === "crop" ? { ...s, rect } : s)),
     setFilter: (id, name) => patch(id, (s) => (s.op === "filter" ? filterStep(id, name, filters) : s)),
+    setShape: (id, shape) =>
+      patch(id, (s) => {
+        if (s.op !== "mask") return s;
+        const { rel: _rel, ref_angle: _ref, frame: _frame, anchor: _anchor, ...rest } = s; // what was measured for the old shape no longer fits
+        return { ...rest, shape, ...(shape && detail?.follow && frame.current ? { anchor: { frame: frame.current } } : {}) };
+      }, SAVE_DELAY),
+    setTurn: (id, turn) =>
+      patch(id, (s) => {
+        if (s.op !== "mask") return s;
+        const { turn: _was, ...rest } = s;
+        return turn ? { ...rest, turn: true } : rest;
+      }),
+    setFrame: (f) => { frame.current = f; },
     setParam: (id, key, value) => patch(id, (s) => (s.op === "filter" ? { ...s, params: { ...s.params, [key]: value } } : s), SAVE_DELAY),
     update,
   };

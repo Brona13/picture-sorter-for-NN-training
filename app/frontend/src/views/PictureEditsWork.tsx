@@ -4,6 +4,7 @@ import FramePane from "../classify/FramePane";
 import PictureSizeSlider, { usePictureSize } from "../PictureSize";
 import RoiCanvas from "../RoiCanvas";
 import { Box, MIN_SIZE } from "../roiGeometry";
+import ShapeCanvas from "../ShapeCanvas";
 import { FIT_VIEW, View } from "../zoomGeometry";
 import type { PictureEdits } from "./pictureEdits";
 
@@ -26,7 +27,12 @@ function useDebounced<T>(value: T, ms: number): T {
  * *enters* the step does not depend on the step itself, so drawing or tuning it must not reload that picture.
  */
 export function entering(steps: FlowEdit[], index: number): FlowEdit[] {
-  return steps.slice(0, index + 1).map((s, i) => (i < index ? s : s.op === "crop" ? { ...s, rect: null } : { ...s, params: {} }));
+  return steps.slice(0, index + 1).map((s, i) => {
+    if (i < index) return s;
+    if (s.op === "crop") return { ...s, rect: null };
+    if (s.op === "mask") return { ...s, shape: null, turn: undefined, rel: undefined, anchor: undefined };
+    return { ...s, params: {} };
+  });
 }
 
 type Props = {
@@ -58,7 +64,11 @@ export default function PictureEditsWork({ camera, nodeId, detail, edits, onErro
   const missing = useMemo(() => new Set(follow?.missing ?? []), [follow?.missing]);
   const straight = isFollowStep && follow?.mode === "straighten"; // the picture is shown turned back by the found angle: the rectangle is drawn on the upright part
 
-  useEffect(() => setShow(step?.op === "filter" ? "after" : "before"), [step?.id, step?.op]); // a filter is judged by its result, a crop is drawn first
+  useEffect(() => setShow(step?.op === "filter" ? "after" : "before"), [step?.id, step?.op]); // a filter is judged by its result, a crop or a mask is drawn first
+  useEffect(() => edits.setFrame(frame), [frame]); // eslint-disable-line react-hooks/exhaustive-deps
+  // A mask that follows a target was drawn on one picture: selecting its step goes there (as the crop that follows a target does), so it can be edited.
+  const maskFrame = step?.op === "mask" && follow ? (step.frame ?? null) : null;
+  useEffect(() => { if (maskFrame && frames.includes(maskFrame)) setFrame(maskFrame); }, [step?.id, maskFrame, frames.length]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => setView(FIT_VIEW), [nodeId]);
   useEffect(() => {
     api.flowNodeFrames(camera, nodeId).then((r) => {
@@ -85,7 +95,10 @@ export default function PictureEditsWork({ camera, nodeId, detail, edits, onErro
 
   const at = frames.indexOf(frame);
   const canvasMode = !!step && step.op === "crop" && show === "before";
-  const title = step ? `Step ${index + 1} · ${step.op === "filter" ? edits.filters[step.name]?.label ?? step.name : "Crop"}` : "No step selected";
+  const maskMode = !!step && step.op === "mask" && show === "before";
+  // A placed mask is edited on the picture it was drawn on; on another one only its result is shown.
+  const maskElsewhere = maskMode && !!follow && !!step && step.op === "mask" && !!step.rel && !!step.frame && step.frame !== frame;
+  const title = step ? `Step ${index + 1} · ${step.op === "filter" ? edits.filters[step.name]?.label ?? step.name : step.op === "mask" ? "Mask" : "Crop"}` : "No step selected";
 
   return (
     <div className="flow-work" data-testid="crop-work">
@@ -120,6 +133,10 @@ export default function PictureEditsWork({ camera, nodeId, detail, edits, onErro
           ? "Add a step on the right. The picture shown is the one that enters this box."
           : step.op === "filter"
             ? show === "after" ? "The picture after this filter, live as you change it. Switch to Before to compare; the zoom stays." : "The picture as it enters this filter."
+            : step.op === "mask"
+              ? show === "after"
+                ? "The picture after this mask: everything outside the shape is dark grey."
+                : maskElsewhere ? `This mask was drawn on ${step.frame}. Pick that picture to change it; After shows where it lies on this one.` : "Choose a shape on the right, then drag it into place. It is saved a moment after the last change."
             : show === "after"
               ? "The picture after this crop."
               : isFollowStep ? "" : "Drag on the picture to draw the crop rectangle, or drag the rectangle to move it or a corner or edge to resize it; it is saved when you let go. Wheel zooms, middle button or Space + drag pans."}
@@ -128,6 +145,12 @@ export default function PictureEditsWork({ camera, nodeId, detail, edits, onErro
         <p className="flow-empty">{hasInput ? "No pictures reach this box yet: add some in Ingest, or check what the box before it passes on." : "Nothing is drawn into this box, so it has no pictures. Draw a line into it on the Chain."}</p>
       ) : canvasMode && step && isFollowStep && follow ? (
         <FollowCanvas camera={camera} nodeId={nodeId} frame={frame} frames={frames} detail={detail} follow={follow} size={size} view={view} setView={setView} url={stepUrl("input", { straighten: straight })} straight={!!straight} edits={edits} onError={onError} />
+      ) : maskMode && step && step.op === "mask" && blocked("input") ? (
+        <p className="flow-missing" role="status">{follow?.detector} found no {follow?.target} on this picture, so there is no picture here at this step. Pick a picture where it did.</p>
+      ) : maskMode && step && step.op === "mask" && !maskElsewhere ? (
+        <MaskCanvas step={step} size={size} url={stepUrl("input")} edits={edits} frame={frame} />
+      ) : maskElsewhere && step ? (
+        <FramePane camera={camera} frame={frame} width={size} imageUrl={stepUrl("output")} view={view} onViewChange={setView} />
       ) : canvasMode && step && step.op === "crop" ? (
         <StaticCanvas camera={camera} nodeId={nodeId} frame={frame} step={step} size={size} view={view} setView={setView} url={stepUrl("input")} edits={edits} blocked={blocked("input")} />
       ) : blocked(show === "after" ? "output" : "input") ? (
@@ -141,6 +164,15 @@ export default function PictureEditsWork({ camera, nodeId, detail, edits, onErro
           <img src={stepUrl("output", { size: 360 })} alt={`${frame} cropped`} style={{ maxWidth: "100%", border: "1px solid var(--border)" }} />
         </div>
       )}
+    </div>
+  );
+}
+
+/** A mask step: the shape over the picture that enters it. Every change shows at once and is saved a moment after the last one. */
+function MaskCanvas({ step, size, url, edits, frame }: { step: Extract<FlowEdit, { op: "mask" }>; size: number; url: string; edits: PictureEdits; frame: string }) {
+  return (
+    <div data-frame={frame} data-testid="mask-canvas">
+      <ShapeCanvas imageUrl={url} shape={step.shape} onChange={(shape) => edits.setShape(step.id, shape)} width={size} />
     </div>
   );
 }
