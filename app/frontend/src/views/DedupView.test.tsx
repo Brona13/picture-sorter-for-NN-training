@@ -71,6 +71,8 @@ beforeEach(() => {
         return ok({ frames: ["a.png", "b.png", "c.png"], muted: ["b.png"], source: "seal", classes: ["OK", "NG"], marks: {} });
       if (url.includes("/dedup/state")) return ok(state);
       if (url.includes("/dedup/settings")) return ok({ params });
+      if (url.includes("/classify/deleted?")) return ok({ items: [{ frame: "x.png", deleted_at: 1760000000, note: "" }] });
+      if (url.endsWith("/classify/restore-bulk")) return ok({ restored: 1 });
       if (url.endsWith("/dedup/sweep") && method === "POST") return ok({ id: "w1", status: "queued", progress: {} }, 202);
       if (url.includes("/dedup/sweep")) return ok({ sweep: heldSweep });
       if (url === "/api/jobs/w1") return ok({ id: "w1", status: "done", progress: {}, result: sweepResult, error: null });
@@ -551,4 +553,16 @@ test("the chart is not on the other tools", async () => {
   render(<DedupView camera="camA" tool="grid" />);
   await screen.findByTestId("grid-view");
   expect(screen.queryByTestId("sweep-chart")).toBeNull();
+});
+
+test("Show deleted lists the deleted pictures in the Grid tool and restores them", async () => {
+  render(<DedupView camera="camA" tool="grid" />);
+  await screen.findByTestId("grid-view");
+  await userEvent.click(screen.getByLabelText("Show deleted"));
+  expect(screen.queryByTestId("grid-view")).toBeNull();
+  const view = await screen.findByTestId("deleted-view");
+  await userEvent.click(await within(view).findByRole("button", { name: "Restore x.png" }));
+  await waitFor(() => expect(calls.find((c) => c.url.endsWith("/classify/restore-bulk"))?.body).toMatchObject({ frames: ["x.png"] }));
+  await userEvent.click(screen.getByLabelText("Show deleted"));
+  expect(await screen.findByTestId("grid-view")).toBeInTheDocument();
 });

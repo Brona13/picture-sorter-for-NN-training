@@ -1,5 +1,6 @@
 import { ReactNode, useCallback, useEffect, useState } from "react";
 import { api, CardData, DedupParams, DedupResult, DedupState, DedupSweep, DedupSweepRange, OutlierResult } from "../api";
+import DeletedByDay from "../classify/DeletedByDay";
 import PictureGrid from "../classify/PictureGrid";
 import ClusterBrowser, { Marks } from "../classify/ClusterBrowser";
 import { OutlierControls, OutlierResults, useOutliers } from "../classify/OutlierPanel";
@@ -76,6 +77,7 @@ export default function DedupView({
   const [gridData, setGridData] = useState<Awaited<ReturnType<typeof api.dedupFrames>> | null>(null);
   const [gridPage, setGridPage] = useState(1);
   const [showMuted, setShowMuted] = useState(false);
+  const [showDeleted, setShowDeleted] = useState(false);
   const [gridRev, setGridRev] = useState(0);
   // The pages work on one Dedup box of the Chain (its id is the "feature" of the API).
   const [features, setFeatures] = useState<{ feature: string; label: string }[]>([]);
@@ -265,6 +267,11 @@ export default function DedupView({
               <input type="checkbox" checked={showMuted} onChange={(e) => { setShowMuted(e.target.checked); setGridPage(1); }} /> Show muted
             </label>
           )}
+          {active === "grid" && (
+            <label title="The camera's deleted pictures by day, with Restore">
+              <input type="checkbox" checked={showDeleted} onChange={(e) => setShowDeleted(e.target.checked)} /> Show deleted
+            </label>
+          )}
           {active === "clusters" && st && st.frames > 0 && params && (
             <ToolControls tool="clusters" info={CLUSTERS_INFO}>
               <label>
@@ -450,7 +457,30 @@ export default function DedupView({
       {boxesLoaded && features.length === 0 && <p>There is no Dedup box yet. Add one on the Chain (the Dedup tile) and connect it.</p>}
       {st && st.frames === 0 && <p>This Dedup box has no pictures yet: ingest some, or label some for the Classifier it reads.</p>}
 
-      {active === "grid" && gridData && st && (() => {
+      {active === "grid" && showDeleted && st && (
+        <div data-testid="deleted-view">
+          <DeletedByDay
+            camera={camera}
+            feature={act}
+            revision={gridRev}
+            settings={st.grid}
+            onSettings={(perPage, cols) =>
+              api
+                .dedupGridSettings(camera, feature, perPage, cols)
+                .then((g) => setSt((x) => (x ? { ...x, grid: g } : x)))
+                .catch((e: unknown) => setError(msg(e)))
+            }
+            onChanged={() => {
+              setGridRev((r) => r + 1);
+              load();
+            }}
+            onNotice={setNotice}
+            onError={setError}
+          />
+        </div>
+      )}
+
+      {active === "grid" && !showDeleted && gridData && st && (() => {
         const mutedSet = new Set(gridData.muted);
         const shownFrames = showMuted ? gridData.frames : gridData.frames.filter((f) => !mutedSet.has(f));
         const cardOf = (frame: string): CardData => ({
