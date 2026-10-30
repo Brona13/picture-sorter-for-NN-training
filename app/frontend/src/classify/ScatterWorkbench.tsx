@@ -126,9 +126,12 @@ export function ScatterMapView({
   onError,
   onChanged,
   labeling = true,
+  onMute,
 }: {
   camera: string;
   feature: string;
+  /** In a Dedup box: mute these pictures in the box (shows the Mute button of the selection). */
+  onMute?: (frames: string[]) => Promise<void>;
   /** The feature whose cutout the cards show, when it differs from the one the picture actions go through (a Dedup box). */
   pictureFeature?: string;
   /** False in a Dedup box: the selection grid shows classes but does not label. */
@@ -156,6 +159,7 @@ export function ScatterMapView({
           points={selected}
           classes={scatter.classes}
           labeling={labeling}
+          onMute={onMute}
           grid={grid}
           onGrid={onGrid}
           onMark={(frame, m) => setOverrides((o) => ({ ...o, [frame]: m }))}
@@ -219,9 +223,12 @@ export function ScatterSelection({
   onDeleted,
   onLabeled,
   onError,
+  onMute,
 }: {
   camera: string;
   feature: string;
+  /** In a Dedup box: mute the selection in the box. */
+  onMute?: (frames: string[]) => Promise<void>;
   pictureFeature?: string;
   points: ScatterPoint[];
   classes: string[];
@@ -325,6 +332,21 @@ export function ScatterSelection({
                   </button>
                 ))}
               </div>}
+              {onMute && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  title="Mute these pictures in this Dedup box: the box stops passing them on. Nothing is deleted; Unmute all of this box undoes it."
+                  onClick={() => {
+                    setBusy(true);
+                    onMute(frames)
+                      .catch((e: unknown) => onError(msg(e)))
+                      .finally(() => setBusy(false));
+                  }}
+                >
+                  🔇 Mute these {rows.length} frame(s)
+                </button>
+              )}
               <button type="button" disabled={busy} onClick={askDelete} style={{ borderColor: "#c62828", color: "#c62828" }}>
                 🗑 Delete these {rows.length} frame(s)…
               </button>

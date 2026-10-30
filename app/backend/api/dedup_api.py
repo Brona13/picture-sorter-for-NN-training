@@ -394,6 +394,20 @@ def get_sweep(camera: str, feature: str) -> dict:
     return {"sweep": None if held is None else held["sweep"]}
 
 
+class MuteBody(BaseModel):
+    feature: str
+    frames: list[str]
+
+
+@router.post("/cameras/{camera}/dedup/mute-frames")
+def mute_frames(camera: str, body: MuteBody) -> dict:
+    """Mute these pictures in the box (the Scatter selection's Mute button). Clusters held for the box stay as they are."""
+    require_box(camera, body.feature)
+    if not body.frames:
+        raise HTTPException(status_code=422, detail="No frames to mute.")
+    return dedup.mute_frames(camera, body.feature, body.frames)
+
+
 class ApplyBody(BaseModel):
     feature: str
     picks: dict[int, str] = {}

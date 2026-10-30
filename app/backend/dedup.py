@@ -435,6 +435,23 @@ def apply(
     )
 
 
+def mute_frames(camera: str, feature: str, frames: list[str]) -> dict[str, int]:
+    """Mute pictures picked by hand (a Scatter selection) in a Dedup box. A golden is never muted; pictures the box does
+    not see are ignored. Muting again what is already muted changes nothing."""
+    import dedup_box  # noqa: PLC0415
+
+    marks_from = dedup_box.label_source(camera, feature)
+    golden = {f for fs in labels.current_goldens(camera, marks_from).values() for f in fs}
+    sees = set(live_frames(camera, feature))
+    already = db.muted_frames(camera, feature)
+    hmap = labels.hash_map(camera)
+    wanted = list(dict.fromkeys(frames))
+    skipped_golden = sum(1 for f in wanted if f in golden and f in sees)
+    fresh = [f for f in wanted if f in sees and f not in golden and f not in already]
+    db.add_dedup_mutes(camera, feature, [(f, hmap.get(f, ""), NOISE) for f in fresh], source="scatter")
+    return {"muted": len(fresh), "skipped_golden": skipped_golden, "already": sum(1 for f in wanted if f in already)}
+
+
 def _save_snapshot(camera, feature, result: ClusterResult, picks: dict[int, str]) -> None:
     """Write one row into cluster_snapshot with every frame's cluster id + rep flag."""
     rep_set = set(picks.values())

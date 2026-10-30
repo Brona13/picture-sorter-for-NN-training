@@ -73,6 +73,7 @@ beforeEach(() => {
       if (url.includes("/dedup/settings")) return ok({ params });
       if (url.includes("/classify/deleted?")) return ok({ items: [{ frame: "x.png", deleted_at: 1760000000, note: "" }] });
       if (url.endsWith("/classify/restore-bulk")) return ok({ restored: 1 });
+      if (url.endsWith("/dedup/mute-frames")) return ok({ muted: 2, skipped_golden: 0, already: 0 });
       if (url.endsWith("/dedup/sweep") && method === "POST") return ok({ id: "w1", status: "queued", progress: {} }, 202);
       if (url.includes("/dedup/sweep")) return ok({ sweep: heldSweep });
       if (url === "/api/jobs/w1") return ok({ id: "w1", status: "done", progress: {}, result: sweepResult, error: null });
@@ -565,4 +566,15 @@ test("Show deleted lists the deleted pictures in the Grid tool and restores them
   await waitFor(() => expect(calls.find((c) => c.url.endsWith("/classify/restore-bulk"))?.body).toMatchObject({ frames: ["x.png"] }));
   await userEvent.click(screen.getByLabelText("Show deleted"));
   expect(await screen.findByTestId("grid-view")).toBeInTheDocument();
+});
+
+test("the scatter selection has a Mute button that mutes its frames in the box", async () => {
+  const svg = await openScatter();
+  fireEvent.mouseDown(svg, { button: 0, clientX: 0, clientY: 0 });
+  fireEvent.mouseMove(window, { clientX: 100, clientY: 100 });
+  fireEvent.mouseUp(window, { clientX: 100, clientY: 100 });
+  const panel = await screen.findByTestId("scatter-selection");
+  await userEvent.click(within(panel).getByRole("button", { name: /Mute these 1 frame/ }));
+  await waitFor(() => expect(calls.find((c) => c.url.endsWith("/dedup/mute-frames"))?.body).toEqual({ feature: "seal", frames: ["a.png"] }));
+  expect(await screen.findByText(/Muted 2 frame\(s\)/)).toBeInTheDocument();
 });

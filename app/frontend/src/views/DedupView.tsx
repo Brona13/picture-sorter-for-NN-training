@@ -540,6 +540,17 @@ export default function DedupView({
                 pictureFeature={feature}
                 labeling={false}
                 map={map}
+                onMute={(frames) =>
+                  api.dedupMuteFrames(camera, feature, frames).then((r) => {
+                    setNotice(
+                      `Muted ${r.muted} frame(s)` +
+                        (r.already ? ` · ${r.already} were already muted` : "") +
+                        (r.skipped_golden ? ` · ${r.skipped_golden} golden kept` : "") +
+                        ". Unmute all of this box (below) undoes it.",
+                    );
+                    load();
+                  })
+                }
                 colourBy={shownColour}
                 scores={outliers ? outlierShades(outliers) : undefined}
                 grid={st?.grid ?? { per_page: 24, cols: 4, per_page_options: [], cols_options: [] }}

@@ -122,6 +122,24 @@ class DedupApiTests(ApiTestCase):
             self.assertEqual(self.client.post(f"{self.base}/sweep", json={**base, **bad}).status_code, 422, bad)
         self.assertIsNone(self.client.get(f"{self.base}/sweep", params={"feature": FEAT}).json()["sweep"])
 
+    def test_mute_frames_by_hand_skips_goldens_and_other_boxes_are_untouched(self) -> None:
+        other = flow.create_node(CAM, "dedup")
+        flow.connect(CAM, "ingest", other)
+        r = self.client.post(f"{self.base}/mute-frames", json={"feature": FEAT, "frames": self.frames[:2] + ["nope.png"]})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json(), {"muted": 2, "skipped_golden": 0, "already": 0})
+        self.assertEqual(db.muted_frames(CAM, FEAT), set(self.frames[:2]))
+        self.assertEqual(db.muted_frames(CAM, other), set())
+        again = self.client.post(f"{self.base}/mute-frames", json={"feature": FEAT, "frames": self.frames[:3]}).json()
+        self.assertEqual((again["muted"], again["already"]), (1, 2))
+        self.assertEqual(self.client.post(f"{self.base}/mute-frames", json={"feature": FEAT, "frames": []}).status_code, 422)
+        self.assertEqual(self.client.post(f"{self.base}/mute-frames", json={"feature": "dedup:99", "frames": self.frames[:1]}).status_code, 404)
+        self.assertEqual(self.client.get(f"{self.base}/state", params={"feature": FEAT}).json()["muted_count"], 3)
+        # the box passes on its pictures minus the mutes: a box after it sees only the rest
+        det = flow.create_node(CAM, "detector")
+        flow.connect(CAM, FEAT, det)
+        self.assertEqual(sorted(flow.node_frames(CAM, det)), sorted(self.frames[3:]))
+
     def test_apply_mutes_non_representatives_only_and_keeps_sources(self) -> None:
         res = self.cluster()["result"]
         big = next(c for c in res["clusters"] if len(c["members"]) == 3)
