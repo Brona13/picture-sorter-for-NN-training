@@ -10,6 +10,8 @@ const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 /** The M key of a Dedup box's grids: `is` tells whether a picture is muted now, `toggle` mutes or unmutes it. */
 export interface GridMute {
   is: (frame: string) => boolean;
+  /** Show muted pictures too (dimmed). Off: a muted picture leaves the grid. */
+  showMuted?: boolean;
   toggle: (frame: string) => Promise<void>;
 }
 
@@ -89,6 +91,9 @@ export default function PictureGrid({
   onError: (message: string) => void;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
+  const hideMuted = !!mute && !mute.showMuted;
+  const allFrames = frames;
+  frames = hideMuted ? allFrames.filter((f) => !mute!.is(f)) : allFrames; // a muted picture leaves the grid unless Show muted is ticked
   const [viewing, setViewing] = useState<string | null>(null);
   // Deleted here and kept in place (a snapshot of the card), and restored from there (kept in place as normal cards).
   const [ghosts, setGhosts] = useState<Map<string, CardData>>(new Map());

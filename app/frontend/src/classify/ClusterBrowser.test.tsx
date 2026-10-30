@@ -60,19 +60,24 @@ const renderIt = (over: Record<string, unknown> = {}) =>
     />,
   );
 
-test("with a mute handler, M on a hovered cluster card calls it and the card gets the muted frame; without one M does nothing", async () => {
+test("with a mute handler, M on a hovered cluster card calls it and the muted card leaves the grid", async () => {
   const muted = new Set<string>();
   const toggle = vi.fn(async (f: string) => void (muted.has(f) ? muted.delete(f) : muted.add(f)));
   renderIt({ mute: { is: (f: string) => muted.has(f), toggle } });
   await userEvent.hover(screen.getByTestId("card-m01.png"));
   fireEvent.keyDown(window, { key: "m" });
   await waitFor(() => expect(toggle).toHaveBeenCalledWith("m01.png"));
-  // the card has the Mute button (Unmute and dimmed once muted)
-  const card = await screen.findByTestId("card-m01.png");
-  expect(within(card).getByRole("button", { name: "Unmute frame" })).toBeInTheDocument();
-  expect(within(card).getByRole("img")).toHaveStyle({ opacity: "0.5" });
+  await waitFor(() => expect(screen.queryByTestId("card-m01.png")).toBeNull());
   await userEvent.click(within(screen.getByTestId("card-m02.png")).getByRole("button", { name: "Mute frame" }));
   expect(toggle).toHaveBeenCalledWith("m02.png");
+});
+
+test("with Show muted, a muted cluster card stays, dimmed, and offers Unmute", async () => {
+  const muted = new Set(["m01.png"]);
+  renderIt({ mute: { showMuted: true, is: (f: string) => muted.has(f), toggle: vi.fn(async () => undefined) } });
+  const card = screen.getByTestId("card-m01.png");
+  expect(within(card).getByRole("button", { name: "Unmute frame" })).toBeInTheDocument();
+  expect(within(card).getByRole("img")).toHaveStyle({ opacity: "0.5" });
 });
 
 test("without a mute handler M does nothing on a cluster card", async () => {

@@ -78,8 +78,6 @@ export default function DedupView({
   const [gridPage, setGridPage] = useState(1);
   const [showMuted, setShowMuted] = useState(false);
   const [showDeleted, setShowDeleted] = useState(false);
-  // Pictures muted with M stay in the grid (dashed frame) until the grid is turned, so a run of M presses keeps its place.
-  const [justMuted, setJustMuted] = useState<Set<string>>(new Set());
   const [gridRev, setGridRev] = useState(0);
   // The pages work on one Dedup box of the Chain (its id is the "feature" of the API).
   const [features, setFeatures] = useState<{ feature: string; label: string }[]>([]);
@@ -139,6 +137,7 @@ export default function DedupView({
   const [mutedByKey, setMutedByKey] = useState<{ box: string; frames: Set<string> }>({ box: "", frames: new Set() });
   const keyMuted = mutedByKey.box === `${camera}/${feature}` ? mutedByKey.frames : new Set<string>();
   const toolMute: GridMute = {
+    showMuted,
     is: (f) => keyMuted.has(f),
     toggle: async (f) => {
       const was = keyMuted.has(f);
@@ -289,9 +288,9 @@ export default function DedupView({
               ))}
             </select>
           </label>
-          {active === "grid" && (
-            <label>
-              <input type="checkbox" checked={showMuted} onChange={(e) => { setShowMuted(e.target.checked); setJustMuted(new Set()); setGridPage(1); }} /> Show muted
+          {(active === "grid" || active === "clusters" || active === "outliers" || active === "scatter") && (
+            <label title="Muted pictures leave the grids; tick to see them again, dimmed">
+              <input type="checkbox" checked={showMuted} onChange={(e) => { setShowMuted(e.target.checked); setGridPage(1); }} /> Show muted
             </label>
           )}
           {active === "grid" && (
@@ -509,7 +508,8 @@ export default function DedupView({
 
       {active === "grid" && !showDeleted && gridData && st && (() => {
         const mutedSet = new Set(gridData.muted);
-        const shownFrames = showMuted ? gridData.frames : gridData.frames.filter((f) => !mutedSet.has(f) || justMuted.has(f));
+        const shownFrames = gridData.frames; // PictureGrid drops the muted ones unless Show muted is ticked
+        const shownCount = showMuted ? shownFrames.length : shownFrames.filter((f) => !mutedSet.has(f)).length;
         const cardOf = (frame: string): CardData => ({
           frame,
           label: gridData.marks[frame]?.label ?? null,
@@ -523,7 +523,7 @@ export default function DedupView({
         return (
           <div data-testid="grid-view">
             <p role="status">
-              {shownFrames.length} {shownFrames.length === 1 ? "picture" : "pictures"} · {gridData.muted.length} muted
+              {shownCount} {shownCount === 1 ? "picture" : "pictures"} · {gridData.muted.length} muted
             </p>
             <PictureGrid
               camera={camera}
@@ -546,10 +546,11 @@ export default function DedupView({
               }
               page={gridPage}
               onPage={(p) => {
-                setJustMuted(new Set());
+               
                 setGridPage(p);
               }}
               mute={{
+                showMuted,
                 is: (f) => mutedSet.has(f),
                 toggle: async (f) => {
                   if (mutedSet.has(f)) await api.dedupUnmuteFrames(camera, feature, [f]);
@@ -559,7 +560,6 @@ export default function DedupView({
                       setNotice(r.skipped_golden ? "A golden picture is never muted." : "This picture is not in the box any more.");
                       return;
                     }
-                    setJustMuted((s) => new Set(s).add(f));
                   }
                   setGridRev((r) => r + 1);
                   load();
