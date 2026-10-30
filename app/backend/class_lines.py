@@ -4,8 +4,8 @@ A Classifier has one input dot per class. A line into the dot of a class says: t
 they belong to that class. The class comes from where the pictures come from, never from the box that passes them on:
 
 * an Evaluation's ``pass`` dot is OK and its ``fail`` dot is NG (``flow.VERDICT_CLASS``);
-* a Dedup box carries the class of what it reads (an Evaluation's pass or fail dot, or one class dot of a Classifier).
-  Dedup only filters: it adds no label and changes none.
+* a Dedup, detector, Picture edits or Merge box carries the class of what it reads (an Evaluation's pass or fail dot, or
+  one class dot of a Classifier). It only passes pictures on: it adds no label and changes none.
 
 A Classifier sees the union of what its class dots receive (several lines into one dot must all pass a picture), and
 those pictures are labelled with the dot's class, as the verdict labels of an Evaluation are (final; only goldens are
@@ -89,7 +89,9 @@ def check(camera: str, feature: str, cls: str, box: str, dot: str | None) -> str
         if flow.VERDICT_CLASS[dot] != cls:
             return f"The Evaluation's {dot} dot is {flow.VERDICT_CLASS[dot]}, not {cls}."
         return None
-    if kind == "dedup":
+    if kind in ("dedup", "detector", "crop", "merge"):
+        if dot:
+            return f"Use {box}'s main dot: a target dot of a detector anchors a Classifier instead."
         src = flow.node_source(graph, box)
         if src and src["feature"] == feature:
             return f"{box} reads {feature}, so it cannot feed it back."
@@ -99,7 +101,7 @@ def check(camera: str, feature: str, cls: str, box: str, dot: str | None) -> str
         if carried != cls:
             return f"{box} carries {carried} pictures, not {cls}."
         return None
-    return "Only an Evaluation's pass or fail dot or a Dedup box can feed a class dot."
+    return "Only an Evaluation's pass or fail dot, or a Dedup, detector, Picture edits or Merge box that carries the class, can feed a class dot."
 
 
 def add(camera: str, feature: str, cls: str, box: str, dot: str | None = None) -> None:

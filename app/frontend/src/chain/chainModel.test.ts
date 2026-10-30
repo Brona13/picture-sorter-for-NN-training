@@ -275,7 +275,9 @@ test("an Evaluation dot feeds Dedup, Picture edits or a detector, and nothing el
   expect(flowConnect(withBoxes, { source: "eval:1", sourceHandle: "p:fail", target: "roi:seal", targetHandle: "in:OK" })).toHaveProperty("error");
   expect(flowConnect(withBoxes, { source: "eval:1", sourceHandle: "all", target: "roi:seal", targetHandle: "in:NG" })).toHaveProperty("error");
   expect(flowConnect(withBoxes, { source: "dedup:7", sourceHandle: null, target: "roi:seal", targetHandle: "in:OK" })).toEqual({ classLine: { feature: "seal", cls: "OK", box: "dedup:7" } });
-  expect(flowConnect(withBoxes, { source: "crop:7", sourceHandle: null, target: "roi:seal", targetHandle: "in:OK" })).toHaveProperty("error");
+  // a detector, Picture edits box or Merge may feed a class dot too (the server checks that it carries that class)
+  expect(flowConnect(withBoxes, { source: "crop:7", sourceHandle: null, target: "roi:seal", targetHandle: "in:OK" })).toEqual({ classLine: { feature: "seal", cls: "OK", box: "crop:7" } });
+  expect(flowConnect(withBoxes, { source: "crop:7", sourceHandle: "t:P", target: "roi:seal", targetHandle: "in:OK" })).toHaveProperty("error");
 });
 
 test("Calculate says how many points it has and what it needs", () => {

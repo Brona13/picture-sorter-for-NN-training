@@ -52,6 +52,20 @@ class ClassLineTests(ApiTestCase):
         self.assertEqual(self.put("OK", self.dedup).status_code, 422)
         self.assertEqual(self.put("NG", self.dedup).status_code, 200)
 
+    def test_a_detector_that_reads_ok_pictures_feeds_the_ok_dot(self) -> None:
+        det = flow.create_node(CAM, "detector")
+        flow.update_node(CAM, det, {"source": {"box": self.eval, "dot": "pass"}})
+        self.assertEqual(self.put("OK", det).status_code, 200)
+        self.assertEqual(sorted(f for f, c in labels.current_labels(CAM, "seal").items() if c == "OK"), sorted(self.frames[:5]))
+        self.assertEqual(self.put("NG", det).status_code, 422)  # it carries OK pictures, not NG
+        self.assertEqual(self.put("OK", det, "P").status_code, 422)  # a target dot anchors a Classifier instead
+        ingest_det = flow.create_node(CAM, "detector")
+        flow.connect(CAM, "ingest", ingest_det)
+        self.assertEqual(self.put("OK", ingest_det).status_code, 422)  # reads Ingest: no class to give
+        crop = flow.create_node(CAM, "crop")
+        flow.update_node(CAM, crop, {"source": {"box": self.eval, "dot": "fail"}})
+        self.assertEqual(self.put("NG", crop).status_code, 200)
+
     def test_a_picture_on_two_dots_is_left_out(self) -> None:
         self.put("OK", self.eval, "pass")
         dedup2 = flow.create_node(CAM, "dedup")
