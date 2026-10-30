@@ -1313,12 +1313,31 @@ DEDUP_INPUT_KEY = "roi.dedup."  # setting roi.dedup.<feature> = the Dedup box a 
 CLASS_LINES_KEY = "class.lines."  # setting class.lines.<feature> = the lines into a Classifier's class dots (class_lines.py)
 
 
+def dedup_inputs(camera: str, feature: str) -> list[str]:
+    """The Dedup boxes a Classifier reads through: the setting holds one box id (before v1.134.0) or a JSON list."""
+    raw = get_setting(camera, f"{DEDUP_INPUT_KEY}{feature}")
+    if not raw:
+        return []
+    if raw.startswith("["):
+        try:
+            parsed = json.loads(raw)
+        except ValueError:
+            return []
+        return [b for b in parsed if isinstance(b, str)] if isinstance(parsed, list) else []
+    return [raw]
+
+
+def set_dedup_inputs(camera: str, feature: str, boxes: list[str]) -> None:
+    """Store the Dedup boxes a Classifier reads through (none removes the setting)."""
+    if not boxes:
+        delete_setting(camera, f"{DEDUP_INPUT_KEY}{feature}")
+    else:
+        set_setting(camera, f"{DEDUP_INPUT_KEY}{feature}", boxes[0] if len(boxes) == 1 else json.dumps(boxes))
+
+
 def feeding_boxes(camera: str, feature: str) -> list[str]:
-    """The Dedup boxes whose mutes hide frames of ``feature``: the one it reads through, and the ones with a line into a class dot."""
-    boxes: list[str] = []
-    box = get_setting(camera, f"{DEDUP_INPUT_KEY}{feature}")
-    if box:
-        boxes.append(box)
+    """The Dedup boxes whose mutes hide frames of ``feature``: the ones it reads through, and the ones with a line into a class dot."""
+    boxes: list[str] = list(dedup_inputs(camera, feature))
     raw = get_setting(camera, f"{CLASS_LINES_KEY}{feature}")
     if raw:
         try:
@@ -1335,7 +1354,14 @@ def feeding_boxes(camera: str, feature: str) -> list[str]:
 def muted_frames(camera: str, feature: str) -> set[str]:
     """Frames hidden from ``feature``: its own mutes (a Dedup box) and those of the Dedup box that feeds it."""
     perf.count("db.muted_state.reads")
+    inputs = dedup_inputs(camera, feature)
+    if len(inputs) >= 2:
+        return _muted_with_several_inputs(camera, feature, inputs)
     owners = [feature, *feeding_boxes(camera, feature)]
+    return _mutes_of(camera, owners)
+
+
+def _mutes_of(camera: str, owners: list[str]) -> set[str]:
     con = connect()
     try:
         rows = con.execute(
@@ -1346,6 +1372,23 @@ def muted_frames(camera: str, feature: str) -> set[str]:
         con.close()
     perf.count("db.mute_current.rows", len(rows))
     return {row["frame"] for row in rows}
+
+
+def _muted_with_several_inputs(camera: str, feature: str, inputs: list[str]) -> set[str]:
+    """A Classifier fed by several Dedup boxes gets the union of what they pass: a picture is hidden only when every box
+    that carries it has muted it (a picture one box muted can still arrive through another)."""
+    import flow  # noqa: PLC0415  (flow imports this module)
+
+    graph = flow.load_graph(camera)
+    visible: set[str] = set()
+    muted_somewhere: set[str] = set()
+    for box in inputs:
+        mine = _mutes_of(camera, [box])
+        muted_somewhere |= mine
+        if box in graph["nodes"]:
+            visible |= set(flow.node_frames(camera, box, graph)) - mine
+    others = [feature, *[b for b in feeding_boxes(camera, feature) if b not in inputs]]
+    return (muted_somewhere - visible) | _mutes_of(camera, others)
 
 
 def unmute_frames(camera: str, feature: str, frames: list[str]) -> int:

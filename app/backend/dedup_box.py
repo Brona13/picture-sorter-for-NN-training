@@ -64,9 +64,16 @@ def frames(camera: str, box: str) -> list[str]:
     return datamodel._snapshot_value(("dedup_frames", camera, box), lambda: flow.node_frames(camera, box))
 
 
+def inputs_of(camera: str, feature: str) -> list[str]:
+    """The Dedup boxes a Classifier reads through (its plain input, v1.134.0: several, its pictures are their union). The
+    setting holds one box id (older versions) or a JSON list. Boxes with a line into a class dot are in ``db.feeding_boxes``."""
+    return db.dedup_inputs(camera, feature)
+
+
 def input_of(camera: str, feature: str) -> str | None:
-    """The Dedup box a Classifier reads through (its plain input), or ``None``. Boxes with a line into a class dot are in ``db.feeding_boxes``."""
-    return db.get_setting(camera, f"{INPUT_KEY}{feature}") or None
+    """The first Dedup box a Classifier reads through, or ``None``."""
+    boxes = inputs_of(camera, feature)
+    return boxes[0] if boxes else None
 
 
 def fed_by(camera: str) -> dict[str, list[str]]:
@@ -78,26 +85,33 @@ def fed_by(camera: str) -> dict[str, list[str]]:
     return out
 
 
-def set_input(camera: str, feature: str, box: str | None) -> None:
-    """Make ``box`` the Dedup box a Classifier reads through (``None`` removes it)."""
+def set_input(camera: str, feature: str, box: str | None, remove: bool = False) -> None:
+    """Add ``box`` to the Dedup boxes a Classifier reads through (several are allowed, the Classifier gets the union of
+    their pictures). ``remove`` takes that one box away; ``box`` ``None`` removes them all."""
     if datamodel.get_roi(camera, feature) is None:
         raise DedupBoxError(f"Unknown ROI: {feature}")
     if box is None:
         db.delete_setting(camera, f"{INPUT_KEY}{feature}")
+        return
+    boxes = inputs_of(camera, feature)
+    if remove:
+        db.set_dedup_inputs(camera, feature, [b for b in boxes if b != box])
         return
     if not exists(camera, box):
         raise DedupBoxError(f"{box} is not a Dedup box.")
     src = source_of(camera, box)
     if src and src["feature"] == feature:
         raise DedupBoxError(f"{box} reads {feature}, so it cannot feed it back.")
-    db.set_setting(camera, f"{INPUT_KEY}{feature}", box)
+    if box not in boxes:
+        db.set_dedup_inputs(camera, feature, [*boxes, box])
 
 
 def drop_box(camera: str, box: str) -> dict[str, int]:
     """Forget everything a deleted Dedup box held: mutes, clusters, scatter maps, settings and the Classifiers it fed."""
-    for feature, fed_box in [(r.name, input_of(camera, r.name)) for r in datamodel.load_rois(camera)]:
-        if fed_box == box:
-            db.delete_setting(camera, f"{INPUT_KEY}{feature}")
+    for roi in datamodel.load_rois(camera):
+        boxes = inputs_of(camera, roi.name)
+        if box in boxes:
+            db.set_dedup_inputs(camera, roi.name, [b for b in boxes if b != box])
     con = db.connect()
     try:
         out = {"mutes": con.execute("DELETE FROM dedup_mute WHERE camera=? AND feature=?", (camera, box)).rowcount}

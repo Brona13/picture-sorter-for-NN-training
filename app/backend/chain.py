@@ -197,7 +197,7 @@ def _edges(camera: str, rois: list[datamodel.ROI], classify: str | None) -> list
 
     classify_id = roi_node_id(classify) if classify else None
     classes = datamodel.classes_for(camera, classify) if classify else []
-    anchored = {r.name for r in rois if anchor.get_anchor(camera, r.name) or roi_input.get_input(camera, r.name) or dedup_box.input_of(camera, r.name)}  # these hang from their detector, Picture edits or Dedup box instead
+    anchored = {r.name for r in rois if anchor.get_anchor(camera, r.name) or roi_input.get_input(camera, r.name) or dedup_box.inputs_of(camera, r.name)}  # these hang from their detector, Picture edits or Dedup box instead
     detached = {r.name for r in rois if db.get_setting(camera, f"{db.DETACHED_KEY}{r.name}") == "1"}  # drawn without the line from Ingest
     if classify_id and classify not in detached and classify not in anchored:
         add(INGEST_ID, classify_id)  # drawn until the user deletes it or feeds the Classifier from a detector / Picture edits box (it then reads that picture)
@@ -442,13 +442,13 @@ def _canvas(camera: str) -> dict:
             if source in known:
                 edges.append({"id": f"{source}#{handle or ''}->{box_id}", "source": source, "source_handle": handle, "target": box_id, "locked": False})
     for roi in rois:  # a Classifier read through a Dedup box hangs from it
-        box = dedup_box.input_of(camera, roi.name)
-        if box and box in known:
-            edges.append({"id": f"{box}->{roi_node_id(roi.name)}", "source": box, "source_handle": None, "target": roi_node_id(roi.name), "locked": False})
+        for box in dedup_box.inputs_of(camera, roi.name):
+            if box in known:
+                edges.append({"id": f"{box}->{roi_node_id(roi.name)}", "source": box, "source_handle": None, "target": roi_node_id(roi.name), "locked": False})
     for roi in rois:  # a Classifier labeled by an Evaluation's verdicts hangs from the box (drawn from its "all" dot)
         judged = flow.feature_evaluation(camera, roi.name)
         if judged and judged in known:
-            edges.append({"id": f"{judged}#{ALL_HANDLE}->{roi_node_id(roi.name)}", "source": judged, "source_handle": ALL_HANDLE, "target": roi_node_id(roi.name), "locked": False})
+            edges.append({"id": f"{judged}#{product_handle('pass')}->{roi_node_id(roi.name)}", "source": judged, "source_handle": product_handle("pass"), "target": roi_node_id(roi.name), "locked": False})
     for roi in rois:  # the lines into a Classifier's class dots: an Evaluation's pass / fail dot, or a Dedup box
         for line in class_lines.get(camera, roi.name):
             if line["box"] not in known:

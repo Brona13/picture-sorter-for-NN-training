@@ -83,6 +83,7 @@ def put_detached(camera: str, feature: str, body: DetachedBody) -> dict:
 
 class DedupInputBody(BaseModel):
     box: str | None = None
+    remove: bool = False  # take this one box away (several can feed a Classifier); box null removes them all
 
 
 @router.put("/cameras/{camera}/chain/{feature:path}/dedup")
@@ -90,7 +91,7 @@ def put_dedup_input(camera: str, feature: str, body: DedupInputBody) -> dict:
     """Make a Dedup box the one a Classifier reads through (``box`` null removes it)."""
     require_camera(camera)
     try:
-        dedup_box.set_input(camera, feature, body.box)
+        dedup_box.set_input(camera, feature, body.box, body.remove)
     except dedup_box.DedupBoxError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return chain.get_canvas(camera)

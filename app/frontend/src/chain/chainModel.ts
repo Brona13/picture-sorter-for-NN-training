@@ -197,7 +197,7 @@ export function flowConnect(canvas: ChainCanvas, c: Connection): FlowLink {
       return { exportLine: { box: target.id, input, ref: { feature: source.ref, dot } } };
     }
     if (source.kind === "evaluation") {
-      if (!dot || !["pass", "fail", ALL_HANDLE].includes(dot)) return { error: "Drag from one of the Evaluation's dots (pass, fail or all)." };
+      if (!dot || !["pass", "fail"].includes(dot)) return { error: "Drag from one of the Evaluation's dots (pass or fail)." };
       return { exportLine: { box: target.id, input, ref: { box: source.id, dot } } };
     }
     if (source.kind === "ingest" || source.kind === "crop" || source.kind === "dedup" || source.kind === "merge" || (source.kind === "detector" && !c.sourceHandle)) {
@@ -283,7 +283,7 @@ export function flowConnect(canvas: ChainCanvas, c: Connection): FlowLink {
   if (source.kind === "evaluation" && (target.kind === "dedup" || target.kind === "crop" || target.kind === "detector")) {
     // A dot of an Evaluation dropped on a Dedup, Picture edits or detector box: the box reads only the pictures judged pass, fail, or both.
     const dot = c.sourceHandle === ALL_HANDLE ? ALL_HANDLE : productOfHandle(c.sourceHandle);
-    if (!dot || !["pass", "fail", ALL_HANDLE].includes(dot)) return { error: "Drag from one of the Evaluation's dots (pass, fail or all)." };
+    if (!dot || !["pass", "fail"].includes(dot)) return { error: "Drag from one of the Evaluation's dots (pass or fail)." };
     return { dedupSource: { box: target.id, evaluation: source.id, dot } };
   }
   if (source.kind === "evaluation" && target.kind === "roi") {

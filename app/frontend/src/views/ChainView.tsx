@@ -87,7 +87,7 @@ function Box({ data, selected }: NodeProps<BoxNode>) {
       style={{ ["--hue" as string]: hueOf(node) }}
       data-testid={`chain-node-${node.id}`}
     >
-      {node.kind !== "ingest" && node.kind !== "export" && <Handle type="target" position={Position.Left} />}
+      {node.kind !== "ingest" && node.kind !== "export" && !isClassifier && <Handle type="target" position={Position.Left} />}
       <KindIcon kind={node.kind} className="chain-node-kind" />
       <div className="chain-node-title">{node.label}</div>
       {node.kind === "export" ? (
@@ -157,6 +157,8 @@ function Box({ data, selected }: NodeProps<BoxNode>) {
             </div>
           ))}
           <div className="chain-node-product chain-node-all" title="All classified pictures (no unlabeled one)">
+            {/* The input for the rest: Ingest, Picture edits, a detector's target, an Evaluation or several Dedup boxes feed pictures here; it adds no label. */}
+            <Handle type="target" position={Position.Left} isConnectable title="Pictures to work on: Ingest, Picture edits, a detector target, an Evaluation (labels) or several Dedup boxes" />
             <span className="chain-node-class">all</span>
             <span className="chain-node-count">{node.labeled}</span>
             <Handle type="source" position={Position.Right} id={ALL_HANDLE} isConnectable />
@@ -178,11 +180,6 @@ function Box({ data, selected }: NodeProps<BoxNode>) {
               <Handle type="source" position={Position.Right} id={productHandle(verdict)} isConnectable />
             </div>
           ))}
-          <div className="chain-node-product chain-node-all" title="Every judged picture (pass and fail, never one that could not be judged)">
-            <span className="chain-node-class">all</span>
-            <span className="chain-node-count">{(node.flow?.counts?.pass ?? 0) + (node.flow?.counts?.fail ?? 0)}</span>
-            <Handle type="source" position={Position.Right} id={ALL_HANDLE} isConnectable />
-          </div>
         </>
       )}
       {node.kind === "detector" &&
@@ -395,7 +392,7 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
       if (line) void applyFlow(() => api.flowUpdate(camera, edge.target, { remove_line: line }));
     } else if (isDedupSourceEdge(canvas, edge)) void applyFlow(() => api.flowUpdate(camera, edge.target, { source: null }));
     else if (isEvaluationLabelEdge(canvas, edge)) void applyFlow(() => api.setChainEvaluation(camera, targetNode!.ref!, null));
-    else if (isDedupInputEdge(canvas, edge)) void applyFlow(() => api.setChainDedup(camera, targetNode!.ref!, null));
+    else if (isDedupInputEdge(canvas, edge)) void applyFlow(() => api.setChainDedup(camera, targetNode!.ref!, edge.source, true));
     else if (isRoiInputEdge(canvas, edge)) void api.clearRoiInput(camera, targetNode!.ref!).then(() => reload()).catch(fail);
     else if (isAnchorEdge(canvas, edge)) void api.clearRoiAnchor(camera, targetNode!.ref!).then(() => reload()).catch(fail);
     else if (ends.some((k) => isFlowKind(k))) void applyFlow(() => api.flowDisconnect(camera, edge.source, edge.target, targetOfHandle(edge.source_handle) ?? undefined));

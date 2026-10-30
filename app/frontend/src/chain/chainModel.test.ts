@@ -229,6 +229,7 @@ test("Dedup boxes: Ingest / Picture edits / a Classifier dot feed them, they fee
   const twoBoxes: ChainCanvas = { ...withBox, nodes: [...withBox.nodes, node({ id: "dedup:2", kind: "dedup", ref: null, role: null, scope: null, label: "Dedup 2" })] };
   expect(flowConnect(twoBoxes, link("dedup:1", "dedup:2"))).toEqual({ source: "dedup:1", target: "dedup:2" }); // a Dedup box can feed another one
   expect(flowConnect(twoBoxes, link("dedup:1", "dedup:1"))).toEqual({ error: "A box cannot feed itself." });
+  expect(flowConnect(twoBoxes, link("dedup:2", "roi:seal"))).toEqual({ dedupInput: { feature: "seal", box: "dedup:2" } }); // several Dedup boxes may feed one Classifier
   for (const [s, t] of [["dedup:1", "calc:1"]]) {
     expect(flowConnect(withBox, link(s, t))).toHaveProperty("error");
   }
@@ -263,7 +264,7 @@ test("an Evaluation dot feeds Dedup, Picture edits or a detector, and nothing el
   };
   expect(flowConnect(withBoxes, { source: "eval:1", sourceHandle: "p:pass", target: "dedup:7" })).toEqual({ dedupSource: { box: "dedup:7", evaluation: "eval:1", dot: "pass" } });
   expect(flowConnect(withBoxes, { source: "eval:1", sourceHandle: "p:fail", target: "crop:7" })).toEqual({ dedupSource: { box: "crop:7", evaluation: "eval:1", dot: "fail" } });
-  expect(flowConnect(withBoxes, { source: "eval:1", sourceHandle: "all", target: "det:7" })).toEqual({ dedupSource: { box: "det:7", evaluation: "eval:1", dot: "all" } });
+  expect(flowConnect(withBoxes, { source: "eval:1", sourceHandle: "all", target: "det:7" })).toHaveProperty("error"); // an Evaluation has only pass and fail
   expect(flowConnect(withBoxes, { source: "eval:1", sourceHandle: null, target: "dedup:7" })).toHaveProperty("error");
   expect(flowConnect(withBoxes, { source: "eval:1", sourceHandle: "p:maybe", target: "dedup:7" })).toHaveProperty("error");
   // onto a Classifier its verdicts become the labels, whichever dot the line leaves from

@@ -1462,9 +1462,9 @@ export const api = {
       `/cameras/${encodeURIComponent(camera)}/dedup/frames?feature=${encodeURIComponent(feature)}`,
     ),
   dedupBoxes: (camera: string) => request<{ feature: string; label: string }[]>(`/cameras/${encodeURIComponent(camera)}/dedup/boxes`),
-  /** Make a Dedup box the one a Classifier reads through (null removes it). */
-  setChainDedup: (camera: string, feature: string, box: string | null) =>
-    request<ChainCanvas>(`/cameras/${encodeURIComponent(camera)}/chain/${encodeURIComponent(feature)}/dedup`, send("PUT", { box })),
+  /** Add a Dedup box to the ones a Classifier reads through (several are allowed); `remove` takes that one away, a null box all of them. */
+  setChainDedup: (camera: string, feature: string, box: string | null, remove = false) =>
+    request<ChainCanvas>(`/cameras/${encodeURIComponent(camera)}/chain/${encodeURIComponent(feature)}/dedup`, send("PUT", { box, remove })),
   setChainEvaluation: (camera: string, feature: string, box: string | null) =>
     request<ChainCanvas>(`/cameras/${encodeURIComponent(camera)}/chain/${encodeURIComponent(feature)}/evaluation`, send("PUT", { box })),
   /** A line into (or, with `remove`, out of) one class dot of a Classifier: the pictures of `box` (its `dot`) belong to `cls` there. */

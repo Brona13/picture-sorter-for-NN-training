@@ -132,14 +132,7 @@ export function replaceNote(canvas: ChainCanvas, c: Connection, link: Exclude<Fl
       lines: [`${t} is fed by ${from(canvas, taken.source, taken.source_handle)} now. The new line replaces it.`, `${t} reads ${newSource} instead.`, ...loses(canvas, taken).slice(1)],
     };
   }
-  if ("dedupInput" in link) {
-    const taken = canvas.edges.find((e) => e.target === c.target && node(canvas, e.source)?.kind === "dedup" && e.source !== c.source);
-    if (!taken) return null;
-    return {
-      title: `Replace the Dedup box of ${t}?`,
-      lines: [`${t} reads through ${name(canvas, taken.source)} now. The new line replaces it.`, `${t} then hides what ${name(canvas, c.source)} muted instead, and shows what ${name(canvas, taken.source)} muted.`],
-    };
-  }
+  if ("dedupInput" in link) return null; // several Dedup boxes can feed one Classifier: the new line adds its pictures
   if ("source" in link) {
     if (!["crop", "detector", "evaluation", "dedup"].includes(target.kind)) return null; // Calculate and Classify take several lines
     const existing = canvas.edges.filter((e) => e.target === c.target && e.source !== c.target);

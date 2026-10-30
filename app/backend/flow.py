@@ -928,7 +928,7 @@ def update_node(camera: str, node_id: str, raw: dict) -> dict:
     return node
 
 
-VERDICT_DOTS = ("pass", "fail", lines.ALL_DOT)
+VERDICT_DOTS = ("pass", "fail")  # v1.134.0: an Evaluation has no "all" dot
 EXPORT_INPUTS = ("ok", "ng")
 
 
@@ -953,7 +953,7 @@ def _export_ref(camera: str, graph: dict, raw: object) -> dict:
         if kind_of(box) != "evaluation" or box not in graph["nodes"]:
             raise FlowError(f"Unknown Evaluation: {box}")
         if dot not in VERDICT_DOTS:
-            raise FlowError("An Evaluation has the dots pass, fail and all.")
+            raise FlowError("An Evaluation has the dots pass and fail.")
         return {"box": box, "dot": dot}
     feature, dot = str(raw.get("feature") or ""), str(raw.get("dot") or "")
     if datamodel.get_roi(camera, feature) is None:
@@ -1079,7 +1079,7 @@ def _dedup_source(camera: str, node_id: str, raw: object) -> dict | None:
         if kind_of(box) != "evaluation" or box not in graph["nodes"]:
             raise FlowError(f"Unknown Evaluation: {box}")
         if dot not in VERDICT_DOTS:
-            raise FlowError("An Evaluation has the dots pass, fail and all.")
+            raise FlowError("An Evaluation has the dots pass and fail.")
         if node_id == box or node_id in _upstream_ids(graph, box):
             raise FlowError(f"{node_id} feeds {box}, so it cannot read it.")
         return {"box": box, "dot": dot}
@@ -1089,7 +1089,7 @@ def _dedup_source(camera: str, node_id: str, raw: object) -> dict | None:
         raise FlowError(f"Unknown ROI: {feature}")
     if dot != lines.ALL_DOT and dot not in datamodel.classes_for(camera, feature):
         raise FlowError(f"{feature} has no class {dot}.")
-    if db.get_setting(camera, f"{db.DEDUP_INPUT_KEY}{feature}") == node_id:
+    if node_id in db.dedup_inputs(camera, feature):
         raise FlowError(f"{node_id} feeds {feature}, so it cannot read it.")
     return {"feature": feature, "dot": dot}
 

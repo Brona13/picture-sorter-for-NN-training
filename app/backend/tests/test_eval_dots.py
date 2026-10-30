@@ -1,4 +1,4 @@
-"""The pass / fail / all dots of an Evaluation box feed Dedup, Picture edits and detector boxes (temporary roots only)."""
+"""The pass / fail dots of an Evaluation box feed Dedup, Picture edits and detector boxes (temporary roots only)."""
 from __future__ import annotations
 
 from unittest import mock
@@ -32,8 +32,8 @@ class EvaluationDotTests(ApiTestCase):
     def test_the_dots_pass_the_pictures_judged_pass_fail_or_both_but_never_an_undetermined_one(self) -> None:
         self.assertEqual(self.read(self.dedup, "pass"), sorted(self.frames[:2]))
         self.assertEqual(self.read(self.dedup, "fail"), sorted(self.frames[2:4]))
-        self.assertEqual(self.read(self.dedup, lines.ALL_DOT), sorted(self.frames[:4]))
-        self.assertEqual(dedup_box.frames(CAM, self.dedup), sorted(self.frames[:4]))
+        with self.assertRaises(flow.FlowError):  # v1.134.0: an Evaluation has no "all" dot
+            flow.update_node(CAM, self.dedup, {"source": {"box": self.eval, "dot": lines.ALL_DOT}})
 
     def test_a_picture_edits_box_and_a_detector_read_a_dot_too(self) -> None:
         self.assertEqual(self.read(self.edits, "pass"), sorted(self.frames[:2]))
@@ -187,7 +187,7 @@ class EvaluationLabelsTests(ApiTestCase):
         self.assertEqual(self.labels.current_goldens(CAM, "seal"), {"OK": [self.frames[0]]})
         self.assertEqual(self.client.put(f"{self.base}/classify/label", json={"feature": "seal", "frame": self.frames[0], "cls": "NG"}).status_code, 200)
 
-    def test_the_chain_draws_the_line_from_the_all_dot(self) -> None:
+    def test_the_chain_draws_the_line_from_the_pass_dot(self) -> None:
         flow.set_feature_evaluation(CAM, "seal", self.eval)
         edges = {(e["source"], e["source_handle"], e["target"]) for e in self.client.get(f"{self.base}/chain").json()["edges"]}
-        self.assertIn((self.eval, lines.ALL_DOT, "roi:seal"), edges)
+        self.assertIn((self.eval, "p:pass", "roi:seal"), edges)

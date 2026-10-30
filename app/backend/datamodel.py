@@ -362,9 +362,7 @@ def _input_scope(camera: str, feature: str) -> set[str] | None:
     spec = roi_input.get_input(camera, feature)
     if spec:
         boxes.append(spec["box"])
-    dedup = dedup_box.input_of(camera, feature)
-    if dedup:
-        boxes.append(dedup)
+    dedups = dedup_box.inputs_of(camera, feature)  # several boxes give the union of their pictures
     graph = flow.load_graph(camera)
     token = _resolving.set(_resolving.get() | {(camera, feature)})
     try:
@@ -376,6 +374,13 @@ def _input_scope(camera: str, feature: str) -> set[str] | None:
             wired = True
             given = set(flow.node_frames(camera, box, graph))
             scope = given if scope is None else scope & given
+        live_dedups = [b for b in dedups if b in graph["nodes"]]
+        if live_dedups:
+            wired = True
+            union: set[str] = set()
+            for box in live_dedups:
+                union |= set(flow.node_frames(camera, box, graph))
+            scope = union if scope is None else scope & union
     finally:
         _resolving.reset(token)
     if not wired and _reads_nothing(camera, feature):
