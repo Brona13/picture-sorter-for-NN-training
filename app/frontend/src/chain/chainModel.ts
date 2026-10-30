@@ -216,12 +216,12 @@ export function flowConnect(canvas: ChainCanvas, c: Connection): FlowLink {
       if (CLASS_OF_VERDICT[dot] !== cls) return { error: `The Evaluation's ${dot} dot is ${CLASS_OF_VERDICT[dot]}, not ${cls}.` };
       return { classLine: { feature: target.ref, cls, box: source.id, dot } };
     }
-    if (source.kind === "dedup" || source.kind === "detector" || source.kind === "crop" || source.kind === "merge") {
-      if (c.sourceHandle) return { error: `Use ${source.label}'s main dot.` };
+    if (source.kind === "dedup") {
+      if (c.sourceHandle) return { error: "Use the Dedup box's main dot." };
       if (source.flow?.source?.feature === target.ref) return { error: `${source.label} reads ${target.label}, so it cannot feed it back.` };
       return { classLine: { feature: target.ref, cls, box: source.id } };
     }
-    return { error: "Only an Evaluation's pass or fail dot, or a Dedup, detector, Picture edits or Merge box can feed a class dot." };
+    return { error: "Only an Evaluation's pass or fail dot or a Dedup box can feed a class dot." };
   }
   if (target.kind === "merge") {
     // A dot dropped on a Merge: one more line it collects. Only dots that mean something (a class, pass, fail) can be collected.
