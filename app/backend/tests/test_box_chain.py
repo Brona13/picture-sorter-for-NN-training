@@ -188,3 +188,108 @@ class BoxChainTests(ApiTestCase):
         shown = self.client.get(f"{self.base}/classify/grid", params={"feature": "pick", "view": "All", "rank": "cpu", "order": "Name", "page": 1}).json()
         self.assertEqual((shown["total"], f[2] in [c["frame"] for c in shown["items"]]), (5, False))  # the muted picture leaves this Classifier's grid
         self.assertEqual(labels.current_labels(CAM, "seal")[f[2]], "OK")  # step 1 keeps its label
+
+    # ---- stage 6: the step-2 Export lists the rectangles --------------------------------------------------------------
+    def export_box_node(self, goldens: bool = True) -> str:
+        node = flow.create_node(CAM, "export", 2)
+        for where, dot in (("ok", "OK"), ("ng", "NG")):
+            flow.update_node(CAM, node, {"add_line": {"input": where, "ref": {"feature": "pick", "dot": dot}}})
+        flow.update_node(CAM, node, {"goldens_only": goldens})
+        return node
+
+    def golden(self, *frames: str) -> None:
+        for frame in frames:
+            self.assertEqual(self.client.put(f"{self.base}/classify/golden", json={"feature": "pick", "frame": frame, "golden": True}).status_code, 200)
+
+    def test_the_export_plan_knows_the_box_and_the_numbers_are_the_cutout_rectangle(self) -> None:
+        import export_box
+
+        f = self.frames
+        self.golden(f[0], f[4])
+        node = self.export_box_node()
+        p = export_box.plan(CAM, node)
+        self.assertEqual((p["box"], p["with_box"], p["no_box"], p["box_format"], len(p["items"])), (self.box, 2, 0, "corners", 2))
+        numbers = export_box.box_numbers(CAM, self.box, [f[0]])[f[0]]
+        crop = self.cutout(f[0])
+        self.assertEqual((numbers[2] - numbers[0], numbers[3] - numbers[1]), (crop.shape[1], crop.shape[0]))  # the numbers are the cut-out's size
+        self.assertEqual(int(crop[0, 0, 0]), 2 * numbers[0])  # and its first column
+        self.assertEqual(export_box.box_row(numbers, "size"), [numbers[0], numbers[1], numbers[2] - numbers[0], numbers[3] - numbers[1]])
+
+    def test_a_step_one_freeze_and_an_export_without_a_box_have_no_rectangles(self) -> None:
+        import export_box
+
+        self.golden(self.frames[0], self.frames[4])
+        plain = flow.create_node(CAM, "export", 2)
+        flow.update_node(CAM, plain, {"add_line": {"input": "ok", "ref": {"feature": "seal", "dot": "OK"}}})  # a Classifier that is not on a Box
+        self.assertEqual(export_box.plan(CAM, plain)["box"], None)
+        freeze = [n for n, node in flow.load_graph(CAM)["nodes"].items() if node["kind"] == "export" and flow.step_of(node) == 1][0]
+        self.assertEqual((export_box.plan(CAM, freeze)["box"], export_box.plan(CAM, freeze)["no_box"]), (None, 0))
+
+    def test_the_rectangles_are_frozen_with_the_version_and_written_to_boxes_csv(self) -> None:
+        import csv
+
+        import export_box
+
+        f = self.frames
+        self.golden(f[0], f[4])
+        node = self.export_box_node()
+        frozen = self.client.post(f"{self.base}/flow/nodes/{node}/export/freeze", json={"name": "round one"})
+        self.assertEqual(frozen.status_code, 201, frozen.text)
+        self.assertEqual(frozen.json()["counts"]["with_box"], 2)
+        self.put_box({"margins": {"left": 20, "right": 20, "up": 9, "down": 9}})  # the Box changes after the freeze: the export must not
+        done = self.client.post(f"{self.base}/project-versions/{frozen.json()['id']}/export").json()
+        self.assertEqual((done["written"], done["boxes"], done["no_box"]), (2, 2, 0))
+        with open(f"{done['destination']}/boxes.csv", newline="", encoding="utf-8") as fh:
+            rows = list(csv.reader(fh, delimiter=";"))
+        self.assertEqual(rows[0], ["file", "class", "x1", "y1", "x2", "y2"])
+        by_file = {r[0]: r for r in rows[1:]}
+        self.assertEqual(set(by_file), {f[0], f[4]})
+        self.assertEqual(by_file[f[0]][1], "OK")
+        self.assertEqual(by_file[f[4]][1], "NG")
+        x1, y1, x2, y2 = (int(v) for v in by_file[f[0]][2:])
+        self.assertAlmostEqual(x2 - x1, 50, delta=2)  # the frozen numbers, not the new margins
+        self.assertTrue((tmp := done["destination"]) and (self.frames[0] in __import__("os").listdir(f"{tmp}/OK")))
+        self.assertEqual(export_box.box_row((x1, y1, x2, y2), "corners"), [x1, y1, x2, y2])
+
+    def test_the_size_layout_lists_the_corner_and_the_size(self) -> None:
+        import csv
+
+        f = self.frames
+        self.golden(f[0])
+        node = self.export_box_node()
+        self.assertEqual(self.client.put(f"{self.base}/flow/nodes/{node}", json={"box_format": "size"}).json()["box_format"], "size")
+        self.assertEqual(self.client.put(f"{self.base}/flow/nodes/{node}", json={"box_format": "polar"}).status_code, 422)
+        frozen = self.client.post(f"{self.base}/flow/nodes/{node}/export/freeze", json={}).json()
+        done = self.client.post(f"{self.base}/project-versions/{frozen['id']}/export").json()
+        with open(f"{done['destination']}/boxes.csv", newline="", encoding="utf-8") as fh:
+            rows = list(csv.reader(fh, delimiter=";"))
+        self.assertEqual(rows[0], ["file", "class", "x", "y", "width", "height"])
+        self.assertAlmostEqual(int(rows[1][4]), 50, delta=2)
+        self.assertAlmostEqual(int(rows[1][5]), 6, delta=2)
+
+    def test_an_export_without_a_box_writes_no_csv(self) -> None:
+        import os
+
+        self.golden(self.frames[0])
+        plain = flow.create_node(CAM, "export", 2)
+        flow.update_node(CAM, plain, {"add_line": {"input": "ok", "ref": {"feature": "seal", "dot": "OK"}}})
+        frozen = self.client.post(f"{self.base}/flow/nodes/{plain}/export/freeze", json={})
+        self.assertEqual(frozen.status_code, 201, frozen.text)
+        done = self.client.post(f"{self.base}/project-versions/{frozen.json()['id']}/export").json()
+        self.assertNotIn("boxes", done)
+        self.assertFalse(os.path.exists(f"{done['destination']}/boxes.csv"))
+
+    def test_the_cards_of_a_classifier_on_a_box_say_their_rectangle(self) -> None:
+        import export_box
+
+        self.golden(self.frames[0], self.frames[4])
+        job = self.client.post(f"{self.base}/classify/refresh", json={"feature": "pick"})
+        wait_for_job(self.client, job.json()["id"], timeout=60)
+        grid = self.client.get(f"{self.base}/classify/grid", params={"feature": "pick", "view": "All", "rank": "cpu", "order": "Name", "page": 1}).json()
+        by_frame = {c["frame"]: c for c in grid["items"]}
+        expected = export_box.box_numbers(CAM, self.box, [self.frames[0]])[self.frames[0]]
+        self.assertEqual(by_frame[self.frames[0]]["box"], list(expected))
+        self.assertEqual(len(by_frame), 6)
+        # a Classifier that is not on a Box has no numbers on its cards
+        self.assertTrue(all("box" not in c for c in grid["items"] if c["frame"] not in by_frame))  # (every card here is on the Box)
+        self.assertEqual(sum("box" in c for c in grid["items"]), 6)

@@ -1076,6 +1076,10 @@ def update_node(camera: str, node_id: str, raw: dict) -> dict:
             node["lines"][where] = kept
         if "goldens_only" in raw:
             node["goldens_only"] = bool(raw["goldens_only"])
+        if "box_format" in raw:
+            if raw["box_format"] not in ("corners", "size"):
+                raise FlowError("The rectangles are listed as two corners or as a corner and a size.")
+            node["box_format"] = raw["box_format"]
     else:
         if "nominal" in raw:
             node["nominal"] = None if raw["nominal"] is None else _finite(raw["nominal"], "Nominal")
@@ -2460,7 +2464,7 @@ def node_detail(camera: str, node_id: str, graph: dict | None = None) -> dict:
     elif kind == "merge":
         detail.update({"lines": merge_lines(node), "mode": node.get("mode", "any"), "meaning": merge_meaning(graph, node_id)})
     elif kind == "export":
-        detail.update({"lines": export_lines(graph, node_id), "goldens_only": export_goldens_only(node), "step": step_of(node)})
+        detail.update({"lines": export_lines(graph, node_id), "goldens_only": export_goldens_only(node), "step": step_of(node), "box_format": node.get("box_format") if node.get("box_format") in ("corners", "size") else "corners"})
     elif kind == "evaluation":
         calc_id = evaluation_source(graph, node_id)
         state = evaluation_state(camera, node_id)

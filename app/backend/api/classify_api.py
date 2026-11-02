@@ -15,6 +15,7 @@ import edge_angle
 import flow
 import embedding
 import engine
+import export_box
 import labels
 import picture_key
 import suggest_goldens as suggest_goldens_mod
@@ -424,6 +425,8 @@ def grid(camera: str, q: QueryParams, page: int = 1, per_page: int | None = None
     n_pages, page = _page(total, page, per_page)
     shown = ctx.items[(page - 1) * per_page : page * per_page]
     snapshot = dedup.load_snapshot(camera, q.feature)
+    box_id = export_box.anchored_box(camera, q.feature)  # a Classifier on a Box: each card says the rectangle it is cut to (x1, y1, x2, y2)
+    numbers = export_box.box_numbers(camera, box_id, [fs.frame for fs in shown]) if box_id else {}
     return {
         "has_results": ctx.results is not None,
         "scored": ctx.scored,
@@ -432,7 +435,7 @@ def grid(camera: str, q: QueryParams, page: int = 1, per_page: int | None = None
         "per_page": per_page,
         "n_pages": n_pages,
         "total": total,
-        "items": [_grid_card(ctx, fs, snapshot) for fs in shown],
+        "items": [{**_grid_card(ctx, fs, snapshot), **({"box": list(numbers[fs.frame])} if fs.frame in numbers else {})} for fs in shown],
     }
 
 

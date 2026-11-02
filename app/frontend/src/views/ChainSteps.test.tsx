@@ -26,9 +26,9 @@ beforeEach(() => {
     calls.push({ url, method, body });
     if (url.endsWith("/flow/nodes") && method === "POST") {
       const pile = body.kind === "ingest_ok" || body.kind === "ingest_ng";
-      const id = body.kind === "box" ? "box:1" : pile ? "inok:1" : "crop:1";
+      const id = body.kind === "box" ? "box:1" : body.kind === "export" ? "export:9" : pile ? "inok:1" : "crop:1";
       current.nodes.push(node({
-        id, kind: body.kind, step: pile || body.kind === "box" ? 2 : body.step, ref: null, label: body.kind === "box" ? "Box 1" : pile ? "Ingest OK 1" : "Picture edits 1", role: null, scope: null, classes: [], x: 0, y: 150,
+        id, kind: body.kind, step: pile || body.kind === "box" ? 2 : body.step, ref: null, label: body.kind === "box" ? "Box 1" : body.kind === "export" ? "Export 9" : pile ? "Ingest OK 1" : "Picture edits 1", role: null, scope: null, classes: [], x: 0, y: 150,
         ...(pile ? { flow: { frames: 3, freeze: 1, warning: null, cls: "OK" } } : {}),
         ...(body.kind === "box" ? { flow: { box_mode: "two", holes: [], ready: false, found: 0, total: 0, targets: ["box"] } } : {}),
       }));
@@ -167,4 +167,17 @@ test("the Step 2 tab offers a Box; it is made for step 2, shows what it still ne
   expect(box).toHaveTextContent("⚠ choose");
   expect(box.querySelectorAll("[data-handleid='t:box']")).toHaveLength(1); // the one output dot
   expect(box.querySelector("[data-handlepos='left']")).toBeNull(); // nothing feeds a Box: the detector boxes are chosen in its panel
+});
+
+test("the Step 2 tab offers an Export (the Freeze of step 1 is another tile), made for step 2", async () => {
+  current.nodes = [ingest, freeze()];
+  renderView();
+  await screen.findByTestId("chain-node-export:1");
+  expect(screen.getByRole("button", { name: "Add Freeze" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Add Export" })).toBeNull();
+  fireEvent.click(screen.getByRole("tab", { name: /Step 2/ }));
+  expect(screen.queryByRole("button", { name: "Add Freeze" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Add Export" }));
+  await waitFor(() => expect(calls.some((c) => c.method === "POST" && c.url.endsWith("/flow/nodes") && c.body?.kind === "export" && c.body?.step === 2)).toBe(true));
+  expect(await screen.findByTestId("chain-node-export:9")).toHaveTextContent("Export 9");
 });

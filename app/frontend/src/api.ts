@@ -197,6 +197,9 @@ export interface ExportReport {
   written: number;
   missing: string[];
   hash_mismatch: string[];
+  /** Step-2 Export with a Box: the rows of `boxes.csv` and the pictures written without a rectangle. */
+  boxes?: number;
+  no_box?: number;
 }
 
 export interface Job<R = unknown> {
@@ -647,6 +650,8 @@ export interface FlowExport {
   goldens_only: boolean;
   /** 1: the Freeze module (every OK / NG picture, no goldens); 2: the Export of goldens. */
   step?: 1 | 2;
+  /** Step 2 with a Box: `corners` lists x1, y1, x2, y2; `size` lists x, y, width, height (whole pixels of the picture). */
+  box_format?: "corners" | "size";
 }
 export interface ExportLatest {
   id: number;
@@ -670,6 +675,11 @@ export interface ExportState {
   no_product: number;
   uses_product: boolean;
   goldens_only: boolean;
+  /** Step 2: the Box whose rectangles are listed (null: none, or the Classifiers use different Boxes), how many of the pictures have one, and the layout. */
+  box?: string | null;
+  with_box?: number;
+  no_box?: number;
+  box_format?: "corners" | "size";
   lines: { ok: number; ng: number };
   latest: ExportLatest | null;
   /** Every freeze of this box, newest first (v1.131.4; an older backend sends only `latest`). */
@@ -1046,6 +1056,8 @@ export interface CardData {
   product?: string | null;
   /** Search results only: the picture is muted for this ROI. */
   muted?: boolean;
+  /** A Classifier on a Box: the rectangle the card is cut to, as whole pixels `[x1, y1, x2, y2]` of the picture. */
+  box?: [number, number, number, number];
 }
 
 export interface GridResponse {

@@ -4,6 +4,7 @@ import ExportWork, { when } from "./ExportWork";
 
 let calls: { url: string; method: string; body?: any }[];
 let frozen: any[];
+let boxState: Record<string, unknown>;
 let counts: { both: number; not_golden: number; no_product: number; total: number; folders: Record<string, number> };
 const detail = { kind: "export" as const, lines: { ok: [{ feature: "seal", dot: "OK" }], ng: [{ box: "eval:1", dot: "fail" }] }, goldens_only: true, step: 2 as const };
 
@@ -14,6 +15,7 @@ const version = (over: Record<string, unknown> = {}) => ({
 beforeEach(() => {
   calls = [];
   frozen = [];
+  boxState = {};
   counts = { both: 1, not_golden: 4, no_product: 2, total: 5, folders: { "A/OK": 3, "A/NG": 2 } };
   vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
     const method = init?.method ?? "GET";
@@ -21,12 +23,12 @@ beforeEach(() => {
     if (url.endsWith("/export") && method === "GET")
       return new Response(JSON.stringify({
         folders: counts.folders, total: counts.total, ok: 3, ng: 2, both: counts.both, not_golden: counts.not_golden, no_product: counts.no_product,
-        uses_product: true, goldens_only: true, lines: { ok: 1, ng: 1 }, latest: frozen[0] ?? null, versions: frozen,
+        uses_product: true, goldens_only: true, lines: { ok: 1, ng: 1 }, latest: frozen[0] ?? null, versions: frozen, ...boxState,
       }));
     if (url.endsWith("/export/freeze")) { frozen = [version(), ...frozen]; return new Response(JSON.stringify({ id: 7, number: 2, counts: {} }), { status: 201 }); }
     if (url.endsWith("/project-versions/7/export")) {
       frozen = frozen.map((v) => (v.id === 7 ? { ...v, exported: true } : v));
-      return new Response(JSON.stringify({ destination: "exports/project/v002__x", written: 5, missing: [], hash_mismatch: [] }));
+      return new Response(JSON.stringify({ destination: "exports/project/v002__x", written: 5, missing: [], hash_mismatch: [], ...("box" in boxState ? { boxes: 4, no_box: 1 } : {}) }));
     }
     return new Response(JSON.stringify(detail));
   }));
@@ -123,4 +125,35 @@ test("the Freeze module (step 1) has no goldens tick: it takes every OK and NG p
 test("a freeze time in epoch seconds is shown as a date, text is kept as it is", () => {
   expect(when(1793350800)).toMatch(/^2026-10-30 \d\d:\d\d$/);
   expect(when("yesterday")).toBe("yesterday");
+});
+
+test("step 2 with a Box: the page says which Box, how many pictures have a rectangle, and offers the layout of the numbers", async () => {
+  boxState = { box: "box:1", with_box: 4, no_box: 1, box_format: "corners" };
+  mount();
+  const box = await screen.findByTestId("export-box");
+  expect(box).toHaveTextContent("Rectangles from box:1: 4 of 5 pictures have one; 1 will be exported without numbers");
+  expect(box).toHaveTextContent("boxes.csv");
+  const layout = screen.getByLabelText("Layout of the numbers") as HTMLSelectElement;
+  expect(layout.value).toBe("corners");
+  fireEvent.change(layout, { target: { value: "size" } });
+  await waitFor(() => expect(calls.some((c) => c.method === "PUT" && c.body?.box_format === "size")).toBe(true));
+});
+
+test("step 2 without a Box says the pictures go out without numbers; the Freeze of step 1 shows no such section", async () => {
+  boxState = { box: null, with_box: 0, no_box: 0 };
+  const { unmount } = render(<ExportWork camera="camA" nodeId="export:1" detail={detail} setDetail={() => {}} onError={() => {}} />);
+  expect(await screen.findByText(/No Box on these lines/)).toBeInTheDocument();
+  unmount();
+  mount({ step: 1 });
+  await screen.findByText("A/OK");
+  expect(screen.queryByTestId("export-box")).toBeNull();
+});
+
+test("the export report lists the rectangles written to boxes.csv", async () => {
+  boxState = { box: "box:1", with_box: 4, no_box: 1, box_format: "corners" };
+  frozen = [version()];
+  mount();
+  fireEvent.click(await screen.findByRole("button", { name: "Export version 2" }));
+  expect(await screen.findByText(/Listed 4 rectangles in/)).toBeInTheDocument();
+  expect(screen.getByText(/1 picture has none/)).toBeInTheDocument();
 });

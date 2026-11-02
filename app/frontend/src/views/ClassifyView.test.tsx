@@ -1273,3 +1273,11 @@ test("step 2: the viewer has no class buttons or delete, and Mute", async () => 
   await new Promise((r) => setTimeout(r, 20));
   expect(calls.some((c) => c.method === "PUT" && c.url.includes("/classify/label"))).toBe(false);
 });
+
+test("a card of a Classifier on a Box says the rectangle it is cut to, in pixels, with its size", async () => {
+  grid = () => gridBody([card("a.png", { label: "OK", box: [26, 27, 76, 33] }), card("b.png", { label: "NG" })]);
+  render(<ClassifyView camera="camA" />);
+  const a = await cardEl("a.png");
+  expect(within(a).getByTestId("card-box")).toHaveTextContent("26,27 – 76,33 · 50×6");
+  expect(within(await cardEl("b.png")).queryByTestId("card-box")).toBeNull(); // no Box: no numbers
+});

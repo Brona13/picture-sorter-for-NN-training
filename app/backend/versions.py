@@ -359,6 +359,8 @@ def export(camera: str, version_id: int) -> tuple[Path, dict]:
     hmap = labels.hash_map(camera)
     dest = export_dir(camera, v["number"], v["name"])
     report = {"written": 0, "missing": [], "hash_mismatch": []}
+    rectangles = ((json.loads(v["stats_json"] or "{}").get("export") or {}).get("rectangles")) or None  # frozen with the version (step-2 Export)
+    written: list[tuple[str, str]] = []
     seen: set[str] = set()
     for item in load_items(version_id):
         if item["kind"] != "verdict" or item["frame"] in seen:
@@ -375,7 +377,29 @@ def export(camera: str, version_id: int) -> tuple[Path, dict]:
         out_dir.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, out_dir / Path(item["frame"]).name)
         report["written"] += 1
+        written.append((item["frame"], item["class"]))
+    if rectangles:
+        report.update(_write_rectangles(dest, rectangles, written))
     return dest, report
+
+
+def _write_rectangles(dest: Path, rectangles: dict, written: list[tuple[str, str]]) -> dict:
+    """``boxes.csv`` next to the class folders: one row per exported picture that has a rectangle (semicolon-separated, whole
+    pixels of the picture, the numbers frozen with the version). Pictures without one are counted, not listed."""
+    import csv
+
+    size = rectangles.get("format") == "size"
+    rows = rectangles.get("rows") or {}
+    dest.mkdir(parents=True, exist_ok=True)
+    listed = 0
+    with open(dest / "boxes.csv", "w", newline="", encoding="utf-8") as fh:
+        out = csv.writer(fh, delimiter=";")
+        out.writerow(["file", "class", "x", "y", "width", "height"] if size else ["file", "class", "x1", "y1", "x2", "y2"])
+        for frame, cls in written:
+            if frame in rows:
+                out.writerow([Path(frame).name, cls, *rows[frame]])
+                listed += 1
+    return {"boxes": listed, "no_box": len(written) - listed}
 
 
 # --- downstream results ------------------------------------------------------

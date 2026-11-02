@@ -76,6 +76,27 @@ export default function ExportWork({ camera, nodeId, detail, setDetail, onError 
           )}
         </div>
         {state && state.total === 0 && <p className="muted">Nothing arrives yet: connect lines to the OK or NG input on the Chain.</p>}
+        {(detail.step ?? 1) === 2 && state && (
+          <div data-testid="export-box">
+            {state.box ? (
+              <>
+                <p>
+                  Rectangles from <strong>{state.box}</strong>: {state.with_box ?? 0} of {state.total} pictures have one
+                  {state.no_box ? `; ${state.no_box} will be exported without numbers` : ""}. They are frozen with the version and written to <code>boxes.csv</code> next to the folders.
+                </p>
+                <label>
+                  Layout of the numbers{" "}
+                  <select aria-label="Layout of the numbers" value={state.box_format ?? detail.box_format ?? "corners"} disabled={busy} onChange={(e) => update({ box_format: e.target.value })}>
+                    <option value="corners">x1, y1, x2, y2 (two corners)</option>
+                    <option value="size">x, y, width, height (corner and size)</option>
+                  </select>
+                </label>
+              </>
+            ) : (
+              <p className="muted">No Box on these lines: the pictures go out without numbers. Feed the inputs from a Classifier that reads a Box to get a <code>boxes.csv</code>.</p>
+            )}
+          </div>
+        )}
         {state && (folders.length > 0 || shownLeftOut.length > 0) && (
           <div className="export-scroll">
             <table>
@@ -136,6 +157,12 @@ export default function ExportWork({ camera, nodeId, detail, setDetail, onError 
             <p>
               Wrote {report.written} pictures to <code>{report.destination}</code> <CopyButton text={report.destination} label="Copy path" />
             </p>
+            {report.boxes !== undefined && (
+              <p>
+                Listed {report.boxes} rectangle{report.boxes === 1 ? "" : "s"} in <code>boxes.csv</code>
+                {report.no_box ? `; ${report.no_box} picture${report.no_box === 1 ? " has" : "s have"} none` : ""}.
+              </p>
+            )}
             {report.missing.length > 0 && <p>Missing: {report.missing.length}.</p>}
             {report.hash_mismatch.length > 0 && <p>Changed since the freeze: {report.hash_mismatch.length}.</p>}
           </div>

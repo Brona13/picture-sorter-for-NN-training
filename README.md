@@ -246,6 +246,28 @@ For parts that must be checked by geometry, for example two holes whose angle mu
 3. **+ Calculate**, arrow from the detector, choose Angle A to B and the positive direction (counter-clockwise or clockwise; 0° points right).
 4. **+ Evaluation**, arrow from Calculate, type the nominal or click a histogram bar, set the tolerance. Draw an arrow from Evaluation to the **Classify** box of the ROI feature: its cards then show the value and pass / fail, and **Show → Measurement** filters them. You still label the pictures yourself.
 
+### Two steps: decide OK / NG, then choose the pictures
+
+The Chain page has two tabs. **Step 1 · decide OK / NG** is everything above: you filter, measure and label until every picture
+you trust is OK or NG, then close it with a **Freeze** module (the old Export box, now called Freeze): it freezes every OK and
+NG picture. Goldens are not used in step 1. The **Step 2 · choose pictures** tab appears once there is a Freeze; it starts empty and
+only the labels of the last freeze cross over. It shows a warning when step 1 changed since the last freeze.
+
+In step 2, for a downstream detector that you train with one hand-drawn upright rectangle per picture:
+
+1. **Ingest OK** and **Ingest NG** hold the OK and NG pictures of the last freeze.
+2. **Box** makes one upright rectangle per picture. In its panel choose **two** detector boxes of step 1 (the left and the right hole) or
+   **one**, say whether the four margins (left, right, up, down; pixels) count from the box **edge** or its **centre**, and type them or
+   drag the dots on the dashed edges on the example picture. With two holes the rectangle turns with the part ("up" and "down" follow it) and is
+   squared off into an upright one.
+3. A **Classifier** (made in the Step 2 tab): draw Ingest OK to its OK dot, Ingest NG to its NG dot, and the Box's dot onto the
+   Classifier. Its labels come from the freeze and are final; you only choose the **goldens** (the fewest pictures that cover the cases), with **Suggested goldens**,
+   clusters, the scatter and outliers, and **Mute** for a picture you do not want to count (a wrong label is fixed in step 1 and frozen again). Its cards are
+   cut to the Box rectangle and say its numbers.
+4. **Export**: draw the Classifier's OK and NG dots to its inputs, **Freeze**, then **Export**. The folders `OK` and `NG` hold the original pictures of the
+   goldens, and `boxes.csv` (semicolon-separated) lists their rectangle in whole pixels of the picture, as `x1;y1;x2;y2` or as `x;y;width;height`
+   (choose in the Export page). The numbers are frozen with the version.
+
 ## Pipeline stages and the step bar
 
 Every ROI card on the **Overview** page shows how far that ROI has got, and the same strip appears as a

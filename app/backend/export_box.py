@@ -18,12 +18,53 @@ from __future__ import annotations
 import json
 from collections import Counter
 
+import anchor
 import datamodel
 import db
 import flow
 import labels
 import lines
 import versions
+
+BOX_FORMATS = ("corners", "size")  # x1, y1, x2, y2 (two corners) or x, y, width, height (top-left corner and size); pixels of the picture
+
+
+def anchored_box(camera: str, feature: str) -> str | None:
+    """The Box a Classifier is anchored to, or ``None``."""
+    spec = anchor.get_anchor(camera, feature)
+    return spec["detector"] if spec and flow.kind_of(spec["detector"]) == "box" else None
+
+
+def box_of(camera: str, node_id: str, graph: dict) -> str | None:
+    """The Box whose rectangles an Export box lists: the one every Classifier on its lines is anchored to. ``None`` when
+    there is none, or the Classifiers use different Boxes (the pictures are then exported without numbers)."""
+    refs = [r for refs in flow.export_lines(graph, node_id).values() for r in refs if r.get("feature")]
+    boxes = {anchored_box(camera, r["feature"]) for r in refs}
+    return boxes.pop() if len(boxes) == 1 and None not in boxes else None
+
+
+def box_numbers(camera: str, box_id: str, frames: list[str]) -> dict[str, tuple[int, int, int, int]]:
+    """The Box's upright rectangle of each picture as whole pixels of the picture: ``(x1, y1, x2, y2)``, the edges. It is the
+    rectangle a Classifier anchored to the Box is cut to (the same ``anchor.rect_for`` and pixel rounding as its cut-outs),
+    so the numbers and the pictures agree. A picture with no rectangle is left out."""
+    stored = flow.load_stored(camera, box_id)["frames"]
+    sizes = flow._frame_sizes(camera)
+    hmap = labels.hash_map(camera)
+    out = {}
+    for frame in frames:
+        key = hmap.get(frame)
+        entry = (stored.get(key) or {}).get("box") if key else None
+        size = sizes.get(key) if key else None
+        roi = anchor.rect_for({"mode": "box"}, entry, "box", size[0], size[1]) if entry and size else None
+        if roi is not None:
+            out[frame] = roi.to_pixels(size[0], size[1])
+    return out
+
+
+def box_row(numbers: tuple[int, int, int, int], box_format: str) -> list[int]:
+    """The numbers in the chosen layout: the two corners, or the top-left corner and the size."""
+    x1, y1, x2, y2 = numbers
+    return [x1, y1, x2 - x1, y2 - y1] if box_format == "size" else [x1, y1, x2, y2]
 
 
 def _line_frames(camera: str, graph: dict, ref: dict, live: set[str]) -> set[str]:
@@ -78,7 +119,15 @@ def plan(camera: str, node_id: str) -> dict:
                 items.append((frame, cls))
     folders = Counter(folder for _, folder in items)
     refs = flow.export_lines(graph, node_id)
+    box_id = box_of(camera, node_id, graph) if flow.step_of(node) == 2 else None  # step 2: the rectangles of the Box the Classifiers read
+    with_box = 0
+    if box_id:
+        made = flow.load_stored(camera, box_id)["frames"]
+        hmap = labels.hash_map(camera)
+        with_box = sum(1 for frame, _ in items if hmap.get(frame) in made)
     return {
+        "box": box_id, "with_box": with_box, "no_box": len(items) - with_box if box_id else 0,
+        "box_format": node.get("box_format") if node.get("box_format") in BOX_FORMATS else "corners",
         "items": items,
         "folders": dict(sorted(folders.items())),
         "ok": sum(1 for _, f in items if f.endswith("OK")),
@@ -145,4 +194,8 @@ def freeze(camera: str, node_id: str, name: str = "", notes: str = "") -> dict:
         )
     counts = {"ok": p["ok"], "ng": p["ng"], "not_golden": p["not_golden"], "both": p["both"], "no_product": p["no_product"], "total": len(p["items"])}
     stats = {"export": {"goldens_only": 1 if p["goldens_only"] else 0, "box": node_id, "source": "chain", "graph": flow.load_graph(camera)}}
+    if p["box"]:  # the rectangles are frozen with the version, so the export of it is reproducible
+        numbers = box_numbers(camera, p["box"], [frame for frame, _ in p["items"]])
+        counts["with_box"] = len(numbers)
+        stats["export"]["rectangles"] = {"box": p["box"], "format": p["box_format"], "rows": {frame: box_row(n, p["box_format"]) for frame, n in numbers.items()}}
     return versions.insert_project_version(camera, name, notes, counts, stats, p["items"])
