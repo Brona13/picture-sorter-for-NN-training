@@ -1110,7 +1110,25 @@ export interface DedupSweepRange {
   mp_to: number;
 }
 
+/** One thing a Dedup box can compare (v1.138.0): the whole picture, a crop above it, or a box a detector found above it. */
+export interface DedupViewOption {
+  id: string | null;
+  label: string;
+  kind: "whole" | "crop" | "found";
+}
+
+export interface DedupViewInfo {
+  candidates: DedupViewOption[];
+  /** The stored choice (null: the whole picture). */
+  selected: string | null;
+  /** Set when the line into the box already decides the picture (a Picture edits box, a detector target): the list is read-only. */
+  locked_by: string | null;
+  /** Pictures the line passes but that have no such view; they do not pass the box. */
+  no_view: number;
+}
+
 export interface DedupState {
+  view?: DedupViewInfo | null;
   feature: string;
   /** The feature the picture actions go through: the Classifier the box reads, else the whole-frame feature. */
   source: string;
@@ -1710,6 +1728,12 @@ export const api = {
     request<InsightsResponse>(`/cameras/${encodeURIComponent(camera)}/insights?feature=${encodeURIComponent(feature)}`),
   dedupState: (camera: string, feature: string) =>
     request<DedupState>(`/cameras/${encodeURIComponent(camera)}/dedup/state?feature=${encodeURIComponent(feature)}`),
+  /** Choose what the box compares. With mutes present and no `confirm` nothing changes: `changed` is false and `mutes` says how many would be lost. */
+  dedupSetView: (camera: string, feature: string, view: string | null, confirm = false) =>
+    request<{ changed: boolean; mutes: number; view: DedupViewInfo }>(
+      `/cameras/${encodeURIComponent(camera)}/dedup/view`,
+      send("PUT", { feature, view, confirm }),
+    ),
   dedupSaveSettings: (camera: string, feature: string, p: DedupParams) =>
     request<{ params: DedupParams }>(`/cameras/${encodeURIComponent(camera)}/dedup/settings`, send("PUT", { feature, ...p })),
   dedupCluster: (camera: string, feature: string, p: DedupParams) =>

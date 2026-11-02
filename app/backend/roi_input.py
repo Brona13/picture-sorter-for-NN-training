@@ -121,6 +121,12 @@ def _rects(camera: str, feature: str, graph: dict | None = None) -> list | None:
 def edited(camera: str, feature: str, image, frame: str):
     """``image`` (the whole frame ``frame``) after the ROI's input box; unchanged when it has none. Raises
     ``FileNotFoundError`` when a following crop has no box on this picture (callers treat that as "no picture")."""
+    if flow.kind_of(feature) == "dedup":  # a Dedup box with a view of its own (v1.138.0): the chosen part, original pixels
+        import dedup_view  # noqa: PLC0415
+
+        viewed = dedup_view.cut(camera, feature, image, frame)
+        if viewed is not None:
+            return viewed
     rects = _rects(camera, feature)
     if rects is None:
         return image
@@ -134,6 +140,10 @@ def rule_key(camera: str, feature: str, con=None) -> str:
     """Part of the ROI's cache key: changes when the box's steps (or a followed detector) change. Empty without an input."""
     spec = get_input(camera, feature, con)
     if not spec:
+        if flow.kind_of(feature) == "dedup":
+            import dedup_view  # noqa: PLC0415
+
+            return dedup_view.rule_key(camera, feature)  # the view a Dedup box chose itself ("" without one)
         return ""
     graph = flow.load_graph(camera)
     rects = _rects(camera, feature, graph) or []

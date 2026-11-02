@@ -106,6 +106,44 @@ def set_input(camera: str, feature: str, box: str | None, remove: bool = False) 
         db.set_dedup_inputs(camera, feature, [*boxes, box])
 
 
+def set_view(camera: str, box: str, view: str | None, confirm: bool = False) -> dict:
+    """Choose what the box compares (see ``dedup_view.py``). A box that has mutes loses them with the change (they were made
+    on other pictures), and its clusters and maps go too: without ``confirm`` that is refused and the number of mutes is
+    returned (``{"changed": False, "mutes": n}``)."""
+    graph = flow.load_graph(camera)
+    if box not in graph["nodes"] or not is_box(box):
+        raise DedupBoxError(f"{box} is not a Dedup box.")
+    import dedup_view  # noqa: PLC0415
+
+    if dedup_view.line_view(camera, box, graph):
+        raise DedupBoxError(f"The line into {box} already decides the picture it compares.")
+    if view is not None and not any(c["id"] == view for c in dedup_view.candidates(camera, box, graph)):
+        raise DedupBoxError(f"{view} is not above {box} in the Chain.")
+    if dedup_view.selected(camera, box, graph) == view:
+        return {"changed": False, "mutes": 0}
+    mutes = len(db.muted_frames(camera, box))
+    if mutes and not confirm:
+        return {"changed": False, "mutes": mutes}
+    graph["nodes"][box]["view"] = {"id": view} if view else None
+    flow.save_graph(camera, graph)
+    cleared = reset_results(camera, box)
+    return {"changed": True, "mutes": cleared}
+
+
+def reset_results(camera: str, box: str) -> int:
+    """Forget the mutes, clusters and scatter maps of a box (what it held was made on other pictures); returns the mutes."""
+    con = db.connect()
+    try:
+        mutes = con.execute("DELETE FROM dedup_mute WHERE camera=? AND feature=?", (camera, box)).rowcount
+        con.execute("DELETE FROM cluster_snapshot WHERE camera=? AND feature=?", (camera, box))
+        con.execute("DELETE FROM scatter_cache WHERE camera=? AND feature=?", (camera, box))
+        con.commit()
+    finally:
+        con.close()
+    datamodel.invalidate_product_membership(camera)
+    return mutes
+
+
 def drop_box(camera: str, box: str) -> dict[str, int]:
     """Forget everything a deleted Dedup box held: mutes, clusters, scatter maps, settings and the Classifiers it fed."""
     for roi in datamodel.load_rois(camera):

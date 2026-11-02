@@ -22,12 +22,15 @@ export function useScatterMap({
   feature,
   method,
   auto = false,
+  resetKey = 0,
   onError,
 }: {
   camera: string;
   feature: string;
   method: string;
   auto?: boolean;
+  /** Changes when the pictures behind the map change without the feature changing (a Dedup box got another view). */
+  resetKey?: number;
   onError: (message: string) => void;
 }) {
   const [projection, setProjection] = useState("umap");
@@ -54,7 +57,7 @@ export function useScatterMap({
     setScatter(null);
     setJob(null);
     setCached(null);
-  }, [camera, feature]);
+  }, [camera, feature, resetKey]);
   useEffect(() => {
     setScatter((s) => (s && s.method !== method ? null : s));
   }, [method]);

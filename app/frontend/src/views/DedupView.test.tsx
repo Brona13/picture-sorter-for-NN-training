@@ -50,6 +50,7 @@ let heldSweep: any = null;
 
 let calls: { url: string; method: string; body?: any }[];
 let state: any;
+let viewAnswer: (body: any) => unknown;
 
 beforeEach(() => {
   calls = [];
@@ -60,6 +61,7 @@ beforeEach(() => {
     /* none */
   }
   state = baseState();
+  viewAnswer = () => ({ changed: true, mutes: 0, view: state.view });
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, init?: RequestInit) => {
@@ -71,6 +73,7 @@ beforeEach(() => {
         return ok({ frames: ["a.png", "b.png", "c.png"], muted: ["b.png"], source: "seal", classes: ["OK", "NG"], marks: {} });
       if (url.includes("/dedup/state")) return ok(state);
       if (url.includes("/dedup/settings")) return ok({ params });
+      if (url.endsWith("/dedup/view")) return ok(viewAnswer(JSON.parse(init!.body as string)));
       if (url.includes("/classify/deleted?")) return ok({ items: [{ frame: "x.png", deleted_at: 1760000000, note: "" }] });
       if (url.endsWith("/classify/restore-bulk")) return ok({ restored: 1 });
       if (url.endsWith("/dedup/mute-frames")) return ok({ muted: 2, skipped_golden: 0, already: 0 });
@@ -600,4 +603,69 @@ test("the scatter selection has a Mute button that mutes its frames in the box",
   await userEvent.click(within(panel).getByRole("button", { name: /Mute these 1 frame/ }));
   await waitFor(() => expect(calls.find((c) => c.url.endsWith("/dedup/mute-frames"))?.body).toEqual({ feature: "seal", frames: ["a.png"] }));
   expect(await screen.findByText(/Muted 2 frame\(s\)/)).toBeInTheDocument();
+});
+
+const viewInfo = (over: Record<string, unknown> = {}) => ({
+  candidates: [
+    { id: null, label: "Whole picture", kind: "whole" },
+    { id: "crop:1", label: "Picture edits 1 (picture)", kind: "crop" },
+    { id: "det:1/hole-left", label: "Detector 1: hole-left (found box)", kind: "found" },
+  ],
+  selected: null,
+  locked_by: null,
+  no_view: 0,
+  ...over,
+});
+
+test("a box fed by a set offers the views above it and changes the view without a question when nothing is muted", async () => {
+  state = baseState({ view: viewInfo() });
+  render(<DedupView camera="camA" />);
+  const select = await screen.findByLabelText("Compares");
+  expect(within(select as HTMLElement).getAllByRole("option").map((o) => o.textContent)).toEqual([
+    "Whole picture",
+    "Picture edits 1 (picture)",
+    "Detector 1: hole-left (found box)",
+  ]);
+  await userEvent.selectOptions(select, "det:1/hole-left");
+  await waitFor(() => expect(calls.find((c) => c.url.endsWith("/dedup/view"))).toBeTruthy());
+  expect(calls.find((c) => c.url.endsWith("/dedup/view"))!.body).toEqual({ feature: "seal", view: "det:1/hole-left", confirm: false });
+  expect(screen.queryByRole("alertdialog")).toBeNull();
+  expect(await screen.findByText(/Now comparing another part of the picture\./)).toBeInTheDocument();
+});
+
+test("a view change with mutes asks first, says how many are lost, and Cancel changes nothing", async () => {
+  state = baseState({ view: viewInfo(), muted_count: 4 });
+  viewAnswer = (b) => (b.confirm ? { changed: true, mutes: 4, view: state.view } : { changed: false, mutes: 4, view: state.view });
+  render(<DedupView camera="camA" />);
+  await userEvent.selectOptions(await screen.findByLabelText("Compares"), "crop:1");
+  const dialog = await screen.findByRole("alertdialog", { name: "Change what the box compares" });
+  expect(dialog).toHaveTextContent("This box has 4 muted pictures.");
+  await userEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  expect(screen.queryByRole("alertdialog")).toBeNull();
+  expect(calls.filter((c) => c.url.endsWith("/dedup/view")).every((c) => c.body.confirm === false)).toBe(true);
+});
+
+test("confirming the view change sends confirm and reports the mutes that were cleared", async () => {
+  state = baseState({ view: viewInfo(), muted_count: 4 });
+  viewAnswer = (b) => (b.confirm ? { changed: true, mutes: 4, view: state.view } : { changed: false, mutes: 4, view: state.view });
+  render(<DedupView camera="camA" />);
+  await userEvent.selectOptions(await screen.findByLabelText("Compares"), "crop:1");
+  await userEvent.click(await screen.findByRole("button", { name: "Yes — change and clear 4" }));
+  await waitFor(() => expect(calls.filter((c) => c.url.endsWith("/dedup/view")).map((c) => c.body.confirm)).toEqual([false, true]));
+  expect(await screen.findByText(/4 mute\(s\) were cleared\./)).toBeInTheDocument();
+});
+
+test("when the line decides the list is replaced by a read-only sentence, and pictures without a view are counted", async () => {
+  state = baseState({ view: viewInfo({ locked_by: "its Picture edits box", no_view: 3 }) });
+  render(<DedupView camera="camA" />);
+  expect(await screen.findByText(/The line into this box decides what it compares: its Picture edits box\./)).toBeInTheDocument();
+  expect(screen.queryByLabelText("Compares")).toBeNull();
+  expect(screen.getByText(/3 pictures have no such part and do not pass this box\./)).toBeInTheDocument();
+});
+
+test("a box with nothing above it to look at shows no view control", async () => {
+  state = baseState({ view: viewInfo({ candidates: [{ id: null, label: "Whole picture", kind: "whole" }] }) });
+  render(<DedupView camera="camA" />);
+  await screen.findByLabelText("Dedup box");
+  expect(screen.queryByTestId("dedup-view")).toBeNull();
 });

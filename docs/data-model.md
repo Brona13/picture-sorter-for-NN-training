@@ -110,6 +110,7 @@ A Classifier with an Evaluation box wired to it (`eval -> classify:<feature>`) i
 - Restore or unmute deletes the row.
 - Camera-wide deletion is outside feature purge.
 - Dedup mute is feature-scoped and is purged with its feature.
+- A Dedup box may carry a **view** (`node["view"]`, v1.138.0): the whole picture (none), a Picture edits box above it, or a single-element detector target above it. It decides which pixels the box compares and which pictures pass (those without the view do not). Changing it clears the box's mutes, clusters and maps (one set of mutes per box). A line that already carries a view overrides it.
 - A deleted frame keeps its deletion time (`updated`) and an optional short `note` (schema v6). The Classify **Deleted** view groups deleted frames by the local day of deletion.
 - Deleting clears the frame's labels and goldens in every feature of the camera; restoring does not bring them back.
 - Deleted frames are left out of Dedup clustering and the 2D scatter. Deleting after a clustering re-clusters the held result without them, and the scatter reuses the cached layout for the remaining frames.

@@ -97,13 +97,16 @@ export default function DedupView({
   // The selected tool owns the options panel and the centre; the other tools keep their results while it is away.
   const active = tool;
   const [confirmClear, setConfirmClear] = useState(false);
+  // Another view with mutes present waits here for the answer (v1.138.0): the choice and how many mutes it would cost.
+  const [pendingView, setPendingView] = useState<{ id: string | null; mutes: number } | null>(null);
+  const [viewRev, setViewRev] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const cj = useJob<DedupResult>(clusterJob);
   const clustering = clusterJob !== null && (cj === null || cj.status === "queued" || cj.status === "running");
   const sj = useJob<DedupSweep>(sweepJob);
   const sweeping = sweepJob !== null && (sj === null || sj.status === "queued" || sj.status === "running");
-  const map = useScatterMap({ camera, feature, method: params?.method ?? "", onError: setError });
+  const map = useScatterMap({ camera, feature, method: params?.method ?? "", resetKey: viewRev, onError: setError });
   const { scatter, projecting, projection, setProjection } = map;
   useEffect(() => setMarks(result?.marks ?? {}), [result]);
 
@@ -169,6 +172,7 @@ export default function DedupView({
     setSweepJob(null);
     setNotice(null);
     setConfirmClear(false);
+    setPendingView(null);
     load();
     if (camera && feature)
       api
@@ -191,6 +195,29 @@ export default function DedupView({
       if (map.scatter) map.run(); // its cluster colours follow the new clustering (the projection itself is cached)
     } else if (cj?.status === "error") setError(cj.error);
   }, [cj?.status]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The box compares another part of the picture: what it held (clusters, maps, mutes) was made on other pictures.
+  function chooseView(id: string | null, confirm = false) {
+    api
+      .dedupSetView(camera, feature, id, confirm)
+      .then((r) => {
+        if (!r.changed && r.mutes > 0 && !confirm) {
+          setPendingView({ id, mutes: r.mutes });
+          return;
+        }
+        setPendingView(null);
+        if (!r.changed) return;
+        setResult(null);
+        setOutliers(null);
+        setSweep(null);
+        setPicks({});
+        setViewRev((n) => n + 1);
+        setGridRev((n) => n + 1);
+        setNotice(r.mutes > 0 ? `Now comparing another part of the picture. ${r.mutes} mute(s) were cleared.` : "Now comparing another part of the picture.");
+        load();
+      })
+      .catch((e: unknown) => setError(msg(e)));
+  }
 
   function runCluster(p: DedupParams) {
     setNotice(null);
@@ -288,6 +315,43 @@ export default function DedupView({
               ))}
             </select>
           </label>
+          {st?.view && (st.view.locked_by || st.view.candidates.length > 1) && (
+            <div data-testid="dedup-view">
+              {st.view.locked_by ? (
+                <p>The line into this box decides what it compares: {st.view.locked_by}.</p>
+              ) : (
+                <label title="What the box looks at: the whole picture, or a crop or a found box above it in the Chain">
+                  Compares
+                  <select value={st.view.selected ?? ""} disabled={pendingView !== null} onChange={(e) => chooseView(e.target.value || null)}>
+                    {st.view.candidates.map((c) => (
+                      <option key={c.id ?? ""} value={c.id ?? ""}>
+                        {c.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {st.view.no_view > 0 && (
+                <p role="status">
+                  {st.view.no_view} {st.view.no_view === 1 ? "picture has" : "pictures have"} no such part and {st.view.no_view === 1 ? "does" : "do"} not pass this box.
+                </p>
+              )}
+              {pendingView && (
+                <div role="alertdialog" aria-label="Change what the box compares">
+                  <p>
+                    <strong>
+                      This box has {pendingView.mutes} muted {pendingView.mutes === 1 ? "picture" : "pictures"}.
+                    </strong>{" "}
+                    Another view clears all of them, and the clusters and maps made so far.
+                  </p>
+                  <button type="button" onClick={() => chooseView(pendingView.id, true)}>
+                    Yes — change and clear {pendingView.mutes}
+                  </button>{" "}
+                  <button type="button" onClick={() => setPendingView(null)}>Cancel</button>
+                </div>
+              )}
+            </div>
+          )}
           {(active === "grid" || active === "clusters" || active === "outliers" || active === "scatter") && (
             <label title="Muted pictures leave the grids; tick to see them again, dimmed">
               <input type="checkbox" checked={showMuted} onChange={(e) => { setShowMuted(e.target.checked); setGridPage(1); }} /> Show muted

@@ -15,6 +15,7 @@ import datamodel
 import db
 import dedup
 import dedup_box
+import dedup_view
 import flow
 import embedding
 import methods_config
@@ -231,7 +232,10 @@ def state(camera: str, feature: str) -> dict:
         described = _describe(camera, feature, result) if result else None
     with applog.timed("dedup.state.grid"):
         grid = _grid_settings(camera, feature)
+    with applog.timed("dedup.state.view"):
+        view = dedup_view.summary(camera, feature) if dedup_box.exists(camera, feature) else None
     return {
+        "view": view,
         "feature": feature,
         "source": source,
         "reason": reason,
@@ -246,6 +250,28 @@ def state(camera: str, feature: str) -> dict:
         "result": described,
         "grid": grid,
     }
+
+
+class ViewBody(BaseModel):
+    feature: str
+    view: str | None = None  # None: the whole picture
+    confirm: bool = False  # the person agreed to lose the box's mutes
+
+
+@router.put("/cameras/{camera}/dedup/view")
+def put_view(camera: str, body: ViewBody) -> dict:
+    """Choose the part of the picture the box compares. With mutes present nothing changes until ``confirm`` is sent: the
+    answer is ``{"changed": false, "mutes": n}`` so the page can ask first."""
+    require_box(camera, body.feature)
+    try:
+        out = dedup_box.set_view(camera, body.feature, body.view, body.confirm)
+    except dedup_box.DedupBoxError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if out["changed"]:
+        with _lock:
+            _results.pop((camera, body.feature), None)
+            _sweeps.pop((camera, body.feature), None)
+    return {**out, "view": dedup_view.summary(camera, body.feature)}
 
 
 @router.get("/cameras/{camera}/dedup/frames")

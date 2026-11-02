@@ -1577,8 +1577,19 @@ def has_input(graph: dict, node_id: str) -> bool:
 def node_frames(camera: str, node_id: str, graph: dict | None = None, _seen: frozenset = frozenset()) -> list[str]:
     """The pictures a box works on, resolved up the chain (v1.107.0): the pictures on its Classifier dot, or what the box
     it reads passes on (Ingest: every live picture; a Dedup box: its pictures minus the ones it muted). A box with no
-    line into it has no pictures. Deleted and removed pictures never; a class that went away gives none."""
+    line into it has no pictures. Deleted and removed pictures never; a class that went away gives none.
+    A Dedup box with a view (v1.138.0, see ``dedup_view.py``) drops the pictures that have no such view."""
     graph = graph or load_graph(camera)
+    names = _node_frames(camera, node_id, graph, _seen)
+    if kind_of(node_id) == "dedup":
+        import dedup_view  # noqa: PLC0415
+
+        return dedup_view.with_view(camera, node_id, names, graph)
+    return names
+
+
+def _node_frames(camera: str, node_id: str, graph: dict, _seen: frozenset = frozenset()) -> list[str]:
+    """``node_frames`` before a Dedup box's view is applied."""
     if kind_of(node_id) == "merge":
         return _merge_frames(camera, node_id, graph, _seen)  # the union (any) or intersection (all) of what its lines pass
     live = _live_frames(camera)
