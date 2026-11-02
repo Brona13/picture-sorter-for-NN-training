@@ -35,11 +35,20 @@ export default function SuggestPanel({ camera, query, classes, revision, onPromo
   return (
     <details onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}>
       <summary>Suggested goldens (most-uncertain, spread for diversity)</summary>
-      <p>
-        The frames the machine is least sure about under <strong>{query.rank}</strong>, spread across the ambiguity band by embedding-space
-        diversity. One click labels <em>and</em> promotes to golden — sharpens class separation the fastest.
-      </p>
-      {data && !data.available && <p>No unlabeled candidates match — refresh scores or add more goldens (at least two classes need goldens).</p>}
+      {data?.labeled ? (
+        <p>
+          The labeled pictures (the labels come from the freeze) that are not golden yet and sit nearest the border between the classes under{" "}
+          <strong>{query.rank}</strong>, spread by embedding-space diversity. One click makes a pick a golden of its own class.
+        </p>
+      ) : (
+        <p>
+          The frames the machine is least sure about under <strong>{query.rank}</strong>, spread across the ambiguity band by embedding-space
+          diversity. One click labels <em>and</em> promotes to golden — sharpens class separation the fastest.
+        </p>
+      )}
+      {data && !data.available && (
+        <p>{data.labeled ? "No labeled candidates match" : "No unlabeled candidates match"} — refresh scores or add more goldens (at least two classes need goldens).</p>
+      )}
       {data?.available && (
         <>
           <label>
@@ -71,7 +80,7 @@ export default function SuggestPanel({ camera, query, classes, revision, onPromo
                 )}
                 <code style={{ fontSize: 11 }}>{p.frame}</code>
                 <div style={{ display: "flex", gap: 4 }}>
-                  {classes.map((c) => (
+                  {(data.labeled ? classes.filter((c) => c === p.label) : classes).map((c) => (
                     <button
                       key={c}
                       style={{ borderColor: classColor(c, classes) }}
@@ -82,7 +91,7 @@ export default function SuggestPanel({ camera, query, classes, revision, onPromo
                           .catch((e: unknown) => onError(e instanceof Error ? e.message : String(e)))
                       }
                     >
-                      ⭐ {c}
+                      {data.labeled ? `⭐ Make golden (${c})` : `⭐ ${c}`}
                     </button>
                   ))}
                 </div>

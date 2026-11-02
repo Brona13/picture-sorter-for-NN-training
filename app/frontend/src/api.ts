@@ -260,6 +260,8 @@ export interface PipelineInfo {
 
 export interface RoiInfo {
   feature: string;
+  /** As `ClassifyState.picture_key`: recorded when the list is loaded, before any thumbnail of the ROI is drawn. */
+  picture_key?: string;
   short_name: string;
   owner_product: string | null;
   role: string;
@@ -912,6 +914,10 @@ export function setPictureVersion(camera: string, feature: string, key: string |
   if (key) pictureVersions.set(`${camera}/${feature}`, key);
   else pictureVersions.delete(`${camera}/${feature}`);
 }
+/** Record the picture key of each ROI of a response, so every thumbnail and cutout address of the ROI carries it from the first render. */
+const recordPictureKeys = (camera: string, rois: { feature: string; picture_key?: string }[]) => {
+  for (const r of rois) setPictureVersion(camera, r.feature, r.picture_key);
+};
 export const pictureVersionParam = (camera: string, feature: string) => {
   const key = pictureVersions.get(`${camera}/${feature}`);
   return key ? `&v=${encodeURIComponent(key)}` : "";
@@ -979,6 +985,8 @@ export interface MethodsConfig {
 
 export interface ClassifyState {
   feature: string;
+  /** Changes when the pictures of this Classifier do (its rectangle, edits, anchor, a Box's margins): recorded for every picture address (`setPictureVersion`). */
+  picture_key?: string;
   /** The Classifier's step in the two-step solution: 2 = goldens and Mute, no labeling (absent or 1 = labeling, no goldens). */
   step?: 1 | 2;
   classes: string[];
@@ -1117,7 +1125,9 @@ export interface SuggestResponse {
   n_min: number;
   n_max: number;
   default_n: number;
-  picks: { frame: string; bars: CardData["bars"] }[];
+  /** Step 2: the picks are labeled pictures (the freeze's label, in each pick's `label`) that are not golden yet. */
+  labeled?: boolean;
+  picks: { frame: string; label?: string | null; bars: CardData["bars"] }[];
 }
 
 export interface InsightsResponse {
@@ -1454,7 +1464,11 @@ export const api = {
   cameras: () => request<string[]>("/cameras"),
   pipeline: (camera: string, feature: string) =>
     request<PipelineInfo>(`/cameras/${encodeURIComponent(camera)}/pipeline?feature=${encodeURIComponent(feature)}`),
-  overview: () => request<{ cameras: OverviewCamera[] }>("/overview"),
+  overview: () =>
+    request<{ cameras: OverviewCamera[] }>("/overview").then((o) => {
+      for (const c of o.cameras) recordPictureKeys(c.camera, c.rois ?? []);
+      return o;
+    }),
   products: (camera: string) =>
     request<string[]>(`/cameras/${encodeURIComponent(camera)}/products`),
   status: (camera: string) =>
@@ -1564,7 +1578,10 @@ export const api = {
     request<RoisResponse>(
       `/cameras/${encodeURIComponent(camera)}/rois` +
         (product ? `?product=${encodeURIComponent(product)}` : ""),
-    ),
+    ).then((r) => {
+      recordPictureKeys(camera, r.rois ?? []);
+      return r;
+    }),
   saveRoi: (camera: string, body: RoiUpsert) =>
     request<RoiInfo>(`/cameras/${encodeURIComponent(camera)}/rois`, send("PUT", body)),
   moveRoi: (camera: string, feature: string, box: { x: number; y: number; w: number; h: number }) =>
@@ -1719,7 +1736,10 @@ export const api = {
       send("PUT", { names, renames }),
     ),
   classifyState: (camera: string, feature: string) =>
-    request<ClassifyState>(`/cameras/${encodeURIComponent(camera)}/classify/state?feature=${encodeURIComponent(feature)}`),
+    request<ClassifyState>(`/cameras/${encodeURIComponent(camera)}/classify/state?feature=${encodeURIComponent(feature)}`).then((s) => {
+      setPictureVersion(camera, feature, s.picture_key); // before the cards render: another rectangle is other pixels at the same address
+      return s;
+    }),
   classifyGrid: (camera: string, q: GridQuery, page: number) =>
     request<GridResponse>(`/cameras/${encodeURIComponent(camera)}/classify/grid?${gridParams(q, { page })}`),
   classifyRefresh: (camera: string, feature: string) =>

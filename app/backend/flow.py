@@ -1658,6 +1658,10 @@ def _node_frames(camera: str, node_id: str, graph: dict, _seen: frozenset = froz
         import piles  # noqa: PLC0415
 
         return piles.frames(camera, node_id, graph)
+    if kind_of(node_id) == "box":
+        import box_module  # noqa: PLC0415
+
+        return box_module.frames(camera, node_id)  # a Box has no input line: its pictures are the ones it made a rectangle for
     if kind_of(node_id) == "merge":
         return _merge_frames(camera, node_id, graph, _seen)  # the union (any) or intersection (all) of what its lines pass
     live = _live_frames(camera)

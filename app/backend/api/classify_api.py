@@ -16,6 +16,7 @@ import flow
 import embedding
 import engine
 import labels
+import picture_key
 import suggest_goldens as suggest_goldens_mod
 from api import dedup_api, jobs
 from api.cameras import require_feature
@@ -264,6 +265,7 @@ def state(camera: str, feature: str) -> dict:
         # methods switched on (Configuration) since the last refresh: they have no scores yet
         "missing_methods": classify.missing_methods(results, methods) if results else [],
         "muted_count": len(db.muted_frames(camera, feature)),
+        "picture_key": picture_key.of(camera, feature),  # the address of every picture of this Classifier carries it
         "step": flow.roi_step(camera, feature),  # 2: a step-2 Classifier (goldens and Mute, no labeling; see class_lines)
         "shared_products": datamodel.feature_products(camera, feature),
         "frames_seen": len(frames),
@@ -807,9 +809,10 @@ def suggest_goldens(camera: str, q: QueryParams, n: int = suggest_goldens_mod.DE
              "n_max": suggest_goldens_mod.N_MAX, "default_n": suggest_goldens_mod.DEFAULT_N}
     if not ctx.scored or len(have) < 2:
         return empty
+    labeled = flow.roi_step(camera, q.feature) == 2  # step 2: every picture is labeled by the freeze, so the picks are labeled ones
     picks = suggest_goldens_mod.suggest(
         camera=camera, feature=q.feature, items=ctx.items, rank_method=ctx.rank, n=n,
-        lab=ctx.lab, gold=ctx.gold,
+        lab=ctx.lab, gold=ctx.gold, labeled_only=labeled,
     )
     if not picks:
         return empty
@@ -817,9 +820,11 @@ def suggest_goldens(camera: str, q: QueryParams, n: int = suggest_goldens_mod.DE
         **empty,
         "available": True,
         "backbone": suggest_goldens_mod._diversity_backbone(),
+        "labeled": labeled,
         "picks": [
             {
                 "frame": fs.frame,
+                "label": ctx.lab.get(fs.frame),
                 "bars": cv.bars(fs.per_method[ctx.rank].dists, ctx.classes) if ctx.rank in fs.per_method else None,
             }
             for fs in picks
@@ -835,6 +840,14 @@ def promote(camera: str, body: PromoteBody) -> dict:
     classes = datamodel.classes_for(camera, body.feature)
     if body.cls not in classes:
         raise HTTPException(status_code=422, detail=f"Unknown class: {body.cls}")
+    if flow.roi_step(camera, body.feature) == 2:  # the freeze's label is final: promoting only makes the picture a golden of its class
+        current = labels.current_labels(camera, body.feature).get(body.frame)
+        if current is None:
+            raise HTTPException(status_code=422, detail="This picture has no label in this Classifier.")
+        if current != body.cls:
+            raise HTTPException(status_code=422, detail=f"Its label is {current}, from the freeze; labels are final in step 2.")
+        labels.mark_golden(camera, body.feature, body.frame, current)
+        return _result(camera, body.feature, body.frame, classes)
     labels.set_label(camera, body.feature, body.frame, body.cls, source="suggest")
     labels.mark_golden(camera, body.feature, body.frame, body.cls)
     return _result(camera, body.feature, body.frame, classes)

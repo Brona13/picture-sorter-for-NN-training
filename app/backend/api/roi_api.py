@@ -12,6 +12,7 @@ import dedup_box
 import engine
 import flow
 import labels
+import picture_key
 import products as product_admin
 import versions
 from api.cameras import require_camera
@@ -91,6 +92,7 @@ def _describe(camera: str, r: ROI, inbox_total: int) -> dict:
         "anchored": anchor.get_anchor(camera, r.name) is not None,
         "input": (roi_input.get_input(camera, r.name) or {}).get("box"),
         "region": region.get_region(camera, r.name),
+        "picture_key": picture_key.of(camera, r.name, r),  # changes when the Classifier's pictures do (its rectangle, edits, anchor, a Box's margins)
     }
 
 

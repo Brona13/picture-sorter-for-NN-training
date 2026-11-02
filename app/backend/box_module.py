@@ -188,6 +188,11 @@ def signature(graph: dict, node_id: str) -> str:
     return hashlib.sha1(json.dumps(material, sort_keys=True).encode()).hexdigest()[:16]
 
 
+def _results_hash(camera: str, detector: str) -> str:
+    """Changes whenever the detector's stored results do: a new run with the same settings, a box moved by hand, a new picture."""
+    return hashlib.sha1((db.get_setting(camera, flow._results_key(detector)) or "").encode()).hexdigest()[:12]
+
+
 def ensure(camera: str, node_id: str) -> dict:
     """The Box's stored results (``{"sig", "frames"}``), made again first when its settings or the detector runs it reads
     changed. Cheap while nothing was written (the answer is kept until the next write)."""
@@ -199,7 +204,7 @@ def ensure(camera: str, node_id: str) -> dict:
     node = graph["nodes"].get(node_id)
     if node is None:
         return {"sig": None, "frames": {}}
-    runs = [flow._load_raw(camera, h["detector"])["sig"] for h in holes_of(node) if h["detector"] in graph["nodes"]]  # the detector runs it reads
+    runs = [_results_hash(camera, h["detector"]) for h in holes_of(node) if h["detector"] in graph["nodes"]]  # the detector results it reads (a run, or a box moved by hand)
     sig = hashlib.sha1(json.dumps([signature(graph, node_id), runs], sort_keys=True).encode()).hexdigest()[:16]
     stored = flow._load_raw(camera, node_id)
     if stored["sig"] != sig:
@@ -213,6 +218,13 @@ def ensure(camera: str, node_id: str) -> dict:
         stored = {"sig": sig, "frames": frames}
     _KEPT[(camera, node_id)] = (db.write_epoch() if db.write_epoch() == epoch else -1, stored)  # a write during the work: do not keep it
     return {"sig": stored["sig"], "frames": dict(stored["frames"])}
+
+
+def frames(camera: str, node_id: str) -> list[str]:
+    """The live pictures (by frame name) that have a rectangle: what a Classifier anchored to the Box can work on."""
+    made = ensure(camera, node_id)["frames"]
+    hmap = labels.hash_map(camera)
+    return [f for f in flow._live_frames(camera) if hmap.get(f) in made]
 
 
 # --- what the Box page and the canvas show -----------------------------------------------
@@ -234,9 +246,7 @@ def detail(camera: str, graph: dict, node_id: str) -> dict:
     """What the Box page needs: the settings, the detector boxes to choose from, which pictures have a rectangle, and
     which detectors have not been run since they changed (their boxes are the old ones)."""
     node = graph["nodes"][node_id]
-    stored = ensure(camera, node_id)["frames"]
-    hmap = labels.hash_map(camera)
-    have = sorted(f for f in flow._live_frames(camera) if hmap.get(f) in stored)
+    have = sorted(frames(camera, node_id))
     return {
         "mode": node.get("mode", "two"), "measure_from": node.get("measure_from", "edge"), "margins": margins_of(node), "holes": holes_of(node),
         "needed": needed(node), "candidates": candidates(camera, graph), "frames": have, "total": len(flow._live_frames(camera)),

@@ -39,11 +39,15 @@ def suggest(
     lab: dict[str, str],
     gold: dict[str, list[str]],
     diversity_backbone: str | None = None,
+    labeled_only: bool = False,
 ) -> list:
     """Return up to ``n`` FrameScore picks: most-uncertain-first, spread by
     farthest-point sampling in embedding space over the top ``POOL_K``.
 
     Pure function. No Streamlit, no session state. Designed to be smoke-tested.
+
+    ``labeled_only`` (a step-2 Classifier, whose labels all come from the freeze) picks among the frames that already carry
+    a label and are not golden yet, instead of the unlabeled ones.
 
     ``diversity_backbone=None`` auto-detects the best available ResNet; pass
     an explicit backbone name in tests to make results deterministic. When no
@@ -52,7 +56,7 @@ def suggest(
     golden_frames = {f for frames in gold.values() for f in frames}
     candidates = [
         r for r in items
-        if r.frame not in lab
+        if (r.frame in lab if labeled_only else r.frame not in lab)
         and r.frame not in golden_frames
         and rank_method in r.per_method
         and r.per_method[rank_method].leaning is not None
