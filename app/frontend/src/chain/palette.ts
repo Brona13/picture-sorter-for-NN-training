@@ -1,7 +1,7 @@
 import type { ChainNode } from "../api";
 
 /** One colour per box type (the hue of its border, fill and palette tile). */
-export const HUE = { ingest: 160, roi: 225, classify: 145, crop: 100, detector: 265, calc: 200, evaluation: 340, dedup: 55, export: 20, merge: 215 } as const;
+export const HUE = { ingest: 160, roi: 225, classify: 145, crop: 100, detector: 265, calc: 200, evaluation: 340, dedup: 55, export: 20, merge: 215, ingest_ok: 140, ingest_ng: 5 } as const;
 
 /** One fixed size per box type, in canvas pixels. A box never changes size with what it holds; only the rows that are
  *  classes (Classify box) or targets (detector) make a box taller, because each row carries its own dot. */
@@ -16,10 +16,12 @@ export const BOX_SIZE: Record<ChainNode["kind"], { w: number; h: number }> = {
   dedup: { w: 200, h: 86 },
   export: { w: 200, h: 110 },
   merge: { w: 64, h: 64 },
+  ingest_ok: { w: 170, h: 64 },
+  ingest_ng: { w: 170, h: 64 },
 };
 
 /** What the palette can add. One Classifier tile: its mode (Product or Feature) is chosen in the panel. */
-export type PaletteKind = "classifier" | "crop" | "detector" | "calc" | "evaluation" | "dedup" | "export" | "merge";
+export type PaletteKind = "classifier" | "crop" | "detector" | "calc" | "evaluation" | "dedup" | "export" | "merge" | "ingest_ok" | "ingest_ng";
 
 export interface PaletteItem {
   kind: PaletteKind;
@@ -62,13 +64,21 @@ export const PALETTE: { group: string; items: PaletteItem[] }[] = [
   },
 ];
 
-/** The step-2 modules arrive with the next versions (Ingest OK / NG, Box, Classifier, Export). */
-export const PALETTE_STEP2: { group: string; items: PaletteItem[] }[] = [];
+/** The step-2 modules so far: the two piles it starts from. Box, Classifier and Export follow in the next versions. */
+export const PALETTE_STEP2: { group: string; items: PaletteItem[] }[] = [
+  {
+    group: "Pictures in",
+    items: [
+      { kind: "ingest_ok", label: "Ingest OK", box: "ingest_ok", hint: "The OK pictures of the last freeze of step 1." },
+      { kind: "ingest_ng", label: "Ingest NG", box: "ingest_ng", hint: "The NG pictures of the last freeze of step 1." },
+    ],
+  },
+];
 
 /** The palette of one step of the two-step solution. */
 export const paletteOf = (step: 1 | 2) => (step === 2 ? PALETTE_STEP2 : PALETTE);
 
-export const paletteItem = (kind: PaletteKind): PaletteItem => PALETTE.flatMap((g) => g.items).find((i) => i.kind === kind)!;
+export const paletteItem = (kind: PaletteKind): PaletteItem => [...PALETTE, ...PALETTE_STEP2].flatMap((g) => g.items).find((i) => i.kind === kind)!;
 
 /** The top-left corner for a box dropped with its centre at the pointer. */
 export function dropPosition(pointer: { x: number; y: number }, box: ChainNode["kind"]): { x: number; y: number } {

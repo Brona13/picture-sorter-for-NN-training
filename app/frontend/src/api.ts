@@ -396,7 +396,7 @@ export interface CameraDeletePreview {
 /** One box of the chain canvas: Ingest, a Classifier (one ROI with its labeling) or a measurement box (see `chain.py`). */
 export interface ChainNode {
   id: string;
-  kind: "ingest" | "roi" | "classify" | "crop" | "detector" | "calc" | "evaluation" | "dedup" | "export" | "merge";
+  kind: "ingest" | "roi" | "classify" | "crop" | "detector" | "calc" | "evaluation" | "dedup" | "export" | "merge" | "ingest_ok" | "ingest_ng";
   /** Which step of the two-step solution the box is in: 1 = decide OK / NG (the default), 2 = choose pictures. A step-1 Export is the Freeze module. */
   step?: 1 | 2;
   /** The ROI's feature name (null for Ingest). */
@@ -454,6 +454,10 @@ export type FlowSummaryStep =
   | { op: "mask"; shape?: string | null; enabled?: boolean };
 
 export interface FlowSummary {
+  /** Ingest OK / NG (step 2): the freeze of step 1 it reads (null before the first freeze), why it is empty, and its class. */
+  freeze?: number | null;
+  warning?: string | null;
+  cls?: "OK" | "NG";
   /** A Picture Edits box: its steps in order. */
   steps?: FlowSummaryStep[];
   /** A Picture Edits box fed by one detector target: which, and the size of its rectangle (null until drawn). */
@@ -1558,7 +1562,7 @@ export const api = {
   chain: (camera: string) => request<ChainCanvas>(`/cameras/${encodeURIComponent(camera)}/chain`),
   saveChainLayout: (camera: string, layout: ChainLayout) =>
     request<ChainCanvas>(`/cameras/${encodeURIComponent(camera)}/chain/layout`, send("PUT", layout)),
-  flowCreate: (camera: string, kind: "crop" | "detector" | "calc" | "evaluation" | "dedup" | "export" | "merge", step: 1 | 2 = 1) =>
+  flowCreate: (camera: string, kind: "crop" | "detector" | "calc" | "evaluation" | "dedup" | "export" | "merge" | "ingest_ok" | "ingest_ng", step: 1 | 2 = 1) =>
     request<{ id: string }>(`/cameras/${encodeURIComponent(camera)}/flow/nodes`, send("POST", { kind, step })),
   flowNode: (camera: string, id: string) =>
     request<FlowNodeDetail>(`/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}`),

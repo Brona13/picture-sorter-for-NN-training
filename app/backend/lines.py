@@ -50,6 +50,7 @@ TAKES = {
 NAMES = {
     "ingest": "Ingest", "roi": "a Classifier", "classify": "a Classify box", "crop": "Picture edits",
     "detector": "a detector", "calc": "Calculate", "evaluation": "Evaluation", "dedup": "a Dedup box", "merge": "a Merge", "export": "Export",
+    "ingest_ok": "Ingest OK", "ingest_ng": "Ingest NG",
 }
 TYPE_NAMES = {FRAMES: "frames", PICTURE: "a picture", POINT: "a target point", VALUE: "a number", VERDICT: "a verdict"}
 

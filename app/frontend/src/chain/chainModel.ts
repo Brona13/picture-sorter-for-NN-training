@@ -127,6 +127,11 @@ function describeFlowBox(kind: string, f: FlowSummary | undefined): string {
     if (f?.a || f?.b) return `1 of 2 points (${f.a ?? f.b}) · needs one more target`; // one detector target gives one point; two are needed
     return "needs two points · connect a detector with two targets";
   }
+  if (kind === "ingest_ok" || kind === "ingest_ng") {
+    const n = f?.frames ?? 0;
+    const what = `${n} ${kind === "ingest_ok" ? "OK" : "NG"} picture${n === 1 ? "" : "s"}`;
+    return f?.warning ? `${what} · ${f.warning}` : `${what} · from freeze v${f?.freeze}`;
+  }
   if (kind === "export") {
     const n = (f?.lines?.ok ?? 0) + (f?.lines?.ng ?? 0);
     if (!n) return "connect lines to OK or NG";
@@ -165,7 +170,9 @@ export function describeNode(n: ChainNode): string {
   return `Feature · ${where} · ${n.labeled}/${n.frames} labeled`;
 }
 
-export const FLOW_KINDS = ["crop", "detector", "calc", "evaluation", "dedup", "export", "merge"] as const;
+export const FLOW_KINDS = ["crop", "detector", "calc", "evaluation", "dedup", "export", "merge", "ingest_ok", "ingest_ng"] as const;
+/** Ingest OK / Ingest NG: where step 2 starts (the OK / NG pictures of the last freeze of step 1). */
+export const isPileKind = (kind: string | undefined): boolean => kind === "ingest_ok" || kind === "ingest_ng";
 export const isFlowKind = (kind: string | undefined): boolean => !!kind && (FLOW_KINDS as readonly string[]).includes(kind);
 
 /**
@@ -186,6 +193,7 @@ export function flowConnect(canvas: ChainCanvas, c: Connection): FlowLink {
   const source = featureOf(canvas, c.source);
   const target = featureOf(canvas, c.target);
   if (!source || !target) return { error: "Unknown box." };
+  if (isPileKind(source.kind) || isPileKind(target.kind)) return { error: "Lines out of Ingest OK / Ingest NG come with the next versions of step 2." };
   if (source.kind === "export") return { error: "Export is the end of the Chain: nothing leaves it." };
   if (target.kind === "export") {
     // A line onto one of the two inputs: the pictures that should land in the OK or NG folders.

@@ -54,7 +54,6 @@ export default function Palette({
   const groups = paletteOf(step);
   return (
     <div className="chain-palette-groups">
-      {groups.length === 0 && <p className="muted chain-palette-empty" title="The step-2 modules (Ingest OK / NG, Box, Classifier, Export) come with the next versions.">Modules follow</p>}
       {groups.map((g) => (
         <section key={g.group} aria-label={g.group}>
           <h4>{g.group}</h4>

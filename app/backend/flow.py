@@ -42,8 +42,9 @@ _log = applog.get("flow")
 GRAPH_KEY = "flow.graph"
 RESULTS_PREFIX = "flow.det."
 INGEST_ID = "ingest"
-KINDS = ("crop", "detector", "calc", "evaluation", "dedup", "export", "merge")
-PREFIX = {"crop": "crop", "detector": "det", "calc": "calc", "evaluation": "eval", "dedup": "dedup", "export": "export", "merge": "merge"}
+KINDS = ("crop", "detector", "calc", "evaluation", "dedup", "export", "merge", "ingest_ok", "ingest_ng")
+PREFIX = {"crop": "crop", "detector": "det", "calc": "calc", "evaluation": "eval", "dedup": "dedup", "export": "export", "merge": "merge", "ingest_ok": "inok", "ingest_ng": "inng"}
+PILES = ("ingest_ok", "ingest_ng")  # step 2 starts here: the OK / NG pictures of the last freeze (``piles.py``); always step 2
 KIND_OF = {v: k for k, v in PREFIX.items()}
 PICTURE_KINDS = ("crop", "detector")  # boxes that read a picture (a box with no line reads the whole picture)
 ALGORITHM = 1  # bump when detection changes, so stored boxes are recomputed
@@ -576,6 +577,8 @@ def _default_config(kind: str) -> dict:
         return {"lines": {"ok": [], "ng": []}, "goldens_only": True}  # what feeds each dot (see ``export_box.py``)
     if kind == "merge":
         return {"lines": [], "mode": "any"}  # the dots it collects (see ``merge_meaning``); any = union, all = intersection
+    if kind in PILES:
+        return {"step": 2}  # the pictures come from the last freeze of step 1 (see ``piles.py``); nothing to set
     if kind == "dedup":
         return {"source": None}  # None: the whole camera (or the box a line comes from); else {"feature", "dot"} of a Classifier
     return {"nominal": None, "tolerance": 3.0, "zone": clean_zone(None)}
@@ -644,6 +647,8 @@ def create_node(camera: str, kind: str, step: int = 1) -> str:
         raise FlowError(f"Unknown box kind: {kind}")
     if step not in (1, 2):
         raise FlowError("The step is 1 or 2.")
+    if kind in PILES:
+        step = 2  # a pile is where step 2 starts
     graph = load_graph(camera)
     n = 1
     while f"{PREFIX[kind]}:{n}" in graph["nodes"]:
@@ -1612,6 +1617,10 @@ def node_frames(camera: str, node_id: str, graph: dict | None = None, _seen: fro
 
 def _node_frames(camera: str, node_id: str, graph: dict, _seen: frozenset = frozenset()) -> list[str]:
     """``node_frames`` before a Dedup box's view is applied."""
+    if kind_of(node_id) in PILES:
+        import piles  # noqa: PLC0415
+
+        return piles.frames(camera, node_id, graph)
     if kind_of(node_id) == "merge":
         return _merge_frames(camera, node_id, graph, _seen)  # the union (any) or intersection (all) of what its lines pass
     live = _live_frames(camera)

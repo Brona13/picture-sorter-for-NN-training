@@ -29,8 +29,9 @@ test("a Merge is a small square, in its own group", () => {
   expect(PALETTE.find((g) => g.items.some((i) => i.kind === "merge"))?.group).toBe("Collects lines");
 });
 
-test("the step-1 export tile is the Freeze module, and step 2 has its own (still empty) palette", () => {
+test("the step-1 export tile is the Freeze module, and step 2 has its own palette", () => {
   expect(paletteItem("export").label).toBe("Freeze");
   expect(paletteOf(1)).toBe(PALETTE);
-  expect(paletteOf(2)).toEqual([]);
+  expect(paletteOf(2).flatMap((g) => g.items.map((i) => i.kind))).toEqual(["ingest_ok", "ingest_ng"]); // Box, Classifier and Export follow
+  expect(HUE.ingest_ok).not.toBe(HUE.ingest_ng);
 });

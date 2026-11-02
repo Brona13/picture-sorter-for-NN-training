@@ -44,6 +44,18 @@ const PALETTE_ICONS: Record<PaletteKind, ReactElement> = {
       <path d="M12 12v5M9.5 14.5L12 17l2.5-2.5" />
     </>
   ),
+  ingest_ok: (
+    <>
+      <path d="M4 14v5h16v-5" />
+      <path d="M8 8l3 3 5-6" />
+    </>
+  ),
+  ingest_ng: (
+    <>
+      <path d="M4 14v5h16v-5" />
+      <path d="M9 4l6 6M15 4l-6 6" />
+    </>
+  ),
   merge: (
     <>
       <path d="M3 6h5l4 6-4 6H3" />
@@ -79,6 +91,8 @@ export const ICON_OF: Record<ChainNode["kind"], PaletteKind | "ingest"> = {
   dedup: "dedup",
   export: "export",
   merge: "merge",
+  ingest_ok: "ingest_ok",
+  ingest_ng: "ingest_ng",
 };
 
 export function KindIcon({ kind, size = 16, className }: { kind: PaletteKind | ChainNode["kind"] | "ingest"; size?: number; className?: string }) {

@@ -33,6 +33,7 @@ import export_box
 import flow
 import labels
 import lines
+import piles
 import preprocess
 import applog
 
@@ -258,6 +259,8 @@ def _flow_nodes(camera: str, graph: dict, stored: dict) -> list[dict]:
             refs = flow.merge_lines(node)
             summary = {"meaning": flow.merge_meaning(graph, node_id), "merge_mode": node.get("mode", "any"), "inputs": len(refs),
                        "frames": len(flow.node_frames(camera, node_id, graph))}
+        elif kind in flow.PILES:
+            summary = piles.summary(camera, node_id, graph)
         elif kind == "export":
             st = export_box.state(camera, node_id)
             summary = {"lines": st["lines"], "folders": st["folders"], "total": st["total"], "ok": st["ok"], "ng": st["ng"], "both": st["both"],
@@ -267,7 +270,7 @@ def _flow_nodes(camera: str, graph: dict, stored: dict) -> list[dict]:
             state = flow.evaluation_state(camera, node_id)
             summary = {"nominal": node["nominal"], "tolerance": node["tolerance"], "unit": state["unit"], "counts": state["counts"],
                        "mode": state["mode"], "zone": state["zone"]}
-        default = {"crop": "Picture edits", "detector": "Detector", "calc": "Calculate", "evaluation": "Evaluation", "dedup": "Dedup", "export": "Export", "merge": "Merge"}[kind]
+        default = {"crop": "Picture edits", "detector": "Detector", "calc": "Calculate", "evaluation": "Evaluation", "dedup": "Dedup", "export": "Export", "merge": "Merge", "ingest_ok": "Ingest OK", "ingest_ng": "Ingest NG"}[kind]
         if kind == "export" and flow.step_of(node) == 1:
             default = "Freeze"
         entry = stored.get(node_id, {})
@@ -286,7 +289,7 @@ def overview_flow(camera: str, picture_frame: str | None) -> dict | None:
     if not graph["nodes"]:
         return None
     stored = load_layout(camera)["nodes"]
-    order = {"crop": 0, "detector": 1, "calc": 2, "evaluation": 3, "dedup": 4, "export": 5, "merge": 6}
+    order = {"crop": 0, "detector": 1, "calc": 2, "evaluation": 3, "dedup": 4, "export": 5, "merge": 6, "ingest_ok": 7, "ingest_ng": 8}
     nodes = sorted(_flow_nodes(camera, graph, stored), key=lambda n: (order[n["kind"]], n["id"]))
     boxes: list[dict] = []
     size = None
@@ -325,7 +328,7 @@ def overview_flow(camera: str, picture_frame: str | None) -> dict | None:
 
 def _column(node: dict) -> int:
     """The chain level of a box: 0 Ingest, 1 product Classifier, 3 feature Classifiers (measurement boxes sit between)."""
-    if node["kind"] == "ingest":
+    if node["kind"] in ("ingest", "ingest_ok", "ingest_ng"):
         return 0
     if node["kind"] in ("crop", "detector", "dedup"):
         return 1

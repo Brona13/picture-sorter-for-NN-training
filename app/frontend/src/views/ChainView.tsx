@@ -16,7 +16,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, ChainCanvas, ChainDeletePreview, ChainEdge, ChainNode, ChainViewport, FlowDeletePreview } from "../api";
-import { ALL_HANDLE, INGEST_ID, targetHandle, targetOfHandle, connectAction, describeNode, disconnectAction, classLineOf, exportLineOf, flowConnect, isClassLineEdge, freshName, isAnchorEdge, isMergeLineEdge, mergeLineOf, isDedupInputEdge, isEvaluationLabelEdge, isDedupSourceEdge, isExportLineEdge, isRoiInputEdge, isFlowKind, layoutOf, productHandle } from "../chain/chainModel";
+import { ALL_HANDLE, INGEST_ID, targetHandle, targetOfHandle, connectAction, describeNode, disconnectAction, classLineOf, exportLineOf, flowConnect, isClassLineEdge, freshName, isAnchorEdge, isMergeLineEdge, mergeLineOf, isDedupInputEdge, isEvaluationLabelEdge, isDedupSourceEdge, isExportLineEdge, isRoiInputEdge, isFlowKind, isPileKind, layoutOf, productHandle } from "../chain/chainModel";
 import ClassifierMode from "../chain/ClassifierMode";
 import Counter from "../chain/Counter";
 import { KindIcon } from "../chain/kindIcons";
@@ -87,7 +87,7 @@ function Box({ data, selected }: NodeProps<BoxNode>) {
       style={{ ["--hue" as string]: hueOf(node) }}
       data-testid={`chain-node-${node.id}`}
     >
-      {node.kind !== "ingest" && node.kind !== "export" && !isClassifier && <Handle type="target" position={Position.Left} />}
+      {node.kind !== "ingest" && node.kind !== "export" && !isPileKind(node.kind) && !isClassifier && <Handle type="target" position={Position.Left} />}
       <KindIcon kind={node.kind} className="chain-node-kind" />
       <div className="chain-node-title">{node.label}</div>
       {node.kind === "export" ? (
@@ -107,6 +107,11 @@ function Box({ data, selected }: NodeProps<BoxNode>) {
             <span title="Last freeze">{node.flow?.frozen ? `❄ v${node.flow.frozen}${node.flow.changed ? " ≠" : ""}` : "❄ –"}</span>
           </div>
         </>
+      ) : isPileKind(node.kind) ? (
+        <div className="chain-node-counters" aria-label="Counters" title={describeNode(node)}>
+          <Counter icon="▦" value={node.flow?.frames ?? 0} title={`${node.flow?.cls ?? ""} pictures of the last freeze of step 1`} />
+          <span title={node.flow?.warning ?? `Reads freeze v${node.flow?.freeze}`}>{node.flow?.warning ? "⚠" : `❄ v${node.flow?.freeze}`}</span>
+        </div>
       ) : node.kind === "dedup" ? (
         <div className="chain-node-counters" aria-label="Counters" title={describeNode(node)}>
           <Counter icon="▦" value={node.flow?.frames ?? 0} title="Pictures it sees" />
@@ -493,7 +498,7 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
     return freeSpot(taken, dropPosition(middle, box), box);
   };
 
-  const addFlowBox = async (kind: "crop" | "detector" | "calc" | "evaluation" | "dedup" | "export" | "merge", at?: { x: number; y: number }) => {
+  const addFlowBox = async (kind: "crop" | "detector" | "calc" | "evaluation" | "dedup" | "export" | "merge" | "ingest_ok" | "ingest_ng", at?: { x: number; y: number }) => {
     await applyFlow(async () => {
       const made = await api.flowCreate(camera, kind, activeStep);
       setSelectedId(made.id);
@@ -550,7 +555,7 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
   /** Opens the page of a box: Ingest, the Classifier (the product one for its names, a feature one on Classify), a Dedup box, or the flow page. */
   const openNode = (n: ChainNode) => {
     if (n.kind === "dedup") navigate(`/dedup/grid?box=${encodeURIComponent(n.id)}`); // the Dedup pages work on one box
-    else if (n.kind === "merge") setSelectedId(n.id); // a Merge has no page: its settings are in the panel
+    else if (n.kind === "merge" || isPileKind(n.kind)) setSelectedId(n.id); // a Merge and the step-2 Ingest boxes have no page
     else if (isFlowKind(n.kind)) onOpenFlow ? onOpenFlow(n.id) : navigate(`/flow?focus=${encodeURIComponent(n.id)}`);
     else openPage(n, n.role === "classify" ? "roi" : "classify");
   };
@@ -598,7 +603,7 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
           </label>
           <p className="muted">{describeNode(selectedLive)}</p>
           <div className="chain-actions">
-            {isFlowKind(selectedLive.kind) && selectedLive.kind !== "merge" && (
+            {isFlowKind(selectedLive.kind) && selectedLive.kind !== "merge" && !isPileKind(selectedLive.kind) && (
               <button
                 type="button"
                 onClick={() =>
