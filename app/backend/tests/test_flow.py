@@ -328,6 +328,38 @@ class FlowTests(ApiTestCase):
             self.assertAlmostEqual(y, entry["y"], delta=0.01, msg=name)
             self.assertAlmostEqual(where.turn, entry.get("angle", 0.0), delta=0.01, msg=name)
 
+    def test_a_point_away_from_the_target_behind_a_straightening_crop_lands_where_the_part_really_is(self) -> None:
+        """The test above checks the target itself, which the turn leaves in place; a sign error in the turn would not show.
+        Here the crop is wide and a detector behind it finds the right-hand part, about 118 px from the target. Taken back
+        to the whole picture it must lie where that part really is in each picture (0, 2, 30 and 358 degrees); the truth
+        comes from the rotation that made the picture, not from the app's own angle."""
+        import labels  # noqa: PLC0415
+
+        a, crop = self._straightening_crop()
+        found0 = flow.load_stored(CAM, a)["frames"][labels.hash_map(CAM)[self.names[0]]]["A"]
+        x0, y0 = int(round(found0["x"])) - 30, int(round(found0["y"])) - 60
+        self.put(f"/nodes/{crop}", {"follow": {"frame": self.names[0], "rect": [x0, y0, 200, 120]}})
+        behind = self.node("detector")
+        self.post("/edges", {"source": crop, "target": behind})  # the line first: the example is cut from the picture behind the crop
+        self.post(f"/nodes/{behind}/targets", {"name": "R"})
+        self.post(f"/nodes/{behind}/examples", {"target": "R", "frame": self.names[0], "box": [RIGHT_BOX[0] - x0, RIGHT_BOX[1] - y0, RIGHT_BOX[2], RIGHT_BOX[3]]})
+        self.put(f"/nodes/{behind}", {"rotate": False})
+        self.run_all()
+        rects = flow.input_rects(flow.load_graph(CAM), behind)
+        hmap = labels.hash_map(CAM)
+        finder = flow.Finder(CAM)
+        for name, angle in zip(self.names, ANGLES):
+            key = hmap[name]
+            found = flow.load_stored(CAM, behind)["frames"][key]["R"]
+            width, height = cv2.imread(str(datamodel.unsorted_dir(CAM) / name)).shape[1::-1]
+            where = flow.rect_map(rects, width, height, finder.for_frame(key))
+            x, y = where.point(found["x"], found["y"])
+            self.assertLess(abs((where.turn - angle + 180.0) % 360.0 - 180.0), 2.0, msg=f"{name} turn")  # a box found upright in the crop was turned by the part's angle
+            m = cv2.getRotationMatrix2D(((width - 1) / 2.0, (height - 1) / 2.0), angle, 1.0)  # what made the picture
+            true_x, true_y = m @ np.array([RIGHT_BOX[0] + 30.5, RIGHT_BOX[1] + 23.5, 1.0])
+            self.assertAlmostEqual(x, true_x, delta=3.0, msg=f"{name} x")
+            self.assertAlmostEqual(y, true_y, delta=3.0, msg=f"{name} y")
+
     def test_the_angle_cannot_be_unticked_while_a_crop_straightens_with_it(self) -> None:
         a, crop = self._straightening_crop()
         r = self.client.put(f"{self.base}/nodes/{a}/targets/A/outputs", json={"outputs": ["position"]})

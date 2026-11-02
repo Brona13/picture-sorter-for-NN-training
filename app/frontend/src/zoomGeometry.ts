@@ -106,3 +106,20 @@ export function viewForOffset(view: View, p: { x: number; y: number }, offset: {
     cy: clamp((p.y - offset.y) / Math.max(img.h, 1), -OUT, 1 + OUT),
   };
 }
+
+/**
+ * The view that shows the picture rectangle `rect` (picture pixels) large, centred in a `vw` x `vh` viewport, with `margin`
+ * (0.2 = 20 %) of the rectangle's own size left around it. The zoom is limited to the usual range; the centre stays on the picture.
+ */
+export function viewForRect(rect: Rect, img: Size, vw: number, vh: number, margin = 0.2): View {
+  const base = fitSize(img.w, img.h, vw, vh);
+  const s = base.w / Math.max(img.w, 1); // viewport pixels per picture pixel at zoom 1
+  const rw = Math.max(rect.w, 1) * (1 + margin);
+  const rh = Math.max(rect.h, 1) * (1 + margin);
+  const zoom = clampZoom(Math.min(vw / (rw * s), vh / (rh * s)));
+  return {
+    zoom,
+    cx: clamp((rect.x + rect.w / 2) / Math.max(img.w, 1), 0, 1),
+    cy: clamp((rect.y + rect.h / 2) / Math.max(img.h, 1), 0, 1),
+  };
+}

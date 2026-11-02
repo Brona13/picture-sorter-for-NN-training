@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { clampZoom, contentRect, FIT_VIEW, fitSize, oneToOneZoom, panBy, pointOffset, screenScale, viewForOffset, viewFromRect, ZOOM_MAX, ZOOM_MIN, zoomAt } from "./zoomGeometry";
+import { clampZoom, contentRect, FIT_VIEW, fitSize, oneToOneZoom, panBy, pointOffset, screenScale, viewForOffset, viewForRect, viewFromRect, ZOOM_MAX, ZOOM_MIN, zoomAt } from "./zoomGeometry";
 
 const base = fitSize(400, 200, 300, 225); // 300 x 150, centred vertically in a 300 x 225 box
 
@@ -83,4 +83,27 @@ test("a kept reference point never puts the view's centre far outside the pictur
   const v = viewForOffset({ zoom: 1, cx: 0.5, cy: 0.5 }, { x: 5000, y: -5000 }, { x: 0, y: 0 }, { w: 400, h: 300 });
   expect(v.cx).toBe(2);
   expect(v.cy).toBe(-1);
+});
+
+test("viewForRect puts a rectangle in the middle of the viewport with the margin around it", () => {
+  const img = { w: 400, h: 300 };
+  const base = fitSize(img.w, img.h, 400, 300); // 1 screen px per picture px at zoom 1
+  const view = viewForRect({ x: 100, y: 50, w: 100, h: 50 }, img, 400, 300, 0.2);
+  // the wider side decides: 100 * 1.2 = 120 px must fit 400 px => zoom 400 / 120
+  expect(view.zoom).toBeCloseTo(400 / 120);
+  expect(view.cx).toBeCloseTo(150 / 400);
+  expect(view.cy).toBeCloseTo(75 / 300);
+  const r = contentRect(view, base, 400, 300);
+  const centre = { x: r.x + (150 / 400) * r.w, y: r.y + (75 / 300) * r.h };
+  expect(centre.x).toBeCloseTo(200);
+  expect(centre.y).toBeCloseTo(150);
+});
+
+test("viewForRect keeps the zoom in range and the centre on the picture", () => {
+  const img = { w: 400, h: 300 };
+  expect(viewForRect({ x: 0, y: 0, w: 1, h: 1 }, img, 400, 300).zoom).toBe(ZOOM_MAX);
+  expect(viewForRect({ x: 0, y: 0, w: 4000, h: 3000 }, img, 400, 300).zoom).toBe(ZOOM_MIN);
+  const edge = viewForRect({ x: 380, y: 280, w: 100, h: 100 }, img, 400, 300);
+  expect(edge.cx).toBeLessThanOrEqual(1);
+  expect(edge.cy).toBeLessThanOrEqual(1);
 });

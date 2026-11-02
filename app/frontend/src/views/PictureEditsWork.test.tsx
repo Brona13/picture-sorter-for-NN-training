@@ -251,3 +251,41 @@ test("a mask of a followed target is edited on the picture it was drawn on; on a
   expect(await screen.findByText(/This mask was drawn on b.png/)).toBeInTheDocument();
   expect(screen.queryByTestId("mask-canvas")).toBeNull();
 });
+
+// --- the view fits the found box ---
+function followFetchBigBox() {
+  vi.stubGlobal("Image", class { naturalWidth = 200; naturalHeight = 100; onload: (() => void) | null = null; set src(_: string) { queueMicrotask(() => this.onload?.()); } });
+  stubFetch((url) => {
+    if (url.includes("/boxes")) return { boxes: { "a.png": { hole: { x: 99.5, y: 49.5, angle: 0, score: 1, w: 100, h: 60, source: "auto" } } }, review: [] };
+    if (!url.includes("/frames") && !url.includes("/vision/filters")) return followDetail();
+    return undefined;
+  });
+}
+
+test("the page zooms to the found box when a picture with the target comes on, and Fit to found box brings it back", async () => {
+  followFetchBigBox();
+  setup(followDetail());
+  await screen.findByAltText("Frame to draw on");
+  const level = () => Number((screen.getByTestId("zoom-level").textContent ?? "").replace("%", ""));
+  fireEvent.click(screen.getByRole("button", { name: "Reset zoom" }));
+  const whole = level();
+  fireEvent.click(screen.getByRole("button", { name: "Fit to found box" })); // the same view the page takes by itself when the picture comes on
+  const onTarget = level();
+  expect(onTarget).toBeGreaterThan(whole * 1.5); // the 100 x 60 box (plus 20 %) of a 200 x 100 picture fills the viewport
+  fireEvent.click(screen.getByRole("button", { name: "Zoom out" })); // zoom in may be at its limit on the found box
+  expect(level()).not.toBe(onTarget);
+  fireEvent.click(screen.getByRole("button", { name: "Fit to found box" }));
+  expect(level()).toBeCloseTo(onTarget, 0);
+});
+
+test("the view zooms to the found box by itself when the picture with the target comes on", async () => {
+  followFetchBigBox();
+  setup(followDetail());
+  await screen.findByAltText("Frame to draw on");
+  await waitFor(() => expect(screen.getByRole("button", { name: "Fit to found box" })).toBeEnabled());
+  await new Promise((r) => setTimeout(r, 50)); // the page takes the view in an effect after the box is known
+  const level = () => Number((screen.getByTestId("zoom-level").textContent ?? "").replace("%", ""));
+  const automatic = level();
+  fireEvent.click(screen.getByRole("button", { name: "Reset zoom" }));
+  expect(automatic).toBeGreaterThan(level() * 1.5);
+});

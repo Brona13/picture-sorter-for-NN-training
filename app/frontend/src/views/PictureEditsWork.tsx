@@ -5,7 +5,7 @@ import PictureSizeSlider, { usePictureSize } from "../PictureSize";
 import RoiCanvas from "../RoiCanvas";
 import { Box, MIN_SIZE } from "../roiGeometry";
 import ShapeCanvas from "../ShapeCanvas";
-import { FIT_VIEW, View } from "../zoomGeometry";
+import { FIT_VIEW, View, viewForRect } from "../zoomGeometry";
 import type { PictureEdits } from "./pictureEdits";
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -254,6 +254,22 @@ function FollowCanvas({ camera, nodeId, frame, frames, detail, follow, size, vie
     latest.current = b;
   }, [pixels, target, follow.size, follow.offset]);
 
+  // The view shows the found box large: it fits when a picture with a found target comes on (so paging through the pictures
+  // shows each part at the same size) and again on the button; a zoom or pan made by hand stays until the next picture.
+  // The fit waits one tick: opening the box resets the view to the whole picture in the page's own effect, which runs after this one.
+  const fitted = useRef("");
+  const fitToTarget = () => {
+    if (!target || !pixels) return;
+    setView(viewForRect({ x: target.x + 0.5 - target.w / 2, y: target.y + 0.5 - target.h / 2, w: target.w, h: target.h }, pixels, size, Math.round(size * 0.75)));
+  };
+  useEffect(() => {
+    const key = `${nodeId}|${frame}`;
+    if (!target) { fitted.current = ""; return; }
+    if (!pixels || fitted.current === key) return;
+    const timer = window.setTimeout(() => { fitted.current = key; fitToTarget(); }, 0);
+    return () => window.clearTimeout(timer);
+  }, [nodeId, frame, target, pixels]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const change = (b: Box) => { latest.current = b; dirty.current = true; setBox(b); };
   const release = () => {
     if (!dirty.current) return;
@@ -274,12 +290,14 @@ function FollowCanvas({ camera, nodeId, frame, frames, detail, follow, size, vie
           : drawn
             ? "The green outline is the target the detector found. Drag the rectangle to move it, or a corner or edge to resize it; every picture is cut at the same place next to its target. Saved when you let go."
             : "The green outline is the target the detector found. Drag on the picture to draw the rectangle once; it then follows the target on every picture."}
+        {" The view zooms to the found box on every picture; Fit to found box brings it back after your own zoom."}
         {straight && " The picture is shown turned back by the found angle, as the cut will be."}
       </p>
       <div onPointerUpCapture={release} onPointerCancelCapture={release} style={target ? undefined : { opacity: 0.55, pointerEvents: "none" }} data-step={stepId ?? undefined}>
         <RoiCanvas imageUrl={url} mode={box ? "edit" : "draw"} box={box} onChange={change} others={others} width={size} view={view} onViewChange={setView} />
       </div>
       <p>
+        <button type="button" disabled={!target || !pixels} onClick={fitToTarget} title="Zoom to the box the detector found on this picture">Fit to found box</button>{" "}
         <button type="button" disabled={!drawn} onClick={() => void edits.update({ follow: null })}>Clear rectangle</button>
       </p>
       {drawn && target && frames.length > 0 && (
