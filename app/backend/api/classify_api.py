@@ -292,17 +292,18 @@ def refresh(camera: str, body: FeatureBody) -> dict:
     feature = body.feature
 
     def work(report):
-        gold = labels.current_goldens(camera, feature)
-        results = classify.refresh(
-            camera, feature, phase_progress_cb=lambda u: report(dataclasses.asdict(u))
-        )
-        report({"phase": "persistence", "done": 0, "total": 1})
-        gsig = cv.golden_signature(gold)
-        fsig = cv.frames_signature(datamodel.frames_for_feature(camera, feature))
-        db.save_results(camera, feature, _roi_key(camera, feature), gsig, fsig,
-                        classify.serialise_results(results))
-        report({"phase": "persistence", "done": 1, "total": 1})
-        return {"frames": len(results), "scored": any(r.per_method for r in results)}
+        with datamodel.render_snapshot():  # the Chain above the Classifier (Evaluations, picture lists) is worked out once, not at every step (v1.139.2)
+            gold = labels.current_goldens(camera, feature)
+            results = classify.refresh(
+                camera, feature, phase_progress_cb=lambda u: report(dataclasses.asdict(u))
+            )
+            report({"phase": "persistence", "done": 0, "total": 1})
+            gsig = cv.golden_signature(gold)
+            fsig = cv.frames_signature(datamodel.frames_for_feature(camera, feature))
+            db.save_results(camera, feature, _roi_key(camera, feature), gsig, fsig,
+                            classify.serialise_results(results))
+            report({"phase": "persistence", "done": 1, "total": 1})
+            return {"frames": len(results), "scored": any(r.per_method for r in results)}
 
     return jobs.registry.submit("classify_refresh", camera, work, feature=feature).to_dict()
 

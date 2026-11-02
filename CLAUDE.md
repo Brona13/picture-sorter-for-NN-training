@@ -76,6 +76,17 @@ What Claude delivers depends on the machine the user works on:
 
 Ask which machine he is on if it is not clear. Per-machine details (proxy, SSH, paths) are in `docs/machines.md`.
 
+## Stale pictures and screens (learned the hard way)
+
+Tests here use a mocked API and a fake page, so they cannot see browser caching. Do not read "tests pass" as "the screen updates". Prevent the known failure instead of testing for it in a browser (no browser harness unless the user asks for one; it would slow development):
+
+- **Same address, other pixels = a bug.** When a setting or choice changes what an existing address returns (`/thumb`, `/cutout`, `/picture`, any `<img src>`), the address must carry a version that changes with it. The backend supplies the key (see `dedup_view.rule_key`, `setPictureVersion` in `api.ts`, `flowPictureUrl`'s `key`); the page records it before it renders the cards. Server ETags are not enough: an unchanged `src` is never requested again.
+- **Before delivering a change to what the user sees,** list every place that shows the affected pictures or numbers (grid, clusters, scatter, outliers, lightbox, Chain canvas, other pages) and check each one gets the new key or a refetch. A cheap `grep` for `thumbUrl`, `frameCutoutUrl`, `flowPictureUrl` and `<img` is enough.
+- **A change that makes held results wrong** (clusters, maps, mutes, stored boxes) clears them in the same step and resets the page state that shows them in the same render. Stale state beside fresh pictures is the same bug.
+- **A frontend test for such a change asserts the address,** not only the call: after the change the `src` differs from before.
+- **Effect order:** a parent's effect runs after its child's. When a child sets state that a parent effect then resets (the v1.137.0 zoom), defer the child's write (`setTimeout(..., 0)`) and say why in a comment.
+- **Say plainly what was not clicked through in a browser** in the delivery message, and give the user a two-line check to run ("change Compares, the grid should change without leaving the page"). This replaces a browser test: the user's own click is the check, so make it short and exact.
+
 ## Context efficiency
 
 Do not scan these by default:

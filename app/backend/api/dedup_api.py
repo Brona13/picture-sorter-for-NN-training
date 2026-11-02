@@ -209,6 +209,11 @@ def _validate(camera: str, p: Params) -> None:
 
 @router.get("/cameras/{camera}/dedup/state")
 def state(camera: str, feature: str) -> dict:
+    with datamodel.render_snapshot():  # the Evaluation and the picture list above the box are worked out once per request (v1.139.2)
+        return _state(camera, feature)
+
+
+def _state(camera: str, feature: str) -> dict:
     with applog.timed("dedup.state.require"):
         require_embeddable(camera, feature)
     with applog.timed("dedup.state.prewarm"):
@@ -280,6 +285,11 @@ def put_view(camera: str, body: ViewBody) -> dict:
 
 @router.get("/cameras/{camera}/dedup/frames")
 def box_frames(camera: str, feature: str) -> dict:
+    with datamodel.render_snapshot():
+        return _box_frames(camera, feature)
+
+
+def _box_frames(camera: str, feature: str) -> dict:
     """The pictures a Dedup box sees (for its Grid), which of them it muted, and the labels of the Classifier it reads."""
     require_box(camera, feature)
     frames = dedup.live_frames(camera, feature)

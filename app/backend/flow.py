@@ -1899,19 +1899,27 @@ def calc_detector(graph: dict, calc_id: str) -> str | None:
     return sources.pop() if len(sources) == 1 and a and b else None
 
 
+_SIZE_OF_HASH: dict[str, tuple[int, int]] = {}  # content hash -> (width, height): a picture's size never changes
+
+
 def _frame_sizes(camera: str) -> dict[str, tuple[int, int]]:
-    """Picture size by frame hash (headers only)."""
+    """Picture size by frame hash (headers only). Each picture is opened once per run of the program (v1.139.2): reading
+    the sizes of a few thousand files took seconds on every Calculate, and Calculate is asked for on every page."""
     from PIL import Image  # noqa: PLC0415
 
     sizes: dict[str, tuple[int, int]] = {}
     for name, key in labels.hash_map(camera).items():
-        if key not in sizes:
+        if key in sizes:
+            continue
+        known = _SIZE_OF_HASH.get(key)
+        if known is None:
             try:
                 with Image.open(datamodel.unsorted_dir(camera) / name) as im:
-                    sizes[key] = im.size
+                    known = _SIZE_OF_HASH[key] = im.size
             except Exception:  # noqa: BLE001 - an unreadable frame has no size, so no value
                 applog.warn_once(_log, f"flow-size-{camera}-{name}", "cannot read the size of %s/%s", camera, name)
                 continue
+        sizes[key] = known
     return sizes
 
 

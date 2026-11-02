@@ -307,3 +307,36 @@ class DedupViewTests(ApiTestCase):
         self.assertEqual(self.client.get(f"{self.base}/dedup/state", params={"feature": dedup}).json()["changes"]["set_changed"], False)
         dedup_box.set_view(CAM, dedup, f"{det}/A")
         self.assertIsNone(self.client.get(f"{self.base}/dedup/state", params={"feature": dedup}).json()["changes"])
+
+    # --- speed (v1.139.2): the work above a Dedup box is done once per request ----------
+    def test_opening_the_dedup_page_works_out_the_evaluation_once_even_with_a_view_and_a_basis(self) -> None:
+        det, _, dedup = self.chain()
+        dedup_box.set_view(CAM, dedup, f"{det}/A")
+        dedup_basis.save(CAM, dedup)
+        calls = []
+        original = flow._evaluation_state
+        flow._evaluation_state = lambda *a, **k: (calls.append(1), original(*a, **k))[1]
+        try:
+            self.assertEqual(self.client.get(f"{self.base}/dedup/state", params={"feature": dedup}).status_code, 200)
+            self.assertEqual(len(calls), 1)
+            calls.clear()
+            self.assertEqual(self.client.get(f"{self.base}/dedup/frames", params={"feature": dedup}).status_code, 200)
+            self.assertEqual(len(calls), 1)
+        finally:
+            flow._evaluation_state = original
+
+    def test_picture_sizes_are_read_from_the_files_once(self) -> None:
+        from PIL import Image  # noqa: PLC0415
+
+        flow._SIZE_OF_HASH.clear()
+        opened = []
+        original = Image.open
+        Image.open = lambda *a, **k: (opened.append(1), original(*a, **k))[1]
+        try:
+            first = flow._frame_sizes(CAM)
+            self.assertEqual(len(opened), len(self.names))
+            opened.clear()
+            self.assertEqual(flow._frame_sizes(CAM), first)
+            self.assertEqual(opened, [])
+        finally:
+            Image.open = original
