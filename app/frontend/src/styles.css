@@ -90,7 +90,12 @@ body {
 .right-col { flex: none; width: 220px; position: sticky; top: calc(var(--top-h) + 12px); max-height: calc(100vh - var(--top-h) - var(--status-h) - 24px); display: flex; flex-direction: column; gap: 10px; }
 .right-col.collapsed { width: auto; }
 .right-col.wide:not(.collapsed) { width: 300px; }
-.stat-card { display: flex; align-items: baseline; gap: 8px; padding: 8px 10px; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; }
+.stat-card { position: relative; display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; padding: 8px 10px; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; }
+/* What changed in the Chain since the box last clustered (v1.139.0): badges in the top right corner, the causes below. */
+.stat-card .change-flag { flex-basis: 100%; font-size: 12px; color: var(--muted); }
+.stat-card .change-flag-badges { position: absolute; top: 6px; right: 8px; display: flex; gap: 4px; }
+.stat-card .change-flag .change-badge { padding: 1px 6px; border: 1px solid var(--warn, #b7791f); border-radius: 10px; color: var(--warn, #b7791f); font-size: 11px; font-weight: 600; white-space: nowrap; }
+.stat-card .change-flag ul { margin: 4px 0; padding-left: 16px; }
 .stat-card strong { font-size: 22px; line-height: 1.1; }
 .stat-card span { color: var(--muted); font-size: 12px; }
 .right-panel {

@@ -140,6 +140,9 @@ def reset_results(camera: str, box: str) -> int:
         con.commit()
     finally:
         con.close()
+    import dedup_basis  # noqa: PLC0415
+
+    dedup_basis.clear(camera, box)  # the clusters it rested on are gone
     datamodel.invalidate_product_membership(camera)
     return mutes
 

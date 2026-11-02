@@ -1127,8 +1127,17 @@ export interface DedupViewInfo {
   no_view: number;
 }
 
+/** What changed in the Chain since the box last clustered (v1.139.0); null when it never did. */
+export interface DedupChanges {
+  view_changed: boolean;
+  set_changed: boolean;
+  /** Named causes ("Detector 2 was run again"), empty when nothing changed. */
+  changes: string[];
+}
+
 export interface DedupState {
   view?: DedupViewInfo | null;
+  changes?: DedupChanges | null;
   feature: string;
   /** The feature the picture actions go through: the Classifier the box reads, else the whole-frame feature. */
   source: string;

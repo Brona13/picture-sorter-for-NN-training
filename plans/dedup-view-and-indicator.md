@@ -1,7 +1,7 @@
 ---
 name: dedup-view-and-indicator
-description: Plan for a view choice in the Dedup box (whole picture, crops and found boxes found going up its own tree) and a change indicator in the side panel; decisions of 2026-11-02; view list built in v1.138.0, indicator still open
-status: v1.138.0 (view list) built 2026-11-02; v1.139.0 (indicator) not built yet
+description: Plan for a view choice in the Dedup box (whole picture, crops and found boxes found going up its own tree) and a change indicator in the side panel; decisions of 2026-11-02; view list built in v1.138.0, indicator built in v1.139.0
+status: v1.138.0 (view list) and v1.139.0 (indicator, Dedup page only) built 2026-11-02
 document_type: plan
 last_updated: 2026-11-02
 ---

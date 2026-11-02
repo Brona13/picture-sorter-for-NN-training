@@ -6,6 +6,7 @@ import numpy as np
 
 import datamodel
 import db
+import dedup_basis
 import dedup_box
 import dedup_view
 import flow
@@ -243,3 +244,63 @@ class DedupViewTests(ApiTestCase):
         self.assertEqual(bad.status_code, 422)
         unknown = self.client.put(f"{self.base}/dedup/view", json={"feature": "dedup:99", "view": None})
         self.assertEqual(unknown.status_code, 404)
+
+
+    # --- what changed since the last clustering (v1.139.0) -------------------------
+    def test_nothing_is_flagged_before_a_clustering_and_after_one_with_nothing_changed(self) -> None:
+        _, _, dedup = self.chain()
+        self.assertIsNone(dedup_basis.compare(CAM, dedup))
+        dedup_basis.save(CAM, dedup)
+        self.assertEqual(dedup_basis.compare(CAM, dedup), {"view_changed": False, "set_changed": False, "changes": []})
+
+    def test_a_detector_that_ran_again_changes_the_view_and_the_set_and_is_named(self) -> None:
+        det, dedup = self.chain_with_spare_target()
+        dedup_box.set_view(CAM, dedup, f"{det}/C")
+        dedup_basis.save(CAM, dedup)
+        self.lose_box(det, "C", self.names[1])
+        flagged = dedup_basis.compare(CAM, dedup)
+        self.assertTrue(flagged["view_changed"])
+        self.assertTrue(flagged["set_changed"])
+        self.assertIn("Detector 1 was run again", flagged["changes"])
+
+    def test_a_tolerance_change_that_moves_pictures_is_a_set_change_and_one_that_does_not_is_not_flagged(self) -> None:
+        _, ev, dedup = self.chain()
+        dedup_basis.save(CAM, dedup)
+        flow.update_node(CAM, ev, {"tolerance": 170.0})  # every picture still passes
+        self.assertEqual(dedup_basis.compare(CAM, dedup), {"view_changed": False, "set_changed": False, "changes": []})
+        flow.update_node(CAM, ev, {"tolerance": 0.001})
+        flagged = dedup_basis.compare(CAM, dedup)
+        self.assertTrue(flagged["set_changed"])
+        self.assertFalse(flagged["view_changed"])
+        self.assertIn(f"Evaluation {ev.split(':')[1]} tolerance changed", flagged["changes"])
+
+    def test_the_mutes_of_a_dedup_box_above_change_the_set_of_the_one_below(self) -> None:
+        first = self.node("dedup")
+        self.post("/edges", {"source": "ingest", "target": first})
+        second = self.node("dedup")
+        self.post("/edges", {"source": first, "target": second})
+        dedup_basis.save(CAM, second)
+        self.mute(first, self.names[:1])
+        flagged = dedup_basis.compare(CAM, second)
+        self.assertTrue(flagged["set_changed"])
+        self.assertIn(f"Dedup {first.split(':')[1]} muted pictures changed", flagged["changes"])
+
+    def test_new_pictures_are_a_set_change_without_a_box_to_blame(self) -> None:
+        _, _, dedup = self.chain()
+        dedup_basis.save(CAM, dedup)
+        picture, _, _ = component()
+        cv2.imwrite(str(datamodel.unsorted_dir(CAM) / "late.png"), picture)
+        ingest.rebuild_index(CAM)
+        flow.update_node(CAM, dedup, {"source": {"box": flow.load_graph(CAM)["nodes"][dedup]["source"]["box"], "dot": "fail"}})  # another dot: another set
+        flagged = dedup_basis.compare(CAM, dedup)
+        self.assertTrue(flagged["set_changed"])
+        self.assertTrue(flagged["changes"])
+
+    def test_the_state_carries_the_flags_and_a_new_view_forgets_the_basis(self) -> None:
+        det, _, dedup = self.chain()
+        state = self.client.get(f"{self.base}/dedup/state", params={"feature": dedup}).json()
+        self.assertIsNone(state["changes"])
+        dedup_basis.save(CAM, dedup)
+        self.assertEqual(self.client.get(f"{self.base}/dedup/state", params={"feature": dedup}).json()["changes"]["set_changed"], False)
+        dedup_box.set_view(CAM, dedup, f"{det}/A")
+        self.assertIsNone(self.client.get(f"{self.base}/dedup/state", params={"feature": dedup}).json()["changes"])

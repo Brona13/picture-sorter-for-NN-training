@@ -290,6 +290,21 @@ export default function DedupView({
           <>
             <strong data-testid="frames-in-scope">{st.frames}</strong>{" "}
             <span>{st.frames === 1 ? "frame" : "frames"} in scope</span>
+            {st.changes && (st.changes.view_changed || st.changes.set_changed) && (
+              <div className="change-flag" data-testid="dedup-changes" role="status">
+                <div className="change-flag-badges">
+                  {st.changes.view_changed && <span className="change-badge">View changed</span>}
+                  {st.changes.set_changed && <span className="change-badge">Set changed</span>}
+                </div>
+                <ul>
+                  {st.changes.changes.slice(0, 5).map((c) => (
+                    <li key={c}>{c}</li>
+                  ))}
+                  {st.changes.changes.length > 5 && <li>… and {st.changes.changes.length - 5} more</li>}
+                </ul>
+                <div>Clusters, maps and mutes were made before this. Run Cluster again to match.</div>
+              </div>
+            )}
           </>
         )
       }

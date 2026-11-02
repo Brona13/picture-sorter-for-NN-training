@@ -14,6 +14,7 @@ import anchor
 import datamodel
 import db
 import dedup
+import dedup_basis
 import dedup_box
 import dedup_view
 import flow
@@ -234,8 +235,11 @@ def state(camera: str, feature: str) -> dict:
         grid = _grid_settings(camera, feature)
     with applog.timed("dedup.state.view"):
         view = dedup_view.summary(camera, feature) if dedup_box.exists(camera, feature) else None
+    with applog.timed("dedup.state.changes"):
+        changes = dedup_basis.compare(camera, feature) if dedup_box.exists(camera, feature) else None
     return {
         "view": view,
+        "changes": changes,
         "feature": feature,
         "source": source,
         "reason": reason,
@@ -339,6 +343,7 @@ def run_cluster(camera: str, body: Params) -> dict:
         with _lock:
             _results[(camera, body.feature)] = result
             _epochs[(camera, body.feature)] = epoch
+        dedup_basis.save(camera, body.feature)  # what this clustering rests on, to flag later changes in the Chain
         return _describe(camera, body.feature, result)
 
     return jobs.registry.submit("dedup_cluster", camera, work, feature=body.feature).to_dict()

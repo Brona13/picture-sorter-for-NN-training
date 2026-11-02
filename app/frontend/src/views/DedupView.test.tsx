@@ -669,3 +669,28 @@ test("a box with nothing above it to look at shows no view control", async () =>
   await screen.findByLabelText("Dedup box");
   expect(screen.queryByTestId("dedup-view")).toBeNull();
 });
+
+test("the side panel flags a changed view and a changed set apart and names what changed", async () => {
+  state = baseState({ changes: { view_changed: true, set_changed: false, changes: ["Detector 2 was run again", "Evaluation 1 tolerance changed"] } });
+  render(<DedupView camera="camA" />);
+  const flag = await screen.findByTestId("dedup-changes");
+  expect(within(flag).getByText("View changed")).toBeInTheDocument();
+  expect(within(flag).queryByText("Set changed")).toBeNull();
+  expect(within(flag).getByText("Detector 2 was run again")).toBeInTheDocument();
+  expect(within(flag).getByText("Evaluation 1 tolerance changed")).toBeInTheDocument();
+});
+
+test("both flags show together, a long list is cut, and nothing shows when nothing changed or the box never clustered", async () => {
+  const many = ["a", "b", "c", "d", "e", "f", "g"].map((x) => `Box ${x} changed`);
+  state = baseState({ changes: { view_changed: true, set_changed: true, changes: many } });
+  const { unmount } = render(<DedupView camera="camA" />);
+  const flag = await screen.findByTestId("dedup-changes");
+  expect(within(flag).getByText("View changed")).toBeInTheDocument();
+  expect(within(flag).getByText("Set changed")).toBeInTheDocument();
+  expect(within(flag).getByText("… and 2 more")).toBeInTheDocument();
+  unmount();
+  state = baseState({ changes: { view_changed: false, set_changed: false, changes: [] } });
+  render(<DedupView camera="camA" />);
+  await screen.findByLabelText("Dedup box");
+  expect(screen.queryByTestId("dedup-changes")).toBeNull();
+});
