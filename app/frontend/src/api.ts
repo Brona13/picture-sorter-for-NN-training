@@ -396,7 +396,7 @@ export interface CameraDeletePreview {
 /** One box of the chain canvas: Ingest, a Classifier (one ROI with its labeling) or a measurement box (see `chain.py`). */
 export interface ChainNode {
   id: string;
-  kind: "ingest" | "roi" | "classify" | "crop" | "detector" | "calc" | "evaluation" | "dedup" | "export" | "merge" | "ingest_ok" | "ingest_ng";
+  kind: "ingest" | "roi" | "classify" | "crop" | "detector" | "calc" | "evaluation" | "dedup" | "export" | "merge" | "ingest_ok" | "ingest_ng" | "box";
   /** Which step of the two-step solution the box is in: 1 = decide OK / NG (the default), 2 = choose pictures. A step-1 Export is the Freeze module. */
   step?: 1 | 2;
   /** The ROI's feature name (null for Ingest). */
@@ -454,6 +454,11 @@ export type FlowSummaryStep =
   | { op: "mask"; shape?: string | null; enabled?: boolean };
 
 export interface FlowSummary {
+  /** A Box (step 2): its mode, the detector boxes chosen (names), whether the choice is complete, and how many pictures have a rectangle. */
+  box_mode?: "one" | "two";
+  holes?: string[];
+  ready?: boolean;
+  found?: number;
   /** Ingest OK / NG (step 2): the freeze of step 1 it reads (null before the first freeze), why it is empty, and its class. */
   freeze?: number | null;
   warning?: string | null;
@@ -668,7 +673,46 @@ export interface ExportState {
   /** Every freeze of this box, newest first (v1.131.4; an older backend sends only `latest`). */
   versions?: ExportLatest[];
 }
-export type FlowNodeDetail = FlowCrop | FlowDetector | FlowCalc | FlowEvaluation | FlowExport;
+/** The Box module of step 2: one upright rectangle per picture round one or two detector boxes of step 1 (see `box_module.py`). */
+export type BoxSide = "left" | "right" | "up" | "down";
+export const BOX_SIDES: BoxSide[] = ["left", "right", "up", "down"];
+export interface FlowBoxModule {
+  kind: "box";
+  mode: "one" | "two";
+  /** The margins count from the box edge (the background beyond it) or from its centre. */
+  measure_from: "edge" | "centre";
+  margins: Record<BoxSide, number>;
+  /** The detector boxes chosen, left hole first. */
+  holes: { detector: string; target: string }[];
+  /** How many the mode needs. */
+  needed: 1 | 2;
+  /** Every detector box of step 1 that can be chosen. */
+  candidates: { detector: string; target: string; detector_label: string; label: string }[];
+  /** The pictures that have a rectangle. */
+  frames: string[];
+  total: number;
+  /** Detectors the boxes come from that were changed since they last ran: their boxes are the old ones. */
+  stale: string[];
+}
+export interface BoxRect {
+  /** The part's direction in degrees, counter-clockwise on screen. */
+  angle: number;
+  /** The rectangle turned with the part: left-top, right-top, right-bottom, left-bottom in the part's own frame. */
+  corners: [number, number][];
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+export interface BoxGeometry {
+  frame: string;
+  size: { w: number; h: number } | null;
+  holes: (FlowBox & { detector: string; target: string })[];
+  missing: string[];
+  rect: BoxRect | null;
+  upright: { x: number; y: number; w: number; h: number } | null;
+}
+export type FlowNodeDetail = FlowCrop | FlowDetector | FlowCalc | FlowEvaluation | FlowExport | FlowBoxModule;
 export interface FlowBox {
   x: number;
   y: number;
@@ -1567,8 +1611,10 @@ export const api = {
   chain: (camera: string) => request<ChainCanvas>(`/cameras/${encodeURIComponent(camera)}/chain`),
   saveChainLayout: (camera: string, layout: ChainLayout) =>
     request<ChainCanvas>(`/cameras/${encodeURIComponent(camera)}/chain/layout`, send("PUT", layout)),
-  flowCreate: (camera: string, kind: "crop" | "detector" | "calc" | "evaluation" | "dedup" | "export" | "merge" | "ingest_ok" | "ingest_ng", step: 1 | 2 = 1) =>
+  flowCreate: (camera: string, kind: "crop" | "detector" | "calc" | "evaluation" | "dedup" | "export" | "merge" | "ingest_ok" | "ingest_ng" | "box", step: 1 | 2 = 1) =>
     request<{ id: string }>(`/cameras/${encodeURIComponent(camera)}/flow/nodes`, send("POST", { kind, step })),
+  boxGeometry: (camera: string, id: string, frame: string) =>
+    request<BoxGeometry>(`/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/box-geometry?frame=${encodeURIComponent(frame)}`),
   flowNode: (camera: string, id: string) =>
     request<FlowNodeDetail>(`/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}`),
   flowUpdate: (camera: string, id: string, body: Record<string, unknown>) =>

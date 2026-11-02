@@ -32,6 +32,6 @@ test("a Merge is a small square, in its own group", () => {
 test("the step-1 export tile is the Freeze module, and step 2 has its own palette", () => {
   expect(paletteItem("export").label).toBe("Freeze");
   expect(paletteOf(1)).toBe(PALETTE);
-  expect(paletteOf(2).flatMap((g) => g.items.map((i) => i.kind))).toEqual(["ingest_ok", "ingest_ng", "classifier"]); // Box and Export follow
+  expect(paletteOf(2).flatMap((g) => g.items.map((i) => i.kind))).toEqual(["ingest_ok", "ingest_ng", "box", "classifier"]); // Export follows
   expect(HUE.ingest_ok).not.toBe(HUE.ingest_ng);
 });

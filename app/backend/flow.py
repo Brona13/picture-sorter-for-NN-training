@@ -42,9 +42,10 @@ _log = applog.get("flow")
 GRAPH_KEY = "flow.graph"
 RESULTS_PREFIX = "flow.det."
 INGEST_ID = "ingest"
-KINDS = ("crop", "detector", "calc", "evaluation", "dedup", "export", "merge", "ingest_ok", "ingest_ng")
-PREFIX = {"crop": "crop", "detector": "det", "calc": "calc", "evaluation": "eval", "dedup": "dedup", "export": "export", "merge": "merge", "ingest_ok": "inok", "ingest_ng": "inng"}
+KINDS = ("crop", "detector", "calc", "evaluation", "dedup", "export", "merge", "ingest_ok", "ingest_ng", "box")
+PREFIX = {"crop": "crop", "detector": "det", "calc": "calc", "evaluation": "eval", "dedup": "dedup", "export": "export", "merge": "merge", "ingest_ok": "inok", "ingest_ng": "inng", "box": "box"}
 PILE_CLASS = {"ingest_ok": "OK", "ingest_ng": "NG"}
+STEP_TWO_KINDS = ("ingest_ok", "ingest_ng", "box")  # boxes that exist only in step 2 (a Box reads the detectors of step 1, by name, not by line)
 PILES = ("ingest_ok", "ingest_ng")  # step 2 starts here: the OK / NG pictures of the last freeze (``piles.py``); always step 2
 KIND_OF = {v: k for k, v in PREFIX.items()}
 PICTURE_KINDS = ("crop", "detector")  # boxes that read a picture (a box with no line reads the whole picture)
@@ -580,6 +581,10 @@ def _default_config(kind: str) -> dict:
         return {"lines": [], "mode": "any"}  # the dots it collects (see ``merge_meaning``); any = union, all = intersection
     if kind in PILES:
         return {"step": 2}  # the pictures come from the last freeze of step 1 (see ``piles.py``); nothing to set
+    if kind == "box":
+        import box_module  # noqa: PLC0415  (it imports this module)
+
+        return {"step": 2, **box_module.default_config()}  # one upright rectangle per picture round one or two step-1 detector boxes
     if kind == "dedup":
         return {"source": None}  # None: the whole camera (or the box a line comes from); else {"feature", "dot"} of a Classifier
     return {"nominal": None, "tolerance": 3.0, "zone": clean_zone(None)}
@@ -662,8 +667,8 @@ def create_node(camera: str, kind: str, step: int = 1) -> str:
         raise FlowError(f"Unknown box kind: {kind}")
     if step not in (1, 2):
         raise FlowError("The step is 1 or 2.")
-    if kind in PILES:
-        step = 2  # a pile is where step 2 starts
+    if kind in STEP_TWO_KINDS:
+        step = 2  # a pile is where step 2 starts, a Box works on the frozen sets
     graph = load_graph(camera)
     n = 1
     while f"{PREFIX[kind]}:{n}" in graph["nodes"]:
@@ -1019,6 +1024,10 @@ def update_node(camera: str, node_id: str, raw: dict) -> dict:
                 node[key] = None if raw[key] in (None, "") else str(raw[key])
         if "clockwise" in raw:
             node["clockwise"] = bool(raw["clockwise"])
+    elif kind == "box":
+        import box_module  # noqa: PLC0415
+
+        box_module.apply_settings(camera, graph, node, raw)
     elif kind == "dedup":
         if "source" in raw:
             node["source"] = _dedup_source(camera, node_id, raw["source"])
@@ -1530,6 +1539,10 @@ def _example_image(example: dict) -> np.ndarray:
 def signature(graph: dict, node_id: str) -> str:
     """Changes when what a detector would find changes: its targets, examples, search settings and its input."""
     node = graph["nodes"][node_id]
+    if node["kind"] == "box":
+        import box_module  # noqa: PLC0415
+
+        return box_module.signature(graph, node_id)
     parent = parent_of(graph, node_id)
     material = {
         "algo": ALGORITHM,
@@ -1548,6 +1561,15 @@ def _results_key(node_id: str) -> str:
 
 
 def load_stored(camera: str, node_id: str) -> dict:
+    """The stored boxes of a detector, or of a Box (made again first when its settings or the runs it reads changed)."""
+    if kind_of(node_id) == "box":
+        import box_module  # noqa: PLC0415
+
+        return box_module.ensure(camera, node_id)
+    return _load_raw(camera, node_id)
+
+
+def _load_raw(camera: str, node_id: str) -> dict:
     raw = db.get_setting(camera, _results_key(node_id))
     if raw:
         try:
@@ -2025,25 +2047,19 @@ def _calc_pairs(camera: str, calc_id: str, graph: dict) -> dict[str, tuple[tuple
     return pairs
 
 
-def calc_boxes(camera: str, calc_id: str, graph: dict | None = None) -> dict[str, dict[str, dict]]:
-    """The two boxes a Calculate box measures, by frame name, on the whole picture: ``{frame: {point key: box}}``.
-    The detectors may work behind different crops; each stored box is moved (and turned) by the crops above its
-    detector, like the points in :func:`_calc_pairs`. A frame where a point is missing keeps the box it has."""
-    graph = graph or load_graph(camera)
-    keys = point_keys(graph, calc_id)
-    a, b = effective_points(graph, calc_id)
-    if a is None or b is None:
-        return {}
+def whole_picture_boxes(camera: str, graph: dict, refs: dict[str, tuple[str, str]], only: str | None = None) -> dict[str, dict[str, dict]]:
+    """Stored detector boxes on the whole picture, by frame name: ``{frame: {ref key: box}}`` for ``refs`` (key -> (detector,
+    target)). The detectors may work behind different crops; each stored box is moved (and turned) by the crops above its
+    detector. A frame where a box is missing keeps the boxes it has. ``only`` limits it to one frame."""
     sizes = _frame_sizes(camera)
     hmap = labels.hash_map(camera)
     finder = Finder(camera)
     stored: dict[str, dict] = {}
     out: dict[str, dict[str, dict]] = {}
-    for point in (a, b):
-        det, name = keys[point]
+    for point, (det, name) in refs.items():
         rects = input_rects(graph, det)
         stored.setdefault(det, load_stored(camera, det)["frames"])
-        for frame in _live_frames(camera):
+        for frame in ([only] if only else _live_frames(camera)):
             key = hmap.get(frame)
             box = stored[det].get(key, {}).get(name) if key else None
             if not box or key not in sizes:
@@ -2055,6 +2071,17 @@ def calc_boxes(camera: str, calc_id: str, graph: dict | None = None) -> dict[str
             x, y = m.point(box["x"], box["y"])
             out.setdefault(frame, {})[point] = {**box, "x": x, "y": y, "angle": float(box.get("angle", 0.0)) + m.turn}
     return out
+
+
+def calc_boxes(camera: str, calc_id: str, graph: dict | None = None) -> dict[str, dict[str, dict]]:
+    """The two boxes a Calculate box measures, by frame name, on the whole picture: ``{frame: {point key: box}}``
+    (see :func:`whole_picture_boxes`). A frame where a point is missing keeps the box it has."""
+    graph = graph or load_graph(camera)
+    keys = point_keys(graph, calc_id)
+    a, b = effective_points(graph, calc_id)
+    if a is None or b is None:
+        return {}
+    return whole_picture_boxes(camera, graph, {a: keys[a], b: keys[b]})
 
 
 def calc_values(camera: str, calc_id: str, graph: dict | None = None) -> dict[str, float | None]:
@@ -2422,6 +2449,10 @@ def node_detail(camera: str, node_id: str, graph: dict | None = None) -> dict:
     elif kind == "dedup":
         parent = next((e["source"] for e in graph["edges"] if e["target"] == node_id), None)
         detail.update({"input_box": parent, "source": node.get("source")})
+    elif kind == "box":
+        import box_module  # noqa: PLC0415
+
+        detail.update(box_module.detail(camera, graph, node_id))
     elif kind == "merge":
         detail.update({"lines": merge_lines(node), "mode": node.get("mode", "any"), "meaning": merge_meaning(graph, node_id)})
     elif kind == "export":

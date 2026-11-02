@@ -389,3 +389,20 @@ test("Ingest OK feeds the OK dot of a Classifier and Ingest NG its NG dot; the w
   expect(describeFlow("ingest_ok", { frames: 3, freeze: 2 })).toBe("3 OK pictures · from freeze v2");
   expect(describeFlow("ingest_ng", { frames: 0, freeze: null, warning: "Step 1 is not frozen yet." })).toBe("0 NG pictures · Step 1 is not frozen yet.");
 });
+
+test("a Box is anchored to a Classifier through its one dot, and says what it still needs", () => {
+  const withBox: ChainCanvas = {
+    ...canvas,
+    nodes: [
+      ...canvas.nodes,
+      node({ id: "roi:pick", ref: "pick", label: "pick", step: 2 }),
+      node({ id: "box:1", kind: "box", ref: null, label: "Box 1", role: null, scope: null, step: 2 }),
+    ],
+  };
+  expect(flowConnect(withBox, { source: "box:1", sourceHandle: "t:box", target: "roi:pick", targetHandle: null })).toEqual({ anchor: { feature: "pick", detector: "box:1", target: "box" } });
+  expect(flowConnect(withBox, { source: "box:1", sourceHandle: "t:box", target: "roi:pick", targetHandle: "in:OK" })).toHaveProperty("error"); // not a class dot
+  expect(describeFlow("box", { ready: false, box_mode: "two" })).toBe("choose two detector boxes");
+  expect(describeFlow("box", { ready: false, box_mode: "one" })).toBe("choose a detector box");
+  expect(describeFlow("box", { ready: true, box_mode: "two", found: 7, total: 9 })).toBe("7 of 9 pictures · two boxes");
+  expect(describeFlow("box", { ready: true, box_mode: "one", found: 1, total: 1 })).toBe("1 of 1 pictures · one box");
+});

@@ -44,6 +44,13 @@ const PALETTE_ICONS: Record<PaletteKind, ReactElement> = {
       <path d="M12 12v5M9.5 14.5L12 17l2.5-2.5" />
     </>
   ),
+  box: (
+    <>
+      <rect x="4" y="7" width="16" height="10" rx="1.5" strokeDasharray="3 2" />
+      <circle cx="8.5" cy="12" r="1.3" />
+      <circle cx="15.5" cy="12" r="1.3" />
+    </>
+  ),
   ingest_ok: (
     <>
       <path d="M4 14v5h16v-5" />
@@ -93,6 +100,7 @@ export const ICON_OF: Record<ChainNode["kind"], PaletteKind | "ingest"> = {
   merge: "merge",
   ingest_ok: "ingest_ok",
   ingest_ng: "ingest_ng",
+  box: "box",
 };
 
 export function KindIcon({ kind, size = 16, className }: { kind: PaletteKind | ChainNode["kind"] | "ingest"; size?: number; className?: string }) {

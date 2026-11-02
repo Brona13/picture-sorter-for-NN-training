@@ -87,7 +87,7 @@ function Box({ data, selected }: NodeProps<BoxNode>) {
       style={{ ["--hue" as string]: hueOf(node) }}
       data-testid={`chain-node-${node.id}`}
     >
-      {node.kind !== "ingest" && node.kind !== "export" && !isPileKind(node.kind) && !isClassifier && <Handle type="target" position={Position.Left} />}
+      {node.kind !== "ingest" && node.kind !== "export" && node.kind !== "box" && !isPileKind(node.kind) && !isClassifier && <Handle type="target" position={Position.Left} />}
       <KindIcon kind={node.kind} className="chain-node-kind" />
       <div className="chain-node-title">{node.label}</div>
       {node.kind === "export" ? (
@@ -107,6 +107,11 @@ function Box({ data, selected }: NodeProps<BoxNode>) {
             <span title="Last freeze">{node.flow?.frozen ? `❄ v${node.flow.frozen}${node.flow.changed ? " ≠" : ""}` : "❄ –"}</span>
           </div>
         </>
+      ) : node.kind === "box" ? (
+        <div className="chain-node-counters" aria-label="Counters" title={describeNode(node)}>
+          <Counter icon="▦" value={node.flow?.found ?? 0} title="Pictures that have a rectangle" />
+          <span title={node.flow?.ready ? (node.flow?.holes ?? []).join(" + ") : "Open the Box and choose the detector boxes"}>{node.flow?.ready ? (node.flow?.box_mode === "one" ? "1 box" : "2 boxes") : "⚠ choose"}</span>
+        </div>
       ) : isPileKind(node.kind) ? (
         <div className="chain-node-counters" aria-label="Counters" title={describeNode(node)}>
           <Counter icon="▦" value={node.flow?.frames ?? 0} title={`${node.flow?.cls ?? ""} pictures of the last freeze of step 1`} />
@@ -201,7 +206,13 @@ function Box({ data, selected }: NodeProps<BoxNode>) {
             <Handle type="source" position={Position.Right} id={targetHandle(target)} />
           </div>
         ))}
-      {!isClassifier && node.kind !== "evaluation" && <Handle type="source" position={Position.Right} style={node.kind === "detector" ? { top: 16 } : undefined} />}
+      {node.kind === "box" && (
+        <div className="chain-node-product chain-node-target" title="Drag this dot onto a step-2 Classifier: it reads the rectangle this Box made for each picture">
+          box
+          <Handle type="source" position={Position.Right} id={targetHandle("box")} />
+        </div>
+      )}
+      {!isClassifier && node.kind !== "evaluation" && node.kind !== "box" && <Handle type="source" position={Position.Right} style={node.kind === "detector" ? { top: 16 } : undefined} />}
     </div>
   );
 }
@@ -210,7 +221,7 @@ const nodeTypes = { box: Box };
 /** How far (px) from an anchor point a dragged arrow still snaps to it. */
 const CONNECT_RADIUS = 40;
 const MAIN_HANDLE = "main";
-const FLOW_PAGE = { crop: "Picture edits", detector: "Detector", calc: "Calculate", evaluation: "Evaluation", dedup: "Dedup", export: "Export" } as const;
+const FLOW_PAGE = { crop: "Picture edits", detector: "Detector", calc: "Calculate", evaluation: "Evaluation", dedup: "Dedup", export: "Export", box: "Box" } as const;
 
 function toFlowNode(n: ChainNode, onRename: BoxData["onRename"], selected: boolean): BoxNode {
   return { id: n.id, type: "box", position: { x: n.x, y: n.y }, data: { node: n, onRename }, selected, deletable: n.kind === "roi" || isFlowKind(n.kind) };
@@ -498,7 +509,7 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
     return freeSpot(taken, dropPosition(middle, box), box);
   };
 
-  const addFlowBox = async (kind: "crop" | "detector" | "calc" | "evaluation" | "dedup" | "export" | "merge" | "ingest_ok" | "ingest_ng", at?: { x: number; y: number }) => {
+  const addFlowBox = async (kind: "crop" | "detector" | "calc" | "evaluation" | "dedup" | "export" | "merge" | "ingest_ok" | "ingest_ng" | "box", at?: { x: number; y: number }) => {
     await applyFlow(async () => {
       const made = await api.flowCreate(camera, kind, activeStep);
       setSelectedId(made.id);

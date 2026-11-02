@@ -245,11 +245,16 @@ def set_anchor(camera: str, feature: str, detector: str, target: str, frame: str
         raise AnchorError("The mode is box or rect.")
     graph = flow.load_graph(camera)
     node = graph["nodes"].get(detector)
-    if node is None or node["kind"] != "detector":
-        raise AnchorError("The anchor must be a detector box.")
-    group = next((t for t in node["targets"] if t["name"] == target and flow.count_of(t) > 1), None)
-    if target not in flow.all_slots(node) and group is None:
-        raise AnchorError(f"The detector has no target named {target!r}.")
+    if node is None or node["kind"] not in ("detector", "box"):
+        raise AnchorError("The anchor must be a detector box or a Box.")
+    if node["kind"] == "box":  # a Box gives one rectangle per picture, target "box"
+        group = None
+        if target != "box":
+            raise AnchorError("A Box has one target, box.")
+    else:
+        group = next((t for t in node["targets"] if t["name"] == target and flow.count_of(t) > 1), None)
+        if target not in flow.all_slots(node) and group is None:
+            raise AnchorError(f"The detector has no target named {target!r}.")
     if group is not None and mode != "box":
         raise AnchorError(f"{target} has several boxes: they are used together as the found boxes (mode box); pick one numbered box for a rectangle of your own.")
     anchor = {"detector": detector, "target": target, "mode": mode,

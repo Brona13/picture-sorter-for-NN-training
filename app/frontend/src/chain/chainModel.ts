@@ -127,6 +127,10 @@ function describeFlowBox(kind: string, f: FlowSummary | undefined): string {
     if (f?.a || f?.b) return `1 of 2 points (${f.a ?? f.b}) · needs one more target`; // one detector target gives one point; two are needed
     return "needs two points · connect a detector with two targets";
   }
+  if (kind === "box") {
+    if (!f?.ready) return f?.box_mode === "one" ? "choose a detector box" : "choose two detector boxes";
+    return `${f.found ?? 0} of ${f.total ?? 0} pictures · ${f.box_mode === "one" ? "one box" : "two boxes"}`;
+  }
   if (kind === "ingest_ok" || kind === "ingest_ng") {
     const n = f?.frames ?? 0;
     const what = `${n} ${kind === "ingest_ok" ? "OK" : "NG"} picture${n === 1 ? "" : "s"}`;
@@ -170,7 +174,7 @@ export function describeNode(n: ChainNode): string {
   return `Feature · ${where} · ${n.labeled}/${n.frames} labeled`;
 }
 
-export const FLOW_KINDS = ["crop", "detector", "calc", "evaluation", "dedup", "export", "merge", "ingest_ok", "ingest_ng"] as const;
+export const FLOW_KINDS = ["crop", "detector", "calc", "evaluation", "dedup", "export", "merge", "ingest_ok", "ingest_ng", "box"] as const;
 /** Ingest OK / Ingest NG: where step 2 starts (the OK / NG pictures of the last freeze of step 1). */
 export const isPileKind = (kind: string | undefined): boolean => kind === "ingest_ok" || kind === "ingest_ng";
 export const isFlowKind = (kind: string | undefined): boolean => !!kind && (FLOW_KINDS as readonly string[]).includes(kind);
@@ -258,7 +262,7 @@ export function flowConnect(canvas: ChainCanvas, c: Connection): FlowLink {
     }
     return { error: `${source.label} gives no OK / NG dot: a Merge collects Classifier class dots, an Evaluation's pass or fail, or another Merge.` };
   }
-  if (source.kind === "detector" && target.kind === "roi" && target.ref) {
+  if ((source.kind === "detector" || source.kind === "box") && target.kind === "roi" && target.ref) {
     // A detector target's dot dropped on an ROI feature anchors the ROI to that target's box.
     const name = targetOfHandle(c.sourceHandle);
     if (!name) return { error: "Drag from one of the detector's target dots (on its right edge) to the ROI." };
@@ -392,4 +396,4 @@ export const isRoiInputEdge = (canvas: ChainCanvas, edge: ChainEdge): boolean =>
 
 /** An arrow from a detector to an ROI box is the ROI's anchor (stored in the anchor, not in the flow graph). */
 export const isAnchorEdge = (canvas: ChainCanvas, edge: ChainEdge): boolean =>
-  canvas.nodes.find((n) => n.id === edge.source)?.kind === "detector" && canvas.nodes.find((n) => n.id === edge.target)?.kind === "roi";
+  ["detector", "box"].includes(canvas.nodes.find((n) => n.id === edge.source)?.kind ?? "") && canvas.nodes.find((n) => n.id === edge.target)?.kind === "roi";

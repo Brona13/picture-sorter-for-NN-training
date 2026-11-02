@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 
 import anchor
+import box_module
 import class_lines
 import db
 import dedup_box
@@ -276,6 +277,15 @@ def get_boxes(camera: str, node_id: str, only_review: bool = False) -> dict:
     if only_review:
         boxes = {f: boxes[f] for f in review}
     return {"boxes": boxes, "review": review}
+
+
+@router.get("/cameras/{camera}/flow/nodes/{node_id}/box-geometry")
+def get_box_geometry(camera: str, node_id: str, frame: str) -> dict:
+    """One picture of a Box: the detector boxes it uses, the rectangle turned with the part and the upright one, on the whole picture."""
+    _known(camera, node_id)
+    if flow.kind_of(node_id) != "box":
+        raise HTTPException(status_code=422, detail="This is not a Box.")
+    return box_module.frame_geometry(camera, flow.load_graph(camera), node_id, frame)
 
 
 @router.get("/cameras/{camera}/flow/nodes/{node_id}/calc-boxes")

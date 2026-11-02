@@ -1,7 +1,7 @@
 import type { ChainNode } from "../api";
 
 /** One colour per box type (the hue of its border, fill and palette tile). */
-export const HUE = { ingest: 160, roi: 225, classify: 145, crop: 100, detector: 265, calc: 200, evaluation: 340, dedup: 55, export: 20, merge: 215, ingest_ok: 140, ingest_ng: 5 } as const;
+export const HUE = { ingest: 160, roi: 225, classify: 145, crop: 100, detector: 265, calc: 200, evaluation: 340, dedup: 55, export: 20, merge: 215, ingest_ok: 140, ingest_ng: 5, box: 180 } as const;
 
 /** One fixed size per box type, in canvas pixels. A box never changes size with what it holds; only the rows that are
  *  classes (Classify box) or targets (detector) make a box taller, because each row carries its own dot. */
@@ -18,10 +18,11 @@ export const BOX_SIZE: Record<ChainNode["kind"], { w: number; h: number }> = {
   merge: { w: 64, h: 64 },
   ingest_ok: { w: 170, h: 64 },
   ingest_ng: { w: 170, h: 64 },
+  box: { w: 200, h: 86 },
 };
 
 /** What the palette can add. One Classifier tile: its mode (Product or Feature) is chosen in the panel. */
-export type PaletteKind = "classifier" | "crop" | "detector" | "calc" | "evaluation" | "dedup" | "export" | "merge" | "ingest_ok" | "ingest_ng";
+export type PaletteKind = "classifier" | "crop" | "detector" | "calc" | "evaluation" | "dedup" | "export" | "merge" | "ingest_ok" | "ingest_ng" | "box";
 
 export interface PaletteItem {
   kind: PaletteKind;
@@ -64,7 +65,7 @@ export const PALETTE: { group: string; items: PaletteItem[] }[] = [
   },
 ];
 
-/** The step-2 modules so far: the two piles it starts from and the Classifier. Box and Export follow in the next versions. */
+/** The step-2 modules so far: the two piles it starts from, the Box and the Classifier. Export follows in the next versions. */
 export const PALETTE_STEP2: { group: string; items: PaletteItem[] }[] = [
   {
     group: "Pictures in",
@@ -72,6 +73,10 @@ export const PALETTE_STEP2: { group: string; items: PaletteItem[] }[] = [
       { kind: "ingest_ok", label: "Ingest OK", box: "ingest_ok", hint: "The OK pictures of the last freeze of step 1." },
       { kind: "ingest_ng", label: "Ingest NG", box: "ingest_ng", hint: "The NG pictures of the last freeze of step 1." },
     ],
+  },
+  {
+    group: "Picture in, box out",
+    items: [{ kind: "box", label: "Box", box: "box", hint: "One upright rectangle per picture round one or two detector boxes of step 1 (chosen in its panel). Draw its dot onto a Classifier." }],
   },
   {
     group: "Sorts pictures into classes",

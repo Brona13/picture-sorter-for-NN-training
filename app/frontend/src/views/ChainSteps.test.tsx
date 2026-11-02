@@ -26,10 +26,11 @@ beforeEach(() => {
     calls.push({ url, method, body });
     if (url.endsWith("/flow/nodes") && method === "POST") {
       const pile = body.kind === "ingest_ok" || body.kind === "ingest_ng";
-      const id = pile ? "inok:1" : "crop:1";
+      const id = body.kind === "box" ? "box:1" : pile ? "inok:1" : "crop:1";
       current.nodes.push(node({
-        id, kind: body.kind, step: pile ? 2 : body.step, ref: null, label: pile ? "Ingest OK 1" : "Picture edits 1", role: null, scope: null, classes: [], x: 0, y: 150,
+        id, kind: body.kind, step: pile || body.kind === "box" ? 2 : body.step, ref: null, label: body.kind === "box" ? "Box 1" : pile ? "Ingest OK 1" : "Picture edits 1", role: null, scope: null, classes: [], x: 0, y: 150,
         ...(pile ? { flow: { frames: 3, freeze: 1, warning: null, cls: "OK" } } : {}),
+        ...(body.kind === "box" ? { flow: { box_mode: "two", holes: [], ready: false, found: 0, total: 0, targets: ["box"] } } : {}),
       }));
       return new Response(JSON.stringify({ id }), { status: 201 });
     }
@@ -151,4 +152,19 @@ test("a Classifier made in the Step 2 tab is made a step-2 Classifier, one made 
   fireEvent.click(screen.getByRole("tab", { name: /Step 2/ }));
   fireEvent.click(screen.getByRole("button", { name: "Add Classifier" }));
   await waitFor(() => expect(calls.some((c) => c.method === "PUT" && c.url.endsWith("/step") && c.body?.step === 2)).toBe(true));
+});
+
+test("the Step 2 tab offers a Box; it is made for step 2, shows what it still needs and has its one dot", async () => {
+  current.nodes = [ingest, freeze()];
+  renderView();
+  await screen.findByTestId("chain-node-export:1");
+  expect(screen.queryByRole("button", { name: "Add Box" })).toBeNull(); // not in step 1
+  fireEvent.click(screen.getByRole("tab", { name: /Step 2/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Add Box" }));
+  await waitFor(() => expect(calls.some((c) => c.method === "POST" && c.url.endsWith("/flow/nodes") && c.body?.kind === "box" && c.body?.step === 2)).toBe(true));
+  const box = await screen.findByTestId("chain-node-box:1");
+  expect(box).toHaveTextContent("Box 1");
+  expect(box).toHaveTextContent("⚠ choose");
+  expect(box.querySelectorAll("[data-handleid='t:box']")).toHaveLength(1); // the one output dot
+  expect(box.querySelector("[data-handlepos='left']")).toBeNull(); // nothing feeds a Box: the detector boxes are chosen in its panel
 });
