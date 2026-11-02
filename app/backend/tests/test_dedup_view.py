@@ -340,3 +340,26 @@ class DedupViewTests(ApiTestCase):
             self.assertEqual(opened, [])
         finally:
             Image.open = original
+
+
+def test_picture_listing_follows_the_directory(tmp_path, monkeypatch):
+    """The listing is cached while the directory is unchanged and sees an added or removed picture (v1.139.3)."""
+    import os
+    import time
+
+    import datamodel
+
+    folder = tmp_path / "pics"
+    folder.mkdir()
+    for name in ("b.png", "a.png", "notes.txt"):
+        (folder / name).write_bytes(b"x")
+    old = time.time() - 60
+    os.utime(folder, (old, old))
+    assert [p.name for p in datamodel._list_images(folder)] == ["a.png", "b.png"]
+    (folder / "c.png").write_bytes(b"x")
+    os.utime(folder, (old + 10, old + 10))
+    assert [p.name for p in datamodel._list_images(folder)] == ["a.png", "b.png", "c.png"]
+    (folder / "a.png").unlink()
+    os.utime(folder, (old + 20, old + 20))
+    assert [p.name for p in datamodel._list_images(folder)] == ["b.png", "c.png"]
+    assert datamodel._list_images(tmp_path / "missing") == []

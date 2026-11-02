@@ -11,6 +11,8 @@ all live in SQLite (``data/picture_sorter.db``) — see ``db.py`` / ``labels.py`
 """
 from __future__ import annotations
 
+import os
+import time
 from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
@@ -150,14 +152,31 @@ def list_cameras() -> list[str]:
     return _snapshot_value(("cameras", str(config.CAMERAS_ROOT)), load)
 
 
+_LISTING_CACHE: dict[str, tuple[int, list[Path]]] = {}
+_LISTING_SETTLE_NS = 2_000_000_000  # a directory changed within the last 2 s is not trusted (same-tick writes)
+
+
 def _list_images(directory: Path) -> list[Path]:
-    if not directory.exists():
+    """The pictures in ``directory``, sorted. Uses the directory listing's own file type (no ``stat`` per file, which
+    is what made 2400 pictures cost ~1 s on Windows) and remembers the result while the directory is unchanged."""
+    try:
+        mtime = directory.stat().st_mtime_ns
+    except OSError:
         return []
-    return sorted(
-        p
-        for p in directory.iterdir()
-        if p.is_file() and p.suffix.lower() in config.IMAGE_EXTENSIONS
-    )
+    key = str(directory)
+    hit = _LISTING_CACHE.get(key)
+    if hit is not None and hit[0] == mtime:
+        return list(hit[1])
+    extensions = config.IMAGE_EXTENSIONS
+    with os.scandir(directory) as entries:
+        found = sorted(
+            Path(e.path) for e in entries if os.path.splitext(e.name)[1].lower() in extensions and e.is_file()
+        )
+    if time.time_ns() - mtime > _LISTING_SETTLE_NS:
+        _LISTING_CACHE[key] = (mtime, found)
+    else:
+        _LISTING_CACHE.pop(key, None)
+    return list(found)
 
 
 def list_unsorted(camera: str, *, include_removed: bool = False) -> list[Path]:

@@ -47,7 +47,7 @@ def _roi_tuple(camera: str, feature: str | None, path: Path | None = None, frame
     if path is not None and anchor.get_anchor(camera, feature):
         with Image.open(path) as picture:
             width, height = picture.size
-        placed = engine.resolve_roi_for_frame(camera, feature, labels.hash_map(camera).get(frame or path.name, ""), width, height)
+        placed = engine.resolve_roi_for_frame(camera, feature, labels.frame_hash(camera, frame or path.name), width, height)
         if placed is None:
             raise HTTPException(status_code=404, detail="The detector found no anchor on this picture.")
         roi = placed
