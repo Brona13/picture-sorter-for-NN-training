@@ -36,6 +36,36 @@ class DedupViewTests(ApiTestCase):
         self.base = f"/api/cameras/{CAM}"
         self.flow = f"{self.base}/flow"
 
+    def test_evaluation_is_kept_between_requests_and_follows_changes(self) -> None:
+        """Worked out once while nothing it reads has changed; a write or a new picture makes it new again (v1.139.3)."""
+        import time
+
+        _, ev, _ = self.chain()
+        folder = datamodel.unsorted_dir(CAM)
+        old = time.time() - 60
+        import os
+
+        os.utime(folder, (old, old))  # settled: a folder changed a moment ago is never kept
+        flow._EVAL_MEMORY.clear()
+        calls = []
+        real = flow._evaluation_state
+        flow._evaluation_state = lambda c, e: (calls.append(e), real(c, e))[1]
+        try:
+            first = flow.evaluation_state(CAM, ev)
+            again = flow.evaluation_state(CAM, ev)
+            self.assertEqual(len(calls), 1)
+            self.assertEqual(first["verdicts"], again["verdicts"])
+            again["verdicts"].clear()  # a caller changing its copy must not change the kept answer
+            self.assertTrue(flow.evaluation_state(CAM, ev)["verdicts"])
+            self.assertEqual(len(calls), 1)
+            flow.update_node(CAM, ev, {"nominal": 0.0, "tolerance": 0.001})  # a write: new answer
+            os.utime(folder, (old, old))
+            changed = flow.evaluation_state(CAM, ev)
+            self.assertEqual(len(calls), 2)
+            self.assertNotEqual(changed["counts"], first["counts"])
+        finally:
+            flow._evaluation_state = real
+
     # --- helpers -----------------------------------------------------------------
     def post(self, path: str, body: dict | None = None, status: int = 201) -> dict:
         r = self.client.post(f"{self.flow}{path}", json=body or {})

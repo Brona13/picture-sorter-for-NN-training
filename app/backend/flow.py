@@ -22,6 +22,7 @@ import base64
 import hashlib
 import json
 import math
+import time
 
 import cv2
 import numpy as np
@@ -2102,7 +2103,39 @@ def evaluation_state(camera: str, eval_id: str) -> dict:
     the box judges (dx, dy) by its zone instead (``mode`` "zone", ``points``).
 
     Inside a render snapshot (the Chain canvas) the answer is worked out once per box and shared: treat it as read-only."""
-    return datamodel._snapshot_value(("eval_state", camera, eval_id), lambda: _evaluation_state(camera, eval_id))
+    return datamodel._snapshot_value(("eval_state", camera, eval_id), lambda: _remembered_evaluation(camera, eval_id))
+
+
+_EVAL_MEMORY: dict[tuple, tuple[tuple, dict]] = {}
+_EVAL_SETTLE_NS = 2_000_000_000  # a picture folder changed in the last 2 s is not trusted (same-tick writes)
+
+
+def _copy_state(state: dict) -> dict:
+    """Own copy of what callers may change: the per-picture tables (the values inside are numbers, text or small lists)."""
+    return {k: (dict(v) if isinstance(v, dict) and k in ("points", "deviations", "values", "verdicts", "counts") else v) for k, v in state.items()}
+
+
+def _remembered_evaluation(camera: str, eval_id: str) -> dict:
+    """The Evaluation, kept between requests while nothing it reads can have changed: no statement has written to the
+    database (the graph, the stored detector boxes, labels, deleted and removed pictures all live there) and the
+    picture folder is unchanged. Chain, Dedup, Classify and the pipeline each asked for the same answer (0.6 to 1.6 s
+    on 2415 pictures) once per request before."""
+    folder = datamodel.unsorted_dir(camera)
+    try:
+        stamp = folder.stat().st_mtime_ns
+    except OSError:
+        return _evaluation_state(camera, eval_id)
+    token = (db.write_epoch(), stamp)  # read before the work: a write during it makes the kept answer outdated at once
+    key = (str(db.db_path()), camera, eval_id)
+    kept = _EVAL_MEMORY.get(key)
+    if kept is not None and kept[0] == token:
+        return _copy_state(kept[1])
+    state = _evaluation_state(camera, eval_id)
+    if time.time_ns() - stamp > _EVAL_SETTLE_NS:
+        _EVAL_MEMORY[key] = (token, state)
+        return _copy_state(state)
+    _EVAL_MEMORY.pop(key, None)
+    return state
 
 
 def _evaluation_state(camera: str, eval_id: str) -> dict:

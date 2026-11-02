@@ -278,6 +278,23 @@ def shared_connection():
         real.close()
 
 
+_WRITE_EPOCH = 0
+_WRITE_VERBS = frozenset({"INSERT", "UPDATE", "DELETE", "REPLACE", "CREATE", "DROP", "ALTER"})
+
+
+def write_epoch() -> int:
+    """Counts the statements that changed this database in this program (any table, any connection opened by
+    :func:`connect`). A result worked out from the database stays true while the number is unchanged."""
+    return _WRITE_EPOCH
+
+
+def _count_writes(statement: str) -> None:
+    global _WRITE_EPOCH
+    head = statement.lstrip()[:8].split(" ", 1)[0].upper()
+    if head in _WRITE_VERBS:
+        _WRITE_EPOCH += 1
+
+
 def connect() -> sqlite3.Connection:
     """Open a short-lived connection, creating or upgrading the schema in place."""
     shared = _shared.get()
@@ -293,6 +310,7 @@ def _open() -> sqlite3.Connection:
     path.parent.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(str(path), timeout=30)
     con.row_factory = sqlite3.Row
+    con.set_trace_callback(_count_writes)
     con.execute("PRAGMA journal_mode=WAL")
     con.execute("PRAGMA foreign_keys=ON")
     version = int(con.execute("PRAGMA user_version").fetchone()[0])

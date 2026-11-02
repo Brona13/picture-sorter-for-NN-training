@@ -154,10 +154,19 @@ def run(steps: list[tuple[str, str, Callable[[], str]]] | None = None) -> None:
     _log.info("ready", extra=applog.audit(version=appinfo.VERSION, seconds=took))
 
 
+def _import_clustering() -> None:
+    """scikit-learn takes seconds to import on a slow disk; the first Dedup page used to wait for it (3.4 s in a log)."""
+    try:
+        from sklearn.cluster import DBSCAN  # noqa: F401, PLC0415
+    except Exception:  # noqa: BLE001 - without it Dedup says so itself
+        _log.debug("scikit-learn not preloaded", exc_info=True)
+
+
 def start() -> threading.Thread:
     """Begin the steps in a background thread (the server keeps answering meanwhile)."""
     with _lock:
         _state.update(ready=False, version=appinfo.VERSION)
     thread = threading.Thread(target=run, name="startup", daemon=True)
     thread.start()
+    threading.Thread(target=_import_clustering, name="startup-clustering", daemon=True).start()
     return thread
