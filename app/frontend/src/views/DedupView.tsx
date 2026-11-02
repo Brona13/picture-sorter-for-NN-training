@@ -1,5 +1,5 @@
 import { ReactNode, useCallback, useEffect, useState } from "react";
-import { api, CardData, DedupParams, DedupResult, DedupState, DedupSweep, DedupSweepRange, OutlierResult } from "../api";
+import { api, CardData, setPictureVersion, DedupParams, DedupResult, DedupState, DedupSweep, DedupSweepRange, OutlierResult } from "../api";
 import DeletedByDay from "../classify/DeletedByDay";
 import PictureGrid, { type GridMute } from "../classify/PictureGrid";
 import ClusterBrowser, { Marks } from "../classify/ClusterBrowser";
@@ -127,6 +127,7 @@ export default function DedupView({
     if (!camera || !feature) return;
     try {
       const s = await api.dedupState(camera, feature);
+      setPictureVersion(camera, feature, s.view?.key); // before the cards render: another view is other pixels at the same address
       setSt(s);
       setParams(s.params);
       setResult(s.result);

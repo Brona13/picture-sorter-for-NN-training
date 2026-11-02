@@ -240,6 +240,9 @@ class DedupViewTests(ApiTestCase):
         self.assertEqual(r.status_code, 200, r.text)
         self.assertTrue(r.json()["changed"])
         self.assertEqual(r.json()["view"]["selected"], f"{det}/A")
+        self.assertTrue(r.json()["view"]["key"])  # the page puts it into thumbnail addresses
+        first = r.json()["view"]["key"]
+        self.assertNotEqual(self.client.put(f"{self.base}/dedup/view", json={"feature": dedup, "view": f"{det}/B"}).json()["view"]["key"], first)
         bad = self.client.put(f"{self.base}/dedup/view", json={"feature": dedup, "view": "det:77/A"})
         self.assertEqual(bad.status_code, 422)
         unknown = self.client.put(f"{self.base}/dedup/view", json={"feature": "dedup:99", "view": None})

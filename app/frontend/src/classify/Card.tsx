@@ -1,5 +1,5 @@
 import { sampleLabel } from "../samples";
-import { CardData, frameImageUrl } from "../api";
+import { CardData, frameImageUrl, pictureVersionParam } from "../api";
 import { methodTag } from "../methodTags";
 import { classColor, clusterColor } from "./colors";
 import { cursorFor, DELETE_MODE, isClearKey, labelPainter, markPainted } from "./paint";
@@ -45,7 +45,7 @@ interface Props {
 export function thumbUrl(camera: string, frame: string, feature: string) {
   return (
     `/api/cameras/${encodeURIComponent(camera)}/frames/${encodeURIComponent(frame)}/thumb` +
-    `?feature=${encodeURIComponent(feature)}`
+    `?feature=${encodeURIComponent(feature)}${pictureVersionParam(camera, feature)}`
   );
 }
 

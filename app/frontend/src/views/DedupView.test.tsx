@@ -694,3 +694,11 @@ test("both flags show together, a long list is cut, and nothing shows when nothi
   await screen.findByLabelText("Dedup box");
   expect(screen.queryByTestId("dedup-changes")).toBeNull();
 });
+
+test("the thumbnails of a box are loaded afresh when it compares another part (the address carries the view's key)", async () => {
+  state = baseState({ view: viewInfo({ selected: "det:1/hole-left", key: "dv=abc123" }) });
+  render(<DedupView camera="camA" tool="grid" />);
+  await screen.findByLabelText("Compares");
+  await waitFor(() => expect(document.querySelector('img[src*="dv%3Dabc123"]')).not.toBeNull());
+  expect(document.querySelector('img[src*="/thumb"][src*="feature=seal"]')?.getAttribute("src")).toContain("&v=dv%3Dabc123");
+});

@@ -849,7 +849,21 @@ export const frameImageUrl = (camera: string, frame: string) =>
 
 /** The picture's cutout of a feature or Dedup box at full resolution (404 where the detector found no box). */
 export const frameCutoutUrl = (camera: string, frame: string, feature: string) =>
-  `/api/cameras/${encodeURIComponent(camera)}/frames/${encodeURIComponent(frame)}/cutout?feature=${encodeURIComponent(feature)}`;
+  `/api/cameras/${encodeURIComponent(camera)}/frames/${encodeURIComponent(frame)}/cutout?feature=${encodeURIComponent(feature)}${pictureVersionParam(camera, feature)}`;
+
+/**
+ * A Dedup box that compares another part of the picture shows other pixels at the same address, so the browser would keep
+ * the old thumbnails. The page records the box's picture key here and every thumbnail / cutout address of that box carries it.
+ */
+const pictureVersions = new Map<string, string>();
+export function setPictureVersion(camera: string, feature: string, key: string | undefined) {
+  if (key) pictureVersions.set(`${camera}/${feature}`, key);
+  else pictureVersions.delete(`${camera}/${feature}`);
+}
+export const pictureVersionParam = (camera: string, feature: string) => {
+  const key = pictureVersions.get(`${camera}/${feature}`);
+  return key ? `&v=${encodeURIComponent(key)}` : "";
+};
 
 /**
  * The picture a Chain box works on (frame after the edits above it), or - `stage: "output"` on a Picture Edits box - the
@@ -1125,6 +1139,8 @@ export interface DedupViewInfo {
   locked_by: string | null;
   /** Pictures the line passes but that have no such view; they do not pass the box. */
   no_view: number;
+  /** Changes with the picture the box compares (empty without a view of its own); goes into thumbnail addresses. */
+  key?: string;
 }
 
 /** What changed in the Chain since the box last clustered (v1.139.0); null when it never did. */

@@ -203,7 +203,8 @@ def with_view(camera: str, box: str, names: list[str], graph: dict | None = None
 
 
 def summary(camera: str, box: str) -> dict:
-    """What the Dedup page shows: the views on offer, the chosen one, who decides, and how many pictures have no view."""
+    """What the Dedup page shows: the views on offer, the chosen one, who decides, and how many pictures have no view.
+    ``key`` changes with the picture the box compares; the page puts it into thumbnail addresses so the browser loads them afresh."""
     graph = flow.load_graph(camera)
     on_line = line_view(camera, box, graph)
     chosen = selected(camera, box, graph)
@@ -214,7 +215,7 @@ def summary(camera: str, box: str) -> dict:
     if active(camera, box, graph) is not None:
         before = flow._node_frames(camera, box, graph)
         missing = len(before) - len(with_view(camera, box, before, graph))
-    return {"candidates": options, "selected": chosen, "locked_by": on_line, "no_view": missing}
+    return {"candidates": options, "selected": chosen, "locked_by": on_line, "no_view": missing, "key": rule_key(camera, box)}
 
 
 def rule_key(camera: str, box: str) -> str:
