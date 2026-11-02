@@ -12,7 +12,7 @@ import flow
 import versions
 
 # Box kind -> the class of the frozen pictures it holds.
-CLASS_OF = {"ingest_ok": "OK", "ingest_ng": "NG"}
+CLASS_OF = flow.PILE_CLASS
 
 
 def freeze_boxes(graph: dict) -> list[str]:

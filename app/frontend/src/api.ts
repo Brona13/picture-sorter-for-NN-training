@@ -1543,6 +1543,9 @@ export const api = {
   /** Draw a feature Classifier without its line from Ingest (it still reads the whole camera), or draw the line again. */
   setChainDetached: (camera: string, feature: string, detached: boolean) =>
     request<ChainCanvas>(`/cameras/${encodeURIComponent(camera)}/chain/${encodeURIComponent(feature)}/detached`, send("PUT", { detached })),
+  /** Make a Classifier a step-1 or a step-2 one (the Step 2 tab makes its Classifiers step 2; they take Ingest OK / NG). */
+  setChainStep: (camera: string, feature: string, step: 1 | 2) =>
+    request<ChainCanvas>(`/cameras/${encodeURIComponent(camera)}/chain/${encodeURIComponent(feature)}/step`, send("PUT", { step })),
   /** Switch a Classifier between Feature (OK / NG) and Product (its classes are the product names); its labels are cleared. */
   setRoiMode: (camera: string, feature: string, mode: "product" | "feature", product_names: string[] = []) =>
     request<RoiInfo & { cleared: number }>(

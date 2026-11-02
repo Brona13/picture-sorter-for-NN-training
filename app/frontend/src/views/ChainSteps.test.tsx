@@ -33,7 +33,16 @@ beforeEach(() => {
       }));
       return new Response(JSON.stringify({ id }), { status: 201 });
     }
-    if (url.endsWith("/chain") || url.endsWith("/chain/layout")) return new Response(JSON.stringify(current));
+    if (url.endsWith("/rois") && method === "PUT") {
+      current.nodes.push(node({ id: `roi:${body.name}`, ref: body.name, label: body.name, x: 0, y: 300 }));
+      return new Response(JSON.stringify({ feature: body.name }), { status: 200 });
+    }
+    if (url.endsWith("/step") && method === "PUT") {
+      const found = current.nodes.find((n: any) => n.id === `roi:${decodeURIComponent(url.split("/chain/")[1].split("/step")[0])}`);
+      if (found) found.step = body.step;
+      return new Response(JSON.stringify(current));
+    }
+    if (url.endsWith("/chain") || url.endsWith("/chain/layout") || url.endsWith("/detached") || url.endsWith("/region")) return new Response(JSON.stringify(current));
     return new Response("{}", { status: 404 });
   }));
 });
@@ -130,4 +139,16 @@ test("an empty pile says why with a sign on the box", async () => {
   const pile = await screen.findByTestId("chain-node-inng:1");
   expect(pile).toHaveTextContent("⚠");
   expect(pile.querySelector("[title='Step 1 has no Freeze module.']")).not.toBeNull();
+});
+
+test("a Classifier made in the Step 2 tab is made a step-2 Classifier, one made in step 1 is not", async () => {
+  current.nodes = [ingest, freeze()];
+  renderView();
+  await screen.findByTestId("chain-node-export:1");
+  fireEvent.click(screen.getByRole("button", { name: "Add Classifier" })); // step 1
+  await waitFor(() => expect(calls.some((c) => c.method === "PUT" && c.url.endsWith("/rois"))).toBe(true));
+  expect(calls.some((c) => c.url.endsWith("/step"))).toBe(false);
+  fireEvent.click(screen.getByRole("tab", { name: /Step 2/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Add Classifier" }));
+  await waitFor(() => expect(calls.some((c) => c.method === "PUT" && c.url.endsWith("/step") && c.body?.step === 2)).toBe(true));
 });

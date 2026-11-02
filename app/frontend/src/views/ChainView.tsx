@@ -511,6 +511,7 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
     const spot = at ?? clickSpot("roi");
     try {
       const made = await api.saveRoi(camera, { name: freshName("classifier", taken), x: 0.25, y: 0.25, w: 0.5, h: 0.5 });
+      if (activeStep === 2) await api.setChainStep(camera, made.feature, 2); // made in the Step 2 tab: it takes Ingest OK / NG
       await api.setChainDetached(camera, made.feature, true); // a new Classifier hangs alone until a line is drawn to it
       await api.setRoiRegion(camera, made.feature, "as_is"); // and has no rectangle: it uses the picture as it comes in until the user chooses otherwise
       setError(null);

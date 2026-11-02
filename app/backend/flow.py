@@ -44,6 +44,7 @@ RESULTS_PREFIX = "flow.det."
 INGEST_ID = "ingest"
 KINDS = ("crop", "detector", "calc", "evaluation", "dedup", "export", "merge", "ingest_ok", "ingest_ng")
 PREFIX = {"crop": "crop", "detector": "det", "calc": "calc", "evaluation": "eval", "dedup": "dedup", "export": "export", "merge": "merge", "ingest_ok": "inok", "ingest_ng": "inng"}
+PILE_CLASS = {"ingest_ok": "OK", "ingest_ng": "NG"}
 PILES = ("ingest_ok", "ingest_ng")  # step 2 starts here: the OK / NG pictures of the last freeze (``piles.py``); always step 2
 KIND_OF = {v: k for k, v in PREFIX.items()}
 PICTURE_KINDS = ("crop", "detector")  # boxes that read a picture (a box with no line reads the whole picture)
@@ -635,6 +636,20 @@ def export_goldens_only(node: dict) -> bool:
     """Whether an Export box takes golden pictures only. A step-1 Export is the Freeze module: it freezes every OK / NG
     picture, so the tick is off there whatever an older graph stored."""
     return bool(node.get("goldens_only", True)) and step_of(node) == 2
+
+
+def roi_step(camera: str, feature: str) -> int:
+    """The step of a Classifier (an ROI, not a graph box): 2 when it was made in the Step 2 tab, else 1."""
+    return 2 if db.get_setting(camera, f"{db.ROI_STEP_KEY}{feature}") == "2" else 1
+
+
+def set_roi_step(camera: str, feature: str, step: int) -> None:
+    if step not in (1, 2):
+        raise FlowError("The step is 1 or 2.")
+    if step == 2:
+        db.set_setting(camera, f"{db.ROI_STEP_KEY}{feature}", "2")
+    else:
+        db.delete_setting(camera, f"{db.ROI_STEP_KEY}{feature}")
 
 
 def step_of_id(graph: dict, node_id: str) -> int:

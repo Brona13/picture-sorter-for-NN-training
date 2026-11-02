@@ -193,7 +193,8 @@ export function flowConnect(canvas: ChainCanvas, c: Connection): FlowLink {
   const source = featureOf(canvas, c.source);
   const target = featureOf(canvas, c.target);
   if (!source || !target) return { error: "Unknown box." };
-  if (isPileKind(source.kind) || isPileKind(target.kind)) return { error: "Lines out of Ingest OK / Ingest NG come with the next versions of step 2." };
+  const intoClassDot = target.kind === "roi" && !!c.targetHandle?.startsWith("in:");
+  if (isPileKind(target.kind) || (isPileKind(source.kind) && !intoClassDot)) return { error: "Ingest OK feeds the OK dot of a step-2 Classifier and Ingest NG its NG dot; other lines come with the next versions of step 2." };
   if (source.kind === "export") return { error: "Export is the end of the Chain: nothing leaves it." };
   if (target.kind === "export") {
     // A line onto one of the two inputs: the pictures that should land in the OK or NG folders.
@@ -218,6 +219,13 @@ export function flowConnect(canvas: ChainCanvas, c: Connection): FlowLink {
     // A line onto one class dot of a Classifier: these pictures are in it and belong to that class (the class comes from the source).
     const cls = c.targetHandle.slice(3);
     if (!target.ref) return { error: "Unknown box." };
+    if (isPileKind(source.kind)) {
+      // A step-2 pile carries one class: Ingest OK goes into the OK dot, Ingest NG into the NG dot.
+      if (c.sourceHandle) return { error: `Use ${source.label}'s main dot.` };
+      const held = source.kind === "ingest_ok" ? "OK" : "NG";
+      if (held !== cls) return { error: `${source.label} holds ${held} pictures, not ${cls}.` };
+      return { classLine: { feature: target.ref, cls, box: source.id } };
+    }
     if (source.kind === "evaluation") {
       const dot = productOfHandle(c.sourceHandle);
       if (dot !== "pass" && dot !== "fail") return { error: "Drag from the Evaluation's pass or fail dot: the all dot has no single class. Use the Classifier's main input to label OK and NG at once." };
@@ -229,7 +237,7 @@ export function flowConnect(canvas: ChainCanvas, c: Connection): FlowLink {
       if (source.flow?.source?.feature === target.ref) return { error: `${source.label} reads ${target.label}, so it cannot feed it back.` };
       return { classLine: { feature: target.ref, cls, box: source.id } };
     }
-    return { error: "Only an Evaluation's pass or fail dot or a Dedup box can feed a class dot." };
+    return { error: "Only an Evaluation's pass or fail dot, a Dedup box or (in step 2) Ingest OK / NG can feed a class dot." };
   }
   if (target.kind === "merge") {
     // A dot dropped on a Merge: one more line it collects. Only dots that mean something (a class, pass, fail) can be collected.

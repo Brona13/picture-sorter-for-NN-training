@@ -370,3 +370,22 @@ test("describeNode tells what a Merge collects", () => {
   expect(describeNode(node({ kind: "merge", flow: { inputs: 0 } }))).toBe("drop OK or NG dots here");
   expect(describeNode(node({ kind: "merge", flow: { inputs: 3, meaning: "OK", merge_mode: "all", frames: 7 } }))).toBe("OK · in every line · 3 lines · 7 pictures");
 });
+
+test("Ingest OK feeds the OK dot of a Classifier and Ingest NG its NG dot; the wrong dot, the main dot or another input is refused", () => {
+  const piles: ChainCanvas = {
+    ...canvas,
+    nodes: [
+      ...canvas.nodes,
+      node({ id: "roi:pick", ref: "pick", label: "pick", step: 2 }),
+      node({ id: "inok:1", kind: "ingest_ok", ref: null, label: "Ingest OK 1", role: null, scope: null, step: 2 }),
+      node({ id: "inng:1", kind: "ingest_ng", ref: null, label: "Ingest NG 1", role: null, scope: null, step: 2 }),
+    ],
+  };
+  expect(flowConnect(piles, { source: "inok:1", sourceHandle: null, target: "roi:pick", targetHandle: "in:OK" })).toEqual({ classLine: { feature: "pick", cls: "OK", box: "inok:1" } });
+  expect(flowConnect(piles, { source: "inng:1", sourceHandle: null, target: "roi:pick", targetHandle: "in:NG" })).toEqual({ classLine: { feature: "pick", cls: "NG", box: "inng:1" } });
+  expect(flowConnect(piles, { source: "inok:1", sourceHandle: null, target: "roi:pick", targetHandle: "in:NG" })).toEqual({ error: "Ingest OK 1 holds OK pictures, not NG." });
+  expect(flowConnect(piles, { source: "inok:1", sourceHandle: null, target: "roi:pick", targetHandle: "main" })).toHaveProperty("error"); // not a class dot
+  expect(flowConnect(piles, { source: "inok:1", sourceHandle: null, target: "inng:1", targetHandle: null })).toHaveProperty("error"); // nothing feeds a pile
+  expect(describeFlow("ingest_ok", { frames: 3, freeze: 2 })).toBe("3 OK pictures · from freeze v2");
+  expect(describeFlow("ingest_ng", { frames: 0, freeze: null, warning: "Step 1 is not frozen yet." })).toBe("0 NG pictures · Step 1 is not frozen yet.");
+});

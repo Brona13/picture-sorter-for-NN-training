@@ -10,6 +10,8 @@ they belong to that class. The class comes from where the pictures come from, ne
 A Classifier sees the union of what its class dots receive (several lines into one dot must all pass a picture), and
 those pictures are labelled with the dot's class, as the verdict labels of an Evaluation are (final; only goldens are
 chosen). A picture that reaches two class dots with different meanings is left out and counted as a conflict.
+* Ingest OK / Ingest NG (step 2, ``piles.py``) carry OK / NG and feed only a **step-2 Classifier**, whose labels then come
+  from the last freeze of step 1 and are final; a step-2 Classifier takes no other line into its class dots.
 Stored as the setting ``class.lines.<feature>``: a list of ``{"class", "box", "dot"?}``.
 """
 from __future__ import annotations
@@ -58,6 +60,8 @@ def meaning(camera: str, box: str, graph: dict | None = None, _seen: frozenset =
     kind = flow.kind_of(box)
     if box in _seen or box not in graph["nodes"] or kind in ("evaluation", "ingest"):
         return None
+    if kind in flow.PILES:
+        return flow.PILE_CLASS[kind]
     judged = flow.node_eval_source(graph, box)
     if judged:
         return flow.VERDICT_CLASS.get(judged["dot"])
@@ -83,6 +87,16 @@ def check(camera: str, feature: str, cls: str, box: str, dot: str | None) -> str
     if box not in graph["nodes"]:
         return f"Unknown box: {box}"
     kind = flow.kind_of(box)
+    if flow.roi_step(camera, feature) == 2 and kind not in flow.PILES:
+        return f"{feature} is a step-2 Classifier: its class dots take Ingest OK and Ingest NG."
+    if kind in flow.PILES:
+        if flow.roi_step(camera, feature) != 2:
+            return f"{box} feeds a step-2 Classifier: make the Classifier in the Step 2 tab."
+        if dot:
+            return f"Use {box}'s main dot."
+        if flow.PILE_CLASS[kind] != cls:
+            return f"{box} holds {flow.PILE_CLASS[kind]} pictures, not {cls}."
+        return None
     if kind == "evaluation":
         if dot not in flow.VERDICT_CLASS:
             return "Drag from the Evaluation's pass or fail dot: the all dot has no single class. Use it on the Classifier's main input to label OK and NG at once."
@@ -99,7 +113,7 @@ def check(camera: str, feature: str, cls: str, box: str, dot: str | None) -> str
         if carried != cls:
             return f"{box} carries {carried} pictures, not {cls}."
         return None
-    return "Only an Evaluation's pass or fail dot or a Dedup box can feed a class dot."
+    return "Only an Evaluation's pass or fail dot, a Dedup box or (in step 2) Ingest OK / NG can feed a class dot."
 
 
 def add(camera: str, feature: str, cls: str, box: str, dot: str | None = None) -> None:

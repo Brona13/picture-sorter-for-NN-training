@@ -81,6 +81,23 @@ def put_detached(camera: str, feature: str, body: DetachedBody) -> dict:
     return chain.get_canvas(camera)
 
 
+class StepBody(BaseModel):
+    step: int = 1  # 1: decide OK / NG, 2: choose pictures (the two-step solution)
+
+
+@router.put("/cameras/{camera}/chain/{feature:path}/step")
+def put_step(camera: str, feature: str, body: StepBody) -> dict:
+    """Make a Classifier a step-1 or a step-2 one (the Step 2 tab makes its Classifiers step 2)."""
+    require_camera(camera)
+    if datamodel.get_roi(camera, feature) is None:
+        raise HTTPException(status_code=404, detail="Unknown Classifier")
+    try:
+        flow.set_roi_step(camera, feature, body.step)
+    except flow.FlowError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return chain.get_canvas(camera)
+
+
 class DedupInputBody(BaseModel):
     box: str | None = None
     remove: bool = False  # take this one box away (several can feed a Classifier); box null removes them all

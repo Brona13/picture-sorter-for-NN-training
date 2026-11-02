@@ -326,6 +326,7 @@ def delete_roi(camera: str, feature: str) -> dict:
     anchor.clear_anchor(camera, feature)
     roi_input.clear_input(camera, feature)
     region.clear(camera, feature)
+    flow.set_roi_step(camera, feature, 1)  # a Classifier of the same name later starts in step 1 again
     flow.drop_classify_edges(camera, feature)
     return {"removed": labels.purge_feature(camera, feature)}
 

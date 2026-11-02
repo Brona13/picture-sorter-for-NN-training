@@ -64,13 +64,19 @@ export const PALETTE: { group: string; items: PaletteItem[] }[] = [
   },
 ];
 
-/** The step-2 modules so far: the two piles it starts from. Box, Classifier and Export follow in the next versions. */
+/** The step-2 modules so far: the two piles it starts from and the Classifier. Box and Export follow in the next versions. */
 export const PALETTE_STEP2: { group: string; items: PaletteItem[] }[] = [
   {
     group: "Pictures in",
     items: [
       { kind: "ingest_ok", label: "Ingest OK", box: "ingest_ok", hint: "The OK pictures of the last freeze of step 1." },
       { kind: "ingest_ng", label: "Ingest NG", box: "ingest_ng", hint: "The NG pictures of the last freeze of step 1." },
+    ],
+  },
+  {
+    group: "Sorts pictures into classes",
+    items: [
+      { kind: "classifier", label: "Classifier", box: "roi", hint: "Takes Ingest OK into its OK dot and Ingest NG into its NG dot; the labels come from the freeze and you choose the goldens." },
     ],
   },
 ];

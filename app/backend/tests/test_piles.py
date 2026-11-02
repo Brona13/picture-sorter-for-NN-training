@@ -94,3 +94,64 @@ class PileTests(ApiTestCase):
         self.assertNotIn(self.ok, flow.load_graph(CAM)["nodes"])
         why = flow.edge_allowed(flow.load_graph(CAM), "ingest", self.ng)
         self.assertTrue(why)
+
+
+class StepTwoClassifierTests(PileTests):
+    """A step-2 Classifier takes its class dots from Ingest OK / Ingest NG: the labels come from the last freeze and are final."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        datamodel.save_rois(CAM, [ROI("seal", 0, 0, 1, 1, classes=["OK", "NG"]), ROI("pick", 0.1, 0.1, 0.5, 0.5, classes=["OK", "NG"])])
+        self.client.put(f"{self.base}/chain/pick/step", json={"step": 2})
+        self.client.put(f"{self.base}/chain/pick/detached", json={"detached": True})
+        self.freeze(self.freeze_box())
+
+    def wire(self) -> None:
+        for cls, pile in (("OK", self.ok), ("NG", self.ng)):
+            r = self.client.put(f"{self.base}/chain/pick/class-lines", json={"cls": cls, "box": pile})
+            self.assertEqual(r.status_code, 200, r.text)
+
+    def test_the_step_is_stored_per_classifier_and_shown_on_the_canvas(self) -> None:
+        self.assertEqual(flow.roi_step(CAM, "pick"), 2)
+        self.assertEqual(flow.roi_step(CAM, "seal"), 1)
+        nodes = {n["id"]: n for n in self.client.get(f"{self.base}/chain").json()["nodes"]}
+        self.assertEqual((nodes["roi:pick"]["step"], nodes["roi:seal"]["step"]), (2, 1))
+        self.assertEqual(self.client.put(f"{self.base}/chain/nope/step", json={"step": 2}).status_code, 404)
+        self.assertEqual(self.client.put(f"{self.base}/chain/pick/step", json={"step": 3}).status_code, 422)
+
+    def test_the_piles_label_a_step_two_classifier_with_the_freeze_and_the_labels_are_final(self) -> None:
+        self.wire()
+        got = labels.current_labels(CAM, "pick")
+        self.assertEqual({f: got.get(f) for f in self.frames[:6]}, {**{f: "OK" for f in self.frames[:3]}, **{f: "NG" for f in self.frames[3:6]}})
+        self.assertNotIn(self.frames[6], got)  # never frozen: no label
+        self.assertEqual(set(datamodel.frames_for_feature(CAM, "pick")), set(self.frames[:6]))
+        self.assertTrue(set(self.frames[:6]) <= labels.locked_frames(CAM, "pick"))  # nobody relabels them by hand
+
+    def test_a_pile_only_feeds_its_own_class_dot(self) -> None:
+        r = self.client.put(f"{self.base}/chain/pick/class-lines", json={"cls": "NG", "box": self.ok})
+        self.assertEqual(r.status_code, 422)
+        self.assertIn("holds OK pictures, not NG", r.json()["detail"])
+
+    def test_a_pile_feeds_only_a_step_two_classifier_and_a_step_two_classifier_takes_only_piles(self) -> None:
+        r = self.client.put(f"{self.base}/chain/seal/class-lines", json={"cls": "OK", "box": self.ok})
+        self.assertEqual(r.status_code, 422)
+        self.assertIn("step-2 Classifier", r.json()["detail"])
+        dedup = flow.create_node(CAM, "dedup")
+        r = self.client.put(f"{self.base}/chain/pick/class-lines", json={"cls": "OK", "box": dedup})
+        self.assertEqual(r.status_code, 422)
+        self.assertIn("take Ingest OK and Ingest NG", r.json()["detail"])
+
+    def test_deleting_a_classifier_forgets_its_step(self) -> None:
+        self.client.delete(f"{self.base}/rois/pick")
+        self.assertEqual(flow.roi_step(CAM, "pick"), 1)
+
+    # The pile tests of the parent class run once, in PileTests.
+    test_a_pile_is_always_step_two_whatever_step_is_asked = None
+    test_without_a_freeze_module_a_pile_is_empty_and_says_so = None
+    test_a_freeze_module_that_was_never_frozen_gives_an_empty_pile_with_its_own_warning = None
+    test_the_piles_hold_the_ok_and_ng_pictures_of_the_last_freeze = None
+    test_step_one_changing_after_the_freeze_does_not_move_the_piles_until_it_is_frozen_again = None
+    test_a_picture_deleted_since_the_freeze_leaves_the_pile = None
+    test_the_newest_freeze_of_any_freeze_module_counts = None
+    test_a_step_two_export_is_not_a_freeze_module = None
+    test_a_pile_can_be_deleted_and_lines_into_it_are_refused = None

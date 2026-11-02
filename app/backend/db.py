@@ -1334,6 +1334,7 @@ def clear_dedup_mutes(camera: str, feature: str) -> int:
         con.close()
 
 
+ROI_STEP_KEY = "roi.step."  # setting roi.step.<feature> = "2": a step-2 Classifier (absent = step 1; see flow.roi_step)
 DETACHED_KEY = "roi.detached."  # setting roi.detached.<feature> = "1": a Classifier with no line from Ingest (v1.133.0: with no other input either it has no pictures)
 DEDUP_INPUT_KEY = "roi.dedup."  # setting roi.dedup.<feature> = the Dedup box a Classifier reads through
 

@@ -160,6 +160,7 @@ def _roi_node_inner(camera: str, roi: datamodel.ROI, stored: dict) -> dict:
     return {
         "id": roi_node_id(roi.name),
         "kind": "roi",
+        "step": flow.roi_step(camera, roi.name),
         "ref": roi.name,
         "label": stored.get("label") or short,
         "x": stored.get("x"),
