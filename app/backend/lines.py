@@ -35,6 +35,8 @@ GIVES = {
     "evaluation": {VERDICT, FRAMES, PICTURE},  # its pass / fail / all dots pass the pictures it judged
     "dedup": {FRAMES, PICTURE},  # the pictures it sees, minus the ones it muted
     "merge": {FRAMES, PICTURE},  # the pictures of the dots it collects, together (any) or in common (all)
+    "ingest_ok": {FRAMES, PICTURE},  # step 2: the OK pictures of the last freeze (``piles.py``)
+    "ingest_ng": {FRAMES, PICTURE},
 }
 TAKES = {
     "roi": {FRAMES, PICTURE},
@@ -46,6 +48,7 @@ TAKES = {
     "dedup": {FRAMES, PICTURE},
     "merge": {FRAMES, PICTURE},
     "export": {FRAMES, PICTURE},  # two inputs, OK and NG; it gives nothing (the end of the chain)
+    "box": {FRAMES, PICTURE},  # step 2: the pictures the Box works on (Ingest OK / NG); with no line, every picture
 }
 NAMES = {
     "ingest": "Ingest", "roi": "a Classifier", "classify": "a Classify box", "crop": "Picture edits",

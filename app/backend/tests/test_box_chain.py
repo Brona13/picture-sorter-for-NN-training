@@ -293,3 +293,65 @@ class BoxChainTests(ApiTestCase):
         # a Classifier that is not on a Box has no numbers on its cards
         self.assertTrue(all("box" not in c for c in grid["items"] if c["frame"] not in by_frame))  # (every card here is on the Box)
         self.assertEqual(sum("box" in c for c in grid["items"]), 6)
+
+    # ---- the Box takes Ingest OK / Ingest NG as its input --------------------------------------------------------------
+    def draw(self, pile: str) -> None:
+        r = self.client.post(f"{self.base}/flow/edges", json={"source": pile, "target": self.box})
+        self.assertEqual(r.status_code, 201, r.text)
+
+    def box_detail(self) -> dict:
+        return self.client.get(f"{self.base}/flow/nodes/{self.box}").json()
+
+    def test_with_no_line_the_box_works_on_every_picture_and_with_lines_only_on_the_piles(self) -> None:
+        detail = self.box_detail()
+        self.assertEqual((len(detail["frames"]), detail["total"], detail["inputs"]), (8, 8, []))  # the two never-frozen pictures too
+        self.draw(self.ok)
+        detail = self.box_detail()
+        self.assertEqual((len(detail["frames"]), detail["total"], detail["inputs"]), (4, 4, [self.ok]))  # the four OK pictures of the freeze
+        self.assertEqual(set(detail["frames"]), set(self.frames[:4]))
+        self.draw(self.ng)
+        detail = self.box_detail()
+        self.assertEqual((len(detail["frames"]), detail["total"]), (6, 6))
+        self.assertEqual(set(detail["frames"]), set(self.frames[:6]))
+        node = {n["id"]: n for n in self.client.get(f"{self.base}/chain").json()["nodes"]}[self.box]
+        self.assertEqual((node["flow"]["found"], node["flow"]["total"], node["flow"]["box_inputs"]), (6, 6, [self.ok, self.ng]))
+
+    def test_the_rectangles_themselves_do_not_depend_on_the_lines(self) -> None:
+        import export_box
+
+        before = export_box.box_numbers(CAM, self.box, [self.frames[0]])
+        self.draw(self.ok)
+        self.assertEqual(export_box.box_numbers(CAM, self.box, [self.frames[0]]), before)
+        geometry = self.client.get(f"{self.base}/flow/nodes/{self.box}/box-geometry", params={"frame": self.frames[7]}).json()
+        self.assertIsNotNone(geometry["rect"])  # the page can still show any picture
+
+    def test_a_classifier_on_the_box_sees_the_pictures_both_the_piles_and_the_box_give(self) -> None:
+        self.assertEqual(self.state()["frames_seen"], 6)
+        self.draw(self.ok)  # only the OK pile is drawn in: the NG pictures are no longer the Box's
+        self.assertEqual(self.state()["frames_seen"], 4)
+        self.draw(self.ng)
+        self.assertEqual(self.state()["frames_seen"], 6)
+
+    def test_a_line_is_stored_once_and_removing_it_gives_the_pictures_back(self) -> None:
+        self.draw(self.ok)
+        self.draw(self.ok)
+        self.assertEqual(sum(1 for e in flow.load_graph(CAM)["edges"] if e["target"] == self.box), 1)
+        r = self.client.post(f"{self.base}/flow/edges/remove", json={"source": self.ok, "target": self.box})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(self.box_detail()["inputs"], [])
+        self.assertEqual(len(self.box_detail()["frames"]), 8)
+
+    def test_only_the_piles_can_feed_a_box_and_a_pile_feeds_nothing_else(self) -> None:
+        graph = flow.load_graph(CAM)
+        self.assertIn("step", flow.edge_allowed(graph, "ingest", self.box) or "")  # Ingest is step 1
+        det2 = flow.create_node(CAM, "detector", 2)
+        graph = flow.load_graph(CAM)
+        self.assertEqual(flow.edge_allowed(graph, det2, self.box), "a detector cannot feed a Box.")  # only the piles
+        self.assertEqual(flow.edge_allowed(graph, self.ok, det2), "Ingest OK cannot feed a detector.")  # and a pile feeds nothing else
+        self.assertIsNone(flow.edge_allowed(graph, self.ok, self.box))
+        self.assertIsNone(flow.edge_allowed(graph, self.ng, self.box))
+
+    def test_deleting_a_pile_takes_its_line_out_of_the_box(self) -> None:
+        self.draw(self.ok)
+        self.client.delete(f"{self.base}/flow/nodes/{self.ok}")
+        self.assertEqual(self.box_detail()["inputs"], [])

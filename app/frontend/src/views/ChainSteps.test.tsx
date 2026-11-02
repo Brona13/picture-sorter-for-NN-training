@@ -166,7 +166,7 @@ test("the Step 2 tab offers a Box; it is made for step 2, shows what it still ne
   expect(box).toHaveTextContent("Box 1");
   expect(box).toHaveTextContent("⚠ choose");
   expect(box.querySelectorAll("[data-handleid='t:box']")).toHaveLength(1); // the one output dot
-  expect(box.querySelector("[data-handlepos='left']")).toBeNull(); // nothing feeds a Box: the detector boxes are chosen in its panel
+  expect(box.querySelectorAll("[data-handlepos='left']")).toHaveLength(1); // the input dot: Ingest OK and Ingest NG are drawn into it (the detector boxes are chosen in its panel)
 });
 
 test("the Step 2 tab offers an Export (the Freeze of step 1 is another tile), made for step 2", async () => {

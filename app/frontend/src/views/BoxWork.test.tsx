@@ -12,7 +12,7 @@ const detail = (over: Partial<FlowBoxModule> = {}): FlowBoxModule => ({
     { detector: "det:1", target: "right hole", detector_label: "Detector 1", label: "Detector 1 · right hole" },
     { detector: "det:2", target: "nut", detector_label: "Nut finder", label: "Nut finder · nut" },
   ],
-  frames: ["a.png", "b.png"], total: 3, stale: [], ...over,
+  frames: ["a.png", "b.png"], total: 3, inputs: [], stale: [], ...over,
 });
 
 const geometry = {
@@ -178,4 +178,14 @@ test("an unchanged or empty margin sends nothing, and a stale detector is called
   expect(onUpdate).not.toHaveBeenCalled();
   expect(screen.getByRole("status")).toHaveTextContent("det:1 changed since it last ran in step 1");
   expect(screen.getByText(/2 of 3 pictures have a rectangle/)).toBeInTheDocument();
+});
+
+test("the options say which pictures the Box works on: every picture, or the piles drawn into it", () => {
+  const { unmount } = render(<BoxOptions detail={detail()} onUpdate={vi.fn()} />);
+  expect(screen.getByText(/Works on every picture of the camera/)).toBeInTheDocument();
+  expect(screen.getByText(/Draw Ingest OK and Ingest NG into this Box/)).toBeInTheDocument();
+  unmount();
+  render(<BoxOptions detail={detail({ inputs: ["inok:1", "inng:1"], total: 6 })} onUpdate={vi.fn()} />);
+  expect(screen.getByText("Works on the pictures of Ingest OK and Ingest NG.")).toBeInTheDocument();
+  expect(screen.getByText(/2 of 6 pictures have a rectangle/)).toBeInTheDocument();
 });

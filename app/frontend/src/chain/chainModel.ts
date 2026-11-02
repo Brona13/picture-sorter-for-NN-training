@@ -198,7 +198,7 @@ export function flowConnect(canvas: ChainCanvas, c: Connection): FlowLink {
   const target = featureOf(canvas, c.target);
   if (!source || !target) return { error: "Unknown box." };
   const intoClassDot = target.kind === "roi" && !!c.targetHandle?.startsWith("in:");
-  if (isPileKind(target.kind) || (isPileKind(source.kind) && !intoClassDot)) return { error: "Ingest OK feeds the OK dot of a step-2 Classifier and Ingest NG its NG dot; other lines come with the next versions of step 2." };
+  if (isPileKind(target.kind) || (isPileKind(source.kind) && !intoClassDot && target.kind !== "box")) return { error: "Ingest OK and Ingest NG feed a Box (the pictures it works on) and the OK / NG dot of a step-2 Classifier; they take no line." };
   if (source.kind === "export") return { error: "Export is the end of the Chain: nothing leaves it." };
   if (target.kind === "export") {
     // A line onto one of the two inputs: the pictures that should land in the OK or NG folders.
@@ -326,6 +326,7 @@ export function flowConnect(canvas: ChainCanvas, c: Connection): FlowLink {
     ((source.kind === "ingest" || source.kind === "crop") && (target.kind === "crop" || target.kind === "detector" || target.kind === "dedup")) ||
     (source.kind === "detector" && (target.kind === "detector" || target.kind === "calc" || target.kind === "crop" || target.kind === "dedup")) ||
     (source.kind === "calc" && target.kind === "evaluation") ||
+    (isPileKind(source.kind) && target.kind === "box") ||
     (source.kind === "merge" && (target.kind === "crop" || target.kind === "detector" || target.kind === "dedup"));
   if (!ok) {
     return {

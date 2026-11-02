@@ -56,6 +56,25 @@ def margins_of(node: dict) -> dict[str, float]:
     return {side: float(stored.get(side, 0.0)) for side in SIDES}
 
 
+# --- the pictures it works on -----------------------------------------------------------
+def piles_of(graph: dict, node_id: str) -> list[str]:
+    """The Ingest OK / Ingest NG boxes with a line into this Box."""
+    return [e["source"] for e in graph["edges"] if e["target"] == node_id and flow.kind_of(e["source"]) in flow.PILES]
+
+
+def scope(camera: str, graph: dict, node_id: str) -> set[str] | None:
+    """The pictures the Box works on: those of the piles drawn into it, or ``None`` (every picture) while no line goes in.
+    The rectangles themselves do not depend on it; it limits what the Box page lists and counts and what a Classifier
+    anchored to the Box can see."""
+    piles = piles_of(graph, node_id)
+    if not piles:
+        return None
+    seen: set[str] = set()
+    for pile in piles:
+        seen |= set(flow.node_frames(camera, pile, graph))
+    return seen
+
+
 # --- settings -------------------------------------------------------------------------
 def candidates(camera: str, graph: dict) -> list[dict]:
     """The detector boxes of step 1 a Box can use: every target (slot) with examples of every step-1 detector."""
@@ -221,10 +240,17 @@ def ensure(camera: str, node_id: str) -> dict:
 
 
 def frames(camera: str, node_id: str) -> list[str]:
-    """The live pictures (by frame name) that have a rectangle: what a Classifier anchored to the Box can work on."""
+    """The live pictures (by frame name) that have a rectangle and are in the piles drawn into the Box (every picture while
+    none is): what a Classifier anchored to the Box can work on."""
     made = ensure(camera, node_id)["frames"]
     hmap = labels.hash_map(camera)
-    return [f for f in flow._live_frames(camera) if hmap.get(f) in made]
+    inside = scope(camera, flow.load_graph(camera), node_id)
+    return [f for f in flow._live_frames(camera) if hmap.get(f) in made and (inside is None or f in inside)]
+
+
+def _total(camera: str, graph: dict, node_id: str) -> int:
+    inside = scope(camera, graph, node_id)
+    return len(flow._live_frames(camera)) if inside is None else len(inside)
 
 
 # --- what the Box page and the canvas show -----------------------------------------------
@@ -237,8 +263,8 @@ def summary(camera: str, graph: dict, node_id: str) -> dict:
     return {
         "box_mode": node.get("mode", "two"), "measure_from": node.get("measure_from", "edge"), "margins": margins_of(node),
         "holes": [labels_of.get((h["detector"], h["target"]), f"{h['detector']} · {h['target']} (gone)") for h in holes],
-        "ready": ready, "found": len(ensure(camera, node_id)["frames"]) if ready else 0, "total": len(flow._live_frames(camera)),
-        "targets": [TARGET],
+        "ready": ready, "found": len(frames(camera, node_id)) if ready else 0, "total": _total(camera, graph, node_id),
+        "box_inputs": piles_of(graph, node_id), "targets": [TARGET],
     }
 
 
@@ -249,7 +275,8 @@ def detail(camera: str, graph: dict, node_id: str) -> dict:
     have = sorted(frames(camera, node_id))
     return {
         "mode": node.get("mode", "two"), "measure_from": node.get("measure_from", "edge"), "margins": margins_of(node), "holes": holes_of(node),
-        "needed": needed(node), "candidates": candidates(camera, graph), "frames": have, "total": len(flow._live_frames(camera)),
+        "needed": needed(node), "candidates": candidates(camera, graph), "frames": have, "total": _total(camera, graph, node_id),
+        "inputs": piles_of(graph, node_id),
         "stale": sorted({h["detector"] for h in holes_of(node) if h["detector"] in graph["nodes"] and flow.status(camera, h["detector"], graph) != "fresh"}),
     }
 

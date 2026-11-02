@@ -28,6 +28,8 @@ function loses(canvas: ChainCanvas, edge: Pick<ChainEdge, "source" | "source_han
         : [`${t} reads the whole picture instead of the output of ${name(canvas, edge.source)}.`, `Boxes behind ${t} go out of date.`];
     case "detector":
       return [`${t} searches the whole picture instead of the output of ${name(canvas, edge.source)}.`, `Its stored boxes go out of date: run it again.`];
+    case "box":
+      return [`${t} no longer works on the pictures of ${name(canvas, edge.source)}; with no line left it works on every picture of the camera.`, "Its rectangles stay as they are."];
     case "calc":
       return [`${t} loses ${from(canvas, edge.source, edge.source_handle)} as an input. It needs two points to give a value.`];
     case "evaluation":

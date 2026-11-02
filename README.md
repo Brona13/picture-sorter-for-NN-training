@@ -256,7 +256,8 @@ only the labels of the last freeze cross over. It shows a warning when step 1 ch
 In step 2, for a downstream detector that you train with one hand-drawn upright rectangle per picture:
 
 1. **Ingest OK** and **Ingest NG** hold the OK and NG pictures of the last freeze.
-2. **Box** makes one upright rectangle per picture. In its panel choose **two** detector boxes of step 1 (the left and the right hole) or
+2. **Box** makes one upright rectangle per picture. Draw **Ingest OK** and **Ingest NG** into its input dot (left) so it works on the pictures of the freeze
+   (with no line it works on every picture of the camera). In its panel choose **two** detector boxes of step 1 (the left and the right hole) or
    **one**, say whether the four margins (left, right, up, down; pixels) count from the box **edge** or its **centre**, and type them or
    drag the dots on the dashed edges on the example picture. With two holes the rectangle turns with the part ("up" and "down" follow it) and is
    squared off into an upright one.

@@ -461,6 +461,8 @@ export type FlowSummaryStep =
 export interface FlowSummary {
   /** A Box (step 2): its mode, the detector boxes chosen (names), whether the choice is complete, and how many pictures have a rectangle. */
   box_mode?: "one" | "two";
+  /** A Box: the Ingest OK / NG boxes drawn into it. */
+  box_inputs?: string[];
   holes?: string[];
   ready?: boolean;
   found?: number;
@@ -700,9 +702,12 @@ export interface FlowBoxModule {
   needed: 1 | 2;
   /** Every detector box of step 1 that can be chosen. */
   candidates: { detector: string; target: string; detector_label: string; label: string }[];
-  /** The pictures that have a rectangle. */
+  /** The pictures that have a rectangle (among those the Box works on). */
   frames: string[];
+  /** How many pictures the Box works on: those of the Ingest OK / NG boxes drawn into it, or every picture while none is. */
   total: number;
+  /** The Ingest OK / NG boxes with a line into this Box. */
+  inputs: string[];
   /** Detectors the boxes come from that were changed since they last ran: their boxes are the old ones. */
   stale: string[];
 }

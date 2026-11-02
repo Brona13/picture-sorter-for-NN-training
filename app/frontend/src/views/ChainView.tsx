@@ -87,7 +87,7 @@ function Box({ data, selected }: NodeProps<BoxNode>) {
       style={{ ["--hue" as string]: hueOf(node) }}
       data-testid={`chain-node-${node.id}`}
     >
-      {node.kind !== "ingest" && node.kind !== "export" && node.kind !== "box" && !isPileKind(node.kind) && !isClassifier && <Handle type="target" position={Position.Left} />}
+      {node.kind !== "ingest" && node.kind !== "export" && !isPileKind(node.kind) && !isClassifier && <Handle type="target" position={Position.Left} />}
       <KindIcon kind={node.kind} className="chain-node-kind" />
       <div className="chain-node-title">{node.label}</div>
       {node.kind === "export" ? (
@@ -207,7 +207,7 @@ function Box({ data, selected }: NodeProps<BoxNode>) {
           </div>
         ))}
       {node.kind === "box" && (
-        <div className="chain-node-product chain-node-target" title="Drag this dot onto a step-2 Classifier: it reads the rectangle this Box made for each picture">
+        <div className="chain-node-product chain-node-target" title="Drag this dot onto a step-2 Classifier: it reads the rectangle this Box made for each picture. Draw Ingest OK and Ingest NG into the Box (its left dot) to limit it to the frozen pictures.">
           box
           <Handle type="source" position={Position.Right} id={targetHandle("box")} />
         </div>

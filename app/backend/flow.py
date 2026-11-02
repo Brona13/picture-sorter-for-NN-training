@@ -725,8 +725,8 @@ def edge_allowed(graph: dict, source: str, target: str) -> str | None:
     why = lines.line_error(ks, kt)
     if why:
         return why
-    if (ks, kt) not in {("ingest", "crop"), ("crop", "crop"), ("crop", "detector"), ("ingest", "detector"), ("detector", "detector"), ("detector", "crop"), ("detector", "calc"), ("calc", "evaluation"), ("evaluation", "classify"), ("ingest", "dedup"), ("crop", "dedup"), ("detector", "dedup"), ("dedup", "dedup"), ("dedup", "detector"), ("dedup", "crop"), ("merge", "dedup"), ("merge", "crop"), ("merge", "detector")}:
-        names = {"ingest": "Ingest", "crop": "Picture edits", "detector": "a detector", "calc": "Calculate", "evaluation": "Evaluation", "classify": "a Classify box", "dedup": "a Dedup box", "merge": "a Merge"}
+    if (ks, kt) not in {("ingest", "crop"), ("crop", "crop"), ("crop", "detector"), ("ingest", "detector"), ("detector", "detector"), ("detector", "crop"), ("detector", "calc"), ("calc", "evaluation"), ("evaluation", "classify"), ("ingest", "dedup"), ("crop", "dedup"), ("detector", "dedup"), ("dedup", "dedup"), ("dedup", "detector"), ("dedup", "crop"), ("merge", "dedup"), ("merge", "crop"), ("merge", "detector"), ("ingest_ok", "box"), ("ingest_ng", "box")}:
+        names = {"ingest": "Ingest", "crop": "Picture edits", "detector": "a detector", "calc": "Calculate", "evaluation": "Evaluation", "classify": "a Classify box", "dedup": "a Dedup box", "merge": "a Merge", "ingest_ok": "Ingest OK", "ingest_ng": "Ingest NG", "box": "a Box"}
         return f"{names.get(ks, ks)} cannot feed {names.get(kt, kt)}."
     if is_flow_id(source) and source not in graph["nodes"]:
         return f"Unknown box: {source}"
@@ -790,7 +790,7 @@ def connect(camera: str, source: str, target: str, point: str | None = None) -> 
             if not any(st["op"] == "crop" for st in steps):
                 set_steps(node, steps + [{"id": new_step_id(steps), "op": "crop", "rect": None}])  # the step that follows the target
     else:
-        if kind_of(target) == "classify":
+        if kind_of(target) in ("classify", "box"):  # a Box takes Ingest OK and Ingest NG: one line each
             graph["edges"] = [e for e in graph["edges"] if not (e["source"] == source and e["target"] == target)]
         graph["edges"].append(edge)
     if target in _upstream_ids(graph, target):  # e.g. a box that reads an Evaluation's dot now feeds that Evaluation

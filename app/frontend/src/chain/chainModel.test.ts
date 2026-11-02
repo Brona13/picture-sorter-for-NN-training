@@ -406,3 +406,19 @@ test("a Box is anchored to a Classifier through its one dot, and says what it st
   expect(describeFlow("box", { ready: true, box_mode: "two", found: 7, total: 9 })).toBe("7 of 9 pictures · two boxes");
   expect(describeFlow("box", { ready: true, box_mode: "one", found: 1, total: 1 })).toBe("1 of 1 pictures · one box");
 });
+
+test("Ingest OK and Ingest NG can be drawn into a Box (the pictures it works on); nothing else can, and a pile takes no line", () => {
+  const steps: ChainCanvas = {
+    ...canvas,
+    nodes: [
+      ...canvas.nodes,
+      node({ id: "box:1", kind: "box", ref: null, label: "Box 1", role: null, scope: null, step: 2 }),
+      node({ id: "inok:1", kind: "ingest_ok", ref: null, label: "Ingest OK 1", role: null, scope: null, step: 2 }),
+      node({ id: "inng:1", kind: "ingest_ng", ref: null, label: "Ingest NG 1", role: null, scope: null, step: 2 }),
+    ],
+  };
+  expect(flowConnect(steps, { source: "inok:1", sourceHandle: null, target: "box:1", targetHandle: null })).toEqual({ source: "inok:1", target: "box:1" });
+  expect(flowConnect(steps, { source: "inng:1", sourceHandle: null, target: "box:1", targetHandle: null })).toEqual({ source: "inng:1", target: "box:1" });
+  expect(flowConnect(steps, { source: "box:1", sourceHandle: null, target: "inok:1", targetHandle: null })).toHaveProperty("error");
+  expect(flowConnect(steps, { source: "inok:1", sourceHandle: null, target: "inng:1", targetHandle: null })).toHaveProperty("error");
+});

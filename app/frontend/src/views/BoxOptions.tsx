@@ -94,6 +94,11 @@ export default function BoxOptions({ detail, onUpdate }: { detail: FlowBoxModule
         </p>
       </PanelSection>
       <PanelSection title="Result">
+        <p>
+          {detail.inputs.length === 0
+            ? "Works on every picture of the camera. Draw Ingest OK and Ingest NG into this Box (its left dot) to limit it to the pictures of the freeze."
+            : `Works on the pictures of ${detail.inputs.map((i) => (i.startsWith("inok") ? "Ingest OK" : "Ingest NG")).join(" and ")}.`}
+        </p>
         <p>{detail.frames.length} of {detail.total} pictures have a rectangle.</p>
         <p className="muted">The Box gives one upright rectangle per picture (the turned one squared off). Draw its dot onto a Classifier in step 2.</p>
       </PanelSection>

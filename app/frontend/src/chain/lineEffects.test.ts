@@ -96,3 +96,11 @@ test("an Evaluation line onto a Classifier or a class dot asks nothing: pass is 
   expect(replaceNote(c, { source: "eval:1", sourceHandle: "all", target: "roi:f" }, { evaluationOf: { feature: "f", box: "eval:1" } })).toBeNull();
   expect(replaceNote(c, { source: "eval:1", sourceHandle: "p:pass", target: "roi:f", targetHandle: "in:OK" }, { classLine: { feature: "f", cls: "OK", box: "eval:1", dot: "pass" } })).toBeNull();
 });
+
+test("deleting a line from Ingest OK into a Box says the Box then works on every picture and keeps its rectangles", () => {
+  const c = canvas([n({ id: "inok:1", kind: "ingest_ok", label: "Ingest OK 1" }), n({ id: "box:1", kind: "box", label: "Box 1" })], [e("a", "inok:1", "box:1")]);
+  const note = deleteNote(c, c.edges[0])!;
+  expect(note.title).toContain("Ingest OK 1 → Box 1");
+  expect(note.lines.join(" ")).toContain("every picture of the camera");
+  expect(note.lines.join(" ")).toContain("rectangles stay");
+});
