@@ -1203,3 +1203,73 @@ test("changing the choice in the top bar reloads the grid under the new method",
   rerender(<RankContext.Provider value={{ rank: "cpu" }}><ClassifyView camera="camA" /></RankContext.Provider>);
   await waitFor(() => expect(gridCalls().at(-1)!.url).toContain("rank=cpu"));
 });
+
+// ---- the two steps (plans/two-step-solution.md, stage 3b) ----------------------------------------------------------------
+
+test("step 1: labeling and delete, no golden star or key, no suggested goldens", async () => {
+  state = baseState({ step: 1 });
+  grid = () => gridBody([card("a.png", { label: "OK" })]);
+  render(<ClassifyView camera="camA" />);
+  const a = await cardEl("a.png");
+  expect(within(a).getByRole("button", { name: "OK" })).toBeInTheDocument();
+  expect(within(a).getByRole("button", { name: "Delete frame" })).toBeInTheDocument();
+  expect(within(a).queryByRole("button", { name: /golden/i })).toBeNull();
+  expect(screen.queryByTestId("step-two-hint")).toBeNull();
+  expect(screen.queryByText(/Suggested goldens/)).toBeNull();
+  fireEvent.keyDown(a, { code: "Backquote", key: "`" }); // the golden key does nothing
+  await new Promise((r) => setTimeout(r, 20));
+  expect(calls.some((c) => c.url.includes("/classify/golden"))).toBe(false);
+});
+
+test("the Suggested goldens panel is there when goldens are (step 2, or a server that does not say the step)", async () => {
+  for (const over of [{}, { step: 2 }]) {
+    state = baseState(over);
+    const { unmount } = render(<ClassifyView camera="camA" />);
+    await cardEl("a.png");
+    expect(screen.getByText(/Suggested goldens/)).toBeInTheDocument();
+    unmount();
+  }
+});
+
+test("step 2: goldens and Mute, no class buttons, no delete, no bulk labeling, and the hint says where a wrong label is fixed", async () => {
+  state = baseState({ step: 2 });
+  grid = () => gridBody([card("a.png", { label: "OK" }), card("b.png", { label: "NG" })]);
+  render(<ClassifyView camera="camA" />);
+  const a = await cardEl("a.png");
+  expect(within(a).queryByRole("button", { name: "OK" })).toBeNull();
+  expect(within(a).queryByRole("button", { name: "NG" })).toBeNull();
+  expect(within(a).queryByRole("button", { name: "Delete frame" })).toBeNull();
+  expect(within(a).getByRole("button", { name: "Make golden" })).toBeEnabled();
+  expect(within(a).getByRole("button", { name: "Mute frame" })).toBeInTheDocument();
+  expect(screen.getByTestId("step-two-hint")).toHaveTextContent("Wrong label? Change it in step 1 and Freeze again");
+  expect(screen.queryByText(/Bulk-label a selection/)).toBeNull();
+  await userEvent.click(within(a).getByRole("button", { name: "Make golden" }));
+  await waitFor(() => expect(calls.some((c) => c.url.includes("/classify/golden"))).toBe(true));
+});
+
+test("step 2: Mute takes the picture out of this Classifier only, through its own endpoint, and the numbers are read again", async () => {
+  state = baseState({ step: 2 });
+  grid = () => gridBody([card("a.png", { label: "OK" })]);
+  render(<ClassifyView camera="camA" />);
+  const a = await cardEl("a.png");
+  await userEvent.click(within(a).getByRole("button", { name: "Mute frame" }));
+  await waitFor(() => expect(calls.some((c) => c.method === "POST" && c.url.endsWith("/classify/mute"))).toBe(true));
+  expect(calls.find((c) => c.url.endsWith("/classify/mute"))!.body).toEqual({ feature: "seal", frames: ["a.png"] });
+  expect(calls.some((c) => c.url.includes("/dedup/mute-frames"))).toBe(false); // not a Dedup box's mute
+});
+
+test("step 2: the viewer has no class buttons or delete, and Mute", async () => {
+  state = baseState({ step: 2 });
+  grid = () => gridBody([card("a.png", { label: "OK" })]);
+  render(<ClassifyView camera="camA" />);
+  const a = await cardEl("a.png");
+  await userEvent.click(within(a).getByRole("link"));
+  const viewer = await screen.findByRole("dialog", { name: "Full-size picture" });
+  expect(within(viewer).queryByRole("button", { name: "OK" })).toBeNull();
+  expect(within(viewer).queryByRole("button", { name: "Delete frame" })).toBeNull();
+  expect(within(viewer).getByRole("button", { name: "Make golden" })).toBeInTheDocument();
+  expect(within(viewer).getByRole("button", { name: "Mute" })).toBeInTheDocument();
+  fireEvent.keyDown(window, { key: "1" }); // a class key labels nothing
+  await new Promise((r) => setTimeout(r, 20));
+  expect(calls.some((c) => c.method === "PUT" && c.url.includes("/classify/label"))).toBe(false);
+});

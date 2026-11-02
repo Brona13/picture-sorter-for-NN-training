@@ -40,6 +40,9 @@ export default function PictureGrid({
   pictureFeature,
   classes,
   labeling = true,
+  goldens = labeling,
+  deleting = true,
+  muteScope,
   methods = [],
   frames,
   cardOf,
@@ -65,6 +68,12 @@ export default function PictureGrid({
   classes: string[];
   /** False in a Dedup box: cards show the class colour only; no labeling, no golden. */
   labeling?: boolean;
+  /** The golden star and key (default: as `labeling`); a step-2 Classifier has goldens without labeling. */
+  goldens?: boolean;
+  /** The camera-wide delete (default on; a step-2 Classifier mutes instead). */
+  deleting?: boolean;
+  /** Where a mute holds (the card's button title); default "this Dedup box". */
+  muteScope?: string;
   methods?: string[];
   /** The frames to show, in order, already filtered. */
   frames: string[];
@@ -185,6 +194,9 @@ export default function PictureGrid({
               pictureFeature={pictureFeature}
               classes={classes}
               labeling={labeling}
+              goldens={goldens}
+              deleting={deleting}
+              muteScope={muteScope}
               methods={methods}
               card={cardAt(f)}
               busy={busy === f}
@@ -212,6 +224,8 @@ export default function PictureGrid({
           start={viewing}
           classes={classes}
           labeling={labeling}
+          goldens={goldens}
+          deleting={deleting}
           marks={(f) => {
             const c = cardAt(f);
             return { label: c.label, golden: c.golden };

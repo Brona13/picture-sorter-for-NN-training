@@ -22,6 +22,10 @@ interface Props {
   classes: string[];
   /** False in a Dedup box: no label or golden buttons or keys, only delete. */
   labeling?: boolean;
+  /** The golden star and key (default: as `labeling`). */
+  goldens?: boolean;
+  /** The delete button and key (default on). */
+  deleting?: boolean;
   marks: (frame: string) => { label: string | null; golden: string | null };
   busy: boolean;
   onLabel: (frame: string, cls: string | null) => void;
@@ -53,7 +57,7 @@ interface Props {
  * pan, the same pane the ROI editor uses), the ROI outline, and the card's own actions for the frame on screen
  * (1-9 label, 0 or X clear, the key left of 1 golden, Delete).
  */
-export default function FrameViewer({ camera, feature, pictureFeature, frames, start, classes, labeling = true, marks, busy, onLabel, onGolden, onDelete, deleted, onRestore, labelsLocked, lead, leadCaption, trail, note, onShow, onMute, isMuted, onClose }: Props) {
+export default function FrameViewer({ camera, feature, pictureFeature, frames, start, classes, labeling = true, goldens = labeling, deleting = true, marks, busy, onLabel, onGolden, onDelete, deleted, onRestore, labelsLocked, lead, leadCaption, trail, note, onShow, onMute, isMuted, onClose }: Props) {
   const [roi, setRoi] = useState<RoiInfo | null>(null);
   const [showRoi, setShowRoi] = useState(true);
   useEffect(() => {
@@ -112,8 +116,8 @@ export default function FrameViewer({ camera, feature, pictureFeature, frames, s
   const outline = boxMode ? boxOutline : roi && showRoi ? (roi.anchored ? (placed && placed.frame === frame && placed.rect ? { ...roi, ...placed.rect } : null) : roi) : null;
   const noAnchor = !!roi?.anchored && placed?.frame === frame && placed.rect === null;
 
-  const latest = useRef({ frame, classes, labeling, busy, marks, onLabel, onGolden, onDelete, deleted, labelsLocked, onMute });
-  latest.current = { frame, classes, labeling, busy, marks, onLabel, onGolden, onDelete, deleted, labelsLocked, onMute };
+  const latest = useRef({ frame, classes, labeling, goldens, deleting, busy, marks, onLabel, onGolden, onDelete, deleted, labelsLocked, onMute });
+  latest.current = { frame, classes, labeling, goldens, deleting, busy, marks, onLabel, onGolden, onDelete, deleted, labelsLocked, onMute };
   // The label keys: 1-9 label, 0 clear, the key left of 1 golden, Delete deletes (the shell has Esc and the arrows).
   const onKey = (e: KeyboardEvent): boolean => {
     const cur = latest.current;
@@ -128,7 +132,7 @@ export default function FrameViewer({ camera, feature, pictureFeature, frames, s
     if (!isGolden && !isDelete && !digit && !clear) return false;
     if (e.repeat || cur.busy || !cur.frame || cur.deleted?.(cur.frame)) return true; // a deleted frame takes no label
     if (!isDelete && cur.labelsLocked?.(cur.frame)) return true; // nor does a frame outside the ROI's scope
-    if (!isDelete && !cur.labeling) return true;
+    if (isDelete ? !cur.deleting : isGolden ? !cur.goldens : !cur.labeling) return true;
     const m = cur.marks(cur.frame);
     if (isDelete) cur.onDelete(cur.frame);
     else if (isGolden) {
@@ -162,7 +166,7 @@ export default function FrameViewer({ camera, feature, pictureFeature, frames, s
       onGo={go}
       onClose={onClose}
       onKey={onKey}
-      hint={labeling ? "Wheel zooms · drag pans · ← → browse · 1-9 label · 0 / X clear · ` golden · Delete deletes · Esc closes" : `Wheel zooms · drag pans · ← → browse · ${onMute ? "M mutes / unmutes · " : ""}Delete deletes · Esc closes`}
+      hint={`Wheel zooms · drag pans · ← → browse · ${labeling ? "1-9 label · 0 / X clear · " : ""}${goldens ? "` golden · " : ""}${onMute ? "M mutes / unmutes · " : ""}${deleting ? "Delete deletes · " : ""}Esc closes`}
       toolbar={
         <div style={{ flex: 1 }}>
         <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
@@ -182,7 +186,7 @@ export default function FrameViewer({ camera, feature, pictureFeature, frames, s
               {c}
             </button>
           ))}
-          {labeling && <button
+          {goldens && <button
             type="button"
             aria-label={mark.golden ? "Remove golden" : "Make golden"}
             disabled={busy || isDeleted || locked || mark.label === null}
@@ -243,11 +247,11 @@ export default function FrameViewer({ camera, feature, pictureFeature, frames, s
             <button type="button" aria-label="Restore frame" disabled={busy || !onRestore} title="Bring the deleted frame back" onClick={() => onRestore?.(frame)}>
               ♻
             </button>
-          ) : (
+          ) : deleting ? (
             <button type="button" aria-label="Delete frame" disabled={busy} title="Soft-delete (Delete)" onClick={() => onDelete(frame)}>
               🗑
             </button>
-          )}
+          ) : null}
         </>
       }
     >

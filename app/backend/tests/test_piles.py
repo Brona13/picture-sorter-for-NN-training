@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import datamodel
+import db
 import flow
 import labels
 import piles
@@ -155,3 +156,24 @@ class StepTwoClassifierTests(PileTests):
     test_the_newest_freeze_of_any_freeze_module_counts = None
     test_a_step_two_export_is_not_a_freeze_module = None
     test_a_pile_can_be_deleted_and_lines_into_it_are_refused = None
+
+    def test_a_step_two_classifier_mutes_pictures_for_itself_only_and_the_state_says_its_step(self) -> None:
+        self.wire()
+        f = self.frames
+        labels.mark_golden(CAM, "pick", f[0], "OK")
+        r = self.client.post(f"{self.base}/classify/mute", json={"feature": "pick", "frames": [f[0], f[1], f[7]]})
+        self.assertEqual(r.status_code, 200, r.text)
+        body = r.json()
+        self.assertEqual((body["muted"], body["skipped_golden"], body["muted_count"]), (1, 1, 1))  # f0 is golden; f7 is not in the Classifier
+        self.assertEqual(db.muted_frames(CAM, "pick"), {f[1]})  # the mute is this Classifier's own
+        self.assertEqual(db.muted_frames(CAM, "seal"), set())  # and no other's
+        state = self.client.get(f"{self.base}/classify/state", params={"feature": "pick"}).json()
+        self.assertEqual((state["step"], state["muted_count"]), (2, 1))
+        self.client.post(f"{self.base}/classify/unmute", json={"feature": "pick", "frame": f[1]})
+        self.assertEqual(self.client.get(f"{self.base}/classify/state", params={"feature": "pick"}).json()["muted_count"], 0)
+
+    def test_mute_is_for_step_two_classifiers_only(self) -> None:
+        r = self.client.post(f"{self.base}/classify/mute", json={"feature": "seal", "frames": [self.frames[0]]})
+        self.assertEqual(r.status_code, 422)
+        self.assertIn("step-2", r.json()["detail"])
+        self.assertEqual(self.client.get(f"{self.base}/classify/state", params={"feature": "seal"}).json()["step"], 1)

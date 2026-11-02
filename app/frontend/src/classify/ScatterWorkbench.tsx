@@ -129,11 +129,20 @@ export function ScatterMapView({
   onError,
   onChanged,
   labeling = true,
+  goldens = labeling,
+  deleting = true,
+  muteScope,
   onMute,
   mute,
 }: {
   camera: string;
   feature: string;
+  /** The golden star and key on the selection's cards (default: as `labeling`). */
+  goldens?: boolean;
+  /** The camera-wide delete of the selection and its cards (default on). */
+  deleting?: boolean;
+  /** Where a mute holds (titles); default "this Dedup box". */
+  muteScope?: string;
   /** In a Dedup box: mute these pictures in the box (shows the Mute button of the selection). */
   onMute?: (frames: string[]) => Promise<void>;
   /** In a Dedup box: the M key on the selection's cards. */
@@ -165,6 +174,9 @@ export function ScatterMapView({
           points={selected}
           classes={scatter.classes}
           labeling={labeling}
+          goldens={goldens}
+          deleting={deleting}
+          muteScope={muteScope}
           onMute={onMute}
           mute={mute}
           grid={grid}
@@ -222,6 +234,9 @@ export function ScatterSelection({
   points,
   classes,
   labeling = true,
+  goldens = labeling,
+  deleting = true,
+  muteScope = "this Dedup box",
   grid,
   onGrid,
   onMark,
@@ -244,6 +259,9 @@ export function ScatterSelection({
   classes: string[];
   /** False in a Dedup box: no batch labeling, no label buttons on the cards. */
   labeling?: boolean;
+  goldens?: boolean;
+  deleting?: boolean;
+  muteScope?: string;
   grid: PagerSettings;
   onGrid: (perPage: number, cols: number) => void;
   onMark: (frame: string, mark: Mark) => void;
@@ -346,7 +364,9 @@ export function ScatterSelection({
                 <button
                   type="button"
                   disabled={busy}
-                  title="Mute these pictures in this Dedup box: the box stops passing them on. Nothing is deleted; Unmute all of this box undoes it."
+                  title={muteScope === "this Dedup box"
+                    ? "Mute these pictures in this Dedup box: the box stops passing them on. Nothing is deleted; Unmute all of this box undoes it."
+                    : `Mute these pictures in ${muteScope}: they leave its computation. Nothing is deleted; Show muted on the Grid brings them back.`}
                   onClick={() => {
                     setBusy(true);
                     onMute(frames)
@@ -357,9 +377,9 @@ export function ScatterSelection({
                   🔇 Mute these {rows.length} frame(s)
                 </button>
               )}
-              <button type="button" disabled={busy} onClick={askDelete} style={{ borderColor: "#c62828", color: "#c62828" }}>
+              {deleting && <button type="button" disabled={busy} onClick={askDelete} style={{ borderColor: "#c62828", color: "#c62828" }}>
                 🗑 Delete these {rows.length} frame(s)…
-              </button>
+              </button>}
             </div>
           ) : (
             <div role="alertdialog" aria-label="Confirm delete" style={{ border: "1px solid #c33", padding: 8, margin: "6px 0" }}>
@@ -385,6 +405,9 @@ export function ScatterSelection({
             pictureFeature={pictureFeature}
             classes={classes}
             labeling={labeling}
+            goldens={goldens}
+            deleting={deleting}
+            muteScope={muteScope}
             frames={frames}
             cardOf={cardOf}
             via="Scatter"

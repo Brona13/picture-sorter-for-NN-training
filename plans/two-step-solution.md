@@ -1,4 +1,4 @@
-# Two-step solution: plan (status: approved 2026-11-02; stage 1 built in v1.140.0, stage 2 in v1.141.0, stage 3a in v1.142.0)
+# Two-step solution: plan (status: approved 2026-11-02; stage 1 built in v1.140.0, stage 2 in v1.141.0, stage 3a in v1.142.0, stage 3b in v1.143.0)
 
 ## Context
 The user's downstream system is a ResNet detector on whole pictures. He draws one upright rectangle per picture by hand and cannot import labels or boxes. He wants the fewest pictures per round. Today's Chain mixes "decide OK/NG" with "choose goldens". The handover (`discussions/2026-11-02-two-step-solution-handover.md`, base v1.139.5) splits the work into two steps. Nothing is built yet. After approval this file is copied to `plans/two-step-solution.md` (together with the handover commit) and executed stage by stage.

@@ -13,6 +13,12 @@ interface Props {
   classes: string[];
   /** False in a Dedup box: the card only shows the class (its colour) and deletes; no label or golden buttons or keys. */
   labeling?: boolean;
+  /** The golden star and key. Default: as `labeling`. A step-2 Classifier has goldens without labeling; a step-1 one has labeling without goldens. */
+  goldens?: boolean;
+  /** The camera-wide delete button and key (default on; a step-2 Classifier mutes instead). */
+  deleting?: boolean;
+  /** Where a mute holds, for the button's title. */
+  muteScope?: string;
   methods: string[];
   card: CardData;
   busy: boolean;
@@ -64,7 +70,7 @@ const badge = (bg: string): React.CSSProperties => ({
  */
 export const MAX_SHORTCUT_CLASSES = 9;
 
-export default function Card({ camera, feature, pictureFeature, classes, labeling = true, methods, card, busy, onLabel, onGolden, onDelete, onMute, onRestore, canRestore = true, isRep, onSetRep, fullSize, onOpen, caption, onSimilar, thumb, edgeColor, extra }: Props) {
+export default function Card({ camera, feature, pictureFeature, classes, labeling = true, goldens = labeling, deleting = true, muteScope = "this Dedup box", methods, card, busy, onLabel, onGolden, onDelete, onMute, onRestore, canRestore = true, isRep, onSetRep, fullSize, onOpen, caption, onSimilar, thumb, edgeColor, extra }: Props) {
   const { frame, label, golden, deleted, bars, leanings, cluster, edge, measure } = card;
   // Search results only: a picture outside this ROI's scope gets a red frame and cannot be labeled here until its
   // product fits (open it to change the product); a muted one gets a dark grey dashed frame.
@@ -94,10 +100,11 @@ export default function Card({ camera, feature, pictureFeature, classes, labelin
       if (busy || deleted || (outside && !isDeleteKey)) return false;
       if (!isGoldenKey) markPainted(frame);
       if (isDeleteKey) {
+        if (!deleting) return false;
         onDelete();
         return true;
       }
-      if (!labeling && !isDeleteKey) return false;
+      if (isGoldenKey ? !goldens : !labeling) return false;
       if (isGoldenKey) {
         if (label === null) return false; // a golden is always a labeled frame
         onGolden(!golden);
@@ -123,7 +130,7 @@ export default function Card({ camera, feature, pictureFeature, classes, labelin
       if (busy || deleted || golden || outside) return false;
       if (!labeling && mode !== DELETE_MODE) return false;
       if (mode === DELETE_MODE) {
-        if (label !== null) return false;
+        if (!deleting || label !== null) return false;
         onDelete();
         return true;
       }
@@ -304,7 +311,7 @@ export default function Card({ camera, feature, pictureFeature, classes, labelin
           </button>
         ))}
         {extra}
-        {labeling && <button
+        {goldens && <button
           aria-label={golden ? "Remove golden" : "Make golden"}
           disabled={busy || label === null || outside || deleted}
           title={
@@ -344,13 +351,13 @@ export default function Card({ camera, feature, pictureFeature, classes, labelin
           <button
             aria-label={muted ? "Unmute frame" : "Mute frame"}
             disabled={busy || deleted}
-            title={muted ? "Muted in this Dedup box. Take the mute away (shortcut: hover and press M)." : "Mute in this Dedup box: the picture goes on no further from here (shortcut: hover and press M). The file stays on disk."}
+            title={muted ? `Muted in ${muteScope}. Take the mute away (shortcut: hover and press M).` : `Mute in ${muteScope}: the picture goes on no further from here (shortcut: hover and press M). The file stays on disk.`}
             onClick={onMute}
           >
             {muted ? "↺" : "🔇"}
           </button>
         )}
-        <button
+        {(deleting || deleted) && <button
           aria-label={deleted ? "Restore frame" : "Delete frame"}
           disabled={busy || (deleted && !canRestore)}
           title={
@@ -363,7 +370,7 @@ export default function Card({ camera, feature, pictureFeature, classes, labelin
           onClick={deleted ? onRestore : onDelete}
         >
           {deleted ? "↺" : "🗑"}
-        </button>
+        </button>}
       </div>
     </li>
   );

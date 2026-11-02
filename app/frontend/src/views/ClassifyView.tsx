@@ -18,6 +18,7 @@ import { ProductRow, SearchNote, ShowAgain, showsProductRow } from "../classify/
 import SidePanel, { PanelSection } from "../SidePanel";
 import SuggestPanel from "../classify/SuggestPanel";
 import { useJob } from "../useJob";
+import { STEP_TWO_HINT, modeOfStep } from "../classify/stepMode";
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const GRID_INFO = (
@@ -49,6 +50,8 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
   const shared = useSharedFeature();
   usePublishFeature(feature, shared.publish);
   const [st, setSt] = useState<ClassifyState | null>(null);
+  // What this Classifier's step offers: step 1 labels and deletes (no goldens); step 2 chooses goldens and mutes (labels are the freeze's).
+  const stepMode = modeOfStep(st?.step);
   const [view, setView] = useState("All");
   // The method to rank by is chosen in the top bar ("Rank using"); until it is, or when it is not in use, the server's default.
   const chosen = useContext(RankContext).rank;
@@ -288,7 +291,7 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
         )}
         {refreshNote && <span role="status">{refreshNote}</span>}
         {!st.has_results && !refreshing && <span>Click Refresh scores to evaluate the inbox.</span>}
-        {st.stale.goldens && (
+        {stepMode.goldens && st.stale.goldens && (
           <span role="status">
             ⭐ Goldens changed since the last refresh — hit <strong>Refresh scores</strong> to re-evaluate everything against them.
           </span>
@@ -299,7 +302,7 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
             {st.missing_methods.length > 1 ? "they get" : "it gets"} scores.
           </span>
         )}
-        {!st.stale.goldens && st.stale.frames && (
+        {!(stepMode.goldens && st.stale.goldens) && st.stale.frames && (
           <span role="status">
             🆕 The frame set changed since the last refresh (ingest or delete) — hit <strong>Refresh scores</strong> to score the new set.
           </span>
@@ -308,6 +311,17 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
     ) : null;
   const navRow = { display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", margin: "8px 0" } as const;
   const classes = st?.classes ?? [];
+  const muteFrames = async (frames: string[]) => {
+    const r = await api.classifyMute(camera, feature, frames);
+    setNotice(`Muted ${r.muted} picture${r.muted === 1 ? "" : "s"} in this Classifier.` + (r.skipped_golden ? ` ${r.skipped_golden} golden kept.` : "") + " Show muted brings them back.");
+    bump();
+  };
+  const stepTwoMute = {
+    selection: muteFrames,
+    cards: { is: () => false, toggle: (f: string) => muteFrames([f]).catch((e: unknown) => setError(msg(e))) },
+  };
+  const toggleMute = (card: CardData) =>
+    actElsewhere(card.frame, () => (card.muted ? api.unmuteFrame(camera, feature, card.frame) : api.classifyMute(camera, feature, [card.frame])));
 
   // The Grid view's properties live in the options panel, like the Dedup pages' tools: which pictures it lists and in what
   // order, and the tools that label, clear or auto-assign many pictures at once. (Scatter and Outliers put theirs there
@@ -339,8 +353,8 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
                 </label>
               )}
         <div style={{ marginTop: 6 }}>
-            {search && st.scored && <p role="status">The bulk, clear and auto-label tools are off while a search is active.</p>}
-            {st.scored && (
+            {search && st.scored && stepMode.labeling && <p role="status">The bulk, clear and auto-label tools are off while a search is active.</p>}
+            {st.scored && stepMode.labeling && (
               <fieldset disabled={!!search} style={{ border: 0, padding: 0, margin: 0, opacity: search ? 0.5 : 1 }}>
                 <BulkPanel
                   camera={camera}
@@ -444,6 +458,8 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
         />
       )}
 
+      {st && stepMode.muting && <p role="note" className="muted" data-testid="step-two-hint">{STEP_TWO_HINT}</p>}
+
       {st && !focus && (
         <div style={navRow}>
           {viewSwitch}
@@ -452,11 +468,11 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
       )}
 
       {mode === "scatter" && st && (
-        <ClassifyScatter camera={camera} feature={feature} grid={st.settings} onGrid={changeSetting} onChanged={bump} onNotice={setNotice} onError={setError} />
+        <ClassifyScatter camera={camera} feature={feature} mode={stepMode} mute={stepMode.muting ? stepTwoMute : undefined} grid={st.settings} onGrid={changeSetting} onChanged={bump} onNotice={setNotice} onError={setError} />
       )}
 
       {mode === "outliers" && st && (
-        <ClassifyOutliers camera={camera} feature={feature} grid={st.settings} onGrid={changeSetting} onChanged={bump} onNotice={setNotice} onError={setError} />
+        <ClassifyOutliers camera={camera} feature={feature} mode={stepMode} mute={stepMode.muting ? stepTwoMute.cards : undefined} grid={st.settings} onGrid={changeSetting} onChanged={bump} onNotice={setNotice} onError={setError} />
       )}
 
       {mode === "grid" && (
@@ -467,7 +483,7 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
             <DeletedByDay camera={camera} feature={feature} revision={revision} settings={st.settings} onSettings={changeSetting} onChanged={bump} onNotice={setNotice} onError={setError} />
           ) : (
             <>
-          {similarSeed && (
+          {stepMode.labeling && similarSeed && (
             <SimilarPanel
               camera={camera}
               feature={feature}
@@ -492,7 +508,7 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
             </p>
           )}
 
-          {st.scored && !search && (
+          {st.scored && !search && stepMode.goldens && (
             <SuggestPanel
               camera={camera}
               query={query}
@@ -529,6 +545,11 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
                     camera={camera}
                     feature={feature}
                     classes={classes}
+                    labeling={stepMode.labeling}
+                    goldens={stepMode.goldens}
+                    deleting={stepMode.deleting}
+                    muteScope="this Classifier"
+                    onMute={stepMode.muting ? () => void toggleMute(card) : undefined}
                     methods={st.methods}
                     card={card}
                     busy={busy === card.frame}
@@ -539,7 +560,7 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
                     onDelete={() => deleteInPlace(card.frame)}
                     onRestore={() => restoreInPlace(card.frame)}
                     onSimilar={
-                      st.methods.some((m) => m.startsWith("resnet"))
+                      stepMode.labeling && st.methods.some((m) => m.startsWith("resnet"))
                         ? () => card.label && setSimilarSeed({ frame: card.frame, label: card.label })
                         : undefined
                     }
@@ -553,6 +574,11 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
                   frames={grid.items.map((c) => c.frame)}
                   start={viewing}
                   classes={classes}
+                  labeling={stepMode.labeling}
+                  goldens={stepMode.goldens}
+                  deleting={stepMode.deleting}
+                  onMute={stepMode.muting ? (f) => { const c = grid.items.find((x) => x.frame === f); if (c) void toggleMute(c); } : undefined}
+                  isMuted={(f) => !!grid.items.find((x) => x.frame === f)?.muted}
                   marks={(f) => {
                     const c = grid.items.find((x) => x.frame === f);
                     return { label: c?.label ?? null, golden: c?.golden ?? null };

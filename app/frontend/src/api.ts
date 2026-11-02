@@ -935,6 +935,8 @@ export interface MethodsConfig {
 
 export interface ClassifyState {
   feature: string;
+  /** The Classifier's step in the two-step solution: 2 = goldens and Mute, no labeling (absent or 1 = labeling, no goldens). */
+  step?: 1 | 2;
   classes: string[];
   /** The pictures the user works with: not deleted, not muted for this ROI. */
   counts: Record<string, number>;
@@ -1686,6 +1688,12 @@ export const api = {
     request<CardUpdate>(`/cameras/${encodeURIComponent(camera)}/classify/golden`, send("PUT", { feature, frame, golden })),
   deleteFrame: (camera: string, feature: string, frame: string, via?: string) =>
     request<CardUpdate>(`/cameras/${encodeURIComponent(camera)}/classify/delete`, post({ feature, frame, via })),
+  /** Step 2: take pictures out of this Classifier's computation (its own mute; nothing is deleted). */
+  classifyMute: (camera: string, feature: string, frames: string[]) =>
+    request<{ muted: number; skipped_golden: number; already: number; muted_count: number }>(
+      `/cameras/${encodeURIComponent(camera)}/classify/mute`,
+      post({ feature, frames }),
+    ),
   /** Bring a picture the duplicate step hid (a dedup mute) back into this ROI's grid. */
   unmuteFrame: (camera: string, feature: string, frame: string) =>
     request<{ frame: string; muted: boolean; muted_count: number }>(

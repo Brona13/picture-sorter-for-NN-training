@@ -111,3 +111,27 @@ test("explains why there is nothing to score when the embeddings are unavailable
   expect(await screen.findByRole("status")).toHaveTextContent("No ResNet method is switched on");
   expect(screen.queryByRole("button", { name: "Score outliers" })).toBeNull();
 });
+
+test("step 2: the outlier cards have no class buttons or delete, and Mute goes through this Classifier's mute", async () => {
+  const user = userEvent.setup();
+  const toggle = vi.fn(async () => {});
+  const mode = { labeling: false, goldens: true, deleting: false, muting: true };
+  render(<ClassifyOutliers camera="camA" feature="seal" grid={grid} onGrid={vi.fn()} onChanged={vi.fn()} onNotice={vi.fn()} onError={vi.fn()} mode={mode} mute={{ is: () => false, toggle }} />);
+  await user.click(await screen.findByRole("button", { name: "Score outliers" }));
+  const card = await screen.findByTestId("card-far.png");
+  expect(within(card).queryByRole("button", { name: "NG" })).toBeNull();
+  expect(within(card).queryByRole("button", { name: /delete/i })).toBeNull();
+  await user.click(within(card).getByRole("button", { name: "Mute frame" }));
+  expect(toggle).toHaveBeenCalledWith("far.png");
+  expect(within(card).getByRole("button", { name: "Mute frame" })).toHaveAttribute("title", expect.stringContaining("this Classifier"));
+});
+
+test("step 1: the outlier cards label and delete but have no golden star", async () => {
+  const user = userEvent.setup();
+  const mode = { labeling: true, goldens: false, deleting: true, muting: false };
+  render(<ClassifyOutliers camera="camA" feature="seal" grid={grid} onGrid={vi.fn()} onChanged={vi.fn()} onNotice={vi.fn()} onError={vi.fn()} mode={mode} />);
+  await user.click(await screen.findByRole("button", { name: "Score outliers" }));
+  const card = await screen.findByTestId("card-far.png");
+  expect(within(card).getByRole("button", { name: "NG" })).toBeInTheDocument();
+  expect(within(card).queryByRole("button", { name: /golden/i })).toBeNull();
+});

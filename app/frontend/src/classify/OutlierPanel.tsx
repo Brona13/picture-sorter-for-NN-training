@@ -94,6 +94,9 @@ export function OutlierResults({
   onChanged,
   labelFeature,
   labeling = true,
+  goldens = labeling,
+  deleting = true,
+  muteScope,
   mute,
 }: {
   o: OutlierState;
@@ -108,6 +111,9 @@ export function OutlierResults({
   mute?: GridMute;
   /** False in a Dedup box: the grid shows classes but does not label. */
   labeling?: boolean;
+  goldens?: boolean;
+  deleting?: boolean;
+  muteScope?: string;
 }) {
   const { camera, feature: ranFor, result, marks, setMarks, gone, setGone, page, setPage } = o;
   if (!result) return null;
@@ -136,6 +142,9 @@ export function OutlierResults({
         pictureFeature={ranFor}
         classes={result.classes}
         labeling={labeling}
+        goldens={goldens}
+        deleting={deleting}
+        muteScope={muteScope}
         frames={rows.map((r) => r.frame)}
         cardOf={cardOf}
         via="Outliers"

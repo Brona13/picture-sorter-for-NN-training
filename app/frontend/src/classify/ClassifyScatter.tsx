@@ -5,6 +5,8 @@ import { PagerSettings } from "./Pager";
 import { ColourBy } from "./Scatter";
 import { effectiveColour, ProjectionProgress, ScatterMapView, useScatterMap } from "./ScatterWorkbench";
 import { EmbeddingSelect, useDedupState } from "./useDedupState";
+import { ALL_ON, type ClassifyMode } from "./stepMode";
+import type { GridMute } from "./PictureGrid";
 
 /**
  * Classify's Scatter view: the 2D map of this ROI's pictures, to select many at once (drag a rectangle) and label or
@@ -20,9 +22,15 @@ export default function ClassifyScatter({
   onChanged,
   onNotice,
   onError,
+  mode = ALL_ON,
+  mute,
 }: {
   camera: string;
   feature: string;
+  /** What the step of this Classifier offers (labeling, goldens, delete, Mute). */
+  mode?: ClassifyMode;
+  /** Step 2: the mute of this Classifier (the selection's button and the cards' M key). */
+  mute?: { selection: (frames: string[]) => Promise<void>; cards: GridMute };
   grid: PagerSettings;
   onGrid: (perPage: number, cols: number) => void;
   /** A label or delete was made from the map: reload the page's counts and grid. */
@@ -88,6 +96,12 @@ export default function ClassifyScatter({
         onNotice={onNotice}
         onError={onError}
         onChanged={onChanged}
+        labeling={mode.labeling}
+        goldens={mode.goldens}
+        deleting={mode.deleting}
+        muteScope="this Classifier"
+        onMute={mute?.selection}
+        mute={mute?.cards}
       />
     </div>
   );

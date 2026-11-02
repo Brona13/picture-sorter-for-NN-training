@@ -264,6 +264,7 @@ def state(camera: str, feature: str) -> dict:
         # methods switched on (Configuration) since the last refresh: they have no scores yet
         "missing_methods": classify.missing_methods(results, methods) if results else [],
         "muted_count": len(db.muted_frames(camera, feature)),
+        "step": flow.roi_step(camera, feature),  # 2: a step-2 Classifier (goldens and Mute, no labeling; see class_lines)
         "shared_products": datamodel.feature_products(camera, feature),
         "frames_seen": len(frames),
         "inbox_total": inbox,
@@ -564,6 +565,25 @@ def unmute_frame(camera: str, body: UnmuteBody) -> dict:
     frame_path(camera, body.frame)
     db.unmute_frames(camera, body.feature, [body.frame])
     return {"frame": body.frame, "muted": False, "muted_count": len(db.muted_frames(camera, body.feature))}
+
+
+class MuteFramesBody(BaseModel):
+    feature: str
+    frames: list[str]
+
+
+@router.post("/cameras/{camera}/classify/mute")
+def mute_frames(camera: str, body: MuteFramesBody) -> dict:
+    """Step 2: take pictures out of this Classifier's computation (a wrong label from step 1 is fixed there, not here). The mute
+    belongs to this Classifier only, is undone with ``classify/unmute`` (or Show muted), and never touches a golden or a deleted picture."""
+    require_feature(camera, body.feature)
+    if flow.roi_step(camera, body.feature) != 2:
+        raise HTTPException(status_code=422, detail="Mute is for step-2 Classifiers; in step 1 a Dedup box mutes pictures.")
+    if not body.frames:
+        raise HTTPException(status_code=422, detail="No frames to mute.")
+    for f in body.frames:
+        frame_path(camera, f)
+    return {**dedup.mute_frames(camera, body.feature, body.frames), "muted_count": len(db.muted_frames(camera, body.feature))}
 
 
 class FramesBody(BaseModel):

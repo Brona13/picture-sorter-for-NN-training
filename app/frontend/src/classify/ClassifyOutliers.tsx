@@ -3,6 +3,8 @@ import { OutlierControls, OutlierResults, useOutliers } from "./OutlierPanel";
 import { PagerSettings } from "./Pager";
 import { OUTLIERS_INFO } from "./toolInfo";
 import { EmbeddingSelect, useDedupState } from "./useDedupState";
+import { ALL_ON, type ClassifyMode } from "./stepMode";
+import type { GridMute } from "./PictureGrid";
 
 /**
  * Classify's Outliers view: the pictures that look least like the others (mean cosine distance to their nearest
@@ -17,9 +19,15 @@ export default function ClassifyOutliers({
   onChanged,
   onNotice,
   onError,
+  mode = ALL_ON,
+  mute,
 }: {
   camera: string;
   feature: string;
+  /** What the step of this Classifier offers (labeling, goldens, delete, Mute). */
+  mode?: ClassifyMode;
+  /** Step 2: the mute of this Classifier (the cards' M key). */
+  mute?: GridMute;
   grid: PagerSettings;
   onGrid: (perPage: number, cols: number) => void;
   /** A label, golden or delete was made from a card: reload the page's counts and grid. */
@@ -55,6 +63,11 @@ export default function ClassifyOutliers({
         grid={grid}
         onGrid={onGrid}
         onChanged={onChanged}
+        labeling={mode.labeling}
+        goldens={mode.goldens}
+        deleting={mode.deleting}
+        muteScope="this Classifier"
+        mute={mute}
         onDeleted={(frame) => {
           onNotice(`Deleted ${frame}. It stays on disk; see Classify → Show: Deleted.`);
           onChanged();
