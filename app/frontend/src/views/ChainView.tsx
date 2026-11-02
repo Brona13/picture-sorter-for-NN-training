@@ -288,8 +288,23 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [camera]);
 
-  const edges = useMemo(() => canvas?.edges.map((e) => ({ ...toFlowEdge(e), selected: e.id === selectedEdgeId })) ?? [], [canvas, selectedEdgeId]);
-  const shownNodes = useMemo(() => nodes.map((n) => ({ ...n, selected: n.id === selectedId })), [nodes, selectedId]);
+  // The two steps are two canvases over one stored graph: a box carries its step, and only the open step is drawn. The step-2 tab
+  // shows once there is a Freeze module (the closing box of step 1) or step-2 boxes; with step-2 boxes but no Freeze it stays, with a warning.
+  const [step, setStep] = useState<1 | 2>(1);
+  const freezes = canvas?.nodes.filter((n) => n.kind === "export" && (n.step ?? 1) === 1) ?? [];
+  const showTabs = freezes.length > 0 || !!canvas?.nodes.some((n) => (n.step ?? 1) === 2);
+  const activeStep: 1 | 2 = showTabs ? step : 1;
+  const stepWarning =
+    freezes.length === 0 ? "Step 1 has no Freeze module. Add one to step 1 and freeze it to give step 2 its pictures."
+    : freezes.some((n) => !n.flow?.frozen) ? "Step 1 is not frozen yet. Open its Freeze module and freeze."
+    : freezes.some((n) => n.flow?.changed) ? "Step 1 has changed since its last freeze. Freeze again to update step 2."
+    : null;
+  const inStep = useCallback((n: { step?: 1 | 2 }) => (n.step ?? 1) === activeStep, [activeStep]);
+  const edges = useMemo(() => {
+    const shown = new Set(canvas?.nodes.filter(inStep).map((n) => n.id));
+    return canvas?.edges.filter((e) => shown.has(e.source) && shown.has(e.target)).map((e) => ({ ...toFlowEdge(e), selected: e.id === selectedEdgeId })) ?? [];
+  }, [canvas, selectedEdgeId, inStep]);
+  const shownNodes = useMemo(() => nodes.filter((n) => inStep(n.data.node)).map((n) => ({ ...n, selected: n.id === selectedId })), [nodes, selectedId, inStep]);
   const selected = canvas?.nodes.find((n) => n.id === selectedId) ?? null;
   const selectedLive = selected ? (nodes.find((n) => n.id === selected.id)?.data.node ?? selected) : null;
 
@@ -480,7 +495,7 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
 
   const addFlowBox = async (kind: "crop" | "detector" | "calc" | "evaluation" | "dedup" | "export" | "merge", at?: { x: number; y: number }) => {
     await applyFlow(async () => {
-      const made = await api.flowCreate(camera, kind);
+      const made = await api.flowCreate(camera, kind, activeStep);
       setSelectedId(made.id);
       await placeBoxes({ [made.id]: at ?? clickSpot(kind) });
     });
@@ -659,6 +674,24 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
       {!canvas && !error && <p className="muted">Loading…</p>}
       {canvas && (
         <>
+        {showTabs && (
+          <div className="chain-steps" role="tablist" aria-label="Step">
+            {([1, 2] as const).map((s) => (
+              <button
+                key={s}
+                type="button"
+                role="tab"
+                aria-selected={activeStep === s}
+                className={activeStep === s ? "chain-step active" : "chain-step"}
+                onClick={() => { setStep(s); setSelectedId(null); setSelectedEdgeId(null); }}
+              >
+                {s === 1 ? "Step 1 · decide OK / NG" : "Step 2 · choose pictures"}
+                {s === 2 && stepWarning && <span className="chain-step-warn" title={stepWarning}> ⚠</span>}
+              </button>
+            ))}
+          </div>
+        )}
+        {showTabs && activeStep === 2 && stepWarning && <p className="chain-step-note" role="status">⚠ {stepWarning}</p>}
         <div
           className="chain-canvas"
           data-testid="chain-canvas"
@@ -666,7 +699,7 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
           onDragOver={(e) => { if (e.dataTransfer.types.includes(PALETTE_DRAG)) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; } }}
           onDrop={onPaletteDrop}
         >
-          <Palette disabled={false} taken={{}} onAdd={(kind) => addFromPalette(kind)} />
+          <Palette disabled={false} taken={{}} step={activeStep} onAdd={(kind) => addFromPalette(kind)} />
           <ReactFlow
             key={camera}
             nodes={shownNodes}

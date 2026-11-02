@@ -397,6 +397,8 @@ export interface CameraDeletePreview {
 export interface ChainNode {
   id: string;
   kind: "ingest" | "roi" | "classify" | "crop" | "detector" | "calc" | "evaluation" | "dedup" | "export" | "merge";
+  /** Which step of the two-step solution the box is in: 1 = decide OK / NG (the default), 2 = choose pictures. A step-1 Export is the Freeze module. */
+  step?: 1 | 2;
   /** The ROI's feature name (null for Ingest). */
   ref: string | null;
   label: string;
@@ -632,6 +634,8 @@ export interface FlowExport {
   kind: "export";
   lines: { ok: ExportRef[]; ng: ExportRef[] };
   goldens_only: boolean;
+  /** 1: the Freeze module (every OK / NG picture, no goldens); 2: the Export of goldens. */
+  step?: 1 | 2;
 }
 export interface ExportLatest {
   id: number;
@@ -1554,8 +1558,8 @@ export const api = {
   chain: (camera: string) => request<ChainCanvas>(`/cameras/${encodeURIComponent(camera)}/chain`),
   saveChainLayout: (camera: string, layout: ChainLayout) =>
     request<ChainCanvas>(`/cameras/${encodeURIComponent(camera)}/chain/layout`, send("PUT", layout)),
-  flowCreate: (camera: string, kind: "crop" | "detector" | "calc" | "evaluation" | "dedup" | "export" | "merge") =>
-    request<{ id: string }>(`/cameras/${encodeURIComponent(camera)}/flow/nodes`, send("POST", { kind })),
+  flowCreate: (camera: string, kind: "crop" | "detector" | "calc" | "evaluation" | "dedup" | "export" | "merge", step: 1 | 2 = 1) =>
+    request<{ id: string }>(`/cameras/${encodeURIComponent(camera)}/flow/nodes`, send("POST", { kind, step })),
   flowNode: (camera: string, id: string) =>
     request<FlowNodeDetail>(`/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}`),
   flowUpdate: (camera: string, id: string, body: Record<string, unknown>) =>

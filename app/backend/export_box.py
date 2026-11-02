@@ -6,6 +6,9 @@ only when every line lets it. A picture that reaches both inputs is left out and
 ``<product>/OK`` and ``<product>/NG`` (a picture with no product is left out and counted), else ``OK`` and ``NG``.
 Originals only, no manifest.
 
+In step 1 the box is the **Freeze** module (``flow.step_of``): every OK / NG picture, no goldens, no product folders. The
+step-2 Export is the goldens export.
+
 Freeze first, export follows: a freeze stores a project version (the picture list with hashes, the Chain settings),
 the export copies that version's pictures (``versions.export``). The box says when the Chain would now pick other
 pictures than the last freeze.
@@ -54,9 +57,9 @@ def plan(camera: str, node_id: str) -> dict:
     sel = selection(camera, node_id, graph)
     ok_in, ng_in = sel["ok"], sel["ng"]
     both = (ok_in & ng_in) if ok_in is not None and ng_in is not None else set()
-    goldens_only = bool(node.get("goldens_only", True))
+    goldens_only = flow.export_goldens_only(node)
     golden = labels.quality_golden_frames(camera) if goldens_only else set()
-    product_roi = datamodel.classify_feature(camera)
+    product_roi = datamodel.classify_feature(camera) if flow.step_of(node) == 2 else None  # Freeze (step 1): plain OK / NG
     product_of = labels.current_labels(camera, product_roi) if product_roi else {}
     items: list[tuple[str, str]] = []
     not_golden = no_product = 0

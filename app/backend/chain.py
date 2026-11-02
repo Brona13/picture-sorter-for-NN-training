@@ -268,9 +268,11 @@ def _flow_nodes(camera: str, graph: dict, stored: dict) -> list[dict]:
             summary = {"nominal": node["nominal"], "tolerance": node["tolerance"], "unit": state["unit"], "counts": state["counts"],
                        "mode": state["mode"], "zone": state["zone"]}
         default = {"crop": "Picture edits", "detector": "Detector", "calc": "Calculate", "evaluation": "Evaluation", "dedup": "Dedup", "export": "Export", "merge": "Merge"}[kind]
+        if kind == "export" and flow.step_of(node) == 1:
+            default = "Freeze"
         entry = stored.get(node_id, {})
         nodes.append({
-            "id": node_id, "kind": kind, "ref": None, "label": entry.get("label") or f"{default} {node_id.split(':')[1]}",
+            "id": node_id, "kind": kind, "step": flow.step_of(node), "ref": None, "label": entry.get("label") or f"{default} {node_id.split(':')[1]}",
             "x": entry.get("x"), "y": entry.get("y"), "role": None, "scope": None, "product": None, "products": [],
             "classes": [], "frames": 0, "labeled": 0, "product_counts": {}, "unlabeled": 0, "flow": summary,
         })

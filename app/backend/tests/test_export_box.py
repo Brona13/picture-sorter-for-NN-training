@@ -1,4 +1,6 @@
-"""The Export box: two inputs (OK / NG), lines combined by intersection, golden pictures, product folders, freeze then export."""
+"""The Export box: two inputs (OK / NG), lines combined by intersection, golden pictures, product folders, freeze then export.
+
+The tests below make the step-2 Export (goldens, product folders); ``FreezeTests`` covers the same box in step 1, the Freeze module."""
 from __future__ import annotations
 
 import datamodel
@@ -27,7 +29,7 @@ class ExportBoxTests(ApiTestCase):
             labels.mark_golden(CAM, "seal", frame, labels.current_labels(CAM, "seal")[frame])
         for frame, product in zip(f[:6], ["A", "A", "B", "A", "B", "B"]):
             labels.set_label(CAM, "type", frame, product)
-        self.box = flow.create_node(CAM, "export")
+        self.box = flow.create_node(CAM, "export", 2)  # step 2: the goldens Export
         self.base = f"/api/cameras/{CAM}"
 
     def line(self, where: str, ref: dict) -> None:
@@ -167,3 +169,68 @@ class ExportBoxTests(ApiTestCase):
         self.assertEqual(flow.delete_preview(CAM, ev)["arrows"], 1)
         flow.delete_node(CAM, ev)
         self.assertEqual(flow.export_lines(flow.load_graph(CAM), self.box)["ok"], [])
+
+
+class FreezeTests(ApiTestCase):
+    """The step-1 box (``step`` 1) is the Freeze module: every OK / NG picture, no goldens, no product folders."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.frames = write_frames(CAM, 8)
+        datamodel.save_rois(CAM, [
+            ROI("type", 0, 0, 1, 1, role="classify", classes=["A", "B"]),
+            ROI("seal", 0, 0, 1, 1, classes=["OK", "NG"]),
+        ])
+        f = self.frames
+        for frame, cls in zip(f[:6], ["OK", "OK", "OK", "NG", "NG", "NG"]):
+            labels.set_label(CAM, "seal", frame, cls)
+        for frame in (f[0], f[3]):  # two goldens; the others are labeled only
+            labels.mark_golden(CAM, "seal", frame, labels.current_labels(CAM, "seal")[frame])
+        for frame, product in zip(f[:6], ["A", "A", "B", "A", "B", "B"]):
+            labels.set_label(CAM, "type", frame, product)
+        self.box = flow.create_node(CAM, "export")  # step 1 is the default
+        self.base = f"/api/cameras/{CAM}"
+        for where, dot in (("ok", "OK"), ("ng", "NG")):
+            flow.update_node(CAM, self.box, {"add_line": {"input": where, "ref": {"feature": "seal", "dot": dot}}})
+
+    def test_the_new_box_defaults_to_step_one_and_a_step_two_box_says_so(self) -> None:
+        self.assertNotIn("step", flow.load_graph(CAM)["nodes"][self.box])
+        self.assertEqual(flow.step_of(flow.load_graph(CAM)["nodes"][self.box]), 1)
+        two = flow.create_node(CAM, "export", 2)
+        self.assertEqual(flow.load_graph(CAM)["nodes"][two]["step"], 2)
+        with self.assertRaises(flow.FlowError):
+            flow.create_node(CAM, "export", 3)
+
+    def test_freeze_takes_every_labeled_picture_without_goldens_and_without_product_folders(self) -> None:
+        flow.update_node(CAM, self.box, {"goldens_only": True})  # an older graph may have stored the tick: it does not count in step 1
+        p = export_box.plan(CAM, self.box)
+        self.assertEqual(sorted(p["items"]), sorted([(f, "OK") for f in self.frames[:3]] + [(f, "NG") for f in self.frames[3:6]]))
+        self.assertEqual((p["not_golden"], p["no_product"]), (0, 0))
+        self.assertFalse(p["goldens_only"])
+        self.assertFalse(p["uses_product"])
+        self.assertEqual(p["folders"], {"NG": 3, "OK": 3})
+
+    def test_a_freeze_stores_the_whole_ok_ng_split(self) -> None:
+        body = self.client.post(f"{self.base}/flow/nodes/{self.box}/export/freeze", json={"name": "step one"}).json()
+        self.assertEqual((body["counts"]["ok"], body["counts"]["ng"], body["counts"]["total"]), (3, 3, 6))
+        self.assertEqual({(i["frame"], i["class"]) for i in versions.load_items(body["id"])}, {(f, "OK") for f in self.frames[:3]} | {(f, "NG") for f in self.frames[3:6]})
+
+    def test_the_canvas_names_it_freeze_and_marks_the_step(self) -> None:
+        nodes = {n["id"]: n for n in self.client.get(f"{self.base}/chain").json()["nodes"]}
+        self.assertEqual((nodes[self.box]["label"], nodes[self.box]["step"]), ("Freeze 1", 1))
+        self.assertFalse(nodes[self.box]["flow"]["goldens_only"])
+        two = flow.create_node(CAM, "export", 2)
+        nodes = {n["id"]: n for n in self.client.get(f"{self.base}/chain").json()["nodes"]}
+        self.assertEqual((nodes[two]["label"], nodes[two]["step"]), ("Export 2", 2))
+
+    def test_a_line_stays_inside_its_step(self) -> None:
+        det_two = flow.create_node(CAM, "detector", 2)
+        det_one = flow.create_node(CAM, "detector")
+        graph = flow.load_graph(CAM)
+        self.assertIn("step 1 and step 2", flow.edge_allowed(graph, "ingest", det_two) or "")
+        self.assertIsNone(flow.edge_allowed(graph, "ingest", det_one))
+
+    def test_the_api_creates_a_step_two_box(self) -> None:
+        made = self.client.post(f"{self.base}/flow/nodes", json={"kind": "export", "step": 2})
+        self.assertEqual(made.status_code, 201)
+        self.assertEqual(flow.load_graph(CAM)["nodes"][made.json()["id"]]["step"], 2)

@@ -58,9 +58,15 @@ export const PALETTE: { group: string; items: PaletteItem[] }[] = [
   },
   {
     group: "Picture sink",
-    items: [{ kind: "export", label: "Export", box: "export", hint: "The end of the Chain: OK and NG inputs; freezes and exports the originals into folders." }],
+    items: [{ kind: "export", label: "Freeze", box: "export", hint: "The end of step 1: OK and NG inputs; freezes every OK and NG picture. Step 2 starts from this freeze." }],
   },
 ];
+
+/** The step-2 modules arrive with the next versions (Ingest OK / NG, Box, Classifier, Export). */
+export const PALETTE_STEP2: { group: string; items: PaletteItem[] }[] = [];
+
+/** The palette of one step of the two-step solution. */
+export const paletteOf = (step: 1 | 2) => (step === 2 ? PALETTE_STEP2 : PALETTE);
 
 export const paletteItem = (kind: PaletteKind): PaletteItem => PALETTE.flatMap((g) => g.items).find((i) => i.kind === kind)!;
 

@@ -67,9 +67,13 @@ export default function ExportWork({ camera, nodeId, detail, setDetail, onError 
       <section className="export-card" aria-label="What would be exported">
         <div className="export-card-head">
           <h3>1 · What would be exported</h3>
-          <label>
-            <input type="checkbox" checked={detail.goldens_only} disabled={busy} onChange={(e) => update({ goldens_only: e.target.checked })} /> Only goldens
-          </label>
+          {(detail.step ?? 1) === 2 ? (
+            <label>
+              <input type="checkbox" checked={detail.goldens_only} disabled={busy} onChange={(e) => update({ goldens_only: e.target.checked })} /> Only goldens
+            </label>
+          ) : (
+            <span className="muted" title="Freeze closes step 1: it takes every OK and NG picture. Goldens are chosen in step 2.">Freeze: every OK and NG picture</span>
+          )}
         </div>
         {state && state.total === 0 && <p className="muted">Nothing arrives yet: connect lines to the OK or NG input on the Chain.</p>}
         {state && (folders.length > 0 || shownLeftOut.length > 0) && (

@@ -30,6 +30,7 @@ def _guard(fn, *args, **kwargs):
 
 class NodeCreate(BaseModel):
     kind: str
+    step: int = 1  # 1: decide OK / NG, 2: choose pictures (the two-step solution)
 
 
 class EdgeBody(BaseModel):
@@ -75,7 +76,7 @@ def _known(camera: str, node_id: str) -> None:
 @router.post("/cameras/{camera}/flow/nodes", status_code=201)
 def create_node(camera: str, body: NodeCreate) -> dict:
     require_camera(camera)
-    node_id = _guard(flow.create_node, camera, body.kind)
+    node_id = _guard(flow.create_node, camera, body.kind, body.step)
     return {"id": node_id}
 
 

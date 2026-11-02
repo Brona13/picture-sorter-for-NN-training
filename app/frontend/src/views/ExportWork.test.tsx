@@ -5,7 +5,7 @@ import ExportWork, { when } from "./ExportWork";
 let calls: { url: string; method: string; body?: any }[];
 let frozen: any[];
 let counts: { both: number; not_golden: number; no_product: number; total: number; folders: Record<string, number> };
-const detail = { kind: "export" as const, lines: { ok: [{ feature: "seal", dot: "OK" }], ng: [{ box: "eval:1", dot: "fail" }] }, goldens_only: true };
+const detail = { kind: "export" as const, lines: { ok: [{ feature: "seal", dot: "OK" }], ng: [{ box: "eval:1", dot: "fail" }] }, goldens_only: true, step: 2 as const };
 
 const version = (over: Record<string, unknown> = {}) => ({
   id: 7, number: 2, name: "x", created: 1793350800, counts: { total: 5, ok: 3, ng: 2 }, changed: false, exported: false, folder: "exports/project/v002__x", ...over,
@@ -33,7 +33,7 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-const mount = () => render(<ExportWork camera="camA" nodeId="export:1" detail={detail} setDetail={() => {}} onError={() => {}} />);
+const mount = (d: typeof detail | { step: 1 } = detail) => render(<ExportWork camera="camA" nodeId="export:1" detail={{ ...detail, ...d }} setDetail={() => {}} onError={() => {}} />);
 
 test("one table holds the folders, what is left out and why, and the total", async () => {
   mount();
@@ -111,6 +111,13 @@ test("the goldens tick goes through the node update", async () => {
   await screen.findByText("A/OK");
   fireEvent.click(screen.getByLabelText("Only goldens"));
   await waitFor(() => expect(calls.some((c) => c.method === "PUT" && c.body?.goldens_only === false)).toBe(true));
+});
+
+test("the Freeze module (step 1) has no goldens tick: it takes every OK and NG picture", async () => {
+  mount({ step: 1 });
+  await screen.findByText("A/OK");
+  expect(screen.queryByLabelText("Only goldens")).toBeNull();
+  expect(screen.getByText("Freeze: every OK and NG picture")).toBeInTheDocument();
 });
 
 test("a freeze time in epoch seconds is shown as a date, text is kept as it is", () => {

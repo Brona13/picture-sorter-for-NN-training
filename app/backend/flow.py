@@ -623,15 +623,33 @@ def zone_of(node: dict) -> dict:
     return clean_zone(None, node.get("zone"))
 
 
-def create_node(camera: str, kind: str) -> str:
+def step_of(node: dict) -> int:
+    """Which step of the two-step solution a box belongs to: 1 (decide OK / NG) unless it says 2 (choose pictures)."""
+    return 2 if node.get("step") == 2 else 1
+
+
+def export_goldens_only(node: dict) -> bool:
+    """Whether an Export box takes golden pictures only. A step-1 Export is the Freeze module: it freezes every OK / NG
+    picture, so the tick is off there whatever an older graph stored."""
+    return bool(node.get("goldens_only", True)) and step_of(node) == 2
+
+
+def step_of_id(graph: dict, node_id: str) -> int:
+    """The step of a box by id; Ingest and the Classifiers are step 1."""
+    return step_of(graph["nodes"].get(node_id) or {})
+
+
+def create_node(camera: str, kind: str, step: int = 1) -> str:
     if kind not in KINDS:
         raise FlowError(f"Unknown box kind: {kind}")
+    if step not in (1, 2):
+        raise FlowError("The step is 1 or 2.")
     graph = load_graph(camera)
     n = 1
     while f"{PREFIX[kind]}:{n}" in graph["nodes"]:
         n += 1
     node_id = f"{PREFIX[kind]}:{n}"
-    graph["nodes"][node_id] = {"kind": kind, **_default_config(kind)}
+    graph["nodes"][node_id] = {"kind": kind, **_default_config(kind), **({"step": 2} if step == 2 else {})}
     # No line is drawn for a new box (v1.88.0): every connection is made by the user. A picture box with no line
     # reads the whole picture, like one fed by Ingest.
     save_graph(camera, graph)
@@ -677,6 +695,8 @@ def edge_allowed(graph: dict, source: str, target: str) -> str | None:
     ks, kt = kind_of(source), kind_of(target)
     if source == target:
         return "A box cannot feed itself."
+    if step_of_id(graph, source) != step_of_id(graph, target):
+        return "A line stays inside its step: step 1 and step 2 boxes cannot be connected."
     why = lines.line_error(ks, kt)
     if why:
         return why
@@ -2381,7 +2401,7 @@ def node_detail(camera: str, node_id: str, graph: dict | None = None) -> dict:
     elif kind == "merge":
         detail.update({"lines": merge_lines(node), "mode": node.get("mode", "any"), "meaning": merge_meaning(graph, node_id)})
     elif kind == "export":
-        detail.update({"lines": export_lines(graph, node_id), "goldens_only": node.get("goldens_only", True)})
+        detail.update({"lines": export_lines(graph, node_id), "goldens_only": export_goldens_only(node), "step": step_of(node)})
     elif kind == "evaluation":
         calc_id = evaluation_source(graph, node_id)
         state = evaluation_state(camera, node_id)

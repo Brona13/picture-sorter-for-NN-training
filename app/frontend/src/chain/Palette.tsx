@@ -1,6 +1,6 @@
 import type { DragEvent } from "react";
 import { KindIcon } from "./kindIcons";
-import { BOX_SIZE, HUE, PALETTE, type PaletteItem, type PaletteKind } from "./palette";
+import { BOX_SIZE, HUE, paletteOf, type PaletteItem, type PaletteKind } from "./palette";
 
 /** The drag type a palette tile carries; the canvas accepts only this. */
 export const PALETTE_DRAG = "application/x-chain-box";
@@ -36,8 +36,11 @@ export default function Palette({
   disabled,
   taken,
   onAdd,
+  step = 1,
 }: {
   disabled: boolean;
+  /** The step whose modules are offered (step 2 has its own palette). */
+  step?: 1 | 2;
   /** Kinds that cannot be added now, with the reason (for example the camera's one product-sorting ROI). */
   taken: Partial<Record<PaletteKind, string>>;
   onAdd: (kind: PaletteKind) => void;
@@ -48,9 +51,11 @@ export default function Palette({
     const { w, h } = BOX_SIZE[item.box];
     e.dataTransfer.setDragImage?.(ghost(item), w / 2, h / 2);
   };
+  const groups = paletteOf(step);
   return (
     <div className="chain-palette-groups">
-      {PALETTE.map((g) => (
+      {groups.length === 0 && <p className="muted chain-palette-empty" title="The step-2 modules (Ingest OK / NG, Box, Classifier, Export) come with the next versions.">Modules follow</p>}
+      {groups.map((g) => (
         <section key={g.group} aria-label={g.group}>
           <h4>{g.group}</h4>
           <div className="chain-palette-tiles">

@@ -27,6 +27,7 @@ Files in `memory/` and `plans/` may describe earlier workflows. Treat `docs/curr
 - A feature is a named ROI; normalized ROI coordinates are stored in the SQLite `rois` table, keyed by `(camera, name)`.
 - A `role="classify"` ROI defines the product classes for a camera.
 - Product-specific feature identifiers use `<product>::<roi>`.
+- The Chain has two steps (graph boxes carry `step`, default 1; see `plans/two-step-solution.md`). Step 1 decides OK / NG and ends in a Freeze module (a step-1 Export box); step 2 chooses the pictures. Only the labels of the last Freeze cross between them, and a line never joins boxes of different steps.
 - Classical and ResNet scoring methods are independent opinions and must not be blended.
 - Exports are reproducible outputs generated from frozen versions.
 

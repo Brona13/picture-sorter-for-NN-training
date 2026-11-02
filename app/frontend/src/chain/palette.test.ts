@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { BOX_SIZE, HUE, PALETTE, dropPosition, freeSpot, paletteItem } from "./palette";
+import { BOX_SIZE, HUE, PALETTE, dropPosition, freeSpot, paletteItem, paletteOf } from "./palette";
 
 test("every box type has one colour and one fixed size", () => {
   for (const kind of Object.keys(HUE)) expect(BOX_SIZE[kind as keyof typeof BOX_SIZE]).toBeDefined();
@@ -27,4 +27,10 @@ test("a free spot is the wanted one, or the first one below that overlaps nothin
 test("a Merge is a small square, in its own group", () => {
   expect(BOX_SIZE.merge).toEqual({ w: 64, h: 64 });
   expect(PALETTE.find((g) => g.items.some((i) => i.kind === "merge"))?.group).toBe("Collects lines");
+});
+
+test("the step-1 export tile is the Freeze module, and step 2 has its own (still empty) palette", () => {
+  expect(paletteItem("export").label).toBe("Freeze");
+  expect(paletteOf(1)).toBe(PALETTE);
+  expect(paletteOf(2)).toEqual([]);
 });

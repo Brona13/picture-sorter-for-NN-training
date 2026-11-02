@@ -345,6 +345,12 @@ button[aria-pressed="true"] { background: var(--info-bg); color: var(--info-fg);
 /* v1.125.0: the palette is a vertical strip on the canvas's left edge; every tile keeps one fixed size. */
 .chain-palette-groups { position: absolute; top: 8px; left: 8px; z-index: 5; display: flex; flex-direction: column; gap: 6px; width: 62px; padding: 4px; overflow-y: auto; border: 1px solid var(--border); border-radius: 9px; background: color-mix(in srgb, var(--panel) 92%, transparent); box-sizing: border-box; pointer-events: auto; height: fit-content; max-height: calc(100% - 16px); }
 .chain-palette-groups h4 { display: none; }
+.chain-palette-empty { margin: 0; font-size: 0.68rem; line-height: 1.2; text-align: center; }
+.chain-steps { display: flex; gap: 4px; margin: 6px 0 4px; }
+.chain-step { padding: 4px 12px; border: 1px solid var(--border); border-radius: 7px 7px 0 0; background: var(--panel); color: inherit; cursor: pointer; }
+.chain-step.active { font-weight: 600; border-bottom-color: transparent; background: color-mix(in srgb, var(--accent, #2a78d6) 14%, var(--panel)); }
+.chain-step-warn { color: #c98500; }
+.chain-step-note { margin: 0 0 6px; padding: 5px 9px; border: 1px solid #c98500; border-radius: 6px; font-size: 0.85rem; }
 .chain-palette-groups section + section { padding-top: 6px; border-top: 1px solid var(--border); }
 .chain-palette-tiles { display: flex; flex-direction: column; gap: 4px; }
 .chain-tile { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; flex: none; width: 50px; height: 50px; padding: 2px; overflow: hidden; border-radius: 7px; border: 1.5px solid hsl(var(--hue) 55% 48%); background: color-mix(in srgb, hsl(var(--hue) 80% 60%) 14%, var(--panel)); color: hsl(var(--hue) 55% 34%); font-size: 9px; line-height: 1.15; text-align: center; cursor: grab; }
