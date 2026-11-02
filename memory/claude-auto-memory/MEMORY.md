@@ -1,0 +1,12 @@
+- [Stay within the project folder](stay-within-project-folder.md) — don't inspect paths outside the project root without asking; the vault holds unrelated personal projects.
+- [Git push state and Windows workflow](migration-push-state.md) — push only on "push it" / "commit and push"; Windows work arrives as commits (pull --ff-only); everything pushed at the end of 2026-10-20 (v1.74.0, dd986cb + a docs commit); schema v8.
+- [User dictates by voice](user-voice-dictation.md) — speech-to-text errors ("data page" = Dedup, "cutter tool" = Scatter, "course" = colours, "texture page" = Detector); resolve by context.
+- [Agree before building](feedback-agree-before-building.md) — restate, list open/contradicting points, ask in plain text (not pop-ups), build only when none; tweaks just get done.
+- [Gate commits on tests](feedback-test-gate-commit.md) — chain on the test exit code, not a grep pipe.
+- [Common components](feedback-common-components.md) — one shared implementation for behaviour on several pages (viewer, grid, painting, cursor); extract instead of copying.
+- [Measure and show numbers](feedback-measure-and-show-numbers.md) — speed/quality changes: benchmark with a quality check, show the table, then commit.
+- [Run commands from the project root](feedback-run-commands-from-project-root.md) — start chained commands with an absolute cd; a stray `cd ..` skipped a version bump and docs silently.
+- [Verify UI in headless Chrome](feedback-verify-ui-in-headless-chrome.md) — layout / pointer bugs need a real browser; temp server + CDP script; stop it with fuser, not pkill -f.
+- [Stale page after an update](feedback-stale-page-after-update.md) — unreproducible bug right after an update: ask for hard refresh / recreate the box and read the Log page first.
+- [Frontend tests flaky under load](frontend-tests-flaky-under-load.md) — one random unrelated vitest fails when the machine is busy; rerun the file alone, then `--maxWorkers=2`.
+- [Memory lives in the project](memory-lives-in-the-project.md) — Claude's own memory is stored in `memory/claude-auto-memory/` of the project; `~/.claude/.../memory` is a symlink to it; how to relink on another machine.

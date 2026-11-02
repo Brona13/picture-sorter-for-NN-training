@@ -1,14 +1,14 @@
 ---
 name: two-step-solution-handover
 description: Session 2026-11-02 (on top of v1.139.5) - the two-step solution (step 1 = clean and decide OK/NG, step 2 = choose pictures through the downstream box); what the user decided, how it fits the code, open decisions, items in between. Discussion only, no code changed for it.
-status: current
+status: built (see memory/2026-11-02-two-step-solution-session.md)
 document_type: memory
 session_date: 2026-11-02
 ---
 
 # Two-step solution (discussion, 2026-11-02, base v1.139.5)
 
-**Nothing of the two-step solution is built.** The user said "no code change until I tell you". This file is the agreed idea plus how it maps onto the code, so the next session can start the plan `.md` and then code. Authoritative state of the app: `docs/current-project.md` (entries v1.138.0 to v1.139.5).
+**Built later the same day (v1.140.0 to v1.147.0, see `memory/2026-11-02-two-step-solution-session.md` and `plans/two-step-solution.md`); this file is the idea as agreed before building.** At the time of writing nothing was built and the user said "no code change until I tell you". This file is the agreed idea plus how it maps onto the code, so the next session can start the plan `.md` and then code. Authoritative state of the app: `docs/current-project.md` (entries v1.138.0 to v1.139.5).
 
 ## 1. Why it came up (the user's downstream system)
 - Downstream is a **ResNet-based detector** on whole pictures. He draws **one upright rectangle per picture by hand** (no rotated boxes) and gives it a class, usually OK or NG. The tool's OK/NG labels are applied identically there.

@@ -1,0 +1,26 @@
+---
+name: migration-push-state
+description: "Git/push state and workflow with the Windows machine (who pushes and on which words, schema caution); updated 2026-10-19"
+metadata:
+  node_type: memory
+  type: project
+  originSessionId: ed77561f-40f9-4b98-84d6-bb654c316f32
+  modified: 2026-10-18T19:16:52.440Z
+---
+
+The user pushes to GitHub, or asks me to with the words **"push it"**, "commit and push" or "commit and push" at the end of a task; never push without one of those. Since 2026-10-19 the Windows work arrives as ordinary commits on `origin/main` (pull with `git pull --ff-only`), no longer as patch files. History: the React+FastAPI migration was merged and pushed on 2026-10-13/14; the laptop's v1.12-v1.14 patches and my v1.15-v1.20 were integrated on 2026-10-15; the laptop's v1.23-v1.27 patches were applied on 2026-10-16.
+
+**State at end of the long 2026-10-18 session:** everything is pushed; app is **v1.63.2**, last code commit `d765ba5` (`origin/main`), followed by one docs-and-memory commit that saved the session. Schema is still **v8** (no schema change since v1.50.0). New since the laptop last pulled: the Chain page (new npm dependency **`@xyflow/react`**, so the laptop needs `npm install` and a frontend rebuild), many new endpoints (`GET/PUT /cameras/{c}/chain...`, `DELETE /cameras/{c}` camera delete, `GET .../dedup/scatter/cached`, `POST .../classify/unmute`, `renames` on `PUT .../product-names`, `search` on the Classify grid) and a different Classify page. Camera delete is irreversible, so tell the user to be careful on real data. `discussions/chain-canvas-handover.md` (the user's note) is tracked. Untracked and never to be committed: `patches/` (laptop patch files). Earlier (2026-10-18, before the Chain work): `origin/main` was `aa4f67b` (v1.50.0), which added `GET /cameras/{c}/tools-used`, `POST .../vision/{f}/detections/{frame}/restore` and the detector settings `method` / `size`.
+
+**Workflow with the Windows work laptop:** another Claude session there produces numbered patch files (`git am`, author "Claude", `core.autocrlf=true`) that the user applies and pushes; they have also dropped such patches into this folder's `patches/` for me to read. `git apply --stat` must run from the repo root. The laptop had no Node.js (frontend built elsewhere) and an Nvidia RTX; this Linux machine has an AMD RX 7800 XT (ROCm, `.venv-rocm`, which `run.sh` now prefers).
+
+**How to apply:** after a push from here tell the user the laptop runs `git pull --rebase` (identical patch content is skipped) and whether the backend needs a restart (new endpoints). Never `reset --hard` the laptop without checking for unpushed work. Back up `data/` before the first launch on real data and never copy a v8 database to a machine with older code (it suggests `reset_database.py`). Details: project notes `memory/laptop-patches-and-ux-round.md`, `memory/dedup-redesign-panel.md`, `memory/navigation-and-detector-rework.md`. Related: [[stay-within-project-folder]].
+
+
+**State at the end of the 2026-10-19 session:** everything is pushed; app is **v1.73.0**, last code commit `fa8d8a1`, followed by a docs-and-memory commit that saved the session. Schema still **v8**. No new npm packages since `@xyflow/react`. The Windows machine only needs `git pull`; old Tolerance boxes migrate to Evaluation by themselves the first time the graph is read. Session note: project `memory/2026-10-19-chain-crop-ingest-detector-session.md`. Untracked `patches/` must still never be committed.
+
+**State at the end of the 2026-10-20 session:** everything is pushed; app is **v1.74.0**, code commit `dd986cb`, followed by a docs-and-memory commit. Schema still **v8**. Backend only gained an optional `point` on the flow edge calls; the Windows machine needs `git pull` and a restart. Session note: project `memory/2026-10-20-chain-lines-and-points-session.md`.
+
+**State at the end of the 2026-10-25 session:** everything is pushed (user said "commit and push"); app is **v1.104.1** plus docs commits. Schema still **v10**. The Linux machine pulled v1.81.0 -> v1.100.1 from the Windows work at the start. Logging was added (v1.101.0-v1.104.1); `data/logs/` is git-ignored and created per machine, so the other machine needs only `git pull`, a frontend rebuild and a server restart. **Mistake to avoid:** `git add -A` once committed `data/logs/logs.db*` (commit `bd247a6`, fixed in `58c92a9`; still in history, no force-push done). Check `git status` for runtime files before `git add -A`. Session note: project `memory/2026-10-25-logging-session.md`.
+
+**State at the end of the 2026-11-02 session:** everything is pushed (user said "push it"); `origin/main` = `2cb6e82`, app **v1.147.0**, schema still **v10**. Windows work arrived as patch files again that day (v1.136.0, then v1.139.1-5, placed in `patches/`, applied with `git am` in version order, then the files were deleted at the user's request: **delete only the patch files, keep the folder**). Then v1.140.0-v1.147.0 were built here (the two-step solution; plan `plans/two-step-solution.md`, session note project `memory/2026-11-02-two-step-solution-session.md`). The Windows laptop needs `git pull --ff-only`, a restart and a **frontend-dist zip** (npm is missing there; not built yet).
