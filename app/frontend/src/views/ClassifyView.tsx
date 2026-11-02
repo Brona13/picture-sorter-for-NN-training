@@ -200,9 +200,11 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
   const deleteInPlace = (frame: string) => act(frame, () => api.deleteFrame(camera, feature, frame)).then(refreshSoon);
   const restoreInPlace = (frame: string) => act(frame, () => api.restoreFrame(camera, feature, frame)).then(refreshSoon);
 
-  async function act(frame: string, call: () => Promise<CardUpdate>, reloadGrid = false) {
+  /** `guess` shows the expected result at once (a golden mark) and puts the card back if the server refuses. */
+  async function act(frame: string, call: () => Promise<CardUpdate>, reloadGrid = false, guess?: { apply: () => void; revert: () => void }) {
     setBusy(frame);
     setError(null);
+    guess?.apply();
     try {
       const r = await call();
       setSt((s) => (s ? { ...s, counts: r.counts } : s));
@@ -213,10 +215,20 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
         );
       }
     } catch (e) {
+      guess?.revert();
       setError(msg(e));
     } finally {
       setBusy(null);
     }
+  }
+
+  // A golden mark is shown the moment the key is pressed: the answer needs the whole scope worked out and can take seconds.
+  function toggleGolden(frame: string, on: boolean) {
+    const was = grid?.items.find((c) => c.frame === frame);
+    const put = (golden: string | null) =>
+      setGrid((g) => (g ? { ...g, items: g.items.map((c): CardData => (c.frame === frame ? { ...c, golden } : c)) } : g));
+    const guess = was && (!on || was.label) ? { apply: () => put(on ? was.label : null), revert: () => put(was.golden) } : undefined;
+    return act(frame, () => api.setGolden(camera, feature, frame, on), false, guess);
   }
 
   function changeSetting(per_page: number, cols: number) {
@@ -523,7 +535,7 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
                     fullSize
                     onOpen={() => setViewing(card.frame)}
                     onLabel={(cls) => act(card.frame, () => api.setLabel(camera, feature, card.frame, cls))}
-                    onGolden={(on) => act(card.frame, () => api.setGolden(camera, feature, card.frame, on))}
+                    onGolden={(on) => void toggleGolden(card.frame, on)}
                     onDelete={() => deleteInPlace(card.frame)}
                     onRestore={() => restoreInPlace(card.frame)}
                     onSimilar={
@@ -547,7 +559,7 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
                   }}
                   busy={busy !== null}
                   onLabel={(f, cls) => act(f, () => api.setLabel(camera, feature, f, cls))}
-                  onGolden={(f, on) => act(f, () => api.setGolden(camera, feature, f, on))}
+                  onGolden={(f, on) => void toggleGolden(f, on)}
                   onDelete={(f) => deleteInPlace(f)}
                   deleted={(f) => !!grid.items.find((x) => x.frame === f)?.deleted}
                   onRestore={(f) => restoreInPlace(f)}

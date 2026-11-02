@@ -66,6 +66,43 @@ class DedupViewTests(ApiTestCase):
         finally:
             flow._evaluation_state = real
 
+    def test_evaluation_survives_labels_and_goldens_and_is_shared_by_parallel_requests(self) -> None:
+        """A golden mark cannot change an Evaluation, so it keeps the answer; five asks at once work it out once (v1.139.5)."""
+        import os
+        import threading
+        import time
+
+        _, ev, _ = self.chain()
+        folder = datamodel.unsorted_dir(CAM)
+        old = time.time() - 60
+        os.utime(folder, (old, old))
+        flow._EVAL_MEMORY.clear()
+        calls = []
+        real = flow._evaluation_state
+
+        def slow(c, e):
+            calls.append(e)
+            time.sleep(0.3)
+            return real(c, e)
+
+        flow._evaluation_state = slow
+        try:
+            threads = [threading.Thread(target=flow.evaluation_state, args=(CAM, ev)) for _ in range(5)]
+            [t.start() for t in threads]
+            [t.join() for t in threads]
+            self.assertEqual(len(calls), 1)
+            labels.set_label(CAM, "classifier", self.names[0], "OK")
+            labels.mark_golden(CAM, "classifier", self.names[0], "OK")
+            os.utime(folder, (old, old))
+            flow.evaluation_state(CAM, ev)
+            self.assertEqual(len(calls), 1, "labels and goldens do not touch what the Evaluation reads")
+            db.set_setting(CAM, "something.else", "1")  # any other write does
+            os.utime(folder, (old, old))
+            flow.evaluation_state(CAM, ev)
+            self.assertEqual(len(calls), 2)
+        finally:
+            flow._evaluation_state = real
+
     # --- helpers -----------------------------------------------------------------
     def post(self, path: str, body: dict | None = None, status: int = 201) -> dict:
         r = self.client.post(f"{self.flow}{path}", json=body or {})

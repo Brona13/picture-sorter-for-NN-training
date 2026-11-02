@@ -22,6 +22,7 @@ import base64
 import hashlib
 import json
 import math
+import threading
 import time
 
 import cv2
@@ -2107,6 +2108,7 @@ def evaluation_state(camera: str, eval_id: str) -> dict:
 
 
 _EVAL_MEMORY: dict[tuple, tuple[tuple, dict]] = {}
+_EVAL_LOCKS: dict[tuple, threading.Lock] = {}
 _EVAL_SETTLE_NS = 2_000_000_000  # a picture folder changed in the last 2 s is not trusted (same-tick writes)
 
 
@@ -2130,12 +2132,16 @@ def _remembered_evaluation(camera: str, eval_id: str) -> dict:
     kept = _EVAL_MEMORY.get(key)
     if kept is not None and kept[0] == token:
         return _copy_state(kept[1])
-    state = _evaluation_state(camera, eval_id)
-    if time.time_ns() - stamp > _EVAL_SETTLE_NS:
-        _EVAL_MEMORY[key] = (token, state)
-        return _copy_state(state)
-    _EVAL_MEMORY.pop(key, None)
-    return state
+    with _EVAL_LOCKS.setdefault(key, threading.Lock()):  # requests asking at the same moment wait for one answer instead of five
+        kept = _EVAL_MEMORY.get(key)
+        if kept is not None and kept[0] == token:
+            return _copy_state(kept[1])
+        state = _evaluation_state(camera, eval_id)
+        if time.time_ns() - stamp > _EVAL_SETTLE_NS:
+            _EVAL_MEMORY[key] = (token, state)
+            return _copy_state(state)
+        _EVAL_MEMORY.pop(key, None)
+        return state
 
 
 def _evaluation_state(camera: str, eval_id: str) -> dict:

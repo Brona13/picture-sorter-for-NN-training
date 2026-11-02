@@ -10,6 +10,7 @@ from __future__ import annotations
 import contextlib
 import contextvars
 import json
+import re
 import sqlite3
 import threading
 import time
@@ -280,19 +281,28 @@ def shared_connection():
 
 _WRITE_EPOCH = 0
 _WRITE_VERBS = frozenset({"INSERT", "UPDATE", "DELETE", "REPLACE", "CREATE", "DROP", "ALTER"})
+# Tables that hold what people decided or what was worked out from the pictures, never what the Chain reads (the graph,
+# the stored detector boxes, the picture catalogue, deleted pictures). Writing to them does not change the epoch.
+_EPOCH_NEUTRAL_TABLES = frozenset({"labels", "goldens", "score_cache", "dedup_mute", "cluster_snapshot", "scatter_cache"})
+_WRITE_TARGET = re.compile(r"""^\s*(?:INSERT(?:\s+OR\s+\w+)?\s+INTO|REPLACE\s+INTO|UPDATE(?:\s+OR\s+\w+)?|DELETE\s+FROM)\s+["`\[]?(\w+)""", re.IGNORECASE)
 
 
 def write_epoch() -> int:
-    """Counts the statements that changed this database in this program (any table, any connection opened by
-    :func:`connect`). A result worked out from the database stays true while the number is unchanged."""
+    """Counts the statements that changed what the Chain reads in this program (any connection opened by
+    :func:`connect`; labels, goldens and caches do not count, anything unrecognised does). A result worked out from the
+    database stays true while the number is unchanged."""
     return _WRITE_EPOCH
 
 
 def _count_writes(statement: str) -> None:
     global _WRITE_EPOCH
     head = statement.lstrip()[:8].split(" ", 1)[0].upper()
-    if head in _WRITE_VERBS:
-        _WRITE_EPOCH += 1
+    if head not in _WRITE_VERBS:
+        return
+    target = _WRITE_TARGET.match(statement)
+    if target and target.group(1).lower() in _EPOCH_NEUTRAL_TABLES:
+        return
+    _WRITE_EPOCH += 1
 
 
 def connect() -> sqlite3.Connection:

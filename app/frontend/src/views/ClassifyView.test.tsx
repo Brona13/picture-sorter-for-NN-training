@@ -64,6 +64,8 @@ type Call = { url: string; method: string; body?: any };
 let calls: Call[];
 let state: any;
 let grid: any;
+let goldenGate: Promise<void> | null = null; // holds the golden answer back, to see the screen before it
+let goldenRefused = false;
 
 function install() {
   vi.stubGlobal(
@@ -91,6 +93,10 @@ function install() {
       if (url.endsWith("/classify/label-frames"))
         return ok({ labeled: 1, skipped: [], counts: { OK: 2, golden_OK: 1, NG: 0, golden_NG: 0, unlabeled: 1, total: 3 } });
       if (url.includes("/classify/label") || url.includes("/classify/golden")) {
+        if (url.includes("/golden")) {
+          if (goldenGate) await goldenGate;
+          if (goldenRefused) return ok({ detail: "Label the frame before making it a golden." }, 409);
+        }
         const b = JSON.parse(init!.body as string);
         const lab = url.includes("/label") ? b.cls : "OK";
         return ok({
@@ -228,6 +234,21 @@ test("star sends golden=true and counts update from the response", async () => {
   expect(calls.find((c) => c.url.includes("/golden"))!.body).toEqual({ feature: "seal", frame: "a.png", golden: true });
   await waitFor(() => expect(within(a).getByRole("button", { name: "Remove golden" })).toBeInTheDocument());
   expect(screen.getByText("Frames").nextSibling).toHaveTextContent("3");
+});
+
+test("the golden mark shows at once, before the server answers, and goes back when the server refuses", async () => {
+  grid = () => gridBody([card("a.png", { label: "OK" })]);
+  let open!: () => void;
+  goldenGate = new Promise<void>((resolve) => (open = resolve));
+  render(<ClassifyView camera="camA" />);
+  const a = await cardEl("a.png");
+  await userEvent.click(within(a).getByRole("button", { name: "Make golden" }));
+  expect(await within(a).findByRole("button", { name: "Remove golden" })).toBeInTheDocument(); // the answer is still held back
+  goldenRefused = true;
+  open();
+  await waitFor(() => expect(within(a).getByRole("button", { name: "Make golden" })).toBeInTheDocument());
+  goldenGate = null;
+  goldenRefused = false;
 });
 
 test("a deleted card fades and stays where it is: the grid is not reloaded, nothing moves, Restore is on the card", async () => {
