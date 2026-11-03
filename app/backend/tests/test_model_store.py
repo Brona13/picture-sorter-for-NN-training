@@ -258,3 +258,18 @@ class FolderNameTests(ModelApiCase):
         self.assertEqual(model_store.folder_name("  x. "), "x")
         self.assertEqual(model_store.folder_name("...", 7), "model-7")
         self.assertEqual(Path(model_store.models_dir()).name, "models")
+
+
+class OverlapTests(ModelApiCase):
+    def test_a_picture_in_two_cameras_is_counted_and_a_conflicting_label_is_flagged(self) -> None:
+        # the test pictures of camA and camB with the same number are the same bytes: a0 is OK in both, a1 is OK in camA but NG in camB
+        pins = self.pins(b={"folder_name": "second"})
+        r = self.client.post("/api/models/overlap", json={"datasets": pins})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json(), {"pairs": [{"a": "camA", "b": "second", "shared": 2, "same": 1, "conflict": 1}], "shared": 2, "conflict": 1})
+
+    def test_datasets_without_a_shared_picture_have_no_pairs(self) -> None:
+        other = write_frames("camC", (200, 200), 1, "ccc")  # a different pattern from camA / camB
+        fc = freeze("camC", [(other[0], "OK")], boxed=other)
+        r = self.client.post("/api/models/overlap", json={"datasets": [self.pins()[0], {"camera": "camC", "version_id": fc["id"]}]})
+        self.assertEqual(r.json(), {"pairs": [], "shared": 0, "conflict": 0})

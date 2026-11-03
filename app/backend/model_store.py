@@ -24,6 +24,7 @@ import datamodel
 import db
 import ds_export
 import model_sets
+import versions
 
 
 class ModelError(ValueError):
@@ -106,6 +107,32 @@ def preview(raw: list) -> dict:
     datasets = _datasets(raw, check_freezes=False)
     classes, notes = ds_export.classes_of([_sub(d) for d in datasets])
     return {"classes": classes, "notes": notes}
+
+
+def overlap(raw: list) -> dict:
+    """Pictures that appear in more than one dataset (the same content hash), read from the frozen items: no picture is opened.
+
+    ``pairs``: per two datasets the number of shared pictures, how many of them carry the same class in both (``same``) and how many
+    OK in one and NG in the other (``conflict``). A conflict is the one to look at: DS would train on one picture with two answers.
+    """
+    datasets = _datasets(raw)
+    held: list[dict[str, str]] = []
+    for d in datasets:
+        classes: dict[str, str] = {}
+        for item in versions.load_items(d["version_id"]):
+            cls = str(item["class"]).split("/")[-1]
+            if item["kind"] == "verdict" and cls in ("OK", "NG") and item["hash"]:
+                classes[item["hash"]] = cls
+        held.append(classes)
+    pairs = []
+    for i in range(len(datasets)):
+        for j in range(i + 1, len(datasets)):
+            shared = held[i].keys() & held[j].keys()
+            if not shared:
+                continue
+            same = sum(1 for h in shared if held[i][h] == held[j][h])
+            pairs.append({"a": datasets[i]["folder_name"], "b": datasets[j]["folder_name"], "shared": len(shared), "same": same, "conflict": len(shared) - same})
+    return {"pairs": pairs, "shared": sum(p["shared"] for p in pairs), "conflict": sum(p["conflict"] for p in pairs)}
 
 
 def _name(name: str) -> str:

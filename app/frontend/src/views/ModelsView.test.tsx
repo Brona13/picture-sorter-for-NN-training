@@ -39,6 +39,7 @@ function mockServer(handlers: Record<string, (c: Call) => unknown> = {}) {
         "GET /models/datasets": catalog,
         "GET /models": { models: [{ id: 7, name: "Round one", dataset_count: 1, builds: 0 }] },
         "POST /models/preview": { classes, notes: [] },
+        "POST /models/overlap": { pairs: [], shared: 0, conflict: 0 },
       };
       return new Response(JSON.stringify(defaults[key] ?? {}));
     }
@@ -132,4 +133,16 @@ test("payload leaves out defaults and draftOf turns a saved model back into the 
   const d = draftOf(m);
   expect(d.rows.camA).toMatchObject({ folder_name: "left", ok_name: "Good", ng_name: "", ok_color: "#010203" });
   expect(payload(d, ["camA", "camB"])).toEqual([{ camera: "camA", version_id: 11, folder_name: "left", ok_name: "Good", ok_color: "#010203" }]);
+});
+
+test("pictures shared by two datasets are listed and a conflicting label is flagged", async () => {
+  mockServer({ "POST /models/overlap": () => ({ pairs: [{ a: "camA", b: "camB", shared: 4, same: 3, conflict: 1 }], shared: 4, conflict: 1 }) });
+  render(<ModelsView />);
+  await userEvent.click(await screen.findByRole("button", { name: "New model" }));
+  await userEvent.click(await screen.findByLabelText("Use camA"));
+  expect(screen.queryByText(/share \d+ pictures/)).toBeNull(); // one dataset cannot overlap
+  await userEvent.click(screen.getByLabelText("Use camB"));
+  const box = await screen.findByLabelText("Shared pictures");
+  expect(box).toHaveTextContent("camA and camB share 4 pictures");
+  expect(box).toHaveTextContent("1 labelled OK in one and NG in the other");
 });

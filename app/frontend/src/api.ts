@@ -1467,6 +1467,12 @@ export interface ModelDataset extends Required<ModelDatasetInput> {
   size?: string | null;
   mixed?: boolean;
 }
+/** Pictures two datasets of a model have in common (same content); `conflict`: labelled OK in one and NG in the other. */
+export interface ModelOverlap {
+  pairs: { a: string; b: string; shared: number; same: number; conflict: number }[];
+  shared: number;
+  conflict: number;
+}
 export interface ModelBuild {
   id: number;
   number: number;
@@ -1507,6 +1513,7 @@ const post = (body?: unknown): RequestInit => ({
 export const api = {
   modelDatasets: (size?: string) => request<ModelDatasets>(`/models/datasets${size ? `?size=${encodeURIComponent(size)}` : ""}`),
   modelPreview: (datasets: ModelDatasetInput[]) => request<{ classes: ModelClass[]; notes: string[] }>("/models/preview", post({ datasets })),
+  modelOverlap: (datasets: ModelDatasetInput[]) => request<ModelOverlap>("/models/overlap", post({ datasets })),
   models: () => request<{ models: ModelSummary[] }>("/models"),
   model: (id: number) => request<ModelDetail>(`/models/${id}`),
   createModel: (name: string, datasets: ModelDatasetInput[], include_without_box: boolean) =>

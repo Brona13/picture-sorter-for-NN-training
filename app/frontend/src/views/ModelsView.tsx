@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { api, ApiError, ModelBuild, ModelClass, ModelDatasetInput, ModelDatasets, ModelDetail, ModelFreeze, ModelSummary } from "../api";
+import { api, ApiError, ModelBuild, ModelClass, ModelDatasetInput, ModelDatasets, ModelDetail, ModelFreeze, ModelOverlap, ModelSummary } from "../api";
 
 /** One camera's line in the editor: ticked or not, which freeze, and the names and colours (empty = the server's default). */
 interface Row {
@@ -71,6 +71,7 @@ export default function ModelsView() {
   const [draft, setDraft] = useState<Draft>(EMPTY);
   const [size, setSize] = useState("");
   const [preview, setPreview] = useState<{ classes: ModelClass[]; notes: string[] } | null>(null);
+  const [overlap, setOverlap] = useState<ModelOverlap | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -129,10 +130,18 @@ export default function ModelsView() {
     if (!editing || chosen.length === 0) {
       setPreview(null);
       setPreviewError(null);
+      setOverlap(null);
       return;
     }
     let cancelled = false;
     const timer = setTimeout(() => {
+      // pictures in two datasets: only a freeze that can be read is checked, so a failure here just hides the line
+      if (chosen.length > 1) {
+        api
+          .modelOverlap(chosen)
+          .then((o) => !cancelled && setOverlap(o))
+          .catch(() => !cancelled && setOverlap(null));
+      } else setOverlap(null);
       api
         .modelPreview(chosen)
         .then((p) => {
@@ -359,6 +368,20 @@ export default function ModelsView() {
               </>
             )}
             {!preview && !previewError && <p className="muted">Tick at least one dataset.</p>}
+
+            {overlap && overlap.shared > 0 && (
+              <div aria-label="Shared pictures">
+                <h3>Shared pictures</h3>
+                <ul>
+                  {overlap.pairs.map((p) => (
+                    <li key={`${p.a}|${p.b}`}>
+                      {p.a} and {p.b} share {p.shared} pictures
+                      {p.conflict > 0 && <strong className="export-badge warn"> {p.conflict} labelled OK in one and NG in the other</strong>}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
             <p>
               <button type="button" onClick={save} disabled={busy || !dirty || chosen.length === 0 || !draft.name.trim()}>

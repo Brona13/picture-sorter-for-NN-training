@@ -68,6 +68,12 @@ def preview_classes(body: PreviewBody) -> dict:
     return _call(model_store.preview, _raw(body.datasets))
 
 
+@router.post("/models/overlap")
+def overlap(body: PreviewBody) -> dict:
+    """Pictures shared by two of these datasets (same content), and those labelled differently in the two."""
+    return _call(model_store.overlap, _raw(body.datasets))
+
+
 @router.get("/models")
 def list_models() -> dict:
     return {"models": model_store.list_models()}
