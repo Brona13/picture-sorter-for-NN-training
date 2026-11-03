@@ -287,8 +287,8 @@ export default function Card({ camera, feature, pictureFeature, classes, labelin
 
       {card.box && (
         <div style={{ margin: "2px 0 4px", fontSize: 10 }} data-testid="card-box">
-          <span style={badge("#2b6a4a")} title="The rectangle this picture is cut to (a Box), in pixels of the picture: x1, y1, x2, y2 and its size. These are the numbers the step-2 Export lists.">
-            ▭ {card.box[0]},{card.box[1]} – {card.box[2]},{card.box[3]} · {card.box[2] - card.box[0]}×{card.box[3] - card.box[1]}
+          <span style={badge("#2b6a4a")} title="The size in pixels of the rectangle this picture is cut to (a Box). The corner numbers are in the step-2 Export.">
+            ▭ {card.box[2] - card.box[0]}×{card.box[3] - card.box[1]}
           </span>
         </div>
       )}
