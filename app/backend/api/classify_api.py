@@ -835,6 +835,25 @@ def suggest_goldens(camera: str, q: QueryParams, n: int = suggest_goldens_mod.DE
     }
 
 
+@router.get("/cameras/{camera}/classify/center")
+def suggest_center(camera: str, q: QueryParams, n: int = 3) -> dict:
+    """The pictures at the centers of the current view (density peaks in the embedding): with the view on one class, the centers of
+    that class. A picture that already has a label can only become a golden of that label."""
+    if not 1 <= n <= suggest_goldens_mod.N_MAX:
+        raise HTTPException(status_code=422, detail="n is out of range.")
+    ctx = _build(camera, q.model_copy(update={"auto_preview": False}))
+    backbone = suggest_goldens_mod._diversity_backbone()
+    out = {"available": False, "picks": [], "backbone": backbone, "view": q.view, "count": len(ctx.items), "n_max": suggest_goldens_mod.N_MAX}
+    if backbone is None:
+        return out
+    picks = suggest_goldens_mod.center(camera=camera, feature=q.feature, items=ctx.items, n=n, gold=ctx.gold, diversity_backbone=backbone)
+    return {
+        **out,
+        "available": bool(picks),
+        "picks": [{"frame": fs.frame, "label": ctx.lab.get(fs.frame)} for fs in picks],
+    }
+
+
 @router.post("/cameras/{camera}/classify/promote")
 def promote(camera: str, body: PromoteBody) -> dict:
     """Label a frame and make it a golden for that class in one action."""

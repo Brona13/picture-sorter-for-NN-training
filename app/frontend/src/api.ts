@@ -1173,6 +1173,17 @@ export interface SuggestResponse {
   picks: { frame: string; label?: string | null; bars: CardData["bars"] }[];
 }
 
+/** The centers of the pictures in view (`GET /classify/center`): density peaks in the embedding, the main crowd's first. */
+export interface CenterResponse {
+  available: boolean;
+  backbone: string | null;
+  view: string;
+  /** How many pictures the view holds (what the peaks were found among). */
+  count: number;
+  n_max: number;
+  picks: { frame: string; label: string | null }[];
+}
+
 export interface InsightsResponse {
   feature: string;
   classes: string[];
@@ -1970,6 +1981,8 @@ export const api = {
     ),
   suggestGoldens: (camera: string, q: GridQuery, n: number) =>
     request<SuggestResponse>(`/cameras/${encodeURIComponent(camera)}/classify/suggest?${gridParams(q, { n })}`),
+  suggestCenter: (camera: string, q: GridQuery, n: number) =>
+    request<CenterResponse>(`/cameras/${encodeURIComponent(camera)}/classify/center?${gridParams(q, { n })}`),
   promote: (camera: string, feature: string, frame: string, cls: string) =>
     request<CardUpdate>(`/cameras/${encodeURIComponent(camera)}/classify/promote`, post({ feature, frame, cls })),
   insightsCell: (camera: string, feature: string, method: string, true_cls: string, pred_cls: string) =>

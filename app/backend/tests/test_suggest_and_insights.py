@@ -139,6 +139,38 @@ class SuggestInsightsApiTests(ApiTestCase):
         bad = self.client.post(f"{self.base}/classify/promote", json={"feature": FEAT, "frame": frame, "cls": "XX"})
         self.assertEqual(bad.status_code, 422)
 
+    def test_center_follows_the_view_filter(self) -> None:
+        for f in self.blue:
+            self.label(f, "OK")
+        for f in self.red:
+            self.label(f, "NG")
+        self.refresh()
+        red = set(self.red)
+
+        def fetch(camera, feature, frames, backbone):  # blue pictures near angle 0, red near 90 degrees
+            rng = np.random.default_rng(1)
+            rad = np.deg2rad([(90.0 if f in red else 0.0) + rng.normal(0, 1.0) for f in frames])
+            return list(frames), np.stack([np.cos(rad), np.sin(rad)], axis=1).astype(np.float32)
+
+        q = {"feature": FEAT, "rank": "cpu"}
+        with mock.patch.object(suggest_goldens, "_diversity_backbone", return_value="resnet18"), \
+                mock.patch.object(suggest_goldens.dedup, "fetch_embeddings", side_effect=fetch):
+            ok = self.client.get(f"{self.base}/classify/center", params={**q, "view": "Labeled OK", "n": 1}).json()
+            ng = self.client.get(f"{self.base}/classify/center", params={**q, "view": "Labeled NG", "n": 1}).json()
+            everything = self.client.get(f"{self.base}/classify/center", params={**q, "n": 2}).json()
+            self.assertEqual(self.client.get(f"{self.base}/classify/center", params={**q, "n": 99}).status_code, 422)
+        self.assertTrue(ok["available"])
+        self.assertEqual((ok["view"], ok["count"], ok["picks"][0]["label"]), ("Labeled OK", len(self.blue), "OK"))
+        self.assertIn(ok["picks"][0]["frame"], self.blue)
+        self.assertEqual((ng["picks"][0]["label"], ng["count"]), ("NG", len(self.red)))
+        self.assertIn(ng["picks"][0]["frame"], self.red)
+        self.assertEqual({p["label"] for p in everything["picks"]}, {"OK", "NG"})  # no filter: the center of each look
+
+    def test_center_needs_a_resnet(self) -> None:
+        with mock.patch.object(suggest_goldens, "_diversity_backbone", return_value=None):
+            body = self.client.get(f"{self.base}/classify/center", params={"feature": FEAT, "rank": "cpu"}).json()
+        self.assertEqual((body["available"], body["picks"], body["backbone"]), (False, [], None))
+
     def test_insights_reasons_and_matrices(self) -> None:
         url = f"{self.base}/insights"
         self.assertEqual(self.client.get(url, params={"feature": FEAT}).json()["reason"], "needs_two_golden_classes")
@@ -172,3 +204,63 @@ class SuggestInsightsApiTests(ApiTestCase):
         empty = self.client.get(f"{url}/cell", params={"feature": FEAT, "method": "cpu", "true_cls": "OK", "pred_cls": "NG"}).json()
         self.assertEqual(empty["items"], [])
         self.assertEqual(self.client.get(f"{url}/cell", params={"feature": FEAT, "method": "x", "true_cls": "OK", "pred_cls": "OK"}).status_code, 422)
+
+
+class CenterTests(unittest.TestCase):
+    """Density peaks in the embedding (v1.157.0)."""
+
+    def vectors(self, groups, step=0.2):
+        """Unit vectors on a circle: ``groups`` = [(frame prefix, centre angle in degrees, count)], ``step`` degrees apart."""
+        frames, rows = [], []
+        for prefix, angle, count in groups:
+            for i in range(count):
+                a = np.deg2rad(angle + (i - (count - 1) / 2) * step)
+                frames.append(f"{prefix}{i}")
+                rows.append([np.cos(a), np.sin(a)])
+        return frames, np.array(rows, dtype=np.float32)
+
+    def run_center(self, frames, matrix, n=3, gold=None):
+        items = [fs(f) for f in frames]
+        with mock.patch.object(suggest_goldens.dedup, "fetch_embeddings", return_value=(list(frames), matrix)):
+            return suggest_goldens.center(camera="c", feature="f", items=items, n=n, gold=gold or {}, diversity_backbone="resnet18")
+
+    def test_the_pick_is_in_the_middle_of_the_crowd_not_of_the_outliers(self) -> None:
+        angles = np.random.default_rng(3).normal(0.0, 2.0, 40)  # a crowd that is dense in the middle and thin at the sides
+        frames = [f"m{i}" for i in range(40)] + ["far1", "far2"]
+        rad = np.deg2rad(np.concatenate([angles, [90.0, 80.0]]))  # two outliers on one side would pull an average that way
+        matrix = np.stack([np.cos(rad), np.sin(rad)], axis=1).astype(np.float32)
+        out = self.run_center(frames, matrix, n=1)
+        picked = angles[int(out[0].frame[1:])]
+        self.assertTrue(out[0].frame.startswith("m"))
+        self.assertLess(abs(picked - np.median(angles)), 1.0)  # within a degree of the middle of the crowd
+
+    def test_each_further_pick_is_the_peak_of_another_look(self) -> None:
+        frames, matrix = self.vectors([("a", 0, 30), ("b", 90, 12), ("c", 180, 6)])
+        out = self.run_center(frames, matrix, n=3)
+        self.assertEqual(sorted(r.frame[0] for r in out), ["a", "b", "c"])  # one per look, not three from the biggest
+        self.assertEqual(out[0].frame[0], "a")  # the main crowd first
+
+    def test_a_golden_is_not_picked_but_still_counts_in_the_crowd(self) -> None:
+        frames, matrix = self.vectors([("a", 0, 21)])
+        first = self.run_center(frames, matrix, n=1)[0].frame
+        again = self.run_center(frames, matrix, n=2, gold={"OK": [first]})
+        self.assertNotIn(first, [r.frame for r in again])
+        self.assertTrue(again)
+
+    def test_too_few_pictures_or_no_resnet_give_nothing(self) -> None:
+        frames, matrix = self.vectors([("a", 0, 2)])
+        self.assertEqual(self.run_center(frames, matrix), [])
+        with mock.patch.object(suggest_goldens, "_diversity_backbone", return_value=None):
+            self.assertEqual(suggest_goldens.center(camera="c", feature="f", items=[fs("a"), fs("b"), fs("c")], gold={}), [])
+
+    def test_density_is_high_where_pictures_are_close(self) -> None:
+        frames, matrix = self.vectors([("a", 0, 10)])
+        matrix = np.vstack([matrix, [[0, 1]]]).astype(np.float32)
+        dens = suggest_goldens.density(matrix, 3)
+        self.assertLess(float(dens[-1]), float(dens[:-1].min()))
+
+    def test_a_small_tight_group_does_not_outrank_the_main_crowd(self) -> None:
+        frames, matrix = self.vectors([("big", 0, 40)], step=0.5)
+        f2, m2 = self.vectors([("tiny", 120, 4)], step=0.01)  # four almost identical pictures
+        out = self.run_center(frames + f2, np.vstack([matrix, m2]).astype(np.float32), n=1)
+        self.assertTrue(out[0].frame.startswith("big"))

@@ -16,6 +16,7 @@ import CardGrid from "../classify/CardGrid";
 import DeletedByDay from "../classify/DeletedByDay";
 import { ProductRow, SearchNote, ShowAgain, showsProductRow } from "../classify/SearchExtras";
 import SidePanel, { PanelSection } from "../SidePanel";
+import CenterPanel from "../classify/CenterPanel";
 import SuggestPanel from "../classify/SuggestPanel";
 import { useJob } from "../useJob";
 import { STEP_TWO_HINT, modeOfStep } from "../classify/stepMode";
@@ -508,6 +509,20 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
             </p>
           )}
 
+          {st.scored && !search && stepMode.goldens && (
+            <CenterPanel
+              camera={camera}
+              query={query}
+              classes={classes}
+              revision={revision}
+              onError={setError}
+              onPromoted={(frame, cls, c) => {
+                setNotice(`Promoted ${frame} → ⭐ ${cls}`);
+                setSt((s) => (s ? { ...s, counts: c } : s));
+                bump();
+              }}
+            />
+          )}
           {st.scored && !search && stepMode.goldens && (
             <SuggestPanel
               camera={camera}

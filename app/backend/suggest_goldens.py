@@ -116,3 +116,79 @@ def suggest(
     pick_set = set(picked_frames)
     frame_to_r = {r.frame: r for r in orderable}
     return [frame_to_r[f] for f in picked_frames if f in frame_to_r]
+
+
+# --- the center of the pictures in view (v1.157.0) -----------------------------------------------------------------------------
+
+def _neighbour_k(n: int) -> int:
+    """How many nearest neighbours define a picture's neighbourhood: about an eighth of the pictures, between 3 and 50. Large enough that
+    a small tight group cannot outrank the main crowd (its neighbourhood spills out of the group and its density drops)."""
+    return max(1, min(n - 1, max(3, min(50, round(n / 8)))))
+
+
+def density(matrix: np.ndarray, k: int, chunk: int = 512) -> np.ndarray:
+    """Per row of a unit-norm matrix: the mean cosine similarity to its ``k`` nearest other rows (its **density**: high = many close
+    neighbours). Done in chunks, so no N x N matrix is held."""
+    n = matrix.shape[0]
+    out = np.zeros(n, dtype=np.float32)
+    for start in range(0, n, chunk):
+        sims = matrix[start:start + chunk] @ matrix.T
+        rows = np.arange(sims.shape[0])
+        sims[rows, rows + start] = -np.inf  # a picture is not its own neighbour
+        out[start:start + chunk] = np.partition(sims, n - 1 - k, axis=1)[:, n - k:].mean(axis=1)  # the k largest per row
+    return out
+
+
+def peak_distance(matrix: np.ndarray, rank: np.ndarray, chunk: int = 512) -> np.ndarray:
+    """Per row: the cosine distance (1 - similarity) to the nearest row that ranks higher (``rank`` 0 = densest). The densest row has
+    none and gets 2.0, the largest possible. A picture in the flank of a crowd has a denser one close by (small value); the peak of
+    another look has none close by (large value)."""
+    n = matrix.shape[0]
+    out = np.full(n, 2.0, dtype=np.float32)
+    for start in range(0, n, chunk):
+        sims = matrix[start:start + chunk] @ matrix.T
+        higher = rank[None, :] < rank[start:start + chunk][:, None]
+        sims = np.where(higher, sims, -np.inf)
+        best = sims.max(axis=1)
+        out[start:start + chunk] = np.where(np.isfinite(best), 1.0 - best, 2.0)
+    return out
+
+
+def center(
+    *,
+    camera: str,
+    feature: str,
+    items,                              # list[classify.FrameScore]: the pictures of the current view
+    n: int = 3,
+    gold: dict[str, list[str]],
+    diversity_backbone: str | None = None,
+) -> list:
+    """The pictures at the **centers** of the view: the peaks of the density in the embedding space, the main crowd's first.
+
+    Density-peaks method: a picture's density is its mean similarity to its nearest neighbours (so a few outliers cannot drag a peak
+    away from where most pictures are, as an average would). A picture is a peak of a look when it is dense *and* far from every denser
+    picture; pictures in the flank of a crowd have a denser one nearby and are not. The densest picture comes first, then the peaks
+    of the other looks by density x distance. Pictures that are golden already are not picked, but stay in the crowd the density is
+    measured on (a look whose peak is golden already is covered). Needs no goldens and no scores: only embeddings. ``[]`` without a
+    ResNet or with fewer than three pictures.
+    """
+    backbone = diversity_backbone if diversity_backbone is not None else _diversity_backbone()
+    if backbone is None or len(items) < 3:
+        return []
+    kept, matrix = dedup.fetch_embeddings(camera, feature, [r.frame for r in items], backbone)
+    count = len(kept)
+    if count < 3:
+        return []
+    k = _neighbour_k(count)
+    dens = density(matrix, k)
+    # Equal densities (to 5 decimals) are ordered by the mean similarity to the nearest three quarters of the view: central, and still
+    # blind to the farthest quarter, so outliers cannot pull it. File order never decides.
+    wide = density(matrix, max(k, int(0.75 * (count - 1))))
+    order = np.lexsort((-wide, -np.round(dens, 5)))
+    rank = np.empty(count, dtype=np.int64)
+    rank[order] = np.arange(count)
+    gamma = dens * peak_distance(matrix, rank)
+    by_frame = {r.frame: r for r in items}
+    golden = {f for frames in gold.values() for f in frames}
+    chosen = [int(i) for i in np.lexsort((rank, -np.round(gamma, 6))) if kept[int(i)] not in golden][:n]
+    return [by_frame[kept[i]] for i in chosen]
