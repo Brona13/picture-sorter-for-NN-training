@@ -234,3 +234,73 @@ class FreezeTests(ApiTestCase):
         made = self.client.post(f"{self.base}/flow/nodes", json={"kind": "export", "step": 2})
         self.assertEqual(made.status_code, 201)
         self.assertEqual(flow.load_graph(CAM)["nodes"][made.json()["id"]]["step"], 2)
+
+
+class BoxIdentityTests(ApiTestCase):
+    """A deleted box leaves nothing behind that a new box with the same name could pick up (v1.148.0)."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.frames = write_frames(CAM, 6)
+        datamodel.save_rois(CAM, [ROI("seal", 0, 0, 1, 1, classes=["OK", "NG"])])
+        for frame, cls in zip(self.frames, ["OK", "OK", "OK", "NG", "NG", "NG"]):
+            labels.set_label(CAM, "seal", frame, cls)
+        self.base = f"/api/cameras/{CAM}"
+
+    def freeze_box(self, box: str):
+        for where, dot in (("ok", "OK"), ("ng", "NG")):
+            flow.update_node(CAM, box, {"add_line": {"input": where, "ref": {"feature": "seal", "dot": dot}}})
+        return export_box.freeze(CAM, box, "first")
+
+    def test_a_number_is_never_given_twice_for_any_kind(self) -> None:
+        for kind in flow.KINDS:
+            step = 2 if kind in flow.STEP_TWO_KINDS else 1
+            first = flow.create_node(CAM, kind, step)
+            second = flow.create_node(CAM, kind, step)
+            flow.delete_node(CAM, second)
+            flow.delete_node(CAM, first)
+            third = flow.create_node(CAM, kind, step)
+            number = lambda i: int(i.split(":")[1])  # noqa: E731
+            self.assertEqual((number(second), number(third)), (number(first) + 1, number(first) + 2), kind)
+
+    def test_every_new_box_has_its_own_uid(self) -> None:
+        ids = [flow.create_node(CAM, kind, 2 if kind in flow.STEP_TWO_KINDS else 1) for kind in flow.KINDS]
+        uids = [flow.load_graph(CAM)["nodes"][i]["uid"] for i in ids]
+        self.assertEqual(len(set(uids)), len(flow.KINDS))
+
+    def test_a_new_freeze_does_not_pick_up_the_freezes_of_a_deleted_one(self) -> None:
+        old = flow.create_node(CAM, "export")
+        self.freeze_box(old)
+        self.assertEqual(len(export_box._versions_of(CAM, old)), 1)
+        flow.delete_node(CAM, old)
+        new = flow.create_node(CAM, "export")
+        self.assertNotEqual(new, old)
+        self.assertEqual(export_box._versions_of(CAM, new), [])
+        self.assertEqual(export_box.state(CAM, new)["versions"], [])
+
+    def test_a_new_box_starts_above_the_numbers_stored_data_still_names(self) -> None:
+        old = flow.create_node(CAM, "export")  # export:1
+        self.freeze_box(old)
+        flow.delete_node(CAM, old)
+        db_setting = flow.COUNTERS_KEY
+        datamodel.db.delete_setting(CAM, db_setting)  # the counter is lost: the saved freeze still names export:1
+        self.assertEqual(flow.create_node(CAM, "export"), "export:2")
+
+    def test_a_box_and_a_freeze_from_before_the_uid_are_still_matched_by_id(self) -> None:
+        box = flow.create_node(CAM, "export")
+        graph = flow.load_graph(CAM)
+        del graph["nodes"][box]["uid"]  # a box made before v1.148.0
+        flow.save_graph(CAM, graph)
+        made = self.freeze_box(box)  # gets its uid now
+        self.assertTrue(flow.load_graph(CAM)["nodes"][box]["uid"])
+        graph = flow.load_graph(CAM)
+        del graph["nodes"][box]["uid"]
+        flow.save_graph(CAM, graph)
+        self.assertEqual([v["id"] for v in export_box._versions_of(CAM, box)], [made["id"]])
+
+    def test_renaming_the_box_on_the_canvas_keeps_its_freezes(self) -> None:
+        box = flow.create_node(CAM, "export")
+        self.freeze_box(box)
+        self.assertEqual(self.client.put(f"{self.base}/chain/layout", json={"names": {box: "My freeze"}}).status_code, 200)
+        self.assertEqual(len(export_box._versions_of(CAM, box)), 1)
+

@@ -24,6 +24,7 @@ import json
 import math
 import threading
 import time
+import uuid
 
 import cv2
 import numpy as np
@@ -670,15 +671,75 @@ def create_node(camera: str, kind: str, step: int = 1) -> str:
     if kind in STEP_TWO_KINDS:
         step = 2  # a pile is where step 2 starts, a Box works on the frozen sets
     graph = load_graph(camera)
-    n = 1
-    while f"{PREFIX[kind]}:{n}" in graph["nodes"]:
-        n += 1
-    node_id = f"{PREFIX[kind]}:{n}"
-    graph["nodes"][node_id] = {"kind": kind, **_default_config(kind), **({"step": 2} if step == 2 else {})}
+    node_id = f"{PREFIX[kind]}:{_next_number(camera, PREFIX[kind], graph)}"
+    graph["nodes"][node_id] = {"kind": kind, "uid": new_uid(), **_default_config(kind), **({"step": 2} if step == 2 else {})}
     # No line is drawn for a new box (v1.88.0): every connection is made by the user. A picture box with no line
     # reads the whole picture, like one fed by Ingest.
     save_graph(camera, graph)
     return node_id
+
+
+# --- identity of a box (v1.148.0) -----------------------------------------------
+# The id (``export:2``) is what the graph, the stored results and the mutes are keyed by, and the number in it is what the
+# canvas shows ("Freeze 2"). Two things keep a new box from inheriting what an old one left behind:
+#   * a number is never given twice: the counter of each kind (setting ``flow.counters``) only goes up, and starts above every
+#     number that stored data still names (boxes, mutes, detector results, saved freezes);
+#   * every new box carries a ``uid`` that has nothing to do with its name or number. A saved freeze records the uid of the
+#     box that made it, and a box lists only the freezes with its own uid.
+COUNTERS_KEY = "flow.counters"
+
+
+def new_uid() -> str:
+    return uuid.uuid4().hex[:12]
+
+
+def ensure_uid(camera: str, node_id: str) -> str:
+    """The box's uid; a box made before v1.148.0 gets one the first time it is needed."""
+    graph = load_graph(camera)
+    node = _node(graph, node_id)
+    if not node.get("uid"):
+        node["uid"] = new_uid()
+        save_graph(camera, graph)
+    return str(node["uid"])
+
+
+def _id_number(text: object, prefix: str) -> int:
+    head, _, tail = str(text).partition(":")
+    return int(tail) if head == prefix and tail.isdigit() else 0
+
+
+def _highest_number(camera: str, prefix: str, graph: dict) -> int:
+    """The highest number of this kind that the graph or any stored data still names (a deleted box leaves some behind)."""
+    best = max((_id_number(i, prefix) for i in graph["nodes"]), default=0)
+    con = db.connect()
+    try:
+        for row in con.execute("SELECT DISTINCT feature FROM dedup_mute WHERE camera=? AND feature LIKE ?", (camera, f"{prefix}:%")):
+            best = max(best, _id_number(row[0], prefix))
+        for row in con.execute("SELECT key FROM settings WHERE camera=? AND key LIKE ?", (camera, f"{RESULTS_PREFIX}{prefix}:%")):
+            best = max(best, _id_number(str(row[0])[len(RESULTS_PREFIX):], prefix))
+        if prefix == PREFIX["export"]:
+            for row in con.execute("SELECT stats_json FROM versions WHERE camera=? AND feature=?", (camera, "@project")):  # versions.PROJECT
+                try:
+                    box = ((json.loads(row[0] or "{}").get("export")) or {}).get("box")
+                except (ValueError, AttributeError):
+                    continue
+                best = max(best, _id_number(box, prefix))
+    finally:
+        con.close()
+    return best
+
+
+def _next_number(camera: str, prefix: str, graph: dict) -> int:
+    try:
+        counters = json.loads(db.get_setting(camera, COUNTERS_KEY) or "{}")
+    except ValueError:
+        counters = {}
+    if not isinstance(counters, dict):
+        counters = {}
+    n = max(int(counters.get(prefix) or 0), _highest_number(camera, prefix, graph)) + 1
+    counters[prefix] = n
+    db.set_setting(camera, COUNTERS_KEY, json.dumps(counters, sort_keys=True))
+    return n
 
 
 def _node(graph: dict, node_id: str) -> dict:

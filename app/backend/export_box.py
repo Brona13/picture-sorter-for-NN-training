@@ -152,13 +152,18 @@ def _versions_of(camera: str, node_id: str) -> list[dict]:
         ).fetchall()
     finally:
         con.close()
+    uid = (flow.load_graph(camera)["nodes"].get(node_id) or {}).get("uid")
     found = []
     for r in rows:
         try:
             stats = json.loads(r["stats_json"] or "{}")
         except ValueError:
             continue
-        if (stats.get("export") or {}).get("box") == node_id:
+        made = stats.get("export") or {}
+        # A freeze lists under the box that made it, told apart by the box's uid, not by its name or number. A freeze or a box
+        # from before v1.148.0 has no uid: those are matched by id as they always were (ids are no longer given twice).
+        mine = made.get("uid") == uid if uid and made.get("uid") else made.get("box") == node_id
+        if mine:
             found.append({"id": r["id"], "number": r["number"], "name": r["name"], "created": r["created"], "counts": json.loads(r["counts_json"] or "{}")})
     return found
 
@@ -193,7 +198,7 @@ def freeze(camera: str, node_id: str, name: str = "", notes: str = "") -> dict:
             if not any(p["lines"].values()) else "No picture comes through the lines of this Export box."
         )
     counts = {"ok": p["ok"], "ng": p["ng"], "not_golden": p["not_golden"], "both": p["both"], "no_product": p["no_product"], "total": len(p["items"])}
-    stats = {"export": {"goldens_only": 1 if p["goldens_only"] else 0, "box": node_id, "source": "chain", "graph": flow.load_graph(camera)}}
+    stats = {"export": {"goldens_only": 1 if p["goldens_only"] else 0, "box": node_id, "uid": flow.ensure_uid(camera, node_id), "source": "chain", "graph": flow.load_graph(camera)}}
     if p["box"]:  # the rectangles are frozen with the version, so the export of it is reproducible
         numbers = box_numbers(camera, p["box"], [frame for frame, _ in p["items"]])
         counts["with_box"] = len(numbers)
