@@ -655,6 +655,28 @@ export interface FlowExport {
   /** Step 2 with a Box: `corners` lists x1, y1, x2, y2; `size` lists x, y, width, height (whole pixels of the picture). */
   box_format?: "corners" | "size";
 }
+/** The fields of the downstream system's import zip (`POST …/project-versions/{id}/ds-export`). */
+export interface DsExportFields {
+  dataset_name: string;
+  folder_name: string;
+  ok_name: string;
+  ng_name: string;
+  ok_color: string;
+  ng_color: string;
+  include_without_box: boolean;
+  zip_name: string;
+}
+export interface DsExportReport {
+  destination: string;
+  written: number;
+  /** Pictures in the file without a rectangle (only with "include pictures without a rectangle"). */
+  no_box: number;
+  left_out: number;
+  missing: string[];
+  hash_mismatch: string[];
+  name_clash: string[];
+  other_class: number;
+}
 export interface ExportLatest {
   id: number;
   number: number;
@@ -1536,6 +1558,8 @@ export const api = {
     ),
   exportProjectVersion: (camera: string, id: number) =>
     request<ExportReport>(`/cameras/${encodeURIComponent(camera)}/project-versions/${id}/export`, post()),
+  exportProjectVersionDs: (camera: string, id: number, fields: DsExportFields) =>
+    request<DsExportReport>(`/cameras/${encodeURIComponent(camera)}/project-versions/${id}/ds-export`, post(fields)),
   job: <R = unknown>(id: string) => request<Job<R>>(`/jobs/${encodeURIComponent(id)}`),
   createCamera: (name: string, tags: string[] = []) => request<{ name: string; tags: string[] }>("/cameras", post({ name, tags })),
   cameraDeletePreview: (camera: string) =>

@@ -6,6 +6,7 @@ import config
 import datamodel
 import db
 import detections
+import ds_export
 import edge_angle
 import engine
 import flow
@@ -204,4 +205,27 @@ def export_project(camera: str, version_id: int) -> dict:
     require_camera(camera)
     _require_version(camera, versions.PROJECT, version_id)
     dest, report = versions.export(camera, version_id)
+    return {"destination": str(dest), **report}
+
+
+class DsExportRequest(BaseModel):
+    dataset_name: str
+    folder_name: str
+    ok_name: str = "OK"
+    ng_name: str = "NG"
+    ok_color: str = ds_export.DEFAULT_OK_COLOR
+    ng_color: str = ds_export.DEFAULT_NG_COLOR
+    include_without_box: bool = False
+    zip_name: str = ""
+
+
+@router.post("/cameras/{camera}/project-versions/{version_id}/ds-export")
+def export_project_ds(camera: str, version_id: int, body: DsExportRequest) -> dict:
+    """Write the downstream system's import zip (``datasetCollection.json`` and the pictures) of a frozen step-2 version."""
+    require_camera(camera)
+    _require_version(camera, versions.PROJECT, version_id)
+    try:
+        dest, report = ds_export.export(camera, version_id, ds_export.Fields(**body.model_dump()))
+    except ds_export.DsExportError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {"destination": str(dest), **report}

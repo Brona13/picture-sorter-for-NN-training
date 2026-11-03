@@ -251,6 +251,39 @@ class BoxChainTests(ApiTestCase):
         self.assertTrue((tmp := done["destination"]) and (self.frames[0] in __import__("os").listdir(f"{tmp}/OK")))
         self.assertEqual(export_box.box_row((x1, y1, x2, y2), "corners"), [x1, y1, x2, y2])
 
+    def test_the_ds_zip_is_made_from_the_frozen_rectangles(self) -> None:
+        import json
+        import zipfile
+
+        f = self.frames
+        self.golden(f[0], f[4])
+        node = self.export_box_node()
+        frozen = self.client.post(f"{self.base}/flow/nodes/{node}/export/freeze", json={"name": "ds"}).json()
+        body = {"dataset_name": "My set", "folder_name": "200", "ok_name": "Good", "ng_name": "Bad", "ok_color": "#00ff00", "ng_color": "#ff0000", "zip_name": ""}
+        r = self.client.post(f"{self.base}/project-versions/{frozen['id']}/ds-export", json=body)
+        self.assertEqual(r.status_code, 200, r.text)
+        done = r.json()
+        self.assertEqual((done["written"], done["no_box"], done["left_out"]), (2, 0, 0))
+        self.assertTrue(done["destination"].endswith(f"My set_v{frozen['number']:03d}.zip"))
+        with zipfile.ZipFile(done["destination"]) as z:
+            self.assertEqual(sorted(z.namelist()), sorted(["datasetCollection.json", f"200/{f[0]}", f"200/{f[4]}"]))
+            data = json.loads(z.read("datasetCollection.json"))
+        images = {i["Name"]: i for i in data["ObjectDetectionArchiveDatasets"][0]["Images"]}
+        self.assertEqual(set(images), {f[0].rsplit(".", 1)[0], f[4].rsplit(".", 1)[0]})
+        names = {l["NodeId"]: l["Name"] for l in data["ObjectDetectionLabelDefinitions"].values()}
+        shown = images[f[4].rsplit(".", 1)[0]]
+        self.assertEqual(names[shown["LabelObjectDetectionBoundingBoxes"][0]["LabelDefinitionNodeId"]], "Bad")
+        box = shown["LabelObjectDetectionBoundingBoxes"][0]
+        self.assertTrue(0 <= box["X1"] <= box["X2"] <= shown["Width"] - 1 and 0 <= box["Y1"] <= box["Y2"] <= shown["Height"] - 1)
+        # a freeze without rectangles (step 1) and a bad field are refused with a message
+        step_one = [n for n, nd in flow.load_graph(CAM)["nodes"].items() if nd["kind"] == "export" and flow.step_of(nd) == 1][0]
+        plain = self.client.post(f"{self.base}/flow/nodes/{step_one}/export/freeze", json={}).json()
+        refused = self.client.post(f"{self.base}/project-versions/{plain['id']}/ds-export", json=body)
+        self.assertEqual(refused.status_code, 422)
+        self.assertIn("no rectangles", refused.json()["detail"])
+        bad = self.client.post(f"{self.base}/project-versions/{frozen['id']}/ds-export", json={**body, "ok_color": "green"})
+        self.assertEqual(bad.status_code, 422)
+
     def test_the_size_layout_lists_the_corner_and_the_size(self) -> None:
         import csv
 

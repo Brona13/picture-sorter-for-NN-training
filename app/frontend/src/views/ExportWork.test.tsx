@@ -30,6 +30,8 @@ beforeEach(() => {
       frozen = frozen.map((v) => (v.id === 7 ? { ...v, exported: true } : v));
       return new Response(JSON.stringify({ destination: "exports/project/v002__x", written: 5, missing: [], hash_mismatch: [], ...("box" in boxState ? { boxes: 4, no_box: 1 } : {}) }));
     }
+    if (url.endsWith("/project-versions/7/ds-export"))
+      return new Response(JSON.stringify({ destination: "exports/project/set_v002.zip", written: 4, no_box: 0, left_out: 1, missing: [], hash_mismatch: [], name_clash: [], other_class: 0 }));
     return new Response(JSON.stringify(detail));
   }));
 });
@@ -156,4 +158,39 @@ test("the export report lists the rectangles written to boxes.csv", async () => 
   fireEvent.click(await screen.findByRole("button", { name: "Export version 2" }));
   expect(await screen.findByText(/Listed 4 rectangles in/)).toBeInTheDocument();
   expect(screen.getByText(/1 picture has none/)).toBeInTheDocument();
+});
+
+test("the DS file card needs a freeze with rectangles, takes the six fields and says what was written", async () => {
+  boxState = { box: "box:1", with_box: 4, no_box: 1, box_format: "corners" };
+  frozen = [version({ counts: { total: 5, ok: 3, ng: 2, with_box: 4 } })];
+  mount();
+  await screen.findByRole("table", { name: "Frozen versions" });
+  const card = within(screen.getByRole("region", { name: "DS import file" }));
+  expect(card.getByLabelText("Dataset name")).toHaveValue("camA");
+  expect(card.getByLabelText("OK class name")).toHaveValue("OK");
+  expect(card.getByLabelText("NG colour")).toHaveValue("#f44336");
+  fireEvent.change(card.getByLabelText("Dataset name"), { target: { value: "My set" } });
+  fireEvent.change(card.getByLabelText("NG class name"), { target: { value: "Bad" } });
+  fireEvent.click(card.getByRole("checkbox"));
+  fireEvent.click(card.getByRole("button", { name: "Make DS zip" }));
+  await waitFor(() => expect(calls.some((c) => c.url.endsWith("/project-versions/7/ds-export"))).toBe(true));
+  const sent = calls.find((c) => c.url.endsWith("/project-versions/7/ds-export"))!;
+  expect(sent.method).toBe("POST");
+  expect(sent.body).toMatchObject({ dataset_name: "My set", folder_name: "camA", ok_name: "OK", ng_name: "Bad", include_without_box: true, zip_name: "" });
+  expect(await screen.findByRole("status", { name: "DS zip result" })).toHaveTextContent("Wrote 4 pictures to exports/project/set_v002.zip");
+  expect(screen.getByRole("status", { name: "DS zip result" })).toHaveTextContent("1 left out: no rectangle.");
+});
+
+test("no DS file card in step 1 or without a Box; before a freeze it says to freeze first", async () => {
+  mount({ step: 1 });
+  await screen.findByText("Freeze: every OK and NG picture");
+  expect(screen.queryByRole("region", { name: "DS import file" })).not.toBeInTheDocument();
+});
+
+test("a freeze without rectangles is not offered for the DS file", async () => {
+  boxState = { box: "box:1", with_box: 4, no_box: 1, box_format: "corners" };
+  frozen = [version()];
+  mount();
+  await screen.findByRole("table", { name: "Frozen versions" });
+  expect(within(screen.getByRole("region", { name: "DS import file" })).getByText(/Freeze first/)).toBeInTheDocument();
 });

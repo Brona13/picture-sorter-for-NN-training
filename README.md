@@ -268,6 +268,11 @@ In step 2, for a downstream detector that you train with one hand-drawn upright 
 4. **Export**: draw the Classifier's OK and NG dots to its inputs, **Freeze**, then **Export**. The folders `OK` and `NG` hold the original pictures of the
    goldens, and `boxes.csv` (semicolon-separated) lists their rectangle in whole pixels of the picture, as `x1;y1;x2;y2` or as `x;y;width;height`
    (choose in the Export page). The numbers are frozen with the version.
+5. **File for the downstream system** (v1.150.0): on the same Export page, card *3 · File for the downstream system*. Pick a freeze that holds
+   rectangles and fill in the dataset name, the picture folder name, the OK / NG class names and colours, whether pictures without a rectangle
+   are included (default: left out) and the zip file name (default: dataset name and version). **Make DS zip** writes
+   `exports/project/<zip name>.zip` with `datasetCollection.json` and the picture folder side by side, ready to import into the downstream system.
+   The pictures are the originals, named by their file names; the boxes are the frozen rectangles in pixel indices.
 
 ## Pipeline stages and the step bar
 

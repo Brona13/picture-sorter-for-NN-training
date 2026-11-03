@@ -11,5 +11,5 @@ tweaks, the middle number (1.0.x -> 1.1.0) for new features or behavior changes.
 """
 from __future__ import annotations
 
-VERSION = "1.149.0"
+VERSION = "1.150.0"
 RELEASED = "2026-11-03"

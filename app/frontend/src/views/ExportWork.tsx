@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { api, ExportLatest, ExportReport, ExportState, FlowExport, FlowNodeDetail } from "../api";
+import { api, DsExportFields, DsExportReport, ExportLatest, ExportReport, ExportState, FlowExport, FlowNodeDetail } from "../api";
 import CopyButton from "../CopyButton";
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -26,6 +26,12 @@ export default function ExportWork({ camera, nodeId, detail, setDetail, onError 
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [report, setReport] = useState<ExportReport | null>(null);
+  const [ds, setDs] = useState<DsExportFields>({
+    dataset_name: camera, folder_name: camera, ok_name: "OK", ng_name: "NG", ok_color: "#06e52b", ng_color: "#f44336", include_without_box: false, zip_name: "",
+  });
+  const [dsVersion, setDsVersion] = useState<number | null>(null);
+  const [dsReport, setDsReport] = useState<DsExportReport | null>(null);
+  const setField = (key: keyof DsExportFields, value: string | boolean) => setDs((d) => ({ ...d, [key]: value }));
 
   const load = useCallback(() => {
     api.flowExport(camera, nodeId).then(setState).catch((e) => onError(msg(e)));
@@ -51,6 +57,8 @@ export default function ExportWork({ camera, nodeId, detail, setDetail, onError 
   };
   const exportNow = (id: number) => run(async () => setReport(await api.exportProjectVersion(camera, id)));
 
+  const makeDs = (id: number) => run(async () => { setDsReport(null); setDsReport(await api.exportProjectVersionDs(camera, id, ds)); });
+
   const folders = Object.entries(state?.folders ?? {});
   const leftOut: [string, number][] = state
     ? [
@@ -61,6 +69,8 @@ export default function ExportWork({ camera, nodeId, detail, setDetail, onError 
     : [];
   const shownLeftOut = leftOut.filter(([, n]) => n > 0);
   const frozen: ExportLatest[] = state?.versions ?? (state?.latest ? [state.latest] : []);
+  const withRectangles = frozen.filter((v) => (v.counts.with_box ?? 0) > 0);
+  const dsChosen = withRectangles.find((v) => v.id === dsVersion) ?? withRectangles[0];
 
   return (
     <div className="export-work">
@@ -168,6 +178,46 @@ export default function ExportWork({ camera, nodeId, detail, setDetail, onError 
           </div>
         )}
       </section>
+
+      {(detail.step ?? 1) === 2 && state?.box && (
+        <section className="export-card" aria-label="DS import file">
+          <div className="export-card-head">
+            <h3>3 · File for the downstream system</h3>
+          </div>
+          {withRectangles.length === 0 ? (
+            <p className="muted">Freeze first: the file is made from a freeze that holds rectangles.</p>
+          ) : (
+            <form className="export-ds" onSubmit={(e) => { e.preventDefault(); if (dsChosen) void makeDs(dsChosen.id); }}>
+              <label>Freeze{" "}
+                <select aria-label="Freeze for the DS file" value={dsChosen?.id} onChange={(e) => setDsVersion(Number(e.target.value))}>
+                  {withRectangles.map((v) => <option key={v.id} value={v.id}>v{v.number}{v.name ? ` · ${v.name}` : ""}</option>)}
+                </select>
+              </label>
+              <label>Dataset name <input aria-label="Dataset name" value={ds.dataset_name} onChange={(e) => setField("dataset_name", e.target.value)} /></label>
+              <label>Picture folder name <input aria-label="Picture folder name" value={ds.folder_name} onChange={(e) => setField("folder_name", e.target.value)} /></label>
+              <label>OK class <input aria-label="OK class name" value={ds.ok_name} onChange={(e) => setField("ok_name", e.target.value)} />{" "}
+                <input type="color" aria-label="OK colour" value={ds.ok_color} onChange={(e) => setField("ok_color", e.target.value)} /></label>
+              <label>NG class <input aria-label="NG class name" value={ds.ng_name} onChange={(e) => setField("ng_name", e.target.value)} />{" "}
+                <input type="color" aria-label="NG colour" value={ds.ng_color} onChange={(e) => setField("ng_color", e.target.value)} /></label>
+              <label><input type="checkbox" checked={ds.include_without_box} onChange={(e) => setField("include_without_box", e.target.checked)} /> Include pictures without a rectangle</label>
+              <label>Zip file name <input aria-label="Zip file name" placeholder="dataset name + version" value={ds.zip_name} onChange={(e) => setField("zip_name", e.target.value)} /></label>
+              <button type="submit" disabled={busy || !dsChosen}>Make DS zip</button>
+            </form>
+          )}
+          {dsReport && (
+            <div role="status" aria-label="DS zip result">
+              <p>
+                Wrote {dsReport.written} picture{dsReport.written === 1 ? "" : "s"} to <code>{dsReport.destination}</code> <CopyButton text={dsReport.destination} label="Copy path" />
+              </p>
+              {dsReport.left_out > 0 && <p>{dsReport.left_out} left out: no rectangle.</p>}
+              {dsReport.no_box > 0 && <p>{dsReport.no_box} written with an empty box list.</p>}
+              {dsReport.missing.length > 0 && <p>Missing: {dsReport.missing.length}.</p>}
+              {dsReport.hash_mismatch.length > 0 && <p>Changed since the freeze: {dsReport.hash_mismatch.length}.</p>}
+              {dsReport.name_clash.length > 0 && <p>Left out, same name as another picture: {dsReport.name_clash.length}.</p>}
+            </div>
+          )}
+        </section>
+      )}
     </div>
   );
 }
