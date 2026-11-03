@@ -114,5 +114,139 @@ class WriteZipTests(unittest.TestCase):
             self.assertEqual(json.loads(raw), collection)
 
 
+def sub(folder: str, ok: str = "OK", ng: str = "NG", **kw) -> ds_export.SubFields:
+    return ds_export.SubFields(folder, ok, ng, **kw)
+
+
+def part(folder: str, names: list[tuple[str, str]], ok: str = "OK", ng: str = "NG", **kw) -> tuple[ds_export.SubFields, list[dict]]:
+    pics = [{"name": n, "width": 200, "height": 200, "cls": c, "box": (10, 10, 50, 60)} for n, c in names]
+    return sub(folder, ok, ng, **kw), pics
+
+
+class ClassesOfTests(unittest.TestCase):
+    def test_equal_names_are_one_class_across_datasets(self) -> None:
+        classes, notes = ds_export.classes_of([sub("camA"), sub("camB")])
+        self.assertEqual([(c["name"], c["datasets"], c["as_ok"], c["as_ng"]) for c in classes],
+                         [("OK", ["camA", "camB"], ["camA", "camB"], []), ("NG", ["camA", "camB"], [], ["camA", "camB"])])
+        self.assertEqual((classes[0]["id"], classes[1]["id"], notes), (ds_export.FIRST_CLASS_ID, ds_export.FIRST_CLASS_ID + 1, []))
+
+    def test_prefixed_names_are_separate_classes(self) -> None:
+        classes, notes = ds_export.classes_of([sub("camA", "camA-OK", "camA-NG"), sub("camB", "camB-OK", "camB-NG")])
+        self.assertEqual([c["name"] for c in classes], ["camA-OK", "camA-NG", "camB-OK", "camB-NG"])
+        self.assertEqual(len({c["id"] for c in classes}), 4)
+        self.assertEqual(notes, [])
+
+    def test_one_dataset_can_share_only_its_ok_class(self) -> None:
+        classes, _ = ds_export.classes_of([sub("camA", "OK", "camA-NG"), sub("camB", "OK", "camB-NG")])
+        self.assertEqual([(c["name"], c["datasets"]) for c in classes], [("OK", ["camA", "camB"]), ("camA-NG", ["camA"]), ("camB-NG", ["camB"])])
+
+    def test_names_equal_ignoring_case_are_one_class_and_the_first_spelling_wins(self) -> None:
+        classes, _ = ds_export.classes_of([sub("camA", "Good", "Bad"), sub("camB", "GOOD", "bad")])
+        self.assertEqual([(c["name"], c["datasets"]) for c in classes], [("Good", ["camA", "camB"]), ("Bad", ["camA", "camB"])])
+
+    def test_two_colours_for_one_class_are_noted_and_the_first_is_used(self) -> None:
+        classes, notes = ds_export.classes_of([sub("camA", ok_color="#010203"), sub("camB", ok_color="#0a0b0c")])
+        self.assertEqual(classes[0]["color"], "#010203")
+        self.assertEqual(len(notes), 1)
+        self.assertIn("'OK' has two colours", notes[0])
+        self.assertIn("camB", notes[0])
+
+    def test_a_class_that_is_ok_in_one_dataset_and_ng_in_another_is_noted(self) -> None:
+        _, notes = ds_export.classes_of([sub("camA", "Good", "Bad"), sub("camB", "Bad", "Worse")])
+        self.assertEqual(len(notes), 2)  # 'Bad' is red as NG in camA and green as OK in camB, so it has two colours as well
+        self.assertTrue(any("'Bad' is the OK class of camB and the NG class of camA" in n for n in notes))
+        self.assertTrue(any("'Bad' has two colours" in n for n in notes))
+
+
+class BuildMultiTests(unittest.TestCase):
+    """The collection as the real DS imported it on 2026-11-03 (two sub-datasets sharing one class pair): same keys, same order."""
+
+    def two(self, **kw):
+        return ds_export.build_multi("set_v001", [part("camA", [("a1", "OK"), ("a2", "NG")], **kw), part("camB", [("b1", "OK"), ("b2", "NG")], **kw)])
+
+    def test_keys_and_their_order_are_those_of_the_single_dataset_file(self) -> None:
+        c, classes, notes = self.two()
+        self.assertEqual(list(c), ["Name", "Note", "NormalizedName", "AvatarImage", "Tags", "ObjectDetectionLabelDefinitions", "SegmentationLabelDefinitions",
+                                   "ClassificationLabelDefinitions", "ObjectDetectionArchiveDatasets", "SegmentationArchiveDatasets", "ClassificationArchiveDatasets"])
+        self.assertEqual((c["Name"], c["Note"], c["NormalizedName"]), ("set_v001", "set_v001", "SET_V001"))
+        label = next(iter(c["ObjectDetectionLabelDefinitions"].values()))
+        self.assertEqual(list(label), ["NodeId", "Name", "Note", "NormalizedName", "AvatarImage", "LabelDefinitionScope", "Tags", "RChannel", "GChannel", "BChannel", "DatasetNodeId"])
+        for d in c["ObjectDetectionArchiveDatasets"]:
+            self.assertEqual(list(d), ["Images", "NodeId", "NormalizedName", "Name", "Note", "Tags", "AvatarImage"])
+            self.assertEqual(list(d["Images"][0]), ["LabelObjectDetectionBoundingBoxes", "Name", "NormalizedName", "FolderPath", "Type", "Storage", "Width", "Height"])
+        self.assertEqual(notes, [])
+
+    def test_shared_classes_have_one_definition_and_both_datasets_point_at_it(self) -> None:
+        c, classes, _ = self.two()
+        defs = c["ObjectDetectionLabelDefinitions"]
+        self.assertEqual(sorted(l["Name"] for l in defs.values()), ["NG", "OK"])
+        self.assertEqual(list(defs), [str(k["id"]) for k in classes])
+        ids_of = {d["Name"]: [i["LabelObjectDetectionBoundingBoxes"][0]["LabelDefinitionNodeId"] for i in d["Images"]] for d in c["ObjectDetectionArchiveDatasets"]}
+        self.assertEqual(ids_of["camA"], ids_of["camB"])
+        self.assertEqual({defs[str(i)]["Name"] for i in ids_of["camA"]}, {"OK", "NG"})
+
+    def test_separate_classes_keep_the_datasets_apart(self) -> None:
+        c, _, _ = ds_export.build_multi("set_v001", [part("camA", [("a1", "OK"), ("a2", "NG")], "camA-OK", "camA-NG"), part("camB", [("b1", "OK")], "camB-OK", "camB-NG")])
+        defs = c["ObjectDetectionLabelDefinitions"]
+        self.assertEqual(sorted(l["Name"] for l in defs.values()), ["camA-NG", "camA-OK", "camB-NG", "camB-OK"])
+        used = {d["Name"]: {defs[str(i["LabelObjectDetectionBoundingBoxes"][0]["LabelDefinitionNodeId"])]["Name"] for i in d["Images"]} for d in c["ObjectDetectionArchiveDatasets"]}
+        self.assertEqual(used, {"camA": {"camA-OK", "camA-NG"}, "camB": {"camB-OK"}})
+
+    def test_dataset_ids_are_unique_and_the_folder_path_follows_them(self) -> None:
+        c, _, _ = self.two()
+        datasets = c["ObjectDetectionArchiveDatasets"]
+        self.assertEqual([d["NodeId"] for d in datasets], [1, 2])
+        self.assertEqual([d["Images"][0]["FolderPath"] for d in datasets], ["ObjectDetectionArchiveDatasetImages/1", "ObjectDetectionArchiveDatasetImages/2"])
+        self.assertEqual([(d["Name"], d["NormalizedName"], d["Note"]) for d in datasets], [("camA", "CAMA", "camA"), ("camB", "CAMB", "camB")])
+
+    def test_boxes_are_written_like_in_the_single_file(self) -> None:
+        c, _, _ = self.two()
+        box = c["ObjectDetectionArchiveDatasets"][0]["Images"][0]["LabelObjectDetectionBoundingBoxes"][0]
+        self.assertEqual((box["X1"], box["X2"], box["Y1"], box["Y2"]), (10, 49, 10, 59))
+
+    def test_bad_input_is_refused_with_a_message_that_names_the_dataset(self) -> None:
+        cases = (
+            ([part("camA", [("a", "OK")]), part("CAMA", [("b", "OK")])], "'camA' and 'CAMA'"),
+            ([part("camA", [("a", "OK")], ok="x", ng="X")], "Dataset camA: The OK and NG class names must differ"),
+            ([part("camA", [("a", "OK")]), part("a/b", [("b", "OK")])], "Dataset a/b: The picture folder name"),
+            ([part("camA", [("a", "OK")], ng_color="red")], "Dataset camA: NG colour"),
+            ([], "at least one dataset"),
+        )
+        for parts, text in cases:
+            with self.assertRaises(DsExportError) as ctx:
+                ds_export.build_multi("set_v001", parts)
+            self.assertIn(text, str(ctx.exception))
+        with self.assertRaises(DsExportError) as ctx:
+            ds_export.build_multi("  ", [part("camA", [("a", "OK")])])
+        self.assertIn("Collection name", str(ctx.exception))
+
+    def test_the_build_number_makes_the_collection_name_unique(self) -> None:
+        self.assertEqual(ds_export.build_name(" My model ", 1), "My model_v001")
+        self.assertEqual(ds_export.build_name("My model", 12), "My model_v012")
+
+
+class WriteCollectionZipTests(unittest.TestCase):
+    def test_every_dataset_is_a_folder_at_the_root_and_names_may_repeat_between_folders(self) -> None:
+        with TemporaryDirectory() as tmp:
+            a, b = Path(tmp) / "a.jpg", Path(tmp) / "b.jpg"
+            a.write_bytes(b"AAA")
+            b.write_bytes(b"BBB")
+            out = Path(tmp) / "out" / "set.zip"
+            collection, _, _ = ds_export.build_multi("set_v001", [part("camA", [("x", "OK")]), part("camB", [("x", "NG")])])
+            ds_export.write_collection_zip(out, collection, [("camA", "x.jpg", a), ("camB", "x.jpg", b)])
+            with zipfile.ZipFile(out) as z:
+                self.assertEqual(sorted(z.namelist()), ["camA/x.jpg", "camB/x.jpg", "datasetCollection.json"])
+                self.assertEqual((z.read("camA/x.jpg"), z.read("camB/x.jpg")), (b"AAA", b"BBB"))
+                self.assertEqual(json.loads(z.read("datasetCollection.json")), collection)
+            self.assertEqual([p.name for p in out.parent.iterdir()], ["set.zip"])  # no temporary file is left
+
+    def test_a_failed_write_leaves_neither_the_zip_nor_a_temporary_file(self) -> None:
+        with TemporaryDirectory() as tmp:
+            out = Path(tmp) / "set.zip"
+            with self.assertRaises(FileNotFoundError):
+                ds_export.write_collection_zip(out, {"Name": "x"}, [("camA", "x.jpg", Path(tmp) / "missing.jpg")])
+            self.assertEqual(list(Path(tmp).iterdir()), [])
+
+
 if __name__ == "__main__":
     unittest.main()
