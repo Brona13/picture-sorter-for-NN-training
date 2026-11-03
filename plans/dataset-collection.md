@@ -1,12 +1,12 @@
 ---
 name: dataset-collection
 description: Plan for the Models section - combine frozen step-2 datasets of several cameras into one DS dataset collection (zip), saved as a named model object with a build per round. Phase 1 only in detail.
-status: agreed 2026-11-03; stage 1 built in v1.152.0, stage 2 in v1.153.0
+status: agreed 2026-11-03; stage 1 built in v1.152.0, stage 2 in v1.153.0, stage 3 in v1.154.0
 document_type: plan
 last_updated: 2026-11-03
 ---
 
-# Dataset collection (Models section): plan (agreed with the user 2026-11-03; stage 1 built in v1.152.0, stage 2 in v1.153.0)
+# Dataset collection (Models section): plan (agreed with the user 2026-11-03; stage 1 built in v1.152.0, stage 2 in v1.153.0, stage 3 in v1.154.0)
 
 ## Context
 - The downstream system (DS, a ResNet Faster R-CNN detector trainer) can train one model on several datasets. The app so far writes one DS zip per camera (`ds_export.py`, v1.150.0). The user needs to combine several cameras' datasets into one collection and control how they are combined.

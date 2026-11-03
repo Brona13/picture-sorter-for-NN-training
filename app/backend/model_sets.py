@@ -129,6 +129,11 @@ def _freezes(camera: str) -> list[dict]:
     return found
 
 
+def freezes_of(camera: str) -> list[dict]:
+    """The camera's freezes a model can pin (step-2, with rectangles, not deleted), newest first, as ``datasets`` lists them."""
+    return _freezes(camera)
+
+
 def datasets(size: str | None = None) -> dict:
     """The freezes a model can be built from, per camera.
 

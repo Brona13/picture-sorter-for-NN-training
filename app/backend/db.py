@@ -21,12 +21,61 @@ import perf
 import samples
 
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 
 
 class DatabaseResetRequired(RuntimeError):
     """Raised when an older incompatible database must be reset explicitly."""
 
+
+# Models (v1.154.0): a saved, named set of pinned step-2 freezes that is built into DS collection zips, one build per round, and the
+# manifest of what went into each build. Not per camera: no ``camera`` column on purpose, so deleting a camera neither removes a
+# model nor erases the record of what an earlier build contained (``source_camera`` is that record).
+_MODELS_SQL = """
+CREATE TABLE IF NOT EXISTS models (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    name                TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    created             REAL NOT NULL,
+    updated             REAL NOT NULL,
+    include_without_box INTEGER NOT NULL DEFAULT 0,
+    datasets_json       TEXT NOT NULL DEFAULT '[]'
+);
+
+CREATE TABLE IF NOT EXISTS model_builds (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    model_id            INTEGER NOT NULL,
+    number              INTEGER NOT NULL,
+    collection_name     TEXT NOT NULL,
+    created             REAL NOT NULL,
+    zip_path            TEXT NOT NULL,
+    written             INTEGER NOT NULL,
+    include_without_box INTEGER NOT NULL DEFAULT 0,
+    datasets_json       TEXT NOT NULL,
+    report_json         TEXT NOT NULL,
+    UNIQUE (model_id, number)
+);
+
+CREATE TABLE IF NOT EXISTS model_build_items (
+    build_id      INTEGER NOT NULL,
+    source_camera TEXT NOT NULL,
+    version_id    INTEGER NOT NULL,
+    dataset       TEXT NOT NULL,
+    name          TEXT NOT NULL,
+    file          TEXT NOT NULL,
+    frame         TEXT NOT NULL,
+    hash          TEXT NOT NULL DEFAULT '',
+    class         TEXT NOT NULL,
+    ds_class      TEXT,
+    x1            INTEGER,
+    y1            INTEGER,
+    x2            INTEGER,
+    y2            INTEGER,
+    width         INTEGER NOT NULL,
+    height        INTEGER NOT NULL,
+    PRIMARY KEY (build_id, dataset, name)
+);
+CREATE INDEX IF NOT EXISTS idx_model_build_items_hash ON model_build_items(hash);
+"""
 
 _SCHEMA = f"""
 CREATE TABLE IF NOT EXISTS frames (
@@ -214,6 +263,7 @@ CREATE TABLE IF NOT EXISTS detections (
     PRIMARY KEY (camera, feature, hash, rank)
 );
 
+{_MODELS_SQL}
 PRAGMA user_version = {SCHEMA_VERSION};
 """
 
@@ -566,6 +616,20 @@ def _migrate_v9_to_v10(con: sqlite3.Connection) -> None:
         raise
 
 
+def _migrate_v10_to_v11(con: sqlite3.Connection) -> None:
+    """Models (v1.154.0): the ``models``, ``model_builds`` and ``model_build_items`` tables."""
+    con.execute("BEGIN IMMEDIATE")
+    try:
+        for statement in _MODELS_SQL.split(";"):
+            if statement.strip():
+                con.execute(statement)
+        con.execute("PRAGMA user_version = 11")
+        con.execute("COMMIT")
+    except Exception:
+        con.execute("ROLLBACK")
+        raise
+
+
 _MIGRATIONS = {
     2: _migrate_v2_to_v3,
     3: _migrate_v3_to_v4,
@@ -575,6 +639,7 @@ _MIGRATIONS = {
     7: _migrate_v7_to_v8,
     8: _migrate_v8_to_v9,
     9: _migrate_v9_to_v10,
+    10: _migrate_v10_to_v11,
 }
 
 

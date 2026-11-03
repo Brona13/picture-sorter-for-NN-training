@@ -336,8 +336,8 @@ def build_name(model_name: str, number: int) -> str:
     return f"{model_name.strip()}_v{number:03d}"
 
 
-def _check_subs(subs: list[SubFields]) -> list[SubFields]:
-    """The cleaned datasets; folder names must differ (ignoring case) because each is a folder in the zip."""
+def check_subs(subs: list[SubFields]) -> list[SubFields]:
+    """The cleaned datasets, or a ``DsExportError`` naming the one that is wrong; folder names must differ (ignoring case) because each is a folder in the zip."""
     if not subs:
         raise DsExportError("Choose at least one dataset.")
     cleaned = [s.cleaned(f"Dataset {s.folder_name.strip() or n}: ") for n, s in enumerate(subs, 1)]
@@ -380,7 +380,7 @@ def build_multi(collection_name: str, parts: list[tuple[SubFields, list[dict]]])
     name = collection_name.strip()
     if not name:
         raise DsExportError("Collection name is empty.")
-    subs = _check_subs([sub for sub, _ in parts])
+    subs = check_subs([sub for sub, _ in parts])
     classes, notes = classes_of(subs)
     id_of = {c["name"].casefold(): c["id"] for c in classes}
     datasets = []
@@ -418,7 +418,7 @@ def export_collection(dest: Path, collection_name: str, entries: list[Entry], in
     pictures: per picture the camera, freeze, dataset folder, DS name, original file, app frame, hash, class and box.
     The report has per dataset ``{camera, version, folder, written, ok, ng, no_box, left_out, missing, hash_mismatch, name_clash,
     other_class}``, the total ``written``, the picture ``sizes`` (counts per ``WxH``), the ``classes`` and ``notes``."""
-    subs = _check_subs([e.sub for e in entries])
+    subs = check_subs([e.sub for e in entries])
     cameras = [e.camera for e in entries]
     if len(set(cameras)) != len(cameras):
         raise DsExportError("One freeze per camera: a camera appears twice.")
