@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { api, DsExportFields, DsExportReport, ExportLatest, ExportReport, ExportState, FlowExport, FlowNodeDetail } from "../api";
 import CopyButton from "../CopyButton";
 
@@ -29,12 +29,16 @@ export default function ExportWork({ camera, nodeId, detail, setDetail, onError 
   const [ds, setDs] = useState<DsExportFields>({
     dataset_name: camera, folder_name: camera, ok_name: "OK", ng_name: "NG", ok_color: "#06e52b", ng_color: "#f44336", include_without_box: false, zip_name: "",
   });
-  const [dsVersion, setDsVersion] = useState<number | null>(null);
+  const [dsFor, setDsFor] = useState<number | null>(null); // the freeze the DS card works on
+  const dsRemembered = useRef(false);
   const [dsReport, setDsReport] = useState<DsExportReport | null>(null);
   const setField = (key: keyof DsExportFields, value: string | boolean) => setDs((d) => ({ ...d, [key]: value }));
 
   const load = useCallback(() => {
-    api.flowExport(camera, nodeId).then(setState).catch((e) => onError(msg(e)));
+    api.flowExport(camera, nodeId).then((st) => {
+      setState(st);
+      if (st.ds_fields && !dsRemembered.current) { dsRemembered.current = true; setDs((d) => ({ ...d, ...st.ds_fields, zip_name: "" })); } // the last values, once; the zip name stays empty so the next version gets its own number
+    }).catch((e) => onError(msg(e)));
   }, [camera, nodeId, onError]);
   useEffect(load, [load, detail]);
 
@@ -69,8 +73,8 @@ export default function ExportWork({ camera, nodeId, detail, setDetail, onError 
     : [];
   const shownLeftOut = leftOut.filter(([, n]) => n > 0);
   const frozen: ExportLatest[] = state?.versions ?? (state?.latest ? [state.latest] : []);
-  const withRectangles = frozen.filter((v) => (v.counts.with_box ?? 0) > 0);
-  const dsChosen = withRectangles.find((v) => v.id === dsVersion) ?? withRectangles[0];
+  const isStepTwoBox = (detail.step ?? 1) === 2 && !!state?.box;
+  const dsChosen = isStepTwoBox ? frozen.find((v) => v.id === dsFor) : undefined;
 
   return (
     <div className="export-work">
@@ -134,7 +138,7 @@ export default function ExportWork({ camera, nodeId, detail, setDetail, onError 
           <div className="export-scroll">
             <table className="export-versions" aria-label="Frozen versions">
               <thead>
-                <tr><th>Version</th><th>Name</th><th>Created</th><th className="num">OK</th><th className="num">NG</th><th>Status</th><th></th></tr>
+                <tr><th>Version</th><th>Name</th><th>Created</th><th className="num">OK</th><th className="num">NG</th><th>Status</th><th>Export</th></tr>
               </thead>
               <tbody>
                 {frozen.map((v, i) => (
@@ -150,11 +154,24 @@ export default function ExportWork({ camera, nodeId, detail, setDetail, onError 
                         <span className="export-badge warn" title="The Chain would now pick other pictures than this freeze holds. Freeze again to export the new selection.">Chain changed</span>
                       )}
                       <span className="export-folder">{v.folder}</span>
+                      {v.ds && <span className="export-badge done" title={`${v.ds.written} pictures`}>DS zip made</span>}
+                      {v.ds && <span className="export-folder">{v.ds.zip}</span>}
                     </td>
-                    <td>
-                      <button type="button" disabled={busy} aria-label={`Export version ${v.number}`} onClick={() => exportNow(v.id)}>
-                        {v.exported ? "Export again" : "Export"}
+                    <td className="export-actions">
+                      <button type="button" disabled={busy} aria-label={`Export version ${v.number}`} title="Copy the original pictures into the OK and NG folders" onClick={() => exportNow(v.id)}>
+                        {v.exported ? "Export files again" : "Export files"}
                       </button>
+                      {isStepTwoBox && (
+                        <button
+                          type="button"
+                          disabled={busy || (v.counts.with_box ?? 0) === 0}
+                          aria-label={`DS dataset of version ${v.number}`}
+                          title={(v.counts.with_box ?? 0) === 0 ? "This freeze holds no rectangles" : "Make the downstream system's import zip with the labels (opens the form below)"}
+                          onClick={() => { setDsFor(v.id); setDsReport(null); }}
+                        >
+                          {v.ds ? "DS dataset again…" : "DS dataset…"}
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -179,21 +196,14 @@ export default function ExportWork({ camera, nodeId, detail, setDetail, onError 
         )}
       </section>
 
-      {(detail.step ?? 1) === 2 && state?.box && (
+      {dsChosen && (
         <section className="export-card" aria-label="DS import file">
           <div className="export-card-head">
-            <h3>3 · File for the downstream system</h3>
+            <h3>3 · DS dataset from v{dsChosen.number}{dsChosen.name && dsChosen.name !== `v${dsChosen.number}` ? ` · ${dsChosen.name}` : ""}</h3>
+            <button type="button" onClick={() => setDsFor(null)}>Close</button>
           </div>
-          {withRectangles.length === 0 ? (
-            <p className="muted">Freeze first: the file is made from a freeze that holds rectangles.</p>
-          ) : (
+          {(
             <form className="ds-form" onSubmit={(e) => { e.preventDefault(); if (dsChosen) void makeDs(dsChosen.id); }}>
-              <label className="ds-field ds-wide">
-                <span>Freeze</span>
-                <select aria-label="Freeze for the DS file" value={dsChosen?.id} onChange={(e) => setDsVersion(Number(e.target.value))}>
-                  {withRectangles.map((v) => <option key={v.id} value={v.id}>v{v.number}{v.name && v.name !== `v${v.number}` ? ` · ${v.name}` : ""}</option>)}
-                </select>
-              </label>
               <label className="ds-field">
                 <span>Dataset name</span>
                 <input aria-label="Dataset name" value={ds.dataset_name} onChange={(e) => setField("dataset_name", e.target.value)} />

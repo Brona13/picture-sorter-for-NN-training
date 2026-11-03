@@ -36,6 +36,9 @@ FOLDER_PATH = f"ObjectDetectionArchiveDatasetImages/{DATASET_ID}"
 _COLOR = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 
+SETTING = "ds.export"  # per camera: {"fields": last values, "versions": {version id: {"zip", "written"}}}
+
+
 class DsExportError(ValueError):
     """The export cannot be made; the message says what to change."""
 
@@ -70,6 +73,38 @@ class Fields:
             if not _COLOR.match(value):
                 raise DsExportError(f"{label} must look like #06e52b.")
         return out
+
+
+def _record(camera: str) -> dict:
+    try:
+        return json.loads(db.get_setting(camera, SETTING) or "{}")
+    except ValueError:
+        return {}
+
+
+def last_fields(camera: str) -> dict | None:
+    """The values typed at the last export, so the form comes back filled in; ``None`` before the first one."""
+    fields = _record(camera).get("fields")
+    return fields if isinstance(fields, dict) else None
+
+
+def made(camera: str, version_id: int) -> dict | None:
+    """The DS zip last made from this version (``zip`` relative to the camera folder, ``written`` pictures), or ``None`` when
+    there is none or the file is gone."""
+    entry = (_record(camera).get("versions") or {}).get(str(version_id))
+    if not entry or not (datamodel.camera_dir(camera) / entry["zip"]).exists():
+        return None
+    return {"zip": entry["zip"], "written": entry.get("written", 0)}
+
+
+def _remember(camera: str, version_id: int, fields: Fields, dest: Path, written: int) -> None:
+    record = _record(camera)
+    record["fields"] = {
+        "dataset_name": fields.dataset_name, "folder_name": fields.folder_name, "ok_name": fields.ok_name, "ng_name": fields.ng_name,
+        "ok_color": fields.ok_color, "ng_color": fields.ng_color, "include_without_box": fields.include_without_box, "zip_name": fields.zip_name,
+    }
+    record.setdefault("versions", {})[str(version_id)] = {"zip": str(dest.relative_to(datamodel.camera_dir(camera))), "written": written}
+    db.set_setting(camera, SETTING, json.dumps(record))
 
 
 def zip_file_name(fields: Fields, number: int) -> str:
@@ -213,4 +248,5 @@ def export(camera: str, version_id: int, fields: Fields) -> tuple[Path, dict]:
     dest = datamodel.camera_dir(camera) / "exports" / "project" / zip_file_name(fields, v["number"])
     write_zip(dest, build_collection(fields, pictures), fields.folder_name, files)
     report["written"] = len(kept)
+    _remember(camera, version_id, fields, dest, len(kept))
     return dest, report

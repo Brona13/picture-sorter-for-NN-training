@@ -21,6 +21,7 @@ from collections import Counter
 import anchor
 import datamodel
 import db
+import ds_export
 import flow
 import labels
 import lines
@@ -181,12 +182,12 @@ def state(camera: str, node_id: str) -> dict:
     p = plan(camera, node_id)
     rows = []
     for n, v in enumerate(_versions_of(camera, node_id)):
-        row = {**v, **_where_exported(camera, v), "changed": False}
+        row = {**v, **_where_exported(camera, v), "changed": False, "ds": ds_export.made(camera, v["id"])}
         if n == 0:
             was = {(i["frame"], i["class"]) for i in versions.load_items(v["id"])}
             row["changed"] = was != set(p["items"])
         rows.append(row)
-    return {**{k: v for k, v in p.items() if k != "items"}, "total": len(p["items"]), "latest": rows[0] if rows else None, "versions": rows}
+    return {**{k: v for k, v in p.items() if k != "items"}, "total": len(p["items"]), "latest": rows[0] if rows else None, "versions": rows, "ds_fields": ds_export.last_fields(camera)}
 
 
 def freeze(camera: str, node_id: str, name: str = "", notes: str = "") -> dict:

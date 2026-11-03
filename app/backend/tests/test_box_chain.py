@@ -283,6 +283,17 @@ class BoxChainTests(ApiTestCase):
         self.assertIn("no rectangles", refused.json()["detail"])
         bad = self.client.post(f"{self.base}/project-versions/{frozen['id']}/ds-export", json={**body, "ok_color": "green"})
         self.assertEqual(bad.status_code, 422)
+        # the form comes back filled in, and the freeze's row says a DS zip was made (and not when the file is gone)
+        import os
+
+        shown = self.client.get(f"{self.base}/flow/nodes/{node}/export").json()
+        self.assertEqual(shown["ds_fields"]["dataset_name"], "My set")
+        self.assertEqual(shown["ds_fields"]["ng_name"], "Bad")
+        row = [v for v in shown["versions"] if v["id"] == frozen["id"]][0]
+        self.assertEqual((row["ds"]["written"], row["ds"]["zip"].endswith(".zip")), (2, True))
+        os.remove(done["destination"])
+        again = self.client.get(f"{self.base}/flow/nodes/{node}/export").json()
+        self.assertIsNone([v for v in again["versions"] if v["id"] == frozen["id"]][0]["ds"])
 
     def test_the_size_layout_lists_the_corner_and_the_size(self) -> None:
         import csv

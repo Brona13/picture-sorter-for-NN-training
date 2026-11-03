@@ -688,6 +688,8 @@ export interface ExportLatest {
   changed: boolean;
   exported: boolean;
   folder: string;
+  /** The DS zip last made from this freeze (path in the camera folder), or none. */
+  ds?: { zip: string; written: number } | null;
 }
 export interface ExportState {
   folders: Record<string, number>;
@@ -708,6 +710,8 @@ export interface ExportState {
   latest: ExportLatest | null;
   /** Every freeze of this box, newest first (v1.131.4; an older backend sends only `latest`). */
   versions?: ExportLatest[];
+  /** The values typed at the last DS export of this camera. */
+  ds_fields?: DsExportFields | null;
 }
 /** The Box module of step 2: one upright rectangle per picture round one or two detector boxes of step 1 (see `box_module.py`). */
 export type BoxSide = "left" | "right" | "up" | "down";

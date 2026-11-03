@@ -30,6 +30,9 @@ beforeEach(() => {
       frozen = frozen.map((v) => (v.id === 7 ? { ...v, exported: true } : v));
       return new Response(JSON.stringify({ destination: "exports/project/v002__x", written: 5, missing: [], hash_mismatch: [], ...("box" in boxState ? { boxes: 4, no_box: 1 } : {}) }));
     }
+    if (url.endsWith("/project-versions/7/ds-export")) {
+      frozen = frozen.map((v) => (v.id === 7 ? { ...v, ds: { zip: "exports/project/set_v002.zip", written: 4 } } : v));
+    }
     if (url.endsWith("/project-versions/7/ds-export"))
       return new Response(JSON.stringify({ destination: "exports/project/set_v002.zip", written: 4, no_box: 0, left_out: 1, missing: [], hash_mismatch: [], name_clash: [], other_class: 0 }));
     return new Response(JSON.stringify(detail));
@@ -85,7 +88,7 @@ test("freezes with a name, lists the freeze, then exports it and shows where it 
   expect(await screen.findByText(/Wrote 5 pictures/)).toHaveTextContent("exports/project/v002__x");
   expect(screen.getByRole("button", { name: "Copy path" })).toBeInTheDocument();
   expect(await screen.findByText("Exported")).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Export version 2" })).toHaveTextContent("Export again");
+  expect(screen.getByRole("button", { name: "Export version 2" })).toHaveTextContent("Export files again");
 });
 
 test("every freeze has a row, newest first, and only the newest can say the Chain changed", async () => {
@@ -160,14 +163,17 @@ test("the export report lists the rectangles written to boxes.csv", async () => 
   expect(screen.getByText(/1 picture has none/)).toBeInTheDocument();
 });
 
-test("the DS file card needs a freeze with rectangles, takes the six fields and says what was written", async () => {
+test("the DS card opens from a freeze row, takes the fields, says what was written and the row says a DS zip was made", async () => {
   boxState = { box: "box:1", with_box: 4, no_box: 1, box_format: "corners" };
   frozen = [version({ counts: { total: 5, ok: 3, ng: 2, with_box: 4 } })];
   mount();
   await screen.findByRole("table", { name: "Frozen versions" });
+  expect(screen.queryByRole("region", { name: "DS import file" })).not.toBeInTheDocument(); // closed until a row asks for it
+  fireEvent.click(screen.getByRole("button", { name: "DS dataset of version 2" }));
   const card = within(screen.getByRole("region", { name: "DS import file" }));
+  expect(card.getByText(/3 · DS dataset from v2/)).toBeInTheDocument();
+  expect(card.queryByLabelText("Freeze for the DS file")).not.toBeInTheDocument(); // the row chose the freeze
   expect(card.getByLabelText("Dataset name")).toHaveValue("camA");
-  expect(card.getByLabelText("OK class name")).toHaveValue("OK");
   expect(card.getByLabelText("NG colour")).toHaveValue("#f44336");
   fireEvent.change(card.getByLabelText("Dataset name"), { target: { value: "My set" } });
   fireEvent.change(card.getByLabelText("NG class name"), { target: { value: "Bad" } });
@@ -179,18 +185,35 @@ test("the DS file card needs a freeze with rectangles, takes the six fields and 
   expect(sent.body).toMatchObject({ dataset_name: "My set", folder_name: "camA", ok_name: "OK", ng_name: "Bad", include_without_box: true, zip_name: "" });
   expect(await screen.findByRole("status", { name: "DS zip result" })).toHaveTextContent("Wrote 4 pictures to exports/project/set_v002.zip");
   expect(screen.getByRole("status", { name: "DS zip result" })).toHaveTextContent("1 left out: no rectangle.");
-});
-
-test("no DS file card in step 1 or without a Box; before a freeze it says to freeze first", async () => {
-  mount({ step: 1 });
-  await screen.findByText("Freeze: every OK and NG picture");
+  expect(await screen.findByText("DS zip made")).toBeInTheDocument(); // section 2 says it
+  fireEvent.click(screen.getByRole("button", { name: "Close" }));
   expect(screen.queryByRole("region", { name: "DS import file" })).not.toBeInTheDocument();
 });
 
-test("a freeze without rectangles is not offered for the DS file", async () => {
+test("the form comes back with the last values; the zip name stays empty", async () => {
+  boxState = { box: "box:1", with_box: 4, no_box: 1, box_format: "corners", ds_fields: { dataset_name: "Mine", folder_name: "200", ok_name: "Good", ng_name: "Bad", ok_color: "#010203", ng_color: "#0a0b0c", include_without_box: true, zip_name: "old" } };
+  frozen = [version({ counts: { total: 5, ok: 3, ng: 2, with_box: 4 } })];
+  mount();
+  await screen.findByRole("table", { name: "Frozen versions" });
+  fireEvent.click(screen.getByRole("button", { name: "DS dataset of version 2" }));
+  const card = within(screen.getByRole("region", { name: "DS import file" }));
+  await waitFor(() => expect(card.getByLabelText("Dataset name")).toHaveValue("Mine"));
+  expect(card.getByLabelText("NG class name")).toHaveValue("Bad");
+  expect(card.getByLabelText("OK colour")).toHaveValue("#010203");
+  expect(card.getByRole("checkbox")).toBeChecked();
+  expect(card.getByLabelText("Zip file name")).toHaveValue("");
+});
+
+test("no DS buttons in step 1; a freeze without rectangles has its DS button off", async () => {
+  mount({ step: 1 });
+  await screen.findByText("Freeze: every OK and NG picture");
+  expect(screen.queryByRole("button", { name: /DS dataset/ })).not.toBeInTheDocument();
+});
+
+test("a freeze without rectangles cannot open the DS card", async () => {
   boxState = { box: "box:1", with_box: 4, no_box: 1, box_format: "corners" };
   frozen = [version()];
   mount();
   await screen.findByRole("table", { name: "Frozen versions" });
-  expect(within(screen.getByRole("region", { name: "DS import file" })).getByText(/Freeze first/)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "DS dataset of version 2" })).toBeDisabled();
 });
