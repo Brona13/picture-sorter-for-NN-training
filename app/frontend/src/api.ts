@@ -1417,6 +1417,87 @@ export interface SimilarResult {
   classes: string[];
 }
 
+/** One step-2 freeze a model can pin (`GET /api/models/datasets`). `sizes`: pictures per "WxH"; `mixed`: not all one known size. */
+export interface ModelFreeze {
+  id: number;
+  number: number;
+  name: string;
+  created: number;
+  ok: number;
+  ng: number;
+  no_rect: number;
+  sizes: Record<string, number>;
+  size: string | null;
+  mixed: boolean;
+}
+export interface ModelDatasets {
+  size: string | null;
+  sizes: Record<string, number>;
+  mixed: number;
+  cameras: { camera: string; freezes: ModelFreeze[] }[];
+}
+/** What the user sets for one dataset of a model; empty names and colours get their defaults on the server. */
+export interface ModelDatasetInput {
+  camera: string;
+  version_id: number;
+  folder_name?: string;
+  ok_name?: string;
+  ng_name?: string;
+  ok_color?: string;
+  ng_color?: string;
+}
+export interface ModelClass {
+  id: number;
+  name: string;
+  color: string;
+  datasets: string[];
+  as_ok: string[];
+  as_ng: string[];
+}
+/** A model's dataset as the server reports it: the settings plus the state of its pinned freeze. */
+export interface ModelDataset extends Required<ModelDatasetInput> {
+  gone: boolean;
+  number: number | null;
+  newer: { id: number; number: number; name: string; created: number } | null;
+  name?: string;
+  ok?: number;
+  ng?: number;
+  no_rect?: number;
+  sizes?: Record<string, number>;
+  size?: string | null;
+  mixed?: boolean;
+}
+export interface ModelBuild {
+  id: number;
+  number: number;
+  collection_name: string;
+  created: number;
+  zip: string;
+  exists: boolean;
+  written: number;
+  include_without_box: boolean;
+}
+export interface ModelSummary {
+  id: number;
+  name: string;
+  created: number;
+  updated: number;
+  include_without_box: boolean;
+  dataset_count: number;
+  builds: number;
+  last_build: ModelBuild | null;
+  folder: string;
+}
+export interface ModelDetail extends ModelSummary {
+  datasets: ModelDataset[];
+  build_list: ModelBuild[];
+  next_build: { number: number; collection_name: string };
+  changed: boolean;
+  stale: string[];
+  classes: ModelClass[];
+  notes: string[];
+}
+
 const post = (body?: unknown): RequestInit => ({
   method: "POST",
   headers: { "Content-Type": "application/json" },
@@ -1424,6 +1505,16 @@ const post = (body?: unknown): RequestInit => ({
 });
 
 export const api = {
+  modelDatasets: (size?: string) => request<ModelDatasets>(`/models/datasets${size ? `?size=${encodeURIComponent(size)}` : ""}`),
+  modelPreview: (datasets: ModelDatasetInput[]) => request<{ classes: ModelClass[]; notes: string[] }>("/models/preview", post({ datasets })),
+  models: () => request<{ models: ModelSummary[] }>("/models"),
+  model: (id: number) => request<ModelDetail>(`/models/${id}`),
+  createModel: (name: string, datasets: ModelDatasetInput[], include_without_box: boolean) =>
+    request<ModelDetail>("/models", post({ name, datasets, include_without_box })),
+  updateModel: (id: number, body: { name?: string; datasets?: ModelDatasetInput[]; include_without_box?: boolean }) =>
+    request<ModelDetail>(`/models/${id}`, send("PUT", body)),
+  buildModel: (id: number) => request<ModelBuild>(`/models/${id}/build`, post()),
+  modelZipUrl: (id: number, number: number) => `/api/models/${id}/builds/${number}/zip`,
   visionFilters: () => request<{ filters: Record<string, FilterSpec> }>("/vision/filters"),
   visionSettings: (camera: string, feature: string) =>
     request<VisionSettings>(

@@ -40,6 +40,8 @@ export const SECTIONS: { id: string; label: string; pages: ViewDef[] }[] = [
     ],
   },
   { id: "export", label: "Export", pages: [view("versions", "Versions", "versions", true)] },
+  // Not tied to the camera picker: a model combines the frozen datasets of several cameras (plans/dataset-collection.md).
+  { id: "models", label: "Models", pages: [view("models", "Models", "versions")] },
 ];
 
 /** Every page of the four sections (not Configuration), in navigation order. */

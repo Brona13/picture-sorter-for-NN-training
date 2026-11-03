@@ -17,6 +17,7 @@ import ChainView from "./views/ChainView";
 import FlowBoxView from "./views/FlowBoxView";
 import ClassifyView from "./views/ClassifyView";
 import ConfigurationView from "./views/ConfigurationView";
+import ModelsView from "./views/ModelsView";
 import DetectorView from "./views/DetectorView";
 import AugmentationView from "./views/AugmentationView";
 import EdgeAngleView from "./views/EdgeAngleView";
@@ -272,15 +273,19 @@ export default function App() {
               );
             })}
           </ul>
-          <label>
-            Camera
-            <select value={camera} onChange={(e) => setCamera(e.target.value)}>
-              {cameras.map((c) => (
-                <option key={c}>{c}</option>
-              ))}
-            </select>
-          </label>
-          <ProductSelect products={products} value={product} onChange={(p) => chooseProduct(camera, p)} />
+          {section?.id !== "models" && (
+            <>
+              <label>
+                Camera
+                <select value={camera} onChange={(e) => setCamera(e.target.value)}>
+                  {cameras.map((c) => (
+                    <option key={c}>{c}</option>
+                  ))}
+                </select>
+              </label>
+              <ProductSelect products={products} value={product} onChange={(p) => chooseProduct(camera, p)} />
+            </>
+          )}
           {pathname === "/classify" && (
             <RankSelect
               methods={methods}
@@ -325,7 +330,7 @@ export default function App() {
       </header>
       <main className="main">
         {error && <p role="alert">{error}</p>}
-        <StepBar camera={camera} feature={feature} />
+        {section?.id !== "models" && <StepBar camera={camera} feature={feature} />}
         <Routes>
           <Route path="/" element={<Navigate to={startPage} replace />} />
           <Route
@@ -395,6 +400,7 @@ export default function App() {
           <Route path="/dedup" element={<Navigate to="/dedup/scatter" replace />} />
           {/* one route for the three tools, so the page (and the results it holds) survives switching between them */}
           <Route path="/dedup/:tool" element={<DedupRoute camera={camera} />} />
+          <Route path="/models" element={<ModelsView />} />
           <Route path="/config" element={<ConfigurationView />} />
           <Route path="*" element={<Navigate to="/overview" replace />} />
         </Routes>

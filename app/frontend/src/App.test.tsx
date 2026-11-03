@@ -50,7 +50,7 @@ test("shows cameras, products and view navigation; redirects to Overview", async
   await waitFor(() => expect(screen.getByLabelText("Camera")).toHaveValue("camA"));
   expect(await screen.findByLabelText("Product")).toBeInTheDocument();
   const sections = within(screen.getByRole("navigation", { name: "Sections" }));
-  for (const label of ["Overview", "Management", "Manipulation", "Export"]) {
+  for (const label of ["Overview", "Management", "Manipulation", "Export", "Models"]) {
     expect(sections.getByRole("link", { name: label })).toBeInTheDocument();
   }
   // Configuration is a separate button after the four sections
@@ -474,4 +474,17 @@ test("freshStart remembers the camera to open and schedules a page reload", asyn
     vi.clearAllTimers();
     vi.useRealTimers();
   }
+});
+
+test("Models is its own section without the camera and product pickers", async () => {
+  render(
+    <MemoryRouter initialEntries={["/overview"]}>
+      <App />
+    </MemoryRouter>,
+  );
+  await waitFor(() => expect(screen.getByLabelText("Camera")).toHaveValue("camA"));
+  await userEvent.click(within(screen.getByRole("navigation", { name: "Sections" })).getByRole("link", { name: "Models" }));
+  expect(await screen.findByRole("heading", { name: "Models" })).toBeInTheDocument();
+  expect(screen.queryByLabelText("Camera")).toBeNull();
+  expect(screen.queryByLabelText("Product")).toBeNull();
 });
