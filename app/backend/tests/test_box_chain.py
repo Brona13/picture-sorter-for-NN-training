@@ -251,6 +251,27 @@ class BoxChainTests(ApiTestCase):
         self.assertTrue((tmp := done["destination"]) and (self.frames[0] in __import__("os").listdir(f"{tmp}/OK")))
         self.assertEqual(export_box.box_row((x1, y1, x2, y2), "corners"), [x1, y1, x2, y2])
 
+    def test_a_step_two_freeze_records_the_sizes_of_the_pictures_with_a_rectangle(self) -> None:
+        import json
+
+        import db
+        import model_sets
+
+        f = self.frames
+        self.golden(f[0], f[4])
+        node = self.export_box_node()
+        frozen = self.client.post(f"{self.base}/flow/nodes/{node}/export/freeze", json={}).json()
+        con = db.connect()
+        try:
+            stats = {r["id"]: json.loads(r["stats_json"])["export"] for r in con.execute("SELECT id, stats_json FROM versions WHERE camera=?", (CAM,)).fetchall()}
+        finally:
+            con.close()
+        self.assertEqual(stats[frozen["id"]]["sizes"], {f"{W}x{H}": 2})
+        step_one = [e for i, e in stats.items() if i != frozen["id"]][0]
+        self.assertNotIn("sizes", step_one)  # the step-1 Freeze has no rectangles and records none
+        listed = model_sets.datasets(f"{W}x{H}")["cameras"][0]["freezes"]
+        self.assertEqual([(r["id"], r["ok"] + r["ng"]) for r in listed], [(frozen["id"], 2)])
+
     def test_the_ds_zip_is_made_from_the_frozen_rectangles(self) -> None:
         import json
         import zipfile

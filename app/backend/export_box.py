@@ -25,6 +25,7 @@ import ds_export
 import flow
 import labels
 import lines
+import model_sets
 import versions
 
 BOX_FORMATS = ("corners", "size")  # x1, y1, x2, y2 (two corners) or x, y, width, height (top-left corner and size); pixels of the picture
@@ -204,4 +205,5 @@ def freeze(camera: str, node_id: str, name: str = "", notes: str = "") -> dict:
         numbers = box_numbers(camera, p["box"], [frame for frame, _ in p["items"]])
         counts["with_box"] = len(numbers)
         stats["export"]["rectangles"] = {"box": p["box"], "format": p["box_format"], "rows": {frame: box_row(n, p["box_format"]) for frame, n in numbers.items()}}
+        stats["export"]["sizes"] = model_sets.size_counts(camera, list(numbers))  # picture sizes of the pictures that have a rectangle (the Models page filters by them)
     return versions.insert_project_version(camera, name, notes, counts, stats, p["items"])

@@ -27,7 +27,7 @@ import appinfo  # noqa: E402
 import db  # noqa: E402
 import startup  # noqa: E402
 import labels  # noqa: E402
-from api import cameras, chain_api, classify_api, config_api, dedup_api, flow_api, frames_api, ingest_api, insights_api, jobs, logs_api, motion_api, outliers_api, overview_api, roi_api, rules_api, similar_api, status, verdicts_api, versions_api, vision_api  # noqa: E402
+from api import cameras, chain_api, classify_api, config_api, dedup_api, flow_api, frames_api, ingest_api, insights_api, jobs, logs_api, models_api, motion_api, outliers_api, overview_api, roi_api, rules_api, similar_api, status, verdicts_api, versions_api, vision_api  # noqa: E402
 
 
 def frontend_dist() -> Path:
@@ -164,6 +164,7 @@ def create_app() -> FastAPI:
     app.include_router(motion_api.router, prefix="/api")
     app.include_router(vision_api.router, prefix="/api")
     app.include_router(config_api.router, prefix="/api")
+    app.include_router(models_api.router, prefix="/api")
     _mount_frontend(app)  # last: its catch-all must not shadow /api routes
     return app
 
