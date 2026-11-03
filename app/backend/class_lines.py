@@ -12,6 +12,8 @@ those pictures are labelled with the dot's class, as the verdict labels of an Ev
 chosen). A picture that reaches two class dots with different meanings is left out and counted as a conflict.
 * Ingest OK / Ingest NG (step 2, ``piles.py``) carry OK / NG and feed only a **step-2 Classifier**, whose labels then come
   from the last freeze of step 1 and are final; a step-2 Classifier takes no other line into its class dots.
+  A step-2 Classifier anchored to a **Box** needs no line into its class dots (v1.149.0): the Ingest OK / NG boxes drawn into
+  the Box say the class (``implied``), so the labels reach it through the Box.
 Stored as the setting ``class.lines.<feature>``: a list of ``{"class", "box", "dot"?}``.
 """
 from __future__ import annotations
@@ -41,6 +43,27 @@ def get(camera: str, feature: str) -> list[dict]:
         return []
     graph = flow.load_graph(camera)
     return [ln for ln in stored if isinstance(ln, dict) and ln.get("box") in graph["nodes"] and ln.get("class")]
+
+
+def implied(camera: str, feature: str) -> list[dict]:
+    """The lines a step-2 Classifier anchored to a Box has without drawing them: one per Ingest OK / NG box drawn into the
+    Box, into the dot of its class (``[{"class", "box"}]``). Nothing for any other Classifier. Never stored, never drawn."""
+    if flow.roi_step(camera, feature) != 2:
+        return []
+    import box_module  # noqa: PLC0415
+    import export_box  # noqa: PLC0415
+
+    box = export_box.anchored_box(camera, feature)
+    if not box:
+        return []
+    classes = datamodel.classes_for(camera, feature)
+    graph = flow.load_graph(camera)
+    return [{"class": flow.PILE_CLASS[flow.kind_of(pile)], "box": pile} for pile in box_module.piles_of(graph, box) if flow.PILE_CLASS[flow.kind_of(pile)] in classes]
+
+
+def effective(camera: str, feature: str) -> list[dict]:
+    """The lines that decide the Classifier's pictures and labels: the stored ones, else the ones its Box implies."""
+    return get(camera, feature) or implied(camera, feature)
 
 
 def _save(camera: str, feature: str, rows: list[dict]) -> None:
@@ -168,7 +191,7 @@ def by_class(camera: str, feature: str) -> dict[str, set[str]]:
 
 
 def _by_class(camera: str, feature: str) -> dict[str, set[str]]:
-    stored = get(camera, feature)
+    stored = effective(camera, feature)
     if not stored:
         return {}
     graph = flow.load_graph(camera)

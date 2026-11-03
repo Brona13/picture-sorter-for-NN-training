@@ -2404,7 +2404,9 @@ def sync_evaluation_labels(camera: str, feature: str) -> dict:
             verdicts = evaluation_state(camera, box)["verdicts"]
             wanted = {f: VERDICT_CLASS[v] for f, v in verdicts.items() if v in VERDICT_CLASS}
     wanted.update(class_lines.desired(camera, feature))  # the lines into the class dots (the same class where both say something)
-    if box is None and not class_lines.get(camera, feature):
+    if box is None and not class_lines.effective(camera, feature):
+        if roi_step(camera, feature) == 2 and labels.locked_frames(camera, feature):
+            labels.release_evaluation(camera, feature)  # the Box or its Ingest lines are gone: the freeze labels stay as hand labels
         return {"labeled": 0, "cleared": 0}
     in_scope = set(datamodel.frames_for_feature(camera, feature))
     have = labels.current_labels(camera, feature)

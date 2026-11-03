@@ -14,7 +14,7 @@ import {
   type NodeProps,
 } from "@xyflow/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { api, ChainCanvas, ChainDeletePreview, ChainEdge, ChainNode, ChainViewport, FlowDeletePreview } from "../api";
 import { ALL_HANDLE, INGEST_ID, targetHandle, targetOfHandle, connectAction, describeNode, disconnectAction, classLineOf, exportLineOf, flowConnect, isClassLineEdge, freshName, isAnchorEdge, isMergeLineEdge, mergeLineOf, isDedupInputEdge, isEvaluationLabelEdge, isDedupSourceEdge, isExportLineEdge, isRoiInputEdge, isFlowKind, isPileKind, layoutOf, productHandle } from "../chain/chainModel";
 import ClassifierMode from "../chain/ClassifierMode";
@@ -307,6 +307,15 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
   // The two steps are two canvases over one stored graph: a box carries its step, and only the open step is drawn. The step-2 tab
   // shows once there is a Freeze module (the closing box of step 1) or step-2 boxes; with step-2 boxes but no Freeze it stays, with a warning.
   const [step, setStep] = useState<1 | 2>(1);
+  // "← Back to chain" from a box page arrives with ?from=<box or ROI>: open the tab of the step that box belongs to, once.
+  const [params, setParams] = useSearchParams();
+  const from = params.get("from");
+  useEffect(() => {
+    if (!from || !canvas) return;
+    const node = canvas.nodes.find((n) => n.id === `roi:${from}`) ?? canvas.nodes.find((n) => n.id === from);
+    if (node) setStep((node.step ?? 1) === 2 ? 2 : 1);
+    setParams({}, { replace: true });
+  }, [from, canvas, setParams]);
   const freezes = canvas?.nodes.filter((n) => n.kind === "export" && (n.step ?? 1) === 1) ?? [];
   const showTabs = freezes.length > 0 || !!canvas?.nodes.some((n) => (n.step ?? 1) === 2);
   const activeStep: 1 | 2 = showTabs ? step : 1;

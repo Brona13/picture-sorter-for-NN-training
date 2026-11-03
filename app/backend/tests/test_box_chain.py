@@ -355,3 +355,39 @@ class BoxChainTests(ApiTestCase):
         self.draw(self.ok)
         self.client.delete(f"{self.base}/flow/nodes/{self.ok}")
         self.assertEqual(self.box_detail()["inputs"], [])
+
+
+class LabelsThroughTheBoxTests(BoxChainTests):
+    """The Classifier on a Box gets its labels through the Box (v1.149.0): Ingest OK / NG drawn into the Box are enough, no line
+    into the Classifier's OK and NG dots."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        for cls, pile in (("OK", self.ok), ("NG", self.ng)):  # the way it was wired before: lines into the class dots
+            self.client.put(f"{self.base}/chain/pick/class-lines", json={"cls": cls, "box": pile, "remove": True})
+        labels.clear_labels_bulk(CAM, "pick", self.frames, force=True)
+        flow.connect(CAM, self.ok, self.box)
+        flow.connect(CAM, self.ng, self.box)
+
+    def test_the_piles_drawn_into_the_box_label_the_classifier_without_lines_into_its_dots(self) -> None:
+        import class_lines
+
+        self.assertEqual(class_lines.get(CAM, "pick"), [])  # nothing stored, nothing drawn
+        st = self.state()
+        self.assertEqual((st["frames_seen"], st["counts"]["OK"], st["counts"]["NG"]), (6, 4, 2))
+        current = labels.current_labels(CAM, "pick")
+        self.assertEqual([current[f] for f in self.frames[:6]], ["OK"] * 4 + ["NG"] * 2)
+        self.assertEqual(len(labels.locked_frames(CAM, "pick")), 6)  # final, like labels from lines
+
+    def test_without_the_piles_in_the_box_nothing_is_labeled_and_taking_them_out_keeps_the_labels_as_hand_labels(self) -> None:
+        self.state()
+        graph = flow.load_graph(CAM)
+        graph["edges"] = [e for e in graph["edges"] if e["target"] != self.box]
+        flow.save_graph(CAM, graph)
+        self.state()
+        self.assertEqual(labels.locked_frames(CAM, "pick"), set())
+        self.assertEqual(len(labels.current_labels(CAM, "pick")), 6)
+
+
+for _name in [n for n in dir(BoxChainTests) if n.startswith("test_") and n not in LabelsThroughTheBoxTests.__dict__]:
+    setattr(LabelsThroughTheBoxTests, _name, None)  # only this class's own tests run on its different wiring

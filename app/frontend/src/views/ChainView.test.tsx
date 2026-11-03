@@ -329,3 +329,19 @@ test("the palette sits on the canvas, not in the right pane, and the help text i
   expect(canvas.contains(help)).toBe(false);
   expect(help.closest(".right-panel")).toBeNull();
 });
+
+test("Back to chain opens the step tab of the box it came from, once", async () => {
+  const base = canvas();
+  current = canvas({
+    nodes: [
+      ...base.nodes.map((n: any) => (n.id === "roi:seal" ? { ...n, step: 2 } : n)),
+      node({ id: "export:1", kind: "export", step: 1, ref: null, label: "Freeze 1", role: null, scope: null, flow: { lines: { ok: 0, ng: 0 }, total: 0, frozen: 1, changed: false } }),
+    ],
+  });
+  render(<MemoryRouter initialEntries={["/chain?from=seal"]}><ChainView camera="camA" /></MemoryRouter>);
+  const tabs = await screen.findAllByRole("tab");
+  await waitFor(() => expect(screen.getAllByRole("tab").filter((t) => t.getAttribute("aria-selected") === "true").map((t) => t.textContent)).toEqual([tabs[1].textContent]));
+  await userEvent.click(tabs[0]); // the choice is the user's again: the address was cleared, nothing pulls it back
+  await waitFor(() => expect(screen.getAllByRole("tab")[0].getAttribute("aria-selected")).toBe("true"));
+});
+

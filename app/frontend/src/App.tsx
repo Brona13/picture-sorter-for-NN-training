@@ -128,6 +128,8 @@ export default function App() {
   // "/roi?focus=<ROI>" and "/classify?focus=<ROI>" are the pages locked to one ROI (opened from the Chain canvas); the plain
   // paths from the menu keep their ROI selector.
   const focusFeature = new URLSearchParams(search).get("focus") ?? "";
+  // "← Back to chain" returns to the canvas on the step tab where the box sits (the Chain reads ?from= once and drops it).
+  const toChain = (id: string) => navigate(id ? `/chain?from=${encodeURIComponent(id)}` : "/chain");
   const knownPages = [...VIEWS, CONFIG_VIEW].map((v) => `/${v.path}`);
   // The page the cogwheel returns to when it is clicked again on Configuration.
   const beforeConfig = useRef("/overview");
@@ -355,7 +357,7 @@ export default function App() {
             path="/flow"
             element={
               focusFeature ? (
-                <FlowBoxView camera={camera} focus={{ nodeId: focusFeature, onBack: () => navigate("/chain") }} />
+                <FlowBoxView camera={camera} focus={{ nodeId: focusFeature, onBack: () => toChain(focusFeature) }} />
               ) : (
                 <p className="muted">Open a Picture edits, detector, Calculate or Evaluation box from the Chain.</p>
               )
@@ -369,16 +371,16 @@ export default function App() {
           />
           <Route
             path="/ingest"
-            element={<IngestView camera={camera} onBack={focusFeature ? () => navigate("/chain") : undefined} />}
+            element={<IngestView camera={camera} onBack={focusFeature ? () => toChain(focusFeature) : undefined} />}
           />
           <Route
             path="/roi"
-            element={<RoiEditorView camera={camera} product={product || undefined} focus={focusFeature ? { feature: focusFeature, onBack: () => navigate("/chain") } : undefined} />}
+            element={<RoiEditorView camera={camera} product={product || undefined} focus={focusFeature ? { feature: focusFeature, onBack: () => toChain(focusFeature) } : undefined} />}
           />
           <Route path="/verdict" element={<VerdictView camera={camera} />} />
           <Route
             path="/classify"
-            element={<ClassifyView camera={camera} product={product || undefined} focus={focusFeature ? { feature: focusFeature, onBack: () => navigate("/chain") } : undefined} />}
+            element={<ClassifyView camera={camera} product={product || undefined} focus={focusFeature ? { feature: focusFeature, onBack: () => toChain(focusFeature) } : undefined} />}
           />
           <Route
             path="/insights"
@@ -417,7 +419,7 @@ function DedupRoute({ camera }: { camera: string }) {
       camera={camera}
       box={box}
       tool={tool as DedupTool}
-      onBack={() => navigate("/chain")}
+      onBack={() => navigate(box ? `/chain?from=${encodeURIComponent(box)}` : "/chain")}
       onTool={(t, b) => navigate(`/dedup/${t}?box=${encodeURIComponent(b)}`)}
     />
   );
