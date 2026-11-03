@@ -187,21 +187,45 @@ export default function ExportWork({ camera, nodeId, detail, setDetail, onError 
           {withRectangles.length === 0 ? (
             <p className="muted">Freeze first: the file is made from a freeze that holds rectangles.</p>
           ) : (
-            <form className="export-ds" onSubmit={(e) => { e.preventDefault(); if (dsChosen) void makeDs(dsChosen.id); }}>
-              <label>Freeze{" "}
+            <form className="ds-form" onSubmit={(e) => { e.preventDefault(); if (dsChosen) void makeDs(dsChosen.id); }}>
+              <label className="ds-field ds-wide">
+                <span>Freeze</span>
                 <select aria-label="Freeze for the DS file" value={dsChosen?.id} onChange={(e) => setDsVersion(Number(e.target.value))}>
-                  {withRectangles.map((v) => <option key={v.id} value={v.id}>v{v.number}{v.name ? ` · ${v.name}` : ""}</option>)}
+                  {withRectangles.map((v) => <option key={v.id} value={v.id}>v{v.number}{v.name && v.name !== `v${v.number}` ? ` · ${v.name}` : ""}</option>)}
                 </select>
               </label>
-              <label>Dataset name <input aria-label="Dataset name" value={ds.dataset_name} onChange={(e) => setField("dataset_name", e.target.value)} /></label>
-              <label>Picture folder name <input aria-label="Picture folder name" value={ds.folder_name} onChange={(e) => setField("folder_name", e.target.value)} /></label>
-              <label>OK class <input aria-label="OK class name" value={ds.ok_name} onChange={(e) => setField("ok_name", e.target.value)} />{" "}
-                <input type="color" aria-label="OK colour" value={ds.ok_color} onChange={(e) => setField("ok_color", e.target.value)} /></label>
-              <label>NG class <input aria-label="NG class name" value={ds.ng_name} onChange={(e) => setField("ng_name", e.target.value)} />{" "}
-                <input type="color" aria-label="NG colour" value={ds.ng_color} onChange={(e) => setField("ng_color", e.target.value)} /></label>
-              <label><input type="checkbox" checked={ds.include_without_box} onChange={(e) => setField("include_without_box", e.target.checked)} /> Include pictures without a rectangle</label>
-              <label>Zip file name <input aria-label="Zip file name" placeholder="dataset name + version" value={ds.zip_name} onChange={(e) => setField("zip_name", e.target.value)} /></label>
-              <button type="submit" disabled={busy || !dsChosen}>Make DS zip</button>
+              <label className="ds-field">
+                <span>Dataset name</span>
+                <input aria-label="Dataset name" value={ds.dataset_name} onChange={(e) => setField("dataset_name", e.target.value)} />
+                <small>The name of the whole collection in DS.</small>
+              </label>
+              <label className="ds-field">
+                <span>Picture folder name</span>
+                <input aria-label="Picture folder name" value={ds.folder_name} onChange={(e) => setField("folder_name", e.target.value)} />
+                <small>The folder in the zip and the dataset inside the collection.</small>
+              </label>
+              <fieldset className="ds-classes ds-wide">
+                <legend>Classes</legend>
+                {([["OK", "ok_name", "ok_color"], ["NG", "ng_name", "ng_color"]] as const).map(([cls, nameKey, colorKey]) => (
+                  <div className="ds-class" key={cls}>
+                    <span className="ds-class-tag">{cls}</span>
+                    <input aria-label={`${cls} class name`} value={ds[nameKey]} onChange={(e) => setField(nameKey, e.target.value)} />
+                    <input type="color" aria-label={`${cls} colour`} value={ds[colorKey]} onChange={(e) => setField(colorKey, e.target.value)} />
+                  </div>
+                ))}
+              </fieldset>
+              <label className="ds-check ds-wide">
+                <input type="checkbox" checked={ds.include_without_box} onChange={(e) => setField("include_without_box", e.target.checked)} />
+                <span>Include pictures without a rectangle <small>(left out by default)</small></span>
+              </label>
+              <label className="ds-field ds-wide">
+                <span>Zip file name</span>
+                <input aria-label="Zip file name" placeholder={`${ds.dataset_name || "dataset"}_v${String(dsChosen?.number ?? 0).padStart(3, "0")}.zip`} value={ds.zip_name} onChange={(e) => setField("zip_name", e.target.value)} />
+                <small>Empty: the dataset name and the version number. Written to the exports folder of the camera.</small>
+              </label>
+              <div className="ds-actions ds-wide">
+                <button type="submit" disabled={busy || !dsChosen}>Make DS zip</button>
+              </div>
             </form>
           )}
           {dsReport && (

@@ -405,6 +405,21 @@ button[aria-pressed="true"] { background: var(--info-bg); color: var(--info-fg);
 .export-total td { font-weight: 600; background: var(--hover); }
 .export-freeze { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
 .export-freeze input { flex: 1 1 200px; min-width: 160px; }
+.ds-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 18px; align-items: start; }
+.ds-wide { grid-column: 1 / -1; }
+.ds-field { display: flex; flex-direction: column; gap: 4px; margin: 0; }
+.ds-field > span, .ds-classes legend { font-weight: 600; font-size: 13px; }
+.ds-field input, .ds-field select { width: 100%; box-sizing: border-box; }
+.ds-field small, .ds-check small { color: var(--muted); font-size: 12px; font-weight: 400; }
+.ds-classes { border: 1px solid var(--border); border-radius: var(--radius); margin: 0; padding: 6px 12px 12px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 18px; }
+.ds-classes legend { padding: 0 6px; }
+.ds-class { display: flex; align-items: center; gap: 8px; }
+.ds-class-tag { flex: none; width: 28px; font-size: 12px; color: var(--muted); }
+.ds-class input[type="text"], .ds-class input:not([type]) { flex: 1 1 auto; min-width: 0; }
+.ds-class input[type="color"] { flex: none; width: 44px; padding: 2px; }
+.ds-check { display: flex; align-items: center; gap: 8px; margin: 0; }
+.ds-actions { display: flex; justify-content: flex-end; }
+@media (max-width: 640px) { .ds-form, .ds-classes { grid-template-columns: minmax(0, 1fr); } }
 .export-badge { display: inline-block; margin-right: 6px; padding: 1px 8px; border: 1px solid var(--border); border-radius: 999px; font-size: 12px; white-space: nowrap; }
 .export-badge.done { background: var(--info-bg); color: var(--info-fg); border-color: var(--accent); }
 .export-badge.warn { background: var(--danger-bg); color: var(--danger-fg); border-color: var(--danger-fg); }
