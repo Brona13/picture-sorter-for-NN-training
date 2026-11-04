@@ -600,6 +600,7 @@ export interface FlowDetector {
   targets: { name: string; count?: number; slots?: string[]; inside?: string | null; outputs: FlowOutput[]; examples: FlowExample[] }[];
   /** A cascade: the input detector's targets (with examples) a target here can search inside. */
   parent_targets?: string[];
+  input_point?: string | null; // the target of the input detector the line into this one leaves from
   rotate: boolean;
   angle_range: [number, number] | null;
   pad: number;

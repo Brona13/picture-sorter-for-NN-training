@@ -822,8 +822,8 @@ def connect(camera: str, source: str, target: str, point: str | None = None) -> 
     if kind_of(source) == "detector" and kind_of(target) == "dedup" and point is None:
         raise FlowError("A Dedup box reads the box a detector found for one target: draw the arrow from that target's dot.")
     if point is not None:
-        if kind_of(source) != "detector" or kind_of(target) not in ("calc", "crop", "dedup"):
-            raise FlowError("Only a detector's target can feed one point of a Calculate box, a Picture edits box or a Dedup box.")
+        if kind_of(source) != "detector" or kind_of(target) not in ("calc", "crop", "dedup", "detector"):
+            raise FlowError("Only a detector's target can feed one point of a Calculate box, a Picture edits box, a Dedup box or another detector.")
         if point not in all_slots(graph["nodes"][source]):
             raise FlowError(f"{source} has no target {point}.")
     edge = {"source": source, "target": target, **({"point": point} if point is not None else {})}
@@ -1340,9 +1340,21 @@ def _clean_inside(graph: dict, node_id: str, inside: object) -> str | None:
     return str(inside)
 
 
-def inside_of(target: dict) -> str:
-    """The input detector's target whose box this target searches in (before v1.73.0 always the same name)."""
-    return target.get("inside") or target["name"]
+def inside_of(target: dict, line_point: str | None = None) -> str:
+    """The input detector's target whose box this target searches in: the one chosen for it, else the one the line
+    into the detector leaves from (v1.157.3), else the same name (before v1.73.0 always the same name)."""
+    return target.get("inside") or line_point or target["name"]
+
+
+def input_line_point(graph: dict, node_id: str) -> str | None:
+    """The target of the input detector the line into this detector leaves from (None: the detector's main dot)."""
+    parent = parent_of(graph, node_id)
+    if not parent or kind_of(parent) != "detector":
+        return None
+    for e in graph["edges"]:
+        if e["target"] == node_id and e["source"] == parent and e.get("point") in parent_target_names(graph, node_id):
+            return e["point"]
+    return None
 
 
 def add_target(camera: str, node_id: str, name: str, inside: str | None = None) -> None:
@@ -1617,6 +1629,7 @@ def signature(graph: dict, node_id: str) -> str:
         "pad": node["pad"],
         "crops": [{**c, "sig": signature(graph, step_follow(c)["detector"])} if step_follow(c) and step_follow(c)["detector"] in graph["nodes"] else c for c in input_rects(graph, node_id)],
         "parent": signature(graph, parent) if parent and kind_of(parent) == "detector" else None,
+        "line_point": input_line_point(graph, node_id),
     }
     return hashlib.sha1(json.dumps(material, sort_keys=True).encode()).hexdigest()[:16]
 
@@ -1851,7 +1864,8 @@ def run_detector(camera: str, node_id: str, report=None, frames: list[str] | Non
     scale = match_scale(node)  # < 1 when an example was too large to match as it is: the picture shrinks with it
     examples = {t["name"]: [_search_example(e, scale) for e in t["examples"]] for t in usable}
     slots_of = {t["name"]: slot_names(t) for t in usable}
-    inside_names = {t["name"]: inside_of(t) for t in usable}  # the input detector's target each one searches in
+    line_point = input_line_point(graph, node_id)
+    inside_names = {t["name"]: inside_of(t, line_point) for t in usable}  # the input detector's target each one searches in
     angle_range = tuple(node["angle_range"]) if node["angle_range"] else None
     if not node["rotate"]:
         angle_range = (0.0, 0.0)
@@ -2488,6 +2502,7 @@ def node_detail(camera: str, node_id: str, graph: dict | None = None) -> dict:
             "input": parent if parent and kind_of(parent) == "detector" else INGEST_ID,
             "input_box": parent,
             "parent_targets": parent_target_names(graph, node_id),
+            "input_point": input_line_point(graph, node_id),
             "crops": input_rects(graph, node_id),
             "no_crop": frames_without_crop(camera, graph, node_id),
             "targets": [

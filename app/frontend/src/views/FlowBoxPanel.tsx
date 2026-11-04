@@ -340,10 +340,10 @@ function DetectorOptions(p: {
                 Searches inside
                 <select
                   aria-label={`Searches inside, target ${t.name}`}
-                  value={t.inside ?? t.name}
+                  value={t.inside ?? d.input_point ?? t.name}
                   onChange={(e) => p.onSetInside(t.name, e.target.value)}
                 >
-                  {!(d.parent_targets ?? []).includes(t.inside ?? t.name) && <option value={t.inside ?? t.name}>{t.inside ?? t.name} (not a target there)</option>}
+                  {!(d.parent_targets ?? []).includes(t.inside ?? d.input_point ?? t.name) && <option value={t.inside ?? d.input_point ?? t.name}>{t.inside ?? d.input_point ?? t.name} (not a target there)</option>}
                   {(d.parent_targets ?? []).map((n) => <option key={n} value={n}>{n}</option>)}
                 </select>
               </label>

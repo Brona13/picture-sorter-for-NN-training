@@ -180,11 +180,13 @@ test("flowConnect: Ingest or a Crop feeds a Crop or a detector; nothing feeds In
   expect(describeNode(node({ kind: "crop", flow: { steps: [{ op: "crop", rect: null }] } }))).toBe("no crop drawn yet");
 });
 
-test("flowConnect: a detector's main dot feeds the whole detector to Calculate, a target dot feeds one point; target dots feed nothing else", async () => {
+test("flowConnect: a detector's main dot feeds the whole detector to Calculate, a target dot feeds one point; a target dot is also what another detector searches inside (v1.157.3)", async () => {
   const { targetHandle } = await import("./chainModel");
   expect(flowConnect(flowCanvas, link("det:1", "calc:1"))).toEqual({ source: "det:1", target: "calc:1" });
   expect(flowConnect(flowCanvas, { source: "det:1", sourceHandle: targetHandle("left"), target: "calc:1" })).toEqual({ source: "det:1", target: "calc:1", point: "left" });
-  expect(flowConnect(flowCanvas, { source: "det:1", sourceHandle: targetHandle("left"), target: "det:2" })).toHaveProperty("error");
+  expect(flowConnect(flowCanvas, { source: "det:1", sourceHandle: targetHandle("left"), target: "det:2" })).toEqual({ source: "det:1", target: "det:2", point: "left" });
+  expect(flowConnect(flowCanvas, link("det:1", "det:2"))).toEqual({ source: "det:1", target: "det:2" });
+  expect(flowConnect(flowCanvas, { source: "det:1", sourceHandle: targetHandle("left"), target: "det:1" })).toHaveProperty("error");
 });
 
 

@@ -452,7 +452,7 @@ function DetectorWork(p: {
                   setInsidePick(name);
                   setPending(null);
                   const own = detail.targets.find((t) => t.name === chosen);
-                  if (!own || (own.inside ?? own.name) !== name) setCreating(true); // another parent box: a new target belongs there
+                  if (!own || (own.inside ?? detail.input_point ?? own.name) !== name) setCreating(true); // another parent box: a new target belongs there
                 }}
               >
                 {name}
@@ -469,7 +469,7 @@ function DetectorWork(p: {
                 type="button"
                 className="flow-chip"
                 aria-pressed={!naming && name === chosen}
-                onClick={() => { setTarget(name); setReuseSrc(""); setCreating(false); setPending(null); if (parentId && t) setInsidePick(t.inside ?? t.name); }}
+                onClick={() => { setTarget(name); setReuseSrc(""); setCreating(false); setPending(null); if (parentId && t) setInsidePick(t.inside ?? detail.input_point ?? t.name); }}
               >
                 <span className="flow-dot" style={{ background: COLORS[i % COLORS.length] }} />
                 {name}

@@ -316,8 +316,8 @@ export function flowConnect(canvas: ChainCanvas, c: Connection): FlowLink {
   if (point && (source.flow?.groups ?? []).includes(point)) {
     return { error: `The “${point} (all)” dot stands for several boxes: it can only feed a Classifier. Use one numbered dot (${point} 1 ...) for anything else.` };
   }
-  if (point && !(source.kind === "detector" && (target.kind === "calc" || target.kind === "crop" || target.kind === "dedup"))) {
-    return { error: "A target dot can feed one point of a Calculate box, be followed by a Picture edits box, be read by a Dedup box or anchor a Classifier; use the detector's main dot for anything else." };
+  if (point && !(source.kind === "detector" && (target.kind === "calc" || target.kind === "crop" || target.kind === "dedup" || target.kind === "detector"))) {
+    return { error: "A target dot can feed one point of a Calculate box, be followed by a Picture edits box, be read by a Dedup box, be searched inside by another detector or anchor a Classifier; use the detector's main dot for anything else." };
   }
   if (source.kind === "detector" && (target.kind === "crop" || target.kind === "dedup") && !point) {
     return { error: `${target.kind === "crop" ? "A Picture edits box follows" : "A Dedup box reads"} one target of a detector: drag from that target's dot (on the detector's right edge) to the box.` };

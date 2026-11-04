@@ -885,6 +885,28 @@ class FlowTests(ApiTestCase):
         solo = self.node("detector")
         self.assertEqual(self.client.post(f"{self.base}/nodes/{solo}/targets", json={"name": "a", "inside": "left"}).status_code, 422)
 
+    def test_a_line_from_one_target_dot_makes_the_next_detector_search_inside_that_box(self) -> None:
+        d1 = self.detector({"left": LEFT_BOX, "right": RIGHT_BOX})
+        d2 = self.node("detector")
+        self.post("/edges", {"source": d1, "target": d2, "point": "right"})
+        self.assertEqual(self.node_detail(d2)["input_point"], "right")
+        self.post(f"/nodes/{d2}/targets", {"name": "hole"})
+        self.post(f"/nodes/{d2}/examples", {"target": "hole", "frame": self.names[0], "box": RIGHT_HOLE})
+        self.put(f"/nodes/{d2}", {"rotate": False})
+        self.run_all()
+        import labels
+
+        key = labels.hash_map(CAM)[self.names[0]]
+        found = flow.load_stored(CAM, d2)["frames"][key]
+        self.assertAlmostEqual(found["hole"]["x"], RIGHT_HOLE[0] + RIGHT_HOLE[2] / 2, delta=1.5)  # searched in the right box only
+        before = flow.signature(flow.load_graph(CAM), d2)
+        self.post("/edges", {"source": d1, "target": d2, "point": "left"})
+        self.assertNotEqual(before, flow.signature(flow.load_graph(CAM), d2))  # another box: a new run
+        self.post("/edges", {"source": d1, "target": d2})  # the main dot again: back to the same-name rule
+        self.assertIsNone(self.node_detail(d2)["input_point"])
+        bad = self.client.post(f"{self.base}/edges", json={"source": d1, "target": d2, "point": "nope"})
+        self.assertEqual(bad.status_code, 422)
+
     def test_a_picture_without_the_parent_box_is_skipped_for_the_cascaded_target(self) -> None:
         import labels
 
