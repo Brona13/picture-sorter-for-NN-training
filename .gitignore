@@ -16,6 +16,7 @@ venv/
 !.env.example
 
 # --- App data (generated, not source) ---
+data/
 data/*.db
 data/*.db-journal
 data/*.db-wal
