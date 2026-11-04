@@ -13,6 +13,8 @@ Start with:
 3. `docs/current-project.md` for current architecture, capabilities, limitations, and open work.
 4. `docs/data-model.md` for canonical entities and domain invariants.
 
+`docs/changelog.md` is the version-by-version history. Do not read it whole (about 45k tokens); search it for a version number or a feature name when the rationale or the checks behind a behaviour matter.
+
 Files in `memory/` and `plans/` may describe earlier workflows. Treat `docs/current-project.md`, `docs/data-model.md`, and active code as authoritative. Read historical files only when their rationale is relevant to the task.
 
 ## Core invariants
@@ -60,6 +62,7 @@ Launch with `./run.sh` (see README). History: `plans/streamlit-to-react-fastapi-
 - Bump `VERSION` and `RELEASED` in `app/backend/appinfo.py` with every code change (patch for small changes, minor for features).
 - Keep direct label/golden state transactionally consistent; deliberate history belongs in Versions.
 - When changing a domain invariant, update its canonical documentation and behavior tests in the same change.
+- Record each code change as one entry at the top of the first section of `docs/changelog.md` (version, what changed, tests, what was not clicked through). Change `docs/current-project.md` only when the change alters the snapshot: workflow, modules, limitations or open work.
 
 ## Git and delivery: who does what
 
@@ -98,5 +101,6 @@ Do not scan these by default:
 - `app/**/__pycache__/`
 - `app/frontend/node_modules/`, `app/frontend/dist/`
 - historical plans or memory notes
+- `docs/changelog.md` (search it, do not read it whole)
 
 Inspect them only when the task specifically requires their data or history. Prefer targeted searches and relevant modules over repository-wide reads.

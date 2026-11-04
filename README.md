@@ -19,7 +19,7 @@ Ingest
   → export training folders
 ```
 
-For the current architecture, capabilities, limitations, and open work, see [Current project](docs/current-project.md).
+For the current architecture, capabilities, limitations, and open work, see [Current project](docs/current-project.md). The history of each version is in [Changelog](docs/changelog.md).
 
 For canonical entities and domain rules, see [Data model](docs/data-model.md).
 
@@ -756,6 +756,7 @@ data/
 
 docs/
   current-project.md
+  changelog.md
   data-model.md
   methodology.md
 
@@ -845,7 +846,7 @@ for Claude** copies the shown records as text for a debugging session.
 - After an app update, hard-refresh the browser: an old page left open can call endpoints that no
   longer exist and shows up as 404 in the log.
 - In code: `log = applog.get("area")`; `applog.warn_once(log, key, msg)` for failures inside loops.
-  Details: `docs/current-project.md` (Logging entries).
+  Details: `docs/changelog.md` (Logging entries).
 
 ### Performance diagnostics
 
@@ -975,6 +976,7 @@ Scoring requires at least one golden reference. Leaning and margin require golde
 Current authoritative documents:
 
 - [Current project](docs/current-project.md)
+- [Changelog](docs/changelog.md)
 - [Data model](docs/data-model.md)
 - [Methodology](docs/methodology.md)
 
