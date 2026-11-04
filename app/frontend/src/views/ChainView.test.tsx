@@ -240,6 +240,28 @@ test("a detector box shows a dot per target; dots are the ones to drag onto an R
   expect(box.querySelector('[data-handleid="t:left hole"]')).not.toBeNull();
 });
 
+test("a detector's main output dot comes first among its output dots, and the box takes a dropped line anywhere (v1.157.2)", async () => {
+  current = canvas({
+    nodes: [
+      ...canvas().nodes,
+      node({ id: "det:1", kind: "detector", ref: null, label: "Detector 1", role: null, scope: null, flow: { targets: ["left hole", "right hole"], status: "fresh", frames: 4, complete: 4 } }),
+    ],
+  });
+  renderView();
+  const box = await screen.findByTestId("chain-node-det:1");
+  // React Flow gives a dot without an id the FIRST dot of its kind: the main output must not come after the target dots.
+  const outputs = [...box.querySelectorAll(".react-flow__handle.source:not(.chain-body-handle)")].map((h) => h.getAttribute("data-handleid"));
+  expect(outputs).toEqual([null, "t:left hole", "t:right hole"]);
+  // whole-box drop zones: same ids as the main dots, behind the real dots in the DOM, never a place to start a line
+  const zones = [...box.querySelectorAll(".chain-body-handle")];
+  expect(zones.map((h) => `${h.classList.contains("source") ? "source" : "target"}:${h.getAttribute("data-handleid")}`)).toEqual(["target:null", "source:null"]);
+  expect(zones.every((h) => !h.classList.contains("connectablestart"))).toBe(true);
+  // a Classifier has a dot per class, so it gets no whole-box zone; neither does Ingest on its input side
+  const feature = await screen.findByTestId(`chain-node-${current.nodes.find((n: { kind: string }) => n.kind === "roi")!.id}`);
+  expect(feature.querySelectorAll(".chain-body-handle")).toHaveLength(0);
+  expect(screen.getByTestId("chain-node-ingest").querySelectorAll(".chain-body-handle.target")).toHaveLength(0);
+});
+
 test("a Picture edits box has one fixed size and shows icons with a badge, not its step list (v1.89.0)", async () => {
   current = canvas();
   current.nodes.push(node({

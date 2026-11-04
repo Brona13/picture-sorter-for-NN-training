@@ -53,6 +53,23 @@ function ScopeChips({ node }: { node: ChainNode }) {
 }
 
 /** A box of the chain: a rounded two-tone rectangle. Double-click opens its page; it is renamed in the right panel. */
+/**
+ * A drop zone over a whole box (v1.157.2). React Flow picks the dot to end a line on as the one under the pointer, else the
+ * nearest dot of either kind within CONNECT_RADIUS; so a line dragged onto the body of a detector found nothing, or a dot of the
+ * wrong kind (red). These invisible handles have the same id as the box's main dot (none), cover the box, lie under the real
+ * dots and only take part while a line is being dragged (`isConnectableStart={false}`): the box then accepts the line anywhere,
+ * and its real main dot lights green or red. A dot the pointer is exactly on still wins.
+ */
+const BODY_ZONE = { left: 0, top: 0, right: "auto", bottom: "auto", width: "100%", height: "100%", minWidth: 0, minHeight: 0, transform: "none", border: 0, borderRadius: "inherit", background: "transparent", opacity: 0 } as const;
+function BodyDropZones({ into, out }: { into: boolean; out: boolean }) {
+  return (
+    <>
+      {into && <Handle type="target" position={Position.Left} isConnectableStart={false} className="chain-body-handle" style={BODY_ZONE} />}
+      {out && <Handle type="source" position={Position.Right} isConnectableStart={false} className="chain-body-handle" style={BODY_ZONE} />}
+    </>
+  );
+}
+
 function Box({ data, selected }: NodeProps<BoxNode>) {
   const { node } = data;
   const isClassifier = node.kind === "roi";
@@ -88,6 +105,8 @@ function Box({ data, selected }: NodeProps<BoxNode>) {
       data-testid={`chain-node-${node.id}`}
     >
       {node.kind !== "ingest" && node.kind !== "export" && !isPileKind(node.kind) && !isClassifier && <Handle type="target" position={Position.Left} />}
+      {/* The main output dot comes first in the DOM, before any target dots: React Flow gives a dot without an id the FIRST dot of its kind in the box, so a detector's line used to leave from its first target dot, and that dot lit up when a line was dragged onto the box (v1.157.2). */}
+      {!isClassifier && node.kind !== "evaluation" && node.kind !== "box" && <Handle type="source" position={Position.Right} style={node.kind === "detector" ? { top: 16 } : undefined} />}
       <KindIcon kind={node.kind} className="chain-node-kind" />
       <div className="chain-node-title">{node.label}</div>
       {node.kind === "export" ? (
@@ -212,7 +231,11 @@ function Box({ data, selected }: NodeProps<BoxNode>) {
           <Handle type="source" position={Position.Right} id={targetHandle("box")} />
         </div>
       )}
-      {!isClassifier && node.kind !== "evaluation" && node.kind !== "box" && <Handle type="source" position={Position.Right} style={node.kind === "detector" ? { top: 16 } : undefined} />}
+      {/* After the real dots in the DOM. */}
+      <BodyDropZones
+        into={node.kind !== "ingest" && node.kind !== "export" && !isPileKind(node.kind) && !isClassifier}
+        out={!isClassifier && node.kind !== "evaluation" && node.kind !== "box" && node.kind !== "export"}
+      />
     </div>
   );
 }
