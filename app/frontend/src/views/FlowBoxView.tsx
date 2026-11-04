@@ -155,6 +155,7 @@ function DetectorWork(p: {
   const [boxes, setBoxes] = useState<Record<string, Record<string, FlowBox>>>({});
   const [parentBoxes, setParentBoxes] = useState<Record<string, Record<string, FlowBox>>>({});
   const [insidePick, setInsidePick] = useState("");
+  const [wholePictureView, setWholePictureView] = useState(false); // cascade: the whole picture with the found box outlined, instead of the cut-out of that box
   const [review, setReview] = useState<string[]>([]);
   const [measured, setMeasured] = useState<{ src: string; w: number; h: number } | null>(null); // size of the picture at `src`, from its load
   const [drag, setDrag] = useState<{ from: { x: number; y: number }; to: { x: number; y: number } } | null>(null);
@@ -237,7 +238,7 @@ function DetectorWork(p: {
   const view = useMemo(() => {
     if (!size) return null;
     const b = parentId && frame ? parentBoxes[frame]?.[insideSel] : undefined;
-    if (!b) return { x: 0, y: 0, w: size.w, h: size.h, crop: false };
+    if (!b || wholePictureView) return { x: 0, y: 0, w: size.w, h: size.h, crop: false };
     const t = (b.angle * Math.PI) / 180;
     const hw = (Math.abs(b.w * Math.cos(t)) + Math.abs(b.h * Math.sin(t))) / 2;
     const hh = (Math.abs(b.w * Math.sin(t)) + Math.abs(b.h * Math.cos(t))) / 2;
@@ -246,7 +247,8 @@ function DetectorWork(p: {
     const x1 = Math.min(size.w, Math.ceil(b.x + hw * (1 + 2 * detail.pad)));
     const y1 = Math.min(size.h, Math.ceil(b.y + hh * (1 + 2 * detail.pad)));
     return { x: x0, y: y0, w: Math.max(1, x1 - x0), h: Math.max(1, y1 - y0), crop: true };
-  }, [size, parentId, frame, parentBoxes, insideSel, detail.pad]);
+  }, [size, parentId, frame, parentBoxes, insideSel, detail.pad, wholePictureView]);
+  const parentBox = parentId && frame ? parentBoxes[frame]?.[insideSel] : undefined; // the box the input detector found, outlined on the picture
 
   const point = (e: React.PointerEvent) => {
     const r = svg.current!.getBoundingClientRect();
@@ -439,6 +441,12 @@ function DetectorWork(p: {
           <button type="button" aria-pressed={mode === "reuse"} disabled={allExamples.length === 0} title="Copy an existing example rectangle onto this picture, turn it, and add it as an example" onClick={() => setMode("reuse")}>Reuse rectangle</button>
         </div>
         {parentId && (
+          <div className="flow-segment" role="group" aria-label="View">
+            <button type="button" aria-pressed={!wholePictureView} title="Only the found box and its surroundings" onClick={() => setWholePictureView(false)}>Cut-out of the box</button>
+            <button type="button" aria-pressed={wholePictureView} title="The whole picture with the found box outlined" onClick={() => setWholePictureView(true)}>Whole picture</button>
+          </div>
+        )}
+        {parentId && (
           <div className="flow-chips" role="group" aria-label="Search inside">
             <span className="muted">Search inside:</span>
             {parentNames.map((name) => (
@@ -577,6 +585,12 @@ function DetectorWork(p: {
                 onPointerLeave={() => setHover(null)}
               >
                 {view.crop && <image href={pictureSrc} x={0} y={0} width={size.w} height={size.h} />}
+                {parentBox && (
+                  <g transform={`translate(${parentBox.x} ${parentBox.y}) rotate(${-parentBox.angle})`} pointerEvents="none" data-testid="parent-box">
+                    <rect x={-parentBox.w / 2} y={-parentBox.h / 2} width={parentBox.w} height={parentBox.h} fill="none" stroke="rgba(0,0,0,.75)" strokeWidth={4} vectorEffect="non-scaling-stroke" />
+                    <rect x={-parentBox.w / 2} y={-parentBox.h / 2} width={parentBox.w} height={parentBox.h} fill="none" stroke="#fff" strokeWidth={1.5} strokeDasharray="2 4" vectorEffect="non-scaling-stroke" />
+                  </g>
+                )}
                 {examplesHere.map((e) => {
                   const b = boxOf(e);
                   const active = sel?.name === e.name && sel.index === e.index;

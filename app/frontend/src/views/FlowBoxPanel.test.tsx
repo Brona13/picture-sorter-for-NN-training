@@ -222,6 +222,14 @@ test("Cascade detector page shows one picture per box of the input detector, zoo
   expect(screen.queryByRole("button", { name: "Show b.png" })).not.toBeInTheDocument(); // b.png has no box in the input detector
   expect(screen.getByRole("group", { name: "Search inside" })).toHaveTextContent("left hole");
   expect(screen.getByRole("button", { name: "+ New target" })).toBeInTheDocument(); // a cascaded detector names its own targets
+  // the found box is outlined, and the view can be switched to the whole picture and back (v1.157.4)
+  expect(screen.getByTestId("parent-box")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Cut-out of the box" })).toHaveAttribute("aria-pressed", "true");
+  await userEvent.click(screen.getByRole("button", { name: "Whole picture" }));
+  expect(screen.getByTestId("flow-overlay").getAttribute("viewBox")).toBe("0 0 400 300");
+  expect(screen.getByTestId("parent-box")).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Cut-out of the box" }));
+  expect(screen.getByTestId("flow-overlay").getAttribute("viewBox")).toBe("52 68 96 64");
 });
 
 test("resizeRect moves the dragged edges only and keeps a minimum size", () => {
