@@ -86,7 +86,7 @@ def target_of(node: dict, name: str) -> dict | None:
     return next((t for t in node.get("targets", []) if name in slot_names(t)), None)
 MAX_STEPS = 16  # picture edits (crop / filter / mask) one box holds
 STEP_OPS = ("crop", "filter", "mask")
-MAX_EXAMPLES = 6
+MAX_EXAMPLES = 12  # per target; one search per example per picture, so the run time grows with it (v1.157.1: was 6)
 MAX_EXAMPLE_SIDE = 400  # longest side (px) an example is matched at; a larger one is stored shrunk and the detector shrinks the picture the same way
 MIN_MATCH_SIDE = 8  # after that shrinking, the shorter side of the smallest example of a detector must stay at least this many pixels
 NAME_MAX = 40

@@ -127,6 +127,16 @@ class FlowTests(ApiTestCase):
         self.assertEqual(len(flow.calc_points(flow.load_graph(CAM), calc)), 2)
         self.assertIsNone(flow.calc_detector(flow.load_graph(CAM), calc))  # the points come from two detectors
 
+    def test_a_target_takes_twelve_examples_and_refuses_the_thirteenth(self) -> None:
+        det = self.node("detector")
+        self.post(f"/nodes/{det}/targets", {"name": "P"})
+        for _ in range(flow.MAX_EXAMPLES):
+            self.post(f"/nodes/{det}/examples", {"target": "P", "frame": self.names[0], "box": LEFT_BOX})
+        self.assertEqual(flow.MAX_EXAMPLES, 12)
+        r = self.client.post(f"{self.base}/nodes/{det}/examples", json={"target": "P", "frame": self.names[0], "box": LEFT_BOX})
+        self.assertEqual(r.status_code, 422, r.text)
+        self.assertIn("at most 12 examples", r.text)
+
     def test_points_of_detectors_behind_different_crops_are_measured_on_the_whole_picture(self) -> None:
         import labels  # noqa: PLC0415
 
