@@ -237,6 +237,8 @@ figure { background: var(--panel); border: 1px solid var(--border); border-radiu
 ul[style*="grid"] > li { min-width: 0; overflow-wrap: anywhere; }
 
 /* --- Chain canvas ------------------------------------------------------------------------------------------- */
+/* The Chain page uses the whole window width; the other pages keep the 1400px column. */
+.main:has(.chain-canvas) { max-width: none; }
 .chain-canvas { position: relative; height: calc(100vh - 250px); min-height: 420px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel); }
 .chain-node { min-width: 150px; padding: 8px 12px; border-radius: 12px; border: 2px solid hsl(var(--hue) 55% 48%); background: color-mix(in srgb, hsl(var(--hue) 80% 60%) 14%, var(--panel)); color: var(--fg); font-size: 13px; }
 .chain-node.selected { box-shadow: 0 0 0 3px color-mix(in srgb, hsl(var(--hue) 80% 60%) 45%, transparent); }

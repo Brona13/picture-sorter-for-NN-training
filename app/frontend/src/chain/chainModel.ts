@@ -79,6 +79,15 @@ export function connectAction(canvas: ChainCanvas, c: Connection): ConnectResult
  */
 export const hasRectangle = (n: ChainNode): boolean => n.role === "classify" || (n.region ?? "own") !== "as_is" || n.anchor?.mode === "rect";
 
+/**
+ * The height the Chain canvas takes so that its bottom edge sits just above the status bar of the window (v1.157.8).
+ * `top` is the canvas's top edge in the page (not the window), `reserved` the status bar plus a small margin. Never below `min`
+ * (the same floor the stylesheet has), so a very low window scrolls the page instead of squashing the canvas.
+ */
+export function fitCanvasHeight(windowHeight: number, top: number, reserved: number, min = 420): number {
+  return Math.max(min, Math.round(windowHeight - top - reserved));
+}
+
 /** What deleting an arrow means: the target ROI loses that product (no product left = whole camera). */
 export function disconnectAction(canvas: ChainCanvas, edge: ChainEdge): ConnectResult {
   const target = featureOf(canvas, edge.target);

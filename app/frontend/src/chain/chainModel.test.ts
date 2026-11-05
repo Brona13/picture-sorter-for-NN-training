@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import type { ChainCanvas, ChainNode } from "../api";
-import { connectAction, describeFlow, describeNode, disconnectAction, freshName, layoutOf, productOfHandle } from "./chainModel";
+import { connectAction, describeFlow, describeNode, disconnectAction, fitCanvasHeight, freshName, layoutOf, productOfHandle } from "./chainModel";
 
 const node = (over: Partial<ChainNode>): ChainNode => ({
   id: "roi:x", kind: "roi", ref: "x", label: "x", x: 0, y: 0, role: "quality", scope: "camera", product: null,
@@ -423,4 +423,10 @@ test("Ingest OK and Ingest NG can be drawn into a Box (the pictures it works on)
   expect(flowConnect(steps, { source: "inng:1", sourceHandle: null, target: "box:1", targetHandle: null })).toEqual({ source: "inng:1", target: "box:1" });
   expect(flowConnect(steps, { source: "box:1", sourceHandle: null, target: "inok:1", targetHandle: null })).toHaveProperty("error");
   expect(flowConnect(steps, { source: "inok:1", sourceHandle: null, target: "inng:1", targetHandle: null })).toHaveProperty("error");
+});
+
+test("fitCanvasHeight: the rest of the window below the canvas's top edge, never below the floor", () => {
+  expect(fitCanvasHeight(1000, 200, 40)).toBe(760);
+  expect(fitCanvasHeight(1000.4, 200.2, 40)).toBe(760);
+  expect(fitCanvasHeight(500, 200, 40)).toBe(420);
 });

@@ -13,10 +13,10 @@ import {
   type Node,
   type NodeProps,
 } from "@xyflow/react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api, ChainCanvas, ChainDeletePreview, ChainEdge, ChainNode, ChainViewport, FlowDeletePreview } from "../api";
-import { ALL_HANDLE, INGEST_ID, hasRectangle, targetHandle, targetOfHandle, connectAction, describeNode, disconnectAction, classLineOf, exportLineOf, flowConnect, isClassLineEdge, freshName, isAnchorEdge, isMergeLineEdge, mergeLineOf, isDedupInputEdge, isEvaluationLabelEdge, isDedupSourceEdge, isExportLineEdge, isRoiInputEdge, isFlowKind, isPileKind, layoutOf, productHandle } from "../chain/chainModel";
+import { ALL_HANDLE, INGEST_ID, hasRectangle, fitCanvasHeight, targetHandle, targetOfHandle, connectAction, describeNode, disconnectAction, classLineOf, exportLineOf, flowConnect, isClassLineEdge, freshName, isAnchorEdge, isMergeLineEdge, mergeLineOf, isDedupInputEdge, isEvaluationLabelEdge, isDedupSourceEdge, isExportLineEdge, isRoiInputEdge, isFlowKind, isPileKind, layoutOf, productHandle } from "../chain/chainModel";
 import ClassifierMode from "../chain/ClassifierMode";
 import Counter from "../chain/Counter";
 import { KindIcon } from "../chain/kindIcons";
@@ -279,6 +279,21 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
   const [lineDialog, setLineDialog] = useState<{ notes: LineNote[]; confirmLabel: string; run: () => void } | null>(null);
   const flowView = useReactFlow();
   const pane = useRef<HTMLDivElement | null>(null);
+  // The canvas fills what is left of the browser window below the controls above it (v1.157.8). The stylesheet's calc() is the first guess.
+  const [canvasHeight, setCanvasHeight] = useState<number | null>(null);
+  const fitCanvas = useCallback(() => {
+    const el = pane.current;
+    if (!el) return;
+    const status = document.querySelector(".statusbar")?.getBoundingClientRect().height ?? 0;
+    const top = el.getBoundingClientRect().top + window.scrollY;
+    const next = fitCanvasHeight(window.innerHeight, top, status + 12);
+    setCanvasHeight((was) => (was === next ? was : next));
+  }, []);
+  useLayoutEffect(fitCanvas); // after every render: a note or tab row above the canvas can change its top edge
+  useEffect(() => {
+    window.addEventListener("resize", fitCanvas);
+    return () => window.removeEventListener("resize", fitCanvas);
+  }, [fitCanvas]);
   // Where the product-sorting ROI goes once its names are typed (the tile was dropped or clicked before the form).
   const viewport = useRef<ChainViewport | null>(null);
   const nodesRef = useRef<BoxNode[]>([]);
@@ -748,6 +763,7 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
           className="chain-canvas"
           data-testid="chain-canvas"
           ref={pane}
+          style={canvasHeight === null ? undefined : { height: canvasHeight }}
           onDragOver={(e) => { if (e.dataTransfer.types.includes(PALETTE_DRAG)) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; } }}
           onDrop={onPaletteDrop}
         >

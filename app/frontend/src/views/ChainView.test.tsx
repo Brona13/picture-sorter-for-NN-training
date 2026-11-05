@@ -359,6 +359,24 @@ test("the delete confirmation is an overlay, Enter confirms it and Esc cancels, 
   await waitFor(() => expect(calls.some((c) => c.method === "DELETE" && c.url.endsWith("/rois/seal"))).toBe(true));
 });
 
+test("the canvas fills the browser window below the controls and follows a resize (v1.157.8)", async () => {
+  const was = window.innerHeight;
+  try {
+    Object.defineProperty(window, "innerHeight", { configurable: true, value: 900 });
+    renderView();
+    const canvas = await screen.findByTestId("chain-canvas");
+    await waitFor(() => expect(canvas.style.height).toBe("888px")); // 900 - top 0 - status bar 0 - 12 margin (jsdom measures no layout)
+    Object.defineProperty(window, "innerHeight", { configurable: true, value: 700 });
+    fireEvent(window, new Event("resize"));
+    await waitFor(() => expect(canvas.style.height).toBe("688px"));
+    Object.defineProperty(window, "innerHeight", { configurable: true, value: 300 });
+    fireEvent(window, new Event("resize"));
+    await waitFor(() => expect(canvas.style.height).toBe("420px")); // never below the stylesheet's floor
+  } finally {
+    Object.defineProperty(window, "innerHeight", { configurable: true, value: was });
+  }
+});
+
 test("the palette sits on the canvas, not in the right pane, and the help text is under the canvas", async () => {
   renderView();
   const canvas = await screen.findByTestId("chain-canvas");
