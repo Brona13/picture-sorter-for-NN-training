@@ -202,11 +202,50 @@ def step_box(step, width: int, height: int, found=None) -> tuple[int, int, int, 
 
 
 def follow_of(graph: dict, crop_id: str) -> dict | None:
-    """``{detector, target}`` when the Crop is fed by one target of a detector (the arrow carries the target), else None."""
+    """``{detector, target}`` when the Crop is fed by one target of a detector (the arrow carries the target), else None.
+    Dedup boxes in between only filter the pictures (v1.157.7): behind one or several of them, a Dedup box that reads
+    a detector's target gives the Crop that target, so the found box stays its reference."""
     for e in graph["edges"]:
-        if e["target"] == crop_id and kind_of(e["source"]) == "detector" and e.get("point"):
+        if e["target"] != crop_id:
+            continue
+        if kind_of(e["source"]) == "detector" and e.get("point"):
             return {"detector": e["source"], "target": e["point"]}
+        if kind_of(e["source"]) == "dedup":
+            return _target_behind_dedup(graph, e["source"])
     return None
+
+
+def _target_behind_dedup(graph: dict, dedup_id: str, _seen: frozenset = frozenset()) -> dict | None:
+    """The detector target a Dedup box (or the Dedup boxes in a row before it) reads, else None."""
+    for e in graph["edges"]:
+        if e["target"] != dedup_id:
+            continue
+        if kind_of(e["source"]) == "detector" and e.get("point"):
+            return {"detector": e["source"], "target": e["point"]}
+        if kind_of(e["source"]) == "dedup" and e["source"] not in _seen:
+            return _target_behind_dedup(graph, e["source"], _seen | {dedup_id})
+    return None
+
+
+def _follows(graph: dict) -> dict[str, dict | None]:
+    """The target each Picture edits box follows now (see ``_refollow``)."""
+    return {i: follow_of(graph, i) for i, n in graph["nodes"].items() if n["kind"] == "crop"}
+
+
+def _refollow(graph: dict, before: dict[str, dict | None]) -> None:
+    """A line changed somewhere: every Picture edits box that now follows another target (or none) forgets the rectangle
+    and the masks drawn for the old one, and gets the step that follows when it now follows a target. This also reaches the
+    boxes behind a Dedup box whose input changed."""
+    for box_id, was in before.items():
+        node = graph["nodes"].get(box_id)
+        now = follow_of(graph, box_id) if node else None
+        if node is None or now == was:
+            continue
+        node["follow"] = None
+        _forget_mask_anchors(node)
+        steps = crop_steps(node)
+        if now is not None and not any(st["op"] == "crop" for st in steps):
+            set_steps(node, steps + [{"id": new_step_id(steps), "op": "crop", "rect": None}])
 
 
 def crop_mode(graph: dict, crop_id: str) -> str:
@@ -754,7 +793,12 @@ def parent_of(graph: dict, node_id: str) -> str | None:
         if e["target"] == node_id and kind_of(e["source"]) in ("ingest", "crop", "detector", "calc"):
             return e["source"]
         if e["target"] == node_id and kind_of(e["source"]) == "dedup" and kind_of(node_id) in ("detector", "crop", "dedup"):
-            return _through_dedup(graph, e["source"])
+            behind = _through_dedup(graph, e["source"])
+            if behind is None and kind_of(node_id) == "crop":
+                followed = follow_of(graph, node_id)  # a Dedup in front of a following Crop: it still works in the detector's picture
+                if followed:
+                    return followed["detector"]
+            return behind
     return None
 
 
@@ -827,6 +871,7 @@ def connect(camera: str, source: str, target: str, point: str | None = None) -> 
         if point not in all_slots(graph["nodes"][source]):
             raise FlowError(f"{source} has no target {point}.")
     edge = {"source": source, "target": target, **({"point": point} if point is not None else {})}
+    followed_before = _follows(graph)
     if kind_of(target) == "calc":
         # Several arrows feed a Calculate box (the whole detector or single targets), two points in all.
         before = calc_points(graph, target)
@@ -856,6 +901,7 @@ def connect(camera: str, source: str, target: str, point: str | None = None) -> 
         graph["edges"].append(edge)
     if target in _upstream_ids(graph, target):  # e.g. a box that reads an Evaluation's dot now feeds that Evaluation
         raise FlowError("That would make a loop.")
+    _refollow(graph, followed_before)  # also the Picture edits boxes behind a Dedup box whose input just changed
     save_graph(camera, graph)
 
 
@@ -864,10 +910,12 @@ def disconnect(camera: str, source: str, target: str, point: str | None = None) 
     kept = [e for e in graph["edges"] if not (e["source"] == source and e["target"] == target and e.get("point") == point)]
     if len(kept) == len(graph["edges"]):
         raise FlowError("There is no such arrow.")
+    followed_before = _follows(graph)
     graph["edges"] = kept  # a picture box with no arrow reads the whole picture, like one fed by Ingest
     if kind_of(target) == "crop" and target in graph["nodes"] and follow_of(graph, target) is None:
         graph["nodes"][target]["follow"] = None
         _forget_mask_anchors(graph["nodes"][target])
+    _refollow(graph, followed_before)  # the boxes behind a Dedup box lose the target it read
     save_graph(camera, graph)
 
 
@@ -889,6 +937,7 @@ def delete_preview(camera: str, node_id: str) -> dict:
 def delete_node(camera: str, node_id: str) -> None:
     graph = load_graph(camera)
     _node(graph, node_id)
+    followed_before = _follows(graph)
     del graph["nodes"][node_id]
     graph["edges"] = [e for e in graph["edges"] if node_id not in (e["source"], e["target"])]
     for other in graph["nodes"].values():  # a box that read a dot of the deleted Evaluation reads the whole camera again
@@ -899,6 +948,8 @@ def delete_node(camera: str, node_id: str) -> None:
             other["lines"] = {k: [r for r in stored.get(k, []) if node_id not in (r.get("box"), r.get("from"))] for k in EXPORT_INPUTS}
         if other.get("kind") == "merge":  # a Merge loses the lines that came from the deleted box
             other["lines"] = [r for r in merge_lines(other) if node_id not in (r.get("box"), r.get("from"))]
+    followed_before.pop(node_id, None)
+    _refollow(graph, followed_before)  # a deleted Dedup box takes the target it read away from the boxes behind it
     save_graph(camera, graph)
     _drop_results(camera, node_id)
 
@@ -1093,7 +1144,9 @@ def update_node(camera: str, node_id: str, raw: dict) -> dict:
         if "source" in raw:
             node["source"] = _dedup_source(camera, node_id, raw["source"])
             if node["source"]:
+                followed_before = _follows(graph)
                 graph["edges"] = [e for e in graph["edges"] if e["target"] != node_id]  # one input: the Classifier dot replaces the line
+                _refollow(graph, followed_before)
     elif kind == "merge":
         node.setdefault("lines", [])
         if "add_line" in raw:

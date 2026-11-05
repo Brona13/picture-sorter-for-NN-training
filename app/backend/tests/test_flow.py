@@ -197,6 +197,74 @@ class FlowTests(ApiTestCase):
         out = self.client.get(f"{self.base}/nodes/{crop}/picture", params={"frame": self.names[0], "stage": "output"})
         self.assertTrue(np.array_equal(cv2.imdecode(np.frombuffer(out.content, np.uint8), cv2.IMREAD_COLOR), whole[y0:y0 + 80, x0:x0 + 90]))
 
+    def _following_crop_behind_dedup(self):
+        """Detector A -> (target A) Dedup -> Crop, rectangle drawn on the first picture. Returns (A, dedup, crop, x0, y0)."""
+        import labels  # noqa: PLC0415
+
+        a = self.detector({"A": LEFT_BOX})
+        self.run_all()
+        key = labels.hash_map(CAM)[self.names[0]]
+        found = flow.load_stored(CAM, a)["frames"][key]["A"]
+        x0, y0 = int(round(found["x"])) - 45, int(round(found["y"])) - 40
+        dedup, crop = self.node("dedup"), self.node("crop")
+        self.post("/edges", {"source": a, "target": dedup, "point": "A"})
+        self.post("/edges", {"source": dedup, "target": crop})
+        self.put(f"/nodes/{crop}", {"follow": {"frame": self.names[0], "rect": [x0, y0, 90, 80]}})
+        return a, dedup, crop, x0, y0
+
+    def test_a_dedup_between_a_detector_target_and_a_crop_keeps_the_found_box_as_reference(self) -> None:
+        """v1.157.7: the Dedup box only filters; the Crop behind it still follows the target the Dedup box reads."""
+        a, dedup, crop, x0, y0 = self._following_crop_behind_dedup()
+        graph = flow.load_graph(CAM)
+        self.assertEqual(flow.follow_of(graph, crop), {"detector": a, "target": "A"})
+        self.assertEqual(flow.parent_of(graph, crop), a)  # it works in the detector's picture, as when the line comes straight from it
+        detail = self.node_detail(crop)
+        self.assertEqual((detail["follow"]["detector"], detail["follow"]["target"], detail["follow"]["size"]), (a, "A", [90, 80]))
+        self.assertEqual(detail["follow_step"], flow.follow_step_id(graph, crop))
+        self.assertIsNotNone(detail["follow_step"])
+        whole = cv2.imread(str(datamodel.unsorted_dir(CAM) / self.names[0]))
+        out = self.client.get(f"{self.base}/nodes/{crop}/picture", params={"frame": self.names[0], "stage": "output"})
+        self.assertEqual(out.status_code, 200, out.text)
+        self.assertTrue(np.array_equal(cv2.imdecode(np.frombuffer(out.content, np.uint8), cv2.IMREAD_COLOR), whole[y0:y0 + 80, x0:x0 + 90]))
+        self.assertEqual(set(flow.node_frames(CAM, crop)), set(flow.node_frames(CAM, dedup)))  # and gets the pictures the Dedup box passes on
+        summary = {n["id"]: n for n in self.client.get(f"/api/cameras/{CAM}/chain").json()["nodes"]}[crop]["flow"]
+        self.assertEqual((summary["follow"]["detector"], summary["follow"]["target"]), (a, "A"))  # the Chain canvas shows it as following too
+
+    def test_dedup_boxes_in_a_row_pass_the_target_on(self) -> None:
+        a, dedup, crop, x0, y0 = self._following_crop_behind_dedup()
+        second = self.node("dedup")
+        self.post("/edges", {"source": dedup, "target": second})
+        self.post("/edges", {"source": second, "target": crop})  # replaces the line from the first Dedup box
+        self.assertEqual(flow.follow_of(flow.load_graph(CAM), crop), {"detector": a, "target": "A"})
+        self.assertEqual(self.node_detail(crop)["follow"]["size"], [90, 80])  # same target, so the drawn rectangle stays
+
+    def test_a_dedup_that_reads_no_target_gives_the_crop_nothing_to_follow(self) -> None:
+        dedup, crop = self.node("dedup"), self.node("crop")
+        self.post("/edges", {"source": "ingest", "target": dedup})
+        self.post("/edges", {"source": dedup, "target": crop})
+        self.assertIsNone(flow.follow_of(flow.load_graph(CAM), crop))
+        self.assertIsNone(self.node_detail(crop)["follow"])
+
+    def test_the_rectangle_is_forgotten_when_the_dedup_in_front_reads_another_target_or_goes_away(self) -> None:
+        a, dedup, crop, x0, y0 = self._following_crop_behind_dedup()
+        self.post(f"/nodes/{a}/targets", {"name": "B"})
+        self.post(f"/nodes/{a}/examples", {"target": "B", "frame": self.names[0], "box": RIGHT_BOX})
+        self.post("/edges", {"source": a, "target": dedup, "point": "B"})  # the Dedup box reads B now
+        detail = self.node_detail(crop)["follow"]
+        self.assertEqual((detail["target"], detail["size"]), ("B", None))
+        self.run_all()  # the detector has to have found B before a rectangle can be drawn for it
+        self.put(f"/nodes/{crop}", {"follow": {"frame": self.names[0], "rect": [0, 0, 60, 60]}})
+        self.assertEqual(self.node_detail(crop)["follow"]["size"], [60, 60])
+        self.post("/edges/remove", {"source": a, "target": dedup, "point": "B"}, status=200)  # the Dedup box reads nothing
+        self.assertIsNone(self.node_detail(crop)["follow"])
+        self.assertIsNone(flow.load_graph(CAM)["nodes"][crop].get("follow"))
+        self.post("/edges", {"source": a, "target": dedup, "point": "A"})
+        self.put(f"/nodes/{crop}", {"follow": {"frame": self.names[0], "rect": [0, 0, 60, 60]}})
+        r = self.client.delete(f"{self.base}/nodes/{dedup}")
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertIsNone(flow.follow_of(flow.load_graph(CAM), crop))
+        self.assertIsNone(flow.load_graph(CAM)["nodes"][crop].get("follow"))
+
     def test_a_detector_behind_a_following_crop_is_placed_back_on_the_whole_picture(self) -> None:
         import labels  # noqa: PLC0415
 
