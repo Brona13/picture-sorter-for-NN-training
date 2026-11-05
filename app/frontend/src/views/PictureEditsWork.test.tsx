@@ -67,7 +67,7 @@ test("shows the picture that enters the step and offers every picture of the cam
   const img = await screen.findByAltText("Frame to draw on");
   expect(img).toHaveAttribute("src", expect.stringContaining("/flow/nodes/crop%3A1/picture?frame=a.png"));
   expect(img.getAttribute("src")).toContain("step=s1");
-  expect(await screen.findByRole("option", { name: "b.png" })).toBeInTheDocument();
+  expect(await screen.findByRole("button", { name: "Show b.png" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Reset zoom" })).toBeInTheDocument(); // the shared zoom pane: Reset and 1:1
 });
 
@@ -168,7 +168,7 @@ test("a following step shows the rectangle next to the target found on this pict
   await screen.findByAltText("Frame to draw on");
   // target centre (100, 50) + offset (10, -5) = (110, 45); 40 x 20 px => x 90..130, y 35..55 of a 200 x 100 picture
   await waitFor(() => expect(screen.getByTestId("roi-box")).toHaveStyle({ left: "45%", top: "35%", width: "20%", height: "20%" }));
-  expect(await screen.findByRole("option", { name: "b.png — no target found" })).toBeInTheDocument();
+  expect(await screen.findByRole("button", { name: "Show b.png" })).toHaveClass("review"); // marked: no target found there
   expect(screen.getByAltText("a.png cropped")).toHaveAttribute("src", expect.stringContaining("stage=output"));
 });
 
@@ -216,7 +216,7 @@ test("behind a step that follows a target, a picture without the target says so 
   await screen.findByAltText("Frame to draw on"); // the following step itself: its canvas is where another picture is picked
   fireEvent.click(screen.getByRole("button", { name: "pick s2" }));
   await screen.findByAltText("a.png");
-  fireEvent.change(screen.getByRole("combobox", { name: /Picture/ }), { target: { value: "b.png" } });
+  fireEvent.click(screen.getAllByRole("button", { name: "Show b.png" })[0]);
   expect(await screen.findByRole("status")).toHaveTextContent("det:1 found no hole on this picture");
   expect(screen.queryByAltText("b.png")).toBeNull();
 });
@@ -245,9 +245,9 @@ test("a mask step opens on Before with the shape over the picture that enters it
 test("a mask of a followed target is edited on the picture it was drawn on; on another picture only its result shows", async () => {
   const follow = { detector: "det:1", target: "A", mode: "keep", modes: [], offered: [], frame: null, size: null, offset: null, missing: [] };
   setup(base([crop(null, "s0"), maskStep({ rel: {}, frame: "b.png" }, "s1")], { follow, follow_step: "s0" }));
-  await waitFor(() => expect(screen.getByRole("combobox")).toHaveValue("b.png")); // selecting the step goes to its picture
+  await waitFor(() => expect(screen.getByRole("button", { name: "Show b.png" })).toHaveAttribute("aria-current", "true")); // selecting the step goes to its picture
   expect(await screen.findByTestId("mask-canvas")).toBeInTheDocument();
-  fireEvent.change(screen.getByRole("combobox"), { target: { value: "a.png" } });
+  fireEvent.click(screen.getByRole("button", { name: "Show a.png" }));
   expect(await screen.findByText(/This mask was drawn on b.png/)).toBeInTheDocument();
   expect(screen.queryByTestId("mask-canvas")).toBeNull();
 });
@@ -288,4 +288,22 @@ test("the view zooms to the found box by itself when the picture with the target
   const automatic = level();
   fireEvent.click(screen.getByRole("button", { name: "Reset zoom" }));
   expect(automatic).toBeGreaterThan(level() * 1.5);
+});
+
+// --- navigation: the Detector page's (counter, thumbnail strip, picture grid) -----------------------------------
+test("the pictures are walked through with the counter, the strip and the grid, and a picture past the edge is flagged", async () => {
+  const base = followDetail();
+  const detail = followDetail({ follow: { ...base.follow!, missing: [], edge_frames: ["b.png"], outside: "skip", outside_modes: [{ id: "skip", label: "No crop" }] } });
+  followFetch(detail);
+  setup(detail);
+  await screen.findByAltText("Frame to draw on");
+  expect(screen.getByText(/1 \/ 2 · a\.png/)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Show b.png" })).toHaveClass("review");
+  expect(screen.getByRole("button", { name: "Show a.png" })).toHaveClass("ok");
+  fireEvent.click(screen.getAllByRole("button", { name: "Next ›" })[0]); // the first is the picture navigation, the others belong to the grid pager
+  expect(await screen.findByText(/2 \/ 2 · b\.png/)).toBeInTheDocument();
+  expect(screen.getByText("The rectangle reaches past the edge of this picture.")).toBeInTheDocument();
+  expect(screen.getByTestId("pictures-grid")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Load a.png in the canvas" }));
+  expect(await screen.findByText(/1 \/ 2 · a\.png/)).toBeInTheDocument();
 });

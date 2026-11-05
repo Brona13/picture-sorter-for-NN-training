@@ -185,6 +185,21 @@ function StepBody({ step, edits, follows, detail }: { step: FlowEdit; edits: Pic
             : "The picture is not turned: the rectangle only moves with the position."}
           {" "}Changing this clears the rectangle; draw it again.
         </p>
+        {f.outside_modes && (
+          <>
+            <label>
+              When the rectangle leaves the picture
+              <select aria-label="When the rectangle leaves the picture" value={f.outside ?? "skip"} onChange={(e) => void edits.update({ follow_outside: e.target.value })}>
+                {f.outside_modes.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+              </select>
+            </label>
+            <p className={f.edge_frames?.length ? "flow-missing" : "muted"} role="status" data-testid="pe-edge">
+              {f.edge_frames?.length
+                ? `${f.edge_frames.length} picture${f.edge_frames.length === 1 ? "" : "s"} where the rectangle reaches past the edge: ${(f.outside ?? "skip") === "skip" ? "they get no crop" : f.outside === "shift" ? "it is slid back inside" : "the missing part is grey"}.`
+                : "The rectangle stays inside every picture."}
+            </p>
+          </>
+        )}
         <p>{f.size ? `${f.size[0]} × ${f.size[1]} px · offset ${f.offset?.[0]}, ${f.offset?.[1]} px from the target` : "No rectangle drawn yet: the picture passes on unchanged."}</p>
         <p className={f.missing.length ? "flow-missing" : "muted"} role="status">
           {f.missing.length ? `${f.missing.length} picture${f.missing.length === 1 ? "" : "s"} where ${f.detector} found no ${f.target}: they get no crop and cannot be used behind it.` : `${f.detector} found ${f.target} on every picture.`}

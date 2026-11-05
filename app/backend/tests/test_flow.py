@@ -197,6 +197,83 @@ class FlowTests(ApiTestCase):
         out = self.client.get(f"{self.base}/nodes/{crop}/picture", params={"frame": self.names[0], "stage": "output"})
         self.assertTrue(np.array_equal(cv2.imdecode(np.frombuffer(out.content, np.uint8), cv2.IMREAD_COLOR), whole[y0:y0 + 80, x0:x0 + 90]))
 
+    # --- a following rectangle that leaves the picture (v1.157.10) ---------------------------------
+    @staticmethod
+    def _corner_step(outside: str | None) -> tuple[dict, np.ndarray]:
+        """A 40 x 30 rectangle whose top left lies at (-30, -20) on a 200 x 100 picture next to a found target."""
+        step = {"follow": {"detector": "det:1", "target": "A", "mode": "keep"}, "size": [40, 30], "offset": [-30.0, -20.0], **({"outside": outside} if outside else {})}
+        image = np.arange(100 * 200 * 3, dtype=np.uint8).reshape(100, 200, 3)
+        return step, image
+
+    def test_a_rectangle_that_leaves_the_picture_is_skipped_slid_back_or_filled(self) -> None:
+        entry = {"x": 19.5, "y": 14.5}
+        found = lambda _step: entry  # noqa: E731
+        for outside in (None, "skip"):
+            step, image = self._corner_step(outside)
+            with self.assertRaises(flow.NoCrop):
+                flow.apply_rects(image, [step], found)
+        step, image = self._corner_step("shift")
+        cut, ox, oy = flow.apply_rects(image, [step], found)
+        self.assertEqual((cut.shape[:2], ox, oy), ((30, 40), 0, 0))  # the same size, slid back to the corner
+        self.assertTrue(np.array_equal(cut, image[0:30, 0:40]))
+        step, image = self._corner_step("pad")
+        cut, ox, oy = flow.apply_rects(image, [step], found)
+        self.assertEqual((cut.shape[:2], ox, oy), ((30, 40), -30, -20))  # the same size and place; the offset says where it starts
+        self.assertTrue(np.array_equal(cut[20:30, 30:40], image[0:10, 0:10]))
+        self.assertTrue((cut[:20] == flow.GREY).all() and (cut[:, :30] == flow.GREY).all())
+        self.assertEqual(flow.rect_offset([step], 200, 100, found), (-30, -20))  # the pixel-free functions agree
+        self.assertEqual(flow.rect_map([step], 200, 100, found).point(0, 0), (-30.0, -20.0))
+
+    def test_nothing_to_show_or_nothing_to_slide_is_still_no_crop(self) -> None:
+        found = lambda _step: {"x": 19.5, "y": 14.5}  # noqa: E731
+        step, image = self._corner_step("pad")
+        step["offset"] = [-200.0, 0.0]  # wholly outside on the left: only grey
+        with self.assertRaises(flow.NoCrop):
+            flow.apply_rects(image, [step], found)
+        step, image = self._corner_step("shift")
+        step["size"] = [300, 30]  # wider than the picture: it cannot slide inside
+        with self.assertRaises(flow.NoCrop):
+            flow.apply_rects(image, [step], found)
+
+    def test_the_outside_setting_is_checked_kept_in_the_page_and_changes_the_signature(self) -> None:
+        a, crop, x0, y0 = self._following_crop()
+        before = flow.output_rects(flow.load_graph(CAM), crop)
+        detail = self.node_detail(crop)["follow"]
+        self.assertEqual((detail["outside"], [m["id"] for m in detail["outside_modes"]]), ("skip", ["skip", "shift", "pad"]))
+        self.put(f"/nodes/{crop}", {"follow_outside": "shift"})
+        after = flow.output_rects(flow.load_graph(CAM), crop)
+        self.assertNotEqual(before, after)  # the pictures behind it are made again
+        self.assertEqual(self.node_detail(crop)["follow"]["size"], [90, 80])  # the rectangle stays
+        self.put(f"/nodes/{crop}", {"follow_outside": "skip"})
+        self.assertEqual(flow.output_rects(flow.load_graph(CAM), crop), before)  # the default is not stored in the step
+        r = self.client.put(f"{self.base}/nodes/{crop}", json={"follow_outside": "nonsense"})
+        self.assertEqual(r.status_code, 422)
+        loose = self.node("crop")
+        r = self.client.put(f"{self.base}/nodes/{loose}", json={"follow_outside": "shift"})
+        self.assertEqual(r.status_code, 422)  # no target is followed
+
+    def test_pictures_where_the_rectangle_leaves_the_picture_are_listed_and_follow_the_setting(self) -> None:
+        a, crop, x0, y0 = self._following_crop()
+        self.assertEqual(self.node_detail(crop)["follow"]["edge_frames"], [])  # drawn inside the picture it was drawn on
+        import labels  # noqa: PLC0415
+
+        graph = flow.load_graph(CAM)
+        key0 = labels.hash_map(CAM)[self.names[0]]
+        found = flow.load_stored(CAM, a)["frames"][key0]["A"]
+        # the rectangle starts 25 pixels left of and above the picture on the first picture: partly outside, on every picture
+        graph["nodes"][crop]["follow"]["offset"] = [-25 + 45 - (float(found["x"]) + 0.5), -25 + 40 - (float(found["y"]) + 0.5)]
+        flow.save_graph(CAM, graph)
+        edge = self.node_detail(crop)["follow"]["edge_frames"]
+        self.assertIn(self.names[0], edge)
+        def output(frame: str):
+            return self.client.get(f"{self.base}/nodes/{crop}/picture", params={"frame": frame, "stage": "output"})
+        self.assertNotEqual(output(self.names[0]).status_code, 200)  # skipped
+        for outside in ("shift", "pad"):
+            self.put(f"/nodes/{crop}", {"follow_outside": outside})
+            r = output(self.names[0])
+            self.assertEqual(r.status_code, 200, (outside, r.text))
+            self.assertEqual(cv2.imdecode(np.frombuffer(r.content, np.uint8), cv2.IMREAD_COLOR).shape[:2], (80, 90), outside)
+
     def _following_crop_behind_dedup(self):
         """Detector A -> (target A) Dedup -> Crop, rectangle drawn on the first picture. Returns (A, dedup, crop, x0, y0)."""
         import labels  # noqa: PLC0415

@@ -568,6 +568,11 @@ export interface FlowFollow {
   offset: [number, number] | null;
   /** Pictures where the detector found no such target: they cannot be cut. */
   missing: string[];
+  /** What happens where the rectangle leaves the picture: `skip` (no crop), `shift` (slid back inside) or `pad` (filled with grey). */
+  outside?: string;
+  outside_modes?: { id: string; label: string }[];
+  /** Pictures where the rectangle, placed next to the found target, leaves the picture. */
+  edge_frames?: string[];
 }
 /** A Picture Edits box (kind `crop`): an ordered list of steps (crop, filter) run on every picture before the next box. */
 export interface FlowCrop {

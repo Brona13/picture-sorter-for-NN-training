@@ -1,12 +1,26 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, flowPictureUrl, FlowBox, FlowCrop, FlowEdit, FlowFollow } from "../api";
+import CardGrid from "../classify/CardGrid";
 import FramePane from "../classify/FramePane";
+import { PagerSettings } from "../classify/Pager";
+import { isPageSize } from "../classify/gridSizes";
 import PictureSizeSlider, { usePictureSize } from "../PictureSize";
 import RoiCanvas from "../RoiCanvas";
 import { Box, MIN_SIZE } from "../roiGeometry";
 import ShapeCanvas from "../ShapeCanvas";
 import { FIT_VIEW, View, viewForRect } from "../zoomGeometry";
 import type { PictureEdits } from "./pictureEdits";
+
+const STRIP_WINDOW = 60; // as on the Detector page
+const GRID_OPTIONS = { per_page_options: [12, 24, 48, 96], cols_options: [3, 4, 5, 6, 8] };
+const GRID_STORE = "flow.pictureEditsGrid";
+function storedGrid(): { per_page: number; cols: number } {
+  try {
+    const raw = JSON.parse(localStorage.getItem(GRID_STORE) ?? "{}");
+    if (isPageSize(raw.per_page) && GRID_OPTIONS.cols_options.includes(raw.cols)) return raw;
+  } catch { /* the grid still works without the remembered size */ }
+  return { per_page: 24, cols: 4 };
+}
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -55,6 +69,10 @@ export default function PictureEditsWork({ camera, nodeId, detail, edits, onErro
   const [hasInput, setHasInput] = useState(true);
   const [frame, setFrame] = useState("");
   const [view, setView] = useState<View>(FIT_VIEW);
+  const [grid, setGrid] = useState(storedGrid);
+  const [page, setPage] = useState(1);
+  const strip = useRef<HTMLDivElement | null>(null);
+  const top = useRef<HTMLDivElement | null>(null);
   const step = steps.find((s) => s.id === edits.selected) ?? null;
   const index = step ? steps.indexOf(step) : -1;
   const [show, setShow] = useState<"before" | "after">("before");
@@ -94,6 +112,20 @@ export default function PictureEditsWork({ camera, nodeId, detail, edits, onErro
   const blocked = (stage: "input" | "output") => !!follow && !!frame && missing.has(frame) && index >= 0 && (stage === "output" ? index >= followIndex : index > followIndex);
 
   const at = frames.indexOf(frame);
+  const edge = useMemo(() => new Set(follow?.edge_frames ?? []), [follow?.edge_frames]);
+  useEffect(() => {
+    (strip.current?.querySelector('[aria-current="true"]') as HTMLElement | null)?.scrollIntoView?.({ inline: "center", block: "nearest" });
+  }, [frame]);
+  const start = Math.max(0, Math.min(at - STRIP_WINDOW / 2, frames.length - STRIP_WINDOW));
+  const strip60 = frames.slice(start, start + STRIP_WINDOW);
+  const statusOf = (f: string) => (missing.has(f) ? "review" : edge.has(f) ? "review" : "ok");
+  const thumbUrl = (f: string, px: number) => flowPictureUrl(camera, nodeId, f, { size: px, key: detail.crops });
+  const gridSettings: PagerSettings = { ...grid, ...GRID_OPTIONS };
+  const changeGrid = (per_page: number, cols: number) => {
+    setGrid({ per_page, cols });
+    setPage(1);
+    try { localStorage.setItem(GRID_STORE, JSON.stringify({ per_page, cols })); } catch { /* not remembered */ }
+  };
   const canvasMode = !!step && step.op === "crop" && show === "before";
   const maskMode = !!step && step.op === "mask" && show === "before";
   // A placed mask is edited on the picture it was drawn on; on another one only its result is shown.
@@ -101,16 +133,8 @@ export default function PictureEditsWork({ camera, nodeId, detail, edits, onErro
   const title = step ? `Step ${index + 1} · ${step.op === "filter" ? edits.filters[step.name]?.label ?? step.name : step.op === "mask" ? "Mask" : "Crop"}` : "No step selected";
 
   return (
-    <div className="flow-work" data-testid="crop-work">
+    <div className="flow-work" data-testid="crop-work" ref={top}>
       <div className="flow-nav">
-        <label>
-          Picture{" "}
-          <select value={frame} onChange={(e) => setFrame(e.target.value)}>
-            {frames.map((f) => <option key={f} value={f}>{f}{missing.has(f) ? " — no target found" : ""}</option>)}
-          </select>
-        </label>
-        <button type="button" disabled={at <= 0} onClick={() => setFrame(frames[at - 1])}>‹ Previous</button>
-        <button type="button" disabled={at < 0 || at >= frames.length - 1} onClick={() => setFrame(frames[at + 1])}>Next ›</button>
         <span role="group" aria-label="Show" style={{ display: "inline-flex", border: "1px solid var(--border)", borderRadius: "var(--radius)", overflow: "hidden" }}>
           {(["before", "after"] as const).map((v) => (
             <button
@@ -163,6 +187,59 @@ export default function PictureEditsWork({ camera, nodeId, detail, edits, onErro
           <h4>Result</h4>
           <img src={stepUrl("output", { size: 360 })} alt={`${frame} cropped`} style={{ maxWidth: "100%", border: "1px solid var(--border)" }} />
         </div>
+      )}
+
+      {frames.length > 0 && (
+        <>
+          <div className="flow-nav">
+            <button type="button" disabled={at <= 0} onClick={() => setFrame(frames[at - 1])}>‹ Previous</button>
+            <button type="button" disabled={at < 0 || at >= frames.length - 1} onClick={() => setFrame(frames[at + 1])}>Next ›</button>
+            <span className="muted">{at >= 0 ? `${at + 1} / ${frames.length} · ${frame}` : ""}</span>
+            {frame && missing.has(frame) && <span className="flow-missing">{follow?.detector} found no {follow?.target} here.</span>}
+            {frame && edge.has(frame) && <span className="flow-missing">The rectangle reaches past the edge of this picture.</span>}
+          </div>
+          <div className="flow-strip" ref={strip} aria-label="Pictures">
+            {strip60.map((f) => (
+              <button key={f} type="button" aria-label={`Show ${f}`} aria-current={f === frame} title={f} className={`flow-thumb ${statusOf(f)}`} onClick={() => setFrame(f)}>
+                <img src={thumbUrl(f, 96)} alt="" loading="lazy" />
+              </button>
+            ))}
+          </div>
+          <section data-testid="pictures-grid" aria-label="Pictures of this box">
+            <div className="flow-nav"><strong>Pictures</strong></div>
+            <CardGrid
+              items={frames}
+              keyOf={(f) => f}
+              settings={gridSettings}
+              onSettings={changeGrid}
+              page={page}
+              onPage={setPage}
+              where="pictures"
+              container="div"
+              renderCard={(f) => (
+                <article
+                  data-testid={`picture-${f}`}
+                  aria-current={f === frame}
+                  style={{ border: "1px solid var(--border)", outline: f === frame ? "2px solid var(--fg)" : undefined, borderRadius: "var(--radius)", background: "var(--panel)", padding: 6, minWidth: 0, boxSizing: "border-box" }}
+                >
+                  <button
+                    type="button"
+                    aria-label={`Load ${f} in the canvas`}
+                    title="Load this picture in the canvas above"
+                    onClick={(e) => { e.currentTarget.blur(); setFrame(f); top.current?.scrollIntoView?.({ block: "start", behavior: "smooth" }); }}
+                    style={{ display: "block", width: "100%", padding: 0, border: 0, background: "none", lineHeight: 0, cursor: "pointer" }}
+                  >
+                    <img src={thumbUrl(f, 200)} alt="" loading="lazy" style={{ width: "100%", display: "block" }} />
+                  </button>
+                  <div style={{ fontSize: 12, margin: "4px 0 2px", wordBreak: "break-all" }}>{f}</div>
+                  <div style={{ fontSize: 12 }}>
+                    {missing.has(f) ? <span className="flow-missing">✗ {follow?.target} not found</span> : edge.has(f) ? <span className="flow-missing">past the edge</span> : <span className="muted">✓</span>}
+                  </div>
+                </article>
+              )}
+            />
+          </section>
+        </>
       )}
     </div>
   );

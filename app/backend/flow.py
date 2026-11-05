@@ -193,12 +193,34 @@ def step_box(step, width: int, height: int, found=None) -> tuple[int, int, int, 
     if is_straighten(step):
         raise FlowError("A straightening step turns the picture; it has no plain rectangle.")
     w, h = (int(v) for v in step["size"])
-    dx, dy = step["offset"]
-    x0 = int(round(float(entry["x"]) + PIXEL_CENTRE + dx - w / 2))
-    y0 = int(round(float(entry["y"]) + PIXEL_CENTRE + dy - h / 2))
+    x0, y0 = _follow_origin(step, entry)
     if x0 < 0 or y0 < 0 or x0 + w > width or y0 + h > height:
-        raise NoCrop("The rectangle around the found target does not lie inside this picture.")
+        how = step.get("outside", "skip")
+        if how == "shift" and w <= width and h <= height:
+            x0, y0 = min(max(x0, 0), width - w), min(max(y0, 0), height - h)  # slid back inside, the same size
+        elif how == "pad" and x0 < width and y0 < height and x0 + w > 0 and y0 + h > 0:
+            pass  # the part outside the picture is filled in by `_cut_padded`
+        else:
+            raise NoCrop("The rectangle around the found target does not lie inside this picture.")
     return x0, y0, x0 + w, y0 + h
+
+
+def _follow_origin(step: dict, entry: dict) -> tuple[int, int]:
+    """Where the rectangle of a following step starts next to the found target (can lie outside the picture)."""
+    w, h = (int(v) for v in step["size"])
+    dx, dy = step["offset"]
+    return (int(round(float(entry["x"]) + PIXEL_CENTRE + dx - w / 2)), int(round(float(entry["y"]) + PIXEL_CENTRE + dy - h / 2)))
+
+
+def _cut_padded(image: np.ndarray, x0: int, y0: int, x1: int, y1: int) -> np.ndarray:
+    """``image[y0:y1, x0:x1]``; the part of the box outside the picture (``pad``, v1.157.10) is grey, as the corners of a straightened picture are."""
+    height, width = image.shape[:2]
+    if x0 >= 0 and y0 >= 0 and x1 <= width and y1 <= height:
+        return image[y0:y1, x0:x1]
+    out = np.full((y1 - y0, x1 - x0) + image.shape[2:], GREY, dtype=image.dtype)
+    sx0, sy0, sx1, sy1 = max(x0, 0), max(y0, 0), min(x1, width), min(y1, height)
+    out[sy0 - y0:sy1 - y0, sx0 - x0:sx1 - x0] = image[sy0:sy1, sx0:sx1]
+    return out
 
 
 def follow_of(graph: dict, crop_id: str) -> dict | None:
@@ -251,6 +273,12 @@ def _refollow(graph: dict, before: dict[str, dict | None]) -> None:
 def crop_mode(graph: dict, crop_id: str) -> str:
     node = graph["nodes"].get(crop_id) or {}
     return node.get("follow_mode") or (node.get("follow") or {}).get("mode", "keep")
+
+
+def outside_of(graph: dict, crop_id: str) -> str:
+    """What a following Crop does where its rectangle leaves the picture: ``skip`` (default), ``shift`` or ``pad``."""
+    value = (graph["nodes"].get(crop_id) or {}).get("follow_outside", "skip")
+    return value if value in OUTSIDE_MODES else "skip"
 
 
 def is_straighten(step: object) -> bool:
@@ -312,7 +340,9 @@ def _resolved(graph: dict, node_id: str) -> list[tuple[str, object]]:
             if not spec.get("size") or not spec.get("offset"):
                 out.append((s["id"], None))
             else:
-                out.append((s["id"], {"follow": {**follow, "mode": crop_mode(graph, node_id)}, "size": list(spec["size"]), "offset": list(spec["offset"])}))
+                outside = outside_of(graph, node_id)
+                out.append((s["id"], {"follow": {**follow, "mode": crop_mode(graph, node_id)}, "size": list(spec["size"]), "offset": list(spec["offset"]),
+                                      **({"outside": outside} if outside != "skip" else {})}))  # stored only when not the default, so boxes made before keep their signature
         else:
             out.append((s["id"], s.get("rect") or None))
     return out
@@ -398,7 +428,7 @@ def apply_rects(image: np.ndarray, rects: list, found=None) -> tuple[np.ndarray,
             image = _straighten(image, rect, entry)
             continue
         x0, y0, x1, y1 = step_box(rect, image.shape[1], image.shape[0], found)
-        image = image[y0:y1, x0:x1]
+        image = _cut_padded(image, x0, y0, x1, y1)
         ox, oy = ox + x0, oy + y0
         total = total @ np.array([[1.0, 0.0, x0], [0.0, 1.0, y0], [0.0, 0.0, 1.0]])
     return image, ox, oy
@@ -1105,6 +1135,12 @@ def update_node(camera: str, node_id: str, raw: dict) -> dict:
             if crop_mode(graph, node_id) != raw["follow_mode"]:
                 node["follow"] = None  # the rectangle's offset means another thing in the other mode: draw it again
             node["follow_mode"] = raw["follow_mode"]
+        if "follow_outside" in raw:
+            if not follow:
+                raise FlowError("Connect one target of a detector to this Picture edits box first.")
+            if raw["follow_outside"] not in OUTSIDE_MODES:
+                raise FlowError("Unknown way to treat a rectangle that leaves the picture.")
+            node["follow_outside"] = raw["follow_outside"]  # the rectangle keeps its meaning: nothing is drawn again
         if "follow" in raw:
             if not follow:
                 raise FlowError("Connect one target of a detector to this Picture edits box first.")
@@ -1437,6 +1473,12 @@ DEFAULT_OUTPUTS = ["position"]
 
 #: How a Crop can use the target it follows: the outputs the mode needs, and what it does. More modes (Straighten
 #: needs the angle) are added here; a mode whose outputs the target does not offer is shown greyed out.
+#: What a following rectangle does on a picture where it would leave the picture (v1.157.10).
+OUTSIDE_MODES = {
+    "skip": "Skip the picture (no result)",
+    "shift": "Slide the rectangle back inside (same size)",
+    "pad": "Fill the part outside with grey (same size and place)",
+}
 FOLLOW_MODES = {
     "keep": {"label": "Position only: the picture stays upright", "needs": ["position"]},
     "straighten": {"label": "Position and angle: the picture is straightened", "needs": ["position", "angle"]},
@@ -2535,7 +2577,48 @@ def follow_detail(camera: str, graph: dict, crop_id: str) -> dict | None:
         "size": spec.get("size"),
         "offset": spec.get("offset"),
         "missing": _missing_for_follow(camera, follow),
+        "outside": outside_of(graph, crop_id),
+        "outside_modes": [{"id": k, "label": v} for k, v in OUTSIDE_MODES.items()],
+        "edge_frames": _edge_frames(camera, graph, crop_id, follow, spec, mode),
     }
+
+
+def _edge_frames(camera: str, graph: dict, crop_id: str, follow: dict, spec: dict, mode: str) -> list[str]:
+    """The pictures where the rectangle drawn next to the target leaves the picture it is cut from: skipped, slid back or
+    filled with grey, depending on the ``outside`` setting. Sizes only, no pixels. Empty while no rectangle is drawn, and
+    when the picture is straightened (it is filled with grey at its corners anyway)."""
+    fid = follow_step_id(graph, crop_id)
+    if mode == "straighten" or not spec.get("size") or not spec.get("offset") or not fid:
+        return []
+    before = steps_before(graph, crop_id, fid)
+    sizes = _frame_sizes(camera)
+    hmap = labels.hash_map(camera)
+    finder = Finder(camera)
+    step = {"follow": follow, "size": spec["size"], "offset": spec["offset"]}
+    w, h = (int(v) for v in spec["size"])
+    out = []
+    for frame in _live_frames(camera):
+        key = hmap.get(frame)
+        found = finder.for_frame(key)
+        entry = found(step)
+        if entry is None or key not in sizes:
+            continue
+        try:
+            width, height = sizes[key]
+            for rect in before:  # the picture that enters the step
+                if is_filter(rect) or is_mask(rect):
+                    continue
+                if is_straighten(rect):
+                    width, height = (int(v) for v in rect["size"])
+                    continue
+                x0, y0, x1, y1 = step_box(rect, width, height, found)
+                width, height = x1 - x0, y1 - y0
+        except NoCrop:
+            continue
+        x0, y0 = _follow_origin(step, entry)
+        if x0 < 0 or y0 < 0 or x0 + w > width or y0 + h > height:
+            out.append(frame)
+    return out
 
 
 def _missing_for_follow(camera: str, follow: dict) -> list[str]:

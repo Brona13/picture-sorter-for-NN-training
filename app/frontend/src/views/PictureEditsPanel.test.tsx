@@ -271,3 +271,15 @@ test("a mask placed relative to a target shows where it was drawn; one not place
   render(<Harness detail={followDetail(saved)} />);
   expect(await screen.findByText(/Not placed yet/)).toBeInTheDocument();
 });
+
+test("a following crop chooses what happens where its rectangle leaves the picture, and counts those pictures", async () => {
+  const follow: FlowFollow = {
+    detector: "det:1", target: "hole", mode: "keep", frame: "a.png", size: [40, 20], offset: [10, -5], missing: [], offered: ["position"],
+    modes: [{ id: "keep", label: "Position only", enabled: true, needs: [] }],
+    outside: "skip", outside_modes: [{ id: "skip", label: "No crop" }, { id: "shift", label: "Slide back inside" }, { id: "pad", label: "Fill with grey" }], edge_frames: ["b.png", "c.png"],
+  };
+  await setup(base([crop("s1")], { follow, follow_step: "s1", input_box: "det:1" }));
+  expect(screen.getByTestId("pe-edge")).toHaveTextContent("2 pictures where the rectangle reaches past the edge: they get no crop.");
+  fireEvent.change(screen.getByRole("combobox", { name: "When the rectangle leaves the picture" }), { target: { value: "shift" } });
+  await waitFor(() => expect(puts().some((c) => c.body.follow_outside === "shift")).toBe(true));
+});
