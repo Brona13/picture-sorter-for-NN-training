@@ -75,6 +75,8 @@ export default function Card({ camera, feature, pictureFeature, classes, labelin
   // Search results only: a picture outside this ROI's scope gets a red frame and cannot be labeled here until its
   // product fits (open it to change the product); a muted one gets a dark grey dashed frame.
   const outside = !!card.outside;
+  // Step 2 (goldens, no labeling): the card's border has the colour of the class assigned in step 1, to compare with the methods' leaning badges.
+  const assigned = !labeling && goldens && label !== null ? label : null;
   const muted = !!card.muted;
   const frameHint = outside
     ? card.product
@@ -149,9 +151,9 @@ export default function Card({ camera, feature, pictureFeature, classes, labelin
       {...props}
       title={frameHint}
       style={{
-        border: outside ? "2px solid #c62828" : muted ? "2px dashed #555" : edgeColor ? `2px solid ${edgeColor}` : "1px solid #ccc",
+        border: outside ? "2px solid #c62828" : muted ? "2px dashed #555" : assigned ? `3px solid ${classColor(assigned, classes)}` : edgeColor ? `2px solid ${edgeColor}` : "1px solid #ccc",
         borderRadius: 8,
-        padding: outside || muted || edgeColor ? 5 : 6,
+        padding: outside || muted ? 5 : assigned ? 4 : edgeColor ? 5 : 6,
         listStyle: "none",
       }}
     >
@@ -182,21 +184,6 @@ export default function Card({ camera, feature, pictureFeature, classes, labelin
           </a>
         ) : (
           img
-        );
-      })()}
-
-      {!labeling && goldens && !golden && label !== null && (() => {
-        // Step 2: the class assigned in step 1 (the freeze), next to what each method sees, so a disagreement stands out.
-        const away = methods.filter((m) => leanings[m] && leanings[m] !== label);
-        return (
-          <div style={{ margin: "2px 0 4px", fontSize: 11 }} data-testid="assigned-label">
-            <span style={badge(classColor(label, classes))} title="The class you assigned in step 1">Assigned: {label}</span>
-            {away.length > 0 && (
-              <span style={{ ...badge("#c62828"), marginLeft: 4 }} data-testid="assigned-mismatch" title={`${away.map((m) => `${methodTag(m)} leans ${leanings[m]}`).join(", ")}: not what you assigned`}>
-                ≠ {away.map((m) => leanings[m]).filter((l, i, a) => a.indexOf(l) === i).join(", ")}
-              </span>
-            )}
-          </div>
         );
       })()}
 

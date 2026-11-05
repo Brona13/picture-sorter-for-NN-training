@@ -1284,24 +1284,26 @@ test("a card of a Classifier on a Box says the rectangle it is cut to, in pixels
   expect(within(await cardEl("b.png")).queryByTestId("card-box")).toBeNull(); // no Box: no numbers
 });
 
-test("step 2: each picture shows the class assigned in step 1, and a mark where a method leans away from it", async () => {
+test("step 2: the border of each card has the colour of the class assigned in step 1, with no text badge", async () => {
   state = baseState({ step: 2 });
-  grid = () => gridBody([card("a.png", { label: "OK", leanings: { cpu: "OK", resnet50: "OK" } }), card("b.png", { label: "NG", leanings: { cpu: "OK", resnet50: "NG" } }), card("c.png")]);
+  grid = () => gridBody([card("a.png", { label: "OK" }), card("b.png", { label: "NG" }), card("c.png")]);
   render(<ClassifyView camera="camA" />);
   const a = await cardEl("a.png");
-  expect(within(a).getByTestId("assigned-label")).toHaveTextContent("Assigned: OK");
-  expect(within(a).queryByTestId("assigned-mismatch")).toBeNull();
   const b = await cardEl("b.png");
-  expect(within(b).getByTestId("assigned-label")).toHaveTextContent("Assigned: NG");
-  expect(within(b).getByTestId("assigned-mismatch")).toHaveTextContent("≠ OK");
-  expect(within(await cardEl("c.png")).queryByTestId("assigned-label")).toBeNull(); // no label, nothing to compare
+  const c = await cardEl("c.png");
+  expect(a.style.border).toContain("3px solid");
+  expect(b.style.border).toContain("3px solid");
+  expect(a.style.borderColor).not.toBe(b.style.borderColor); // one colour per class
+  expect(c.style.border).toContain("1px solid"); // no label: the plain border
+  expect(within(a).queryByText(/Assigned/)).toBeNull();
+  expect(within(b).queryByText(/≠/)).toBeNull();
 });
 
-test("step 1 cards show no 'Assigned' badge (they have the class buttons)", async () => {
+test("step 1 cards keep the plain border (they have the class buttons)", async () => {
   state = baseState({ step: 1 });
   grid = () => gridBody([card("a.png", { label: "OK" })]);
   render(<ClassifyView camera="camA" />);
-  expect(within(await cardEl("a.png")).queryByTestId("assigned-label")).toBeNull();
+  expect((await cardEl("a.png")).style.border).toContain("1px solid");
 });
 
 test("the heading shows the name given on the Chain, not the system name", async () => {
