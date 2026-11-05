@@ -21,7 +21,8 @@ export function freshName(base: string, taken: string[]): string {
 }
 
 /** What an arrow drawn on the canvas means for the target ROI: the products it should apply to (empty = whole camera). */
-export type ConnectResult = { feature: string; products: string[]; detach?: boolean; attach?: boolean } | { error: string };
+export type ConnectResult = { feature: string; products: string[]; detach?: boolean; attach?: boolean; reset?: boolean } | { error: string };
+// attach: draw the line from Ingest (clear "detached"); reset: first empty the product list (back to the whole camera).
 
 export interface Connection {
   source: string;
@@ -54,7 +55,9 @@ export function connectAction(canvas: ChainCanvas, c: Connection): ConnectResult
   if (target.scope === "name") {
     return { error: `${target.label} belongs to ${target.product} by its name, so its product cannot change.` };
   }
-  if (source.kind === "ingest") return { feature: target.ref, products: [] };
+  // Ingest onto a feature Classifier: back on the whole camera AND the line drawn. A Classifier made alone is "detached" and reads
+  // no pictures; emptying the product list changes nothing for it, so without `attach` the line was silently not drawn (v1.157.5).
+  if (source.kind === "ingest") return { feature: target.ref, products: [], attach: true, reset: true };
   if (source.kind === "roi" && source.role !== "classify") {
     return { error: "A feature Classifier's class dots do not feed another box yet. Start the line at Ingest or at a dot of the product Classifier." };
   }

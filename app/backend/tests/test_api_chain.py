@@ -86,6 +86,28 @@ class ChainApiTests(ApiTestCase):
         self.assertEqual(self.node("roi:seal")["frames"], 4)
         self.assertEqual(self.client.put(f"{self.base}/nope/detached", json={"detached": True}).status_code, 404)
 
+    def test_a_line_from_ingest_onto_a_classifier_made_alone_draws_the_line(self) -> None:
+        """v1.157.5: the canvas sends "no products" and then "draw the line"; "no products" alone left a new Classifier hanging."""
+        self.make_chain()
+        r = self.client.put(f"/api/cameras/{CAM}/rois", json={"name": "fresh", "x": 0, "y": 0, "w": 1, "h": 1})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.client.patch(f"/api/cameras/{CAM}/rois/fresh/products", json={"products": []})  # what the canvas sent before: no change
+        self.assertNotIn(("ingest", None, "roi:fresh"), self.edges())
+        self.assertEqual(self.node("roi:fresh")["frames"], 0)
+        self.client.patch(f"/api/cameras/{CAM}/rois/fresh/products", json={"products": []})
+        self.client.put(f"{self.base}/fresh/detached", json={"detached": False})  # the new canvas sequence
+        self.assertIn(("ingest", None, "roi:fresh"), self.edges())
+        self.assertEqual(self.node("roi:fresh")["frames"], 4)
+
+    def test_a_line_from_ingest_onto_a_shared_classifier_puts_it_on_the_whole_camera(self) -> None:
+        self.make_chain()
+        self.client.patch(f"/api/cameras/{CAM}/rois/seal/products", json={"products": ["A"]})
+        self.client.patch(f"/api/cameras/{CAM}/rois/seal/products", json={"products": []})  # empties the list and detaches it ...
+        self.assertNotIn(("ingest", None, "roi:seal"), self.edges())
+        self.client.put(f"{self.base}/seal/detached", json={"detached": False})  # ... so the line must be drawn after
+        self.assertIn(("ingest", None, "roi:seal"), self.edges())
+        self.assertFalse(any(e[2] == "roi:seal" and e[0] == "roi:type" for e in self.edges()))
+
     def test_a_new_classifier_has_no_line_and_no_pictures_until_one_is_drawn(self) -> None:
         r = self.client.put(f"/api/cameras/{CAM}/rois", json={"name": "fresh", "x": 0, "y": 0, "w": 1, "h": 1})
         self.assertEqual(r.status_code, 200, r.text)

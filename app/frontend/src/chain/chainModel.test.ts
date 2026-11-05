@@ -39,7 +39,7 @@ test("the same product twice does not repeat it", () => {
 
 test("an arrow from Ingest puts the feature back on the whole camera", () => {
   expect(connectAction(canvas, { source: "ingest", sourceHandle: null, target: "roi:seal" })).toEqual({
-    feature: "seal", products: [],
+    feature: "seal", products: [], attach: true, reset: true, // attach: a Classifier made alone is detached; without it the line was never drawn (v1.157.5)
   });
 });
 

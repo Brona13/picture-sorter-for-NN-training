@@ -363,7 +363,10 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
       setError(null);
       try {
         if (result.detach) await api.setChainDetached(camera, result.feature, true);
-        else if (result.attach) await api.setChainDetached(camera, result.feature, false);
+        else if (result.attach) {
+          if (result.reset) await api.setRoiProducts(camera, result.feature, []); // first the whole camera (this may re-detach it) ...
+          await api.setChainDetached(camera, result.feature, false); // ... then the line from Ingest
+        }
         else await api.setRoiProducts(camera, result.feature, result.products);
       } catch (e) {
         fail(e);
