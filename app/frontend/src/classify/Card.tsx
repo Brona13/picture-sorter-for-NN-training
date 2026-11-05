@@ -185,6 +185,21 @@ export default function Card({ camera, feature, pictureFeature, classes, labelin
         );
       })()}
 
+      {!labeling && goldens && !golden && label !== null && (() => {
+        // Step 2: the class assigned in step 1 (the freeze), next to what each method sees, so a disagreement stands out.
+        const away = methods.filter((m) => leanings[m] && leanings[m] !== label);
+        return (
+          <div style={{ margin: "2px 0 4px", fontSize: 11 }} data-testid="assigned-label">
+            <span style={badge(classColor(label, classes))} title="The class you assigned in step 1">Assigned: {label}</span>
+            {away.length > 0 && (
+              <span style={{ ...badge("#c62828"), marginLeft: 4 }} data-testid="assigned-mismatch" title={`${away.map((m) => `${methodTag(m)} leans ${leanings[m]}`).join(", ")}: not what you assigned`}>
+                ≠ {away.map((m) => leanings[m]).filter((l, i, a) => a.indexOf(l) === i).join(", ")}
+              </span>
+            )}
+          </div>
+        );
+      })()}
+
       {golden ? (
         <div style={{ margin: "2px 0 6px", fontSize: 11 }}>
           <span style={badge(classColor(golden, classes))}>⭐ {golden}</span>

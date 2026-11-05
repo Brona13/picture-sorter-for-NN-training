@@ -74,6 +74,7 @@ function install() {
       const method = init?.method ?? "GET";
       calls.push({ url, method, body: init?.body ? JSON.parse(init.body as string) : undefined });
       const ok = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status });
+      if (url.endsWith("/camA/chain")) return ok({ camera: "camA", nodes: [{ id: "roi:1", kind: "classify", ref: "seal", label: "Seal check", x: 0, y: 0 }], edges: [], products: [], classify: null, viewport: null });
       if (url.includes("/versions/features")) return ok([{ feature: "seal", label: "seal" }]);
       if (url.includes("/classify/state")) return ok(state);
       if (url.includes("/classify/grid-settings")) return ok({ per_page: 32, cols: 4 });
@@ -724,7 +725,7 @@ test("opened on one ROI from the chain, the page is locked to it: no ROI dropdow
   render(<ClassifyView camera="camA" focus={{ feature: "seal", onBack }} />);
   await cardEl("a.png");
   expect(screen.queryByLabelText(/Feature \(ROI\)/)).toBeNull();
-  expect(screen.getByRole("heading", { name: /Classify — camA › seal/ })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: /Classify — camA › Seal check/ })).toBeInTheDocument(); // the Chain's own name
   expect(calls.some((c) => c.url.includes("/versions/features"))).toBe(false); // the ROI list is not even asked for
   expect(calls.find((c) => c.url.includes("/classify/state"))!.url).toContain("feature=seal");
   await userEvent.click(screen.getByRole("button", { name: /Back to chain/ }));
@@ -1281,4 +1282,29 @@ test("a card of a Classifier on a Box says the rectangle it is cut to, in pixels
   expect(within(a).getByTestId("card-box")).toHaveTextContent("▭ 50×6");
   expect(within(a).getByTestId("card-box")).not.toHaveTextContent("26,27"); // the resolution only, not the corners
   expect(within(await cardEl("b.png")).queryByTestId("card-box")).toBeNull(); // no Box: no numbers
+});
+
+test("step 2: each picture shows the class assigned in step 1, and a mark where a method leans away from it", async () => {
+  state = baseState({ step: 2 });
+  grid = () => gridBody([card("a.png", { label: "OK", leanings: { cpu: "OK", resnet50: "OK" } }), card("b.png", { label: "NG", leanings: { cpu: "OK", resnet50: "NG" } }), card("c.png")]);
+  render(<ClassifyView camera="camA" />);
+  const a = await cardEl("a.png");
+  expect(within(a).getByTestId("assigned-label")).toHaveTextContent("Assigned: OK");
+  expect(within(a).queryByTestId("assigned-mismatch")).toBeNull();
+  const b = await cardEl("b.png");
+  expect(within(b).getByTestId("assigned-label")).toHaveTextContent("Assigned: NG");
+  expect(within(b).getByTestId("assigned-mismatch")).toHaveTextContent("≠ OK");
+  expect(within(await cardEl("c.png")).queryByTestId("assigned-label")).toBeNull(); // no label, nothing to compare
+});
+
+test("step 1 cards show no 'Assigned' badge (they have the class buttons)", async () => {
+  state = baseState({ step: 1 });
+  grid = () => gridBody([card("a.png", { label: "OK" })]);
+  render(<ClassifyView camera="camA" />);
+  expect(within(await cardEl("a.png")).queryByTestId("assigned-label")).toBeNull();
+});
+
+test("the heading shows the name given on the Chain, not the system name", async () => {
+  render(<ClassifyView camera="camA" focus={{ feature: "seal", onBack: () => {} }} />);
+  expect(await screen.findByRole("heading", { name: /Classify — camA › Seal check/ })).toBeInTheDocument();
 });

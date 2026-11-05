@@ -60,6 +60,15 @@ class FilterSortTests(unittest.TestCase):
                                  methods=["cpu", "resnet50"], lab={}, gold={})
         self.assertEqual([r.frame for r in out], ["d.png"])
 
+    def test_disagrees_with_label(self) -> None:
+        d = fs("d.png", cpu={"dists": {"OK": 0.2, "NG": 0.1}, "leaning": "NG", "margin": 0.1, "novelty": 0.1})
+        out = cv.filter_and_sort(
+            [A, C, d, G], view=cv.DISAGREE_VIEW, rank_method="cpu", order="Name", scored=True, methods=["cpu"],
+            lab={"a.png": "OK", "c.png": "OK", "d.png": "OK", "g.png": "OK"}, gold={"OK": ["g.png"]},
+        )
+        self.assertEqual([r.frame for r in out], ["c.png", "d.png"])  # labeled OK, a method leans NG; a.png agrees, g.png is a golden
+        self.assertIn(cv.DISAGREE_VIEW, cv.valid_views(["OK", "NG"]))
+
 
 class BarsAndSelectionTests(unittest.TestCase):
     def test_bars_relative_closeness_and_close_call(self) -> None:

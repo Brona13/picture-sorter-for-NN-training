@@ -2,6 +2,7 @@ import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "r
 import ClassifyKpis from "../classify/ClassifyKpis";
 import ClassifyOutliers from "../classify/ClassifyOutliers";
 import ClassifyScatter from "../classify/ClassifyScatter";
+import { useNodeName } from "../chain/useNodeName";
 import { RankContext } from "../RankContext";
 import { usePublishFeature, useSharedFeature } from "../SharedFeature";
 import { api, CardData, CardUpdate, ClassifyState, GridQuery, GridResponse } from "../api";
@@ -49,6 +50,7 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
   const [features, setFeatures] = useState<{ feature: string; label: string }[]>([]);
   const [feature, setFeature] = useState("");
   const shared = useSharedFeature();
+  const focusName = useNodeName(camera, focus?.feature, focus?.feature.split("::").pop() ?? ""); // the name given on the Chain, not the system one
   usePublishFeature(feature, shared.publish);
   const [st, setSt] = useState<ClassifyState | null>(null);
   // What this Classifier's step offers: step 1 labels and deletes (no goldens); step 2 chooses goldens and mutes (labels are the freeze's).
@@ -409,7 +411,7 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
     <section>
       <h2>
         Classify — {camera}
-        {focus ? ` › ${focus.feature.split("::").pop()}` : product ? ` › ${product}` : ""}
+        {focus ? ` › ${focusName}` : product ? ` › ${product}` : ""}
       </h2>
       <SidePanel panel={gridPanel} wide>
       {focus && (

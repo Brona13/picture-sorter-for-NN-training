@@ -1,6 +1,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { api, ChainNode, flowPictureUrl, frameCutoutUrl, frameImageUrl, FramesResponse, PRODUCTS_RENAMED, RoiInfo, RoisResponse, roiThumbUrl } from "../api";
 import AnchorSection from "../chain/AnchorSection";
+import { useNodeName } from "../chain/useNodeName";
 import RegionSection from "../chain/RegionSection";
 import SidePanel from "../SidePanel";
 import ProductNamesEditor from "../classify/ProductNamesEditor";
@@ -88,6 +89,7 @@ export default function RoiEditorView({ camera, product, focus }: { camera: stri
     ? rois[0]
     : (rois.find((r) => r.feature === editFeature) ?? rois[0]);
   const editing = (focused !== "" || mode === "edit") && target !== undefined;
+  const chainName = useNodeName(camera, focus?.feature, target?.short_name ?? datamodelShort(focused)); // the name given on the Chain
 
   // Entering edit mode (or switching target) seeds the box from the saved geometry.
   useEffect(() => {
@@ -180,7 +182,7 @@ export default function RoiEditorView({ camera, product, focus }: { camera: stri
     <section>
       <h2>
         ROI editor — {camera}
-        {focus ? ` › ${target?.short_name ?? datamodelShort(focused)}` : product ? ` › ${product}` : ""}
+        {focus ? ` › ${chainName}` : product ? ` › ${product}` : ""}
       </h2>
       {focus && (
         <p>

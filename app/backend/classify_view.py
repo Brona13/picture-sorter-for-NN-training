@@ -8,7 +8,8 @@ from __future__ import annotations
 import labels
 
 CLOSE_CALL_RATIO = 0.90
-BASE_VIEWS = ["All", "Unlabeled", "Golden", "Methods disagree", "Deleted"]
+DISAGREE_VIEW = "Disagrees with label"  # a labeled picture that a method leans away from (what you assigned vs what the network sees)
+BASE_VIEWS = ["All", "Unlabeled", "Golden", "Methods disagree", DISAGREE_VIEW, "Deleted"]
 ORDERS = ["Most novel first", "Most uncertain first", "Name"]
 BULK_MODES = ["leaning", "ordinary", "uncertain"]
 
@@ -87,6 +88,12 @@ def filter_and_sort(
             items = [r for r in items if labels.golden_class_of(gold, r.frame)]
         elif view == "Methods disagree":
             items = [r for r in items if len(leanings(r) - {None}) > 1]
+        elif view == DISAGREE_VIEW:
+            items = [
+                r for r in items
+                if r.frame in lab and labels.golden_class_of(gold, r.frame) is None
+                and any(l not in (None, lab[r.frame]) for l in leanings(r))
+            ]
         elif view.startswith(EDGE_VIEW_PREFIX):
             want = view[len(EDGE_VIEW_PREFIX):]
             items = [r for r in items if (edge_verdicts or {}).get(r.frame) == want]
