@@ -794,10 +794,12 @@ def parent_of(graph: dict, node_id: str) -> str | None:
             return e["source"]
         if e["target"] == node_id and kind_of(e["source"]) == "dedup" and kind_of(node_id) in ("detector", "crop", "dedup"):
             behind = _through_dedup(graph, e["source"])
-            if behind is None and kind_of(node_id) == "crop":
-                followed = follow_of(graph, node_id)  # a Dedup in front of a following Crop: it still works in the detector's picture
-                if followed:
-                    return followed["detector"]
+            if behind is None and kind_of(node_id) in ("crop", "detector"):
+                # A Dedup box in front of a Crop or a detector only filters the pictures: when it reads a detector's target, that
+                # detector is still this box's input (the found box it follows or the box a cascaded target searches in).
+                read = _target_behind_dedup(graph, e["source"])
+                if read:
+                    return read["detector"]
             return behind
     return None
 
@@ -1407,6 +1409,10 @@ def input_line_point(graph: dict, node_id: str) -> str | None:
     for e in graph["edges"]:
         if e["target"] == node_id and e["source"] == parent and e.get("point") in parent_target_names(graph, node_id):
             return e["point"]
+        if e["target"] == node_id and kind_of(e["source"]) == "dedup":  # behind a Dedup box: the target it reads
+            read = _target_behind_dedup(graph, e["source"])
+            if read and read["detector"] == parent and read["target"] in parent_target_names(graph, node_id):
+                return read["target"]
     return None
 
 

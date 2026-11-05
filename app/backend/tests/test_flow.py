@@ -975,6 +975,41 @@ class FlowTests(ApiTestCase):
         bad = self.client.post(f"{self.base}/edges", json={"source": d1, "target": d2, "point": "nope"})
         self.assertEqual(bad.status_code, 422)
 
+    def test_a_dedup_between_two_detectors_keeps_the_cascade(self) -> None:
+        """v1.157.8: detector target dot -> Dedup -> detector is the same cascade as a line straight from the target dot."""
+        import labels
+
+        d1 = self.detector({"left": LEFT_BOX, "right": RIGHT_BOX})
+        dedup, d2 = self.node("dedup"), self.node("detector")
+        self.post("/edges", {"source": d1, "target": dedup, "point": "right"})
+        self.post("/edges", {"source": dedup, "target": d2})
+        graph = flow.load_graph(CAM)
+        self.assertEqual(flow.parent_of(graph, d2), d1)
+        detail = self.node_detail(d2)
+        self.assertEqual((detail["input"], detail["input_box"], detail["input_point"]), (d1, d1, "right"))
+        self.assertEqual(detail["parent_targets"], ["left", "right"])  # the page offers "Search inside" and the cut-out / whole picture view
+        self.post(f"/nodes/{d2}/targets", {"name": "hole"})
+        self.post(f"/nodes/{d2}/examples", {"target": "hole", "frame": self.names[0], "box": RIGHT_HOLE})
+        self.put(f"/nodes/{d2}", {"rotate": False})
+        with self.assertRaises(flow.FlowError):
+            flow.run_detector(CAM, d2)  # the detector before it has to be run first, as with a direct line
+        self.run_all()
+        key = labels.hash_map(CAM)[self.names[0]]
+        found = flow.load_stored(CAM, d2)["frames"][key]
+        self.assertAlmostEqual(found["hole"]["x"], RIGHT_HOLE[0] + RIGHT_HOLE[2] / 2, delta=1.5)  # searched in the right box only
+        direct = self.node("detector")  # the same thing with the line straight from the target dot
+        self.post("/edges", {"source": d1, "target": direct, "point": "right"})
+        self.assertEqual(flow.input_rects(flow.load_graph(CAM), d2), flow.input_rects(flow.load_graph(CAM), direct))
+        # another target behind the Dedup box: a new run
+        before = flow.signature(flow.load_graph(CAM), d2)
+        self.post("/edges", {"source": d1, "target": dedup, "point": "left"})
+        self.assertEqual(self.node_detail(d2)["input_point"], "left")
+        self.assertNotEqual(before, flow.signature(flow.load_graph(CAM), d2))
+        # a Dedup box that reads Ingest gives no cascade
+        self.post("/edges", {"source": "ingest", "target": dedup})
+        self.assertIsNone(self.node_detail(d2)["input_point"])
+        self.assertEqual(self.node_detail(d2)["input"], "ingest")
+
     def test_a_picture_without_the_parent_box_is_skipped_for_the_cascaded_target(self) -> None:
         import labels
 
