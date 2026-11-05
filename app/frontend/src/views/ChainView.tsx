@@ -16,7 +16,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api, ChainCanvas, ChainDeletePreview, ChainEdge, ChainNode, ChainViewport, FlowDeletePreview } from "../api";
-import { ALL_HANDLE, INGEST_ID, targetHandle, targetOfHandle, connectAction, describeNode, disconnectAction, classLineOf, exportLineOf, flowConnect, isClassLineEdge, freshName, isAnchorEdge, isMergeLineEdge, mergeLineOf, isDedupInputEdge, isEvaluationLabelEdge, isDedupSourceEdge, isExportLineEdge, isRoiInputEdge, isFlowKind, isPileKind, layoutOf, productHandle } from "../chain/chainModel";
+import { ALL_HANDLE, INGEST_ID, hasRectangle, targetHandle, targetOfHandle, connectAction, describeNode, disconnectAction, classLineOf, exportLineOf, flowConnect, isClassLineEdge, freshName, isAnchorEdge, isMergeLineEdge, mergeLineOf, isDedupInputEdge, isEvaluationLabelEdge, isDedupSourceEdge, isExportLineEdge, isRoiInputEdge, isFlowKind, isPileKind, layoutOf, productHandle } from "../chain/chainModel";
 import ClassifierMode from "../chain/ClassifierMode";
 import Counter from "../chain/Counter";
 import { KindIcon } from "../chain/kindIcons";
@@ -667,7 +667,7 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
                 Ingest
               </button>
             )}
-            {selectedLive.kind === "roi" && (
+            {selectedLive.kind === "roi" && hasRectangle(selectedLive) && (
               <button type="button" onClick={() => openPage(selectedLive, "roi")}>
                 ROI editor
               </button>

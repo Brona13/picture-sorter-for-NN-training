@@ -118,6 +118,24 @@ test("a Classifier opens the ROI editor and the Classify page, and a feature Cla
   expect(screen.getByRole("button", { name: /Delete…/ })).toBeInTheDocument();
 });
 
+test("the ROI editor button is offered only where there is a rectangle to draw (v1.157.6)", async () => {
+  const mk = (over: Record<string, unknown>) => node({ id: "roi:x", ref: "x", label: "x", mode: "feature", scope: "camera", classes: ["OK", "NG"], product_counts: {}, ...over });
+  current = canvas();
+  current.nodes.push(
+    mk({ id: "roi:asis", ref: "asis", label: "asis", region: "as_is" }),
+    mk({ id: "roi:own", ref: "own", label: "own", region: "own" }),
+    mk({ id: "roi:pending", ref: "pending", label: "pending", region: "own_pending" }),
+    mk({ id: "roi:box", ref: "box", label: "box", region: "as_is", anchor: { detector: "det:1", target: "p", mode: "box", follow_rotation: false } }),
+    mk({ id: "roi:rect", ref: "rect", label: "rect", region: "own", anchor: { detector: "det:1", target: "p", mode: "rect", follow_rotation: false } }),
+  );
+  renderView(vi.fn());
+  for (const [id, shown] of [["roi:type", true], ["roi:asis", false], ["roi:own", true], ["roi:pending", true], ["roi:box", false], ["roi:rect", true]] as [string, boolean][]) {
+    fireEvent.click(await screen.findByTestId(`chain-node-${id}`));
+    expect(screen.getByRole("button", { name: "Classify" })).toBeInTheDocument(); // Classify is always there
+    expect(!!screen.queryByRole("button", { name: "ROI editor" })).toBe(shown);
+  }
+});
+
 test("every Classifier offers ROI editor and Classify; Ingest only Ingest", async () => {
   renderView(vi.fn());
   for (const [id, wanted, absent] of [

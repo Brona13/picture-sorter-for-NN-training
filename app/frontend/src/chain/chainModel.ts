@@ -71,6 +71,14 @@ export function connectAction(canvas: ChainCanvas, c: Connection): ConnectResult
   return { error: "Start the line at Ingest or at a dot of the product Classifier." };
 }
 
+/**
+ * Whether the ROI editor has anything to do for a Classifier (v1.157.6): the product Classifier (it renames the products), one
+ * with its own rectangle (chosen or still to draw) or one that follows a detector's box with a rectangle of its own. A Classifier
+ * that uses the picture as it comes in, or a detector's found box, has no rectangle, so its editor page would be empty.
+ * No stored region means the legacy default, own (as in `RegionSection`).
+ */
+export const hasRectangle = (n: ChainNode): boolean => n.role === "classify" || (n.region ?? "own") !== "as_is" || n.anchor?.mode === "rect";
+
 /** What deleting an arrow means: the target ROI loses that product (no product left = whole camera). */
 export function disconnectAction(canvas: ChainCanvas, edge: ChainEdge): ConnectResult {
   const target = featureOf(canvas, edge.target);
