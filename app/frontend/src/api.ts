@@ -697,6 +697,13 @@ export interface ExportLatest {
   /** The DS zip last made from this freeze (path in the camera folder), or none. */
   ds?: { zip: string; written: number } | null;
 }
+/** The pictures that reach neither input of an Export box: for each, the Classifiers that gave it no label and why. */
+export interface ExportLeftOut {
+  total: number;
+  items: { frame: string; missing: { classifier: string; feature: string; state: "absent" | "unlabeled"; why: string }[]; said: Record<string, string> }[];
+  /** "Classifier: reason" -> how many pictures. */
+  reasons: Record<string, number>;
+}
 export interface ExportState {
   folders: Record<string, number>;
   total: number;
@@ -1798,6 +1805,8 @@ export const api = {
     request<FlowNodeDetail>(`/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}`, send("PUT", body)),
   flowExport: (camera: string, id: string) =>
     request<ExportState>(`/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/export`),
+  flowExportLeftOut: (camera: string, id: string) =>
+    request<ExportLeftOut>(`/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/export/left-out`),
   flowExportFreeze: (camera: string, id: string, name = "", notes = "") =>
     request<{ id: number; number: number; counts: Record<string, number> }>(
       `/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/export/freeze`,

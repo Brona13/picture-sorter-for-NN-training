@@ -6,6 +6,7 @@ import json
 import anchor
 import box_module
 import class_lines
+import datamodel
 import db
 import dedup_box
 import export_box
@@ -317,6 +318,14 @@ def get_export(camera: str, node_id: str) -> dict:
     """What this Export box would write now (counts per folder) and the state of its latest freeze."""
     _export_box(camera, node_id)
     return export_box.state(camera, node_id)
+
+
+@router.get("/cameras/{camera}/flow/nodes/{node_id}/export/left-out")
+def get_export_left_out(camera: str, node_id: str) -> dict:
+    """The pictures that reach neither input of this Export box (a freeze leaves them out), with what each Classifier said or why it has no label."""
+    _export_box(camera, node_id)
+    with datamodel.render_snapshot():  # the Chain above is worked out once, not for every picture
+        return export_box.left_out(camera, node_id)
 
 
 @router.post("/cameras/{camera}/flow/nodes/{node_id}/export/freeze", status_code=201)

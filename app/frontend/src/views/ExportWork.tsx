@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import { api, DsExportFields, DsExportReport, ExportLatest, ExportReport, ExportState, FlowExport, FlowNodeDetail } from "../api";
+import { api, DsExportFields, DsExportReport, ExportLatest, ExportLeftOut, ExportReport, ExportState, FlowExport, FlowNodeDetail, frameThumbUrl } from "../api";
 import CopyButton from "../CopyButton";
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -26,6 +26,8 @@ export default function ExportWork({ camera, nodeId, detail, setDetail, onError 
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [report, setReport] = useState<ExportReport | null>(null);
+  const [left, setLeft] = useState<ExportLeftOut | null>(null); // the pictures in neither pile, once asked for
+  const [leftBusy, setLeftBusy] = useState(false);
   const [ds, setDs] = useState<DsExportFields>({
     dataset_name: camera, folder_name: camera, ok_name: "OK", ng_name: "NG", ok_color: "#06e52b", ng_color: "#f44336", include_without_box: false, zip_name: "",
   });
@@ -41,6 +43,11 @@ export default function ExportWork({ camera, nodeId, detail, setDetail, onError 
     }).catch((e) => onError(msg(e)));
   }, [camera, nodeId, onError]);
   useEffect(load, [load, detail]);
+  useEffect(() => setLeft(null), [camera, nodeId, detail]); // the list was made for the lines as they were
+  const showLeft = () => {
+    setLeftBusy(true);
+    api.flowExportLeftOut(camera, nodeId).then(setLeft).catch((e) => onError(msg(e))).finally(() => setLeftBusy(false));
+  };
 
   const run = async (work: () => Promise<unknown>) => {
     setBusy(true);
@@ -124,6 +131,42 @@ export default function ExportWork({ camera, nodeId, detail, setDetail, onError 
           </div>
         )}
       </section>
+
+      {(detail.step ?? 1) === 1 && state && state.total > 0 && (
+        <section className="export-card" aria-label="Pictures left out" data-testid="left-out">
+          <div className="export-card-head">
+            <h3>Pictures in neither OK nor NG</h3>
+            <button type="button" disabled={leftBusy} onClick={showLeft}>{left ? "Refresh" : "Show them"}</button>
+          </div>
+          {!left && <p className="muted">A freeze takes only pictures that reach the OK or the NG input. Show the others and why each is missing.</p>}
+          {left && left.total === 0 && <p className="muted">Every picture reaches OK or NG.</p>}
+          {left && left.total > 0 && (
+            <>
+              <p>
+                <strong>{left.total}</strong> picture{left.total === 1 ? "" : "s"} reach neither input, so the freeze does not take {left.total === 1 ? "it" : "them"}. A picture is OK only when every
+                Classifier on the OK lines says OK; one that a Classifier does not have (a detector found nothing, a Dedup box muted it) or has not labeled is not OK, and is not NG unless another one says NG.
+              </p>
+              <div className="export-scroll">
+                <table aria-label="Why pictures are left out">
+                  <thead><tr><th>Classifier: reason</th><th className="num">Pictures</th></tr></thead>
+                  <tbody>{Object.entries(left.reasons).map(([why, n]) => <tr key={why}><td>{why}</td><td className="num">{n}</td></tr>)}</tbody>
+                </table>
+              </div>
+              {left.total > left.items.length && <p className="muted">The first {left.items.length} are listed below.</p>}
+              <ul style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: 8, padding: 0, listStyle: "none" }}>
+                {left.items.map((i) => (
+                  <li key={i.frame} data-testid={`left-out-${i.frame}`} style={{ border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: 6, background: "var(--panel)", minWidth: 0 }}>
+                    <img src={frameThumbUrl(camera, i.frame)} alt={i.frame} loading="lazy" style={{ width: "100%", display: "block" }} />
+                    <div style={{ fontSize: 12, wordBreak: "break-all", margin: "4px 0 2px" }}>{i.frame}</div>
+                    {i.missing.map((m) => <div key={m.feature} className="flow-missing" style={{ fontSize: 12 }}>{m.classifier}: {m.why}</div>)}
+                    {Object.keys(i.said).length > 0 && <div className="muted" style={{ fontSize: 12 }}>{Object.entries(i.said).map(([c, l]) => `${c} ${l}`).join(" · ")}</div>}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </section>
+      )}
 
       <section className="export-card" aria-label="Freeze and export">
         <div className="export-card-head">

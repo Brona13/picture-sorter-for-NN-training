@@ -304,3 +304,47 @@ class BoxIdentityTests(ApiTestCase):
         self.assertEqual(self.client.put(f"{self.base}/chain/layout", json={"names": {box: "My freeze"}}).status_code, 200)
         self.assertEqual(len(export_box._versions_of(CAM, box)), 1)
 
+
+
+class LeftOutTests(ApiTestCase):
+    """The pictures a freeze leaves out: in neither pile, and which Classifier gave them no label."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.frames = write_frames(CAM, 6)
+        datamodel.save_rois(CAM, [ROI("seal", 0, 0, 1, 1, classes=["OK", "NG"]), ROI("foam", 0, 0, 1, 1, classes=["OK", "NG"])])
+        f = self.frames
+        for frame, cls in zip(f, ["OK", "OK", "OK", "NG", "OK", "OK"]):
+            labels.set_label(CAM, "seal", frame, cls)
+        for frame, cls in zip(f[:4], ["OK", "OK", "NG", "OK"]):  # f4 and f5 have no label in foam
+            labels.set_label(CAM, "foam", frame, cls)
+        self.box = flow.create_node(CAM, "export")
+        self.ng = flow.create_node(CAM, "merge")
+        for feature in ("seal", "foam"):
+            flow.update_node(CAM, self.box, {"add_line": {"input": "ok", "ref": {"feature": feature, "dot": "OK"}}})
+            flow.update_node(CAM, self.ng, {"add_line": {"feature": feature, "dot": "NG"}})
+        flow.update_node(CAM, self.box, {"add_line": {"input": "ng", "ref": {"from": self.ng}}})
+
+    def test_no_lines_no_list(self) -> None:
+        empty = flow.create_node(CAM, "export")
+        self.assertEqual(export_box.left_out(CAM, empty), {"total": 0, "items": [], "reasons": {}})
+
+    def test_the_pictures_in_neither_pile_say_which_classifier_has_no_label_for_them(self) -> None:
+        out = export_box.left_out(CAM, self.box)
+        f = self.frames
+        self.assertEqual(sorted(i["frame"] for i in out["items"]), sorted([f[4], f[5]]))  # f0 f1 OK in both, f2 f3 NG somewhere
+        one = next(i for i in out["items"] if i["frame"] == f[4])
+        self.assertEqual(one["said"], {"seal": "OK"})
+        self.assertEqual([m["classifier"] for m in one["missing"]], ["foam"])
+        self.assertEqual(one["missing"][0]["state"], "unlabeled")  # it is among foam's pictures but has no label there
+        self.assertEqual(out["reasons"], {"foam: no label yet": 2})
+
+    def test_a_picture_the_classifier_does_not_have_says_why(self) -> None:
+        from unittest import mock
+
+        f = self.frames
+        real = export_box.db.muted_frames
+        with mock.patch.object(export_box.db, "muted_frames", lambda cam, feat: {f[5]} if feat == "foam" else real(cam, feat)):
+            out = export_box.left_out(CAM, self.box)
+        gone = next(i for i in out["items"] if i["frame"] == f[5])
+        self.assertEqual(gone["missing"], [{"classifier": "foam", "feature": "foam", "state": "absent", "why": "muted in this Classifier"}])

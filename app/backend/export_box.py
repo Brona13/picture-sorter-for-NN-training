@@ -19,6 +19,7 @@ import json
 from collections import Counter
 
 import anchor
+import dedup_box
 import datamodel
 import db
 import ds_export
@@ -26,6 +27,7 @@ import flow
 import labels
 import lines
 import model_sets
+import roi_input
 import versions
 
 BOX_FORMATS = ("corners", "size")  # x1, y1, x2, y2 (two corners) or x, y, width, height (top-left corner and size); pixels of the picture
@@ -207,3 +209,123 @@ def freeze(camera: str, node_id: str, name: str = "", notes: str = "") -> dict:
         stats["export"]["rectangles"] = {"box": p["box"], "format": p["box_format"], "rows": {frame: box_row(n, p["box_format"]) for frame, n in numbers.items()}}
         stats["export"]["sizes"] = model_sets.size_counts(camera, list(numbers))  # picture sizes of the pictures that have a rectangle (the Models page filters by them)
     return versions.insert_project_version(camera, name, notes, counts, stats, p["items"])
+
+
+# --- the pictures that reach neither input --------------------------------------------------------
+LEFT_OUT_LIMIT = 500  # the list is for looking at; the count is always the whole number
+
+
+def _leaf_features(graph: dict, ref: dict, _seen: frozenset = frozenset()) -> list[str]:
+    """The Classifiers whose dots a line comes from, through any Merges."""
+    if ref.get("from"):
+        box = ref["from"]
+        if flow.kind_of(box) == "merge" and box not in _seen and box in graph["nodes"]:
+            return [f for r in flow.merge_lines(graph["nodes"][box]) for f in _leaf_features(graph, r, _seen | {box})]
+        return []
+    return [ref["feature"]] if ref.get("feature") else []
+
+
+def _box_names(camera: str, graph: dict) -> dict[str, str]:
+    """The name of each box as the Chain shows it (the user's name, else the default)."""
+    import chain  # noqa: PLC0415  (chain imports this module)
+
+    stored = chain.load_layout(camera).get("nodes", {})
+    names = {}
+    for node_id, node in graph["nodes"].items():
+        default = {"crop": "Picture edits", "detector": "Detector", "evaluation": "Evaluation", "dedup": "Dedup", "export": "Export", "merge": "Merge", "calc": "Calculate", "box": "Box"}.get(node.get("kind"), node.get("kind", "Box"))
+        names[node_id] = (stored.get(node_id) or {}).get("label") or f"{default} {node_id.split(':')[-1]}"
+    return names
+
+
+def _passes(camera: str, graph: dict, box: str, frame: str) -> bool:
+    """Whether a box hands this picture on (a Dedup box not when it muted it)."""
+    names = set(flow.node_frames(camera, box, graph))
+    if flow.kind_of(box) == "dedup":
+        names -= db.muted_frames(camera, box)
+    return frame in names
+
+
+def _why_absent(camera: str, graph: dict, names: dict[str, str], feature: str, frame: str) -> str:
+    """Why a picture is not among a Classifier's pictures: the first box above it that does not hand it on."""
+    boxes = []
+    spec = anchor.get_anchor(camera, feature)
+    if spec:
+        boxes.append(spec["detector"])
+    spec = roi_input.get_input(camera, feature)
+    if spec:
+        boxes.append(spec["box"])
+    boxes += dedup_box.inputs_of(camera, feature)
+    for box in boxes:
+        if box not in graph["nodes"] or _passes(camera, graph, box, frame):
+            continue
+        cur = box
+        for _ in range(30):  # up the chain while the box above does not have it either
+            up = flow.parent_of(graph, cur)
+            if up and up in graph["nodes"] and not _passes(camera, graph, up, frame):
+                cur = up
+                continue
+            break
+        kind = flow.kind_of(cur)
+        name = names.get(cur, cur)
+        if kind == "dedup":
+            return f"muted by {name}"
+        if kind == "detector":
+            return f"{name} found no target"
+        if kind == "crop":
+            return f"{name} has no rectangle here (the detector before it found nothing)"
+        return f"not passed on by {name}"
+    if frame in db.muted_frames(camera, feature):
+        return "muted in this Classifier"
+    return "not among this Classifier's pictures"
+
+
+def left_out(camera: str, node_id: str) -> dict:
+    """The pictures that reach neither the OK nor the NG input of this box (so a freeze leaves them out), and for each the
+    Classifiers on its lines that gave it no label: ``{"total", "items": [{"frame", "missing": [{"classifier", "feature",
+    "state", "why"}], "said": {classifier: label}}], "reasons": {text: count}}``. A picture labeled OK or NG by every Classifier is
+    never in the list, so each listed one has at least one Classifier that has no label for it."""
+    graph = flow.load_graph(camera)
+    node = graph["nodes"].get(node_id)
+    if node is None or node.get("kind") != "export":
+        raise flow.FlowError(f"Unknown Export box: {node_id}")
+    lines_in = flow.export_lines(graph, node_id)
+    sel = selection(camera, node_id, graph)
+    if not any(lines_in.values()):
+        return {"total": 0, "items": [], "reasons": {}}
+    live = flow._live_frames(camera)
+    passed = (sel["ok"] or set()) | (sel["ng"] or set())
+    left = [f for f in live if f not in passed]
+    features: list[str] = []
+    for refs in lines_in.values():
+        for ref in refs:
+            for f in _leaf_features(graph, ref):
+                if f not in features:
+                    features.append(f)
+    names = _box_names(camera, graph)
+    short = {f: (chain_label(camera, f) or f.split("::")[-1]) for f in features}
+    scope = {f: set(datamodel.frames_for_feature(camera, f)) - db.muted_frames(camera, f) for f in features}
+    labs = {f: labels.current_labels(camera, f) for f in features}
+    items = []
+    reasons: Counter = Counter()
+    for frame in left:
+        missing, said = [], {}
+        for f in features:
+            label = labs[f].get(frame) if frame in scope[f] else None
+            if label:
+                said[short[f]] = label
+                continue
+            if frame in scope[f]:
+                why, state = "no label yet", "unlabeled"
+            else:
+                why, state = _why_absent(camera, graph, names, f, frame), "absent"
+            missing.append({"classifier": short[f], "feature": f, "state": state, "why": why})
+            reasons[f"{short[f]}: {why}"] += 1
+        items.append({"frame": frame, "missing": missing, "said": said})
+    return {"total": len(items), "items": items[:LEFT_OUT_LIMIT], "reasons": dict(reasons.most_common())}
+
+
+def chain_label(camera: str, feature: str) -> str | None:
+    """The name the user gave a Classifier on the Chain, if any."""
+    import chain  # noqa: PLC0415
+
+    return (chain.load_layout(camera).get("nodes", {}).get(chain.roi_node_id(feature)) or {}).get("label")

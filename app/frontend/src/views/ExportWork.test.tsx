@@ -25,6 +25,14 @@ beforeEach(() => {
         folders: counts.folders, total: counts.total, ok: 3, ng: 2, both: counts.both, not_golden: counts.not_golden, no_product: counts.no_product,
         uses_product: true, goldens_only: true, lines: { ok: 1, ng: 1 }, latest: frozen[0] ?? null, versions: frozen, ...boxState,
       }));
+    if (url.endsWith("/export/left-out"))
+      return new Response(JSON.stringify({
+        total: 2, reasons: { "foam-4: muted by Dedup 5": 1, "foam-1: Detector 2 found no target": 1 },
+        items: [
+          { frame: "a.png", missing: [{ classifier: "foam-4", feature: "foam4", state: "absent", why: "muted by Dedup 5" }], said: { "foam-1": "OK" } },
+          { frame: "b.png", missing: [{ classifier: "foam-1", feature: "foam1", state: "absent", why: "Detector 2 found no target" }], said: {} },
+        ],
+      }));
     if (url.endsWith("/export/freeze")) { frozen = [version(), ...frozen]; return new Response(JSON.stringify({ id: 7, number: 2, counts: {} }), { status: 201 }); }
     if (url.endsWith("/project-versions/7/export")) {
       frozen = frozen.map((v) => (v.id === 7 ? { ...v, exported: true } : v));
@@ -216,4 +224,22 @@ test("a freeze without rectangles cannot open the DS card", async () => {
   mount();
   await screen.findByRole("table", { name: "Frozen versions" });
   expect(screen.getByRole("button", { name: "DS dataset of version 2" })).toBeDisabled();
+});
+
+test("Freeze: the pictures in neither pile are listed on request, with the Classifier and the reason for each", async () => {
+  mount({ step: 1 });
+  await screen.findByText("A/OK");
+  expect(calls.some((c) => c.url.endsWith("/export/left-out"))).toBe(false); // only when asked for
+  fireEvent.click(screen.getByRole("button", { name: "Show them" }));
+  const card = await screen.findByTestId("left-out-a.png");
+  expect(card).toHaveTextContent("foam-4: muted by Dedup 5");
+  expect(card).toHaveTextContent("foam-1 OK");
+  expect(screen.getByTestId("left-out-b.png")).toHaveTextContent("foam-1: Detector 2 found no target");
+  expect(screen.getByRole("table", { name: "Why pictures are left out" })).toHaveTextContent("foam-4: muted by Dedup 5");
+});
+
+test("the step-2 Export has no such list", async () => {
+  mount();
+  await screen.findByText("A/OK");
+  expect(screen.queryByTestId("left-out")).toBeNull();
 });
