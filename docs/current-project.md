@@ -3,7 +3,7 @@ name: current-project
 description: Authoritative snapshot of the current purpose, architecture, capabilities, limitations, and open work; per-version history is in changelog.md
 status: current
 document_type: project-status
-last_updated: 2026-11-04
+last_updated: 2026-11-06
 ---
 
 # Current project
@@ -471,6 +471,13 @@ A collection written by the app from real cameras has **not** been imported into
 Most behaviour from v1.51.0 on, and all of v1.152.0 to v1.157.0, was tested with a mocked API and unit tests and not clicked through in a real browser (see *Implemented capabilities*).
 
 ## Open work
+
+### Newest (2026-11-06)
+
+1. **Click through v1.157.14 to v1.160.0 in a real browser:** the viewer without the gap (a Classifier on a Picture edits box with a crop and filters; hold the arrow key), *Order by: Worst fit first*, and the confusion matrix at the top of the options pane of a step-2 Classifier with real ResNet50 scores (a cell opens the Grid on its Show entry; greyed out after a golden changes; updated after Refresh scores). The tests ran on synthetic data and, for the matrix, on the classical method.
+2. **Deleting modules leaves labels behind (noted, not decided):** deleting a Classifier purges its labels, but a Dedup box with no Classifier reads the pseudo-feature `whole-frame` (`dedup_box.label_source`), which no ROI deletion purges, so labels set there in earlier versions stay and colour a Dedup scatter on a "blank" canvas. Not verified on the real database (a one-off removal for `m13-podvozek-meb-feat-24` was done by hand). Options: purge `whole-frame` with the last Classifier, or a "Clear all labels" action that shows a count and asks first; the risk is wiping labels set elsewhere without noticing.
+3. **Matrix, later:** several methods or computations (today only ResNet50, `classify_view.MATRIX_METHOD`); storing the matrix with a frozen version, so a freeze records what its goldens achieved.
+4. **Viewer, later:** a server-side cache of rendered viewer pictures and a lighter format than full-size PNG, once the render time per picture is measured. The prefetch holds up to 160 pictures in the browser (full-size PNG bytes); not measured on real cameras.
 
 ### Newest (2026-11-04)
 

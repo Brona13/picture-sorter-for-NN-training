@@ -3,7 +3,7 @@ name: MEMORY
 description: Portable index of project memory files
 status: current
 document_type: index
-last_updated: 2026-11-02
+last_updated: 2026-11-06
 ---
 
 # Project Memory Index
@@ -11,6 +11,7 @@ last_updated: 2026-11-02
 Portable memory for the *Picture Sorter for NN Training* project. Kept inside the project (not `~/.claude/`) so it travels if the folder is moved to another machine.
 
 - [Claude's own memory (`claude-auto-memory/`)](claude-auto-memory/MEMORY.md) — the notes Claude Code keeps about how to work with the user (feedback, dictation glossary, push state, test flakes); stored here so they travel with the project, `~/.claude/.../memory` is a symlink to this folder (see `claude-auto-memory/memory-lives-in-the-project.md` for relinking on another machine).
+- [Session 2026-11-06: viewer without the gap, Worst fit first, confusion matrix in the options pane, 1.157.14-1.160.0](2026-11-06-viewer-worst-fit-matrix-session.md) — hold the old picture and prefetch a grid page, Order by Worst fit first, Insights page gone: the ResNet50 matrix is the first pane region and its cells are Show entries (OK = positive class); agreed decisions, open items (whole-frame labels left behind), delivery notes
 - [Session 2026-11-02 Linux: the two-step solution, 1.139.1-1.147.0](2026-11-02-two-step-solution-session.md) — step flag + Freeze + tabs, Ingest OK/NG, step-2 Classifier, Classify per step, Box (one/two detector boxes, input from the piles), end-to-end check, Export with `boxes.csv`; agreed rules, faults found by tests, lessons, open items (number convention, what NG means, real pictures). Plan `plans/two-step-solution.md`, idea `discussions/2026-11-02-two-step-solution-handover.md`.
 - [Session 2026-10-29 Linux: start-up screen, Calculate overlay with two detectors, 1.131.0-1.131.2](2026-10-29-linux-startup-screen-calc-overlay-session.md) — termui start-up screen, overlay for same-input and different-crop detectors, Space reference fix, dead tests in test_flow revived; lessons ("same picture" misread, check UI in a browser first).
 - [Browser testing plan (2026-10-29)](browser-testing-plan.md) — not built: reusable no-interaction headless-browser harness (`tools/browser_check/`), Playwright leaning for Linux + Windows, current ad hoc CDP method, open decisions.
