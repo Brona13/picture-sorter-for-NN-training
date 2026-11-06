@@ -10,7 +10,8 @@ import labels
 CLOSE_CALL_RATIO = 0.90
 DISAGREE_VIEW = "Disagrees with label"  # a labeled picture that a method leans away from (what you assigned vs what the network sees)
 BASE_VIEWS = ["All", "Unlabeled", "Golden", "Methods disagree", DISAGREE_VIEW, "Deleted"]
-ORDERS = ["Most novel first", "Most uncertain first", "Name"]
+WORST_FIT_ORDER = "Worst fit first"  # the label's own class fits the picture worst, compared with the class the method finds nearest
+ORDERS = ["Most novel first", "Most uncertain first", WORST_FIT_ORDER, "Name"]
 BULK_MODES = ["leaning", "ordinary", "uncertain"]
 
 
@@ -113,9 +114,25 @@ def filter_and_sort(
                 _ms(r).margin if (_ms(r) and _ms(r).margin is not None) else 0.0,
             )
         )
+    elif scored and order == WORST_FIT_ORDER:
+        items.sort(key=lambda r: _worst_fit_key(r, _ms(r), lab, gold))
     else:
         items.sort(key=lambda r: r.frame)
     return items
+
+
+def _worst_fit_key(r, ms, lab: dict[str, str], gold: dict[str, list[str]]) -> tuple:
+    """Sort key of ``Worst fit first``: the bar of the picture's own label (``bars``: nearest distance / the label's
+    distance), lowest first. The picture a method agrees with has 100% and comes late; one it places far from its label's
+    goldens comes first. Among equal bars the one farthest from its label's goldens goes first, then the name. Pictures with
+    no label, no score for that class, or that are goldens themselves (references, no scores) go last, by name."""
+    cls = lab.get(r.frame)
+    d = ms.dists.get(cls) if ms is not None and cls is not None else None
+    if d is None or labels.golden_class_of(gold, r.frame) is not None:
+        return (1, 0.0, 0.0, r.frame)
+    d_min = min(v for v in ms.dists.values() if v is not None)
+    rel = 1.0 if d <= 0 else d_min / d
+    return (0, rel, -d, r.frame)
 
 
 def clear_pick(

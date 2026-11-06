@@ -37,6 +37,34 @@ class FilterSortTests(unittest.TestCase):
         self.assertEqual(self.run_filter(order="Most uncertain first"), ["b.png", "a.png", "c.png", "g.png"])
         self.assertEqual(self.run_filter(order="Name"), ["a.png", "b.png", "c.png", "g.png"])
 
+    def test_worst_fit_first_puts_the_label_the_method_places_farthest_first(self) -> None:
+        # a: label OK, nearest OK (100%); b: label NG, OK .3 vs NG .31 (97%); c: label OK, NG nearest, OK only 22%
+        lab = {"a.png": "OK", "b.png": "NG", "c.png": "OK", "g.png": "OK"}
+        self.assertEqual(self.run_filter(order=cv.WORST_FIT_ORDER, lab=lab), ["c.png", "b.png", "a.png", "g.png"])
+
+    def test_worst_fit_first_the_lower_bar_of_the_label_comes_first(self) -> None:
+        # the user's example: both NG, OK nearest at 100%; NG at 95% and at 85%, the 85% one first
+        p1 = fs("p1.png", cpu={"dists": {"OK": 0.10, "NG": 0.10 / 0.95}, "novelty": 0.1})
+        p2 = fs("p2.png", cpu={"dists": {"OK": 0.10, "NG": 0.10 / 0.85}, "novelty": 0.1})
+        out = cv.filter_and_sort([p1, p2], view="All", rank_method="cpu", order=cv.WORST_FIT_ORDER, scored=True,
+                                 methods=["cpu"], lab={"p1.png": "NG", "p2.png": "NG"}, gold={})
+        self.assertEqual([r.frame for r in out], ["p2.png", "p1.png"])
+
+    def test_worst_fit_first_ties_go_to_the_farthest_then_unlabeled_last(self) -> None:
+        near = fs("near.png", cpu={"dists": {"OK": 0.1, "NG": 0.5}, "novelty": 0.1})
+        far = fs("far.png", cpu={"dists": {"OK": 0.4, "NG": 0.9}, "novelty": 0.4})  # both agree (100%): the farther first
+        free = fs("free.png", cpu={"dists": {"OK": 0.9, "NG": 0.1}, "novelty": 0.1})  # no label: after the labeled ones
+        out = cv.filter_and_sort([free, near, far], view="All", rank_method="cpu", order=cv.WORST_FIT_ORDER, scored=True,
+                                 methods=["cpu"], lab={"near.png": "OK", "far.png": "OK"}, gold={})
+        self.assertEqual([r.frame for r in out], ["far.png", "near.png", "free.png"])
+
+    def test_worst_fit_first_a_label_with_no_score_goes_last_and_a_zero_distance_is_100_percent(self) -> None:
+        zero = fs("zero.png", cpu={"dists": {"OK": 0.0, "NG": 0.3}, "novelty": 0.0})
+        gap = fs("gap.png", cpu={"dists": {"OK": 0.2, "NG": None}, "novelty": 0.2})  # labeled NG, no distance to NG
+        out = cv.filter_and_sort([gap, zero], view="All", rank_method="cpu", order=cv.WORST_FIT_ORDER, scored=True,
+                                 methods=["cpu"], lab={"zero.png": "OK", "gap.png": "NG"}, gold={})
+        self.assertEqual([r.frame for r in out], ["zero.png", "gap.png"])
+
     def test_unscored_sorts_by_name(self) -> None:
         self.assertEqual(self.run_filter(scored=False), ["a.png", "b.png", "c.png", "g.png"])
 
