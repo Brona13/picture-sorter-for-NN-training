@@ -26,7 +26,7 @@ export default function FramePane({ camera, frame, width, outline, info, imageUr
   /** Show this picture instead of the frame itself (a Chain box's cut-out), and draw `overlay` over it. */
   imageUrl?: string;
   /**
-   * Pictures the viewer is likely to show next (the neighbours in the list). Given, they are fetched and decoded ahead, and
+   * Pictures the viewer is likely to show next, nearest first (the neighbours in the list, a whole grid page). Given, they are fetched ahead, a few at a time, and
    * the picture being left stays on screen until the next one is ready, so browsing never shows an empty gap. Left out, the
    * pane loads the picture the plain way, but still keeps the old one on screen until the new one has arrived.
    */
@@ -58,14 +58,16 @@ export default function FramePane({ camera, frame, width, outline, info, imageUr
   const [loaded, setLoaded] = useState("");
   // The picture on screen stays until the next one has loaded and decoded, so a change of picture never shows a gap.
   const wanted = imageUrl ?? frameImageUrl(camera, frame);
-  const [shown, setShown] = useState({ url: wanted, src: wanted, frame });
+  const [held, setShown] = useState({ url: wanted, src: wanted, frame });
+  const holding = typeof Image.prototype.decode === "function"; // every browser; a test DOM has none and shows the wanted picture at once
+  const shown = holding ? held : { url: wanted, src: wanted, frame };
   const shownSrc = useRef(shown.src);
   shownSrc.current = shown.src;
   const cache = useRef<ReturnType<typeof makePictureCache> | null>(null);
   if (!cache.current) cache.current = makePictureCache(() => shownSrc.current);
   useEffect(() => () => cache.current?.dispose(), []);
   useEffect(() => {
-    if (shown.url === wanted) return;
+    if (!holding || shown.url === wanted) return;
     let dead = false;
     const arrive = (src: string, w: number, h: number) => {
       if (dead) return;
@@ -73,7 +75,6 @@ export default function FramePane({ camera, frame, width, outline, info, imageUr
       setLoaded(frame);
       setShown({ url: wanted, src, frame });
     };
-    if (typeof Image.prototype.decode !== "function") return arrive(wanted, 0, 0); // no decode() to wait for (a test DOM): swap at once
     const resolve = preload ? cache.current!.load(wanted) : Promise.resolve(wanted);
     resolve
       .then((src) => {
@@ -88,8 +89,8 @@ export default function FramePane({ camera, frame, width, outline, info, imageUr
   }, [wanted]); // eslint-disable-line react-hooks/exhaustive-deps
   const preloadKey = (preload ?? []).join("\n");
   useEffect(() => {
-    if (!preload || typeof Image.prototype.decode !== "function") return;
-    preload.forEach((u) => cache.current!.warm(u));
+    if (!preload || !holding) return;
+    cache.current!.prefetch(preload);
   }, [preloadKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const fix = useRef<{ off: { x: number; y: number } | null; frame: string | null }>({ off: null, frame: null });
   const on = !!fixPoint?.on;

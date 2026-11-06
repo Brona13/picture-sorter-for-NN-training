@@ -3,6 +3,7 @@ import { ReactNode, useEffect, useRef, useState } from "react";
 import { api, flowPictureUrl, frameCutoutUrl, frameImageUrl, FlowEdit, RoiInfo } from "../api";
 import FramePane from "./FramePane";
 import PictureViewer from "./PictureViewer";
+import { DEFAULT_MAX_ENTRIES } from "./pictureCache";
 import { useBrowse } from "./useBrowse";
 import { classColor } from "./colors";
 import { MAX_SHORTCUT_CLASSES } from "./Card";
@@ -113,16 +114,18 @@ export default function FrameViewer({ camera, feature, pictureFeature, frames, s
   const showCutout = boxMode && cutout && !boxMissing;
   const boxPictureUrl = !boxMode ? undefined : showCutout ? frameCutoutUrl(camera, frame, pictureFeature!) : boxInfo!.input ? flowPictureUrl(camera, boxInfo!.input, frame, { stage: "output" }) : undefined;
   const boxOutline = boxMode && !showCutout && boxHere && boxInfo!.anchored && boxInfo!.rect ? boxInfo!.rect : null;
-  // The pictures the arrows lead to next (two ahead, one behind), in the form the pane would show them, fetched ahead of time.
+  // The pictures the arrows lead to, nearest first and the ones ahead before the ones behind, in the form the pane would
+  // show them: a whole grid page (up to 160 pictures) is fetched ahead, a few at a time, so browsing fast shows no gap.
   const urlFor = (f: string): string | undefined =>
     boxMode
       ? showCutout ? frameCutoutUrl(camera, f, pictureFeature!) : boxInfo!.input ? flowPictureUrl(camera, boxInfo!.input, f, { stage: "output" }) : undefined
       : roi?.input
         ? flowPictureUrl(camera, roi.input, f, version === "original" && boxSteps ? { stage: "output", steps: boxSteps.filter((s) => s.op !== "filter") } : { stage: "output" })
         : undefined;
-  const preload = [index + 1, index + 2, index - 1]
-    .filter((i) => i >= 0 && i < frames.length)
-    .map((i) => urlFor(frames[i]) ?? frameImageUrl(camera, frames[i]));
+  const preload: string[] = [];
+  for (let d = 1; preload.length < DEFAULT_MAX_ENTRIES - 1 && (index + d < frames.length || index - d >= 0); d++) {
+    for (const i of [index + d, index - d]) if (i >= 0 && i < frames.length) preload.push(urlFor(frames[i]) ?? frameImageUrl(camera, frames[i]));
+  }
   const outline = boxMode ? boxOutline : roi && showRoi ? (roi.anchored ? (placed && placed.frame === frame && placed.rect ? { ...roi, ...placed.rect } : null) : roi) : null;
   const noAnchor = !!roi?.anchored && placed?.frame === frame && placed.rect === null;
 

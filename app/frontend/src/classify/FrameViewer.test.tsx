@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, test, vi } from "vitest";
 import FrameViewer from "./FrameViewer";
@@ -179,8 +179,8 @@ test("an ROI fed by a Picture edits box is shown on that box's output picture, o
   vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify(fed))));
   setup({ feature: "seal" });
   expect(await screen.findByTestId("viewer-roi")).toHaveStyle({ left: "10%", top: "20%", width: "50%", height: "50%" });
-  const img = screen.getByAltText("b.png") as HTMLImageElement;
-  expect(img.getAttribute("src")).toMatch(/flow\/nodes\/crop%3A1\/picture\?frame=b\.png&stage=output/);
+  // the picture changes to the box's output one render after the ROI arrives (the old one is held until then)
+  await waitFor(() => expect((screen.getByAltText("b.png") as HTMLImageElement).getAttribute("src")).toMatch(/flow\/nodes\/crop%3A1\/picture\?frame=b\.png&stage=output/));
 });
 
 test("with filters in the Picture edits box a switch chooses the original or the filtered picture, and keeps the choice", async () => {
