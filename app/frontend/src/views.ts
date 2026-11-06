@@ -34,7 +34,6 @@ export const SECTIONS: { id: string; label: string; pages: ViewDef[] }[] = [
       view("detector", "Detector", "detector", true),
       view("edge-angle", "Edge angle", "edge-angle", true),
       view("classify", "Classify", "classify", true, undefined, true),
-      view("insights", "Insights", "insights", true),
       view("verdict", "Verdict", "verdict", true),
       view("augmentation", "Augmentation", "augmentation", true),
     ],

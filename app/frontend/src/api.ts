@@ -1207,7 +1207,15 @@ export interface InsightsResponse {
   has_results: boolean;
   matrices: Record<
     string,
-    { matrix: Record<string, Record<string, number>>; skipped: number; correct: number; total: number; accuracy: number }
+    {
+      matrix: Record<string, Record<string, number>>;
+      /** The Classify grid's Show entry of each cell: views[your label][the method's leaning]. */
+      views: Record<string, Record<string, string>>;
+      skipped: number;
+      correct: number;
+      total: number;
+      accuracy: number;
+    }
   >;
 }
 
@@ -2000,11 +2008,6 @@ export const api = {
     request<CenterResponse>(`/cameras/${encodeURIComponent(camera)}/classify/center?${gridParams(q, { n })}`),
   promote: (camera: string, feature: string, frame: string, cls: string) =>
     request<CardUpdate>(`/cameras/${encodeURIComponent(camera)}/classify/promote`, post({ feature, frame, cls })),
-  insightsCell: (camera: string, feature: string, method: string, true_cls: string, pred_cls: string) =>
-    request<{ items: CardData[]; classes: string[]; methods: string[]; cols: number }>(
-      `/cameras/${encodeURIComponent(camera)}/insights/cell?feature=${encodeURIComponent(feature)}&method=${encodeURIComponent(method)}` +
-        `&true_cls=${encodeURIComponent(true_cls)}&pred_cls=${encodeURIComponent(pred_cls)}`,
-    ),
   insights: (camera: string, feature: string) =>
     request<InsightsResponse>(`/cameras/${encodeURIComponent(camera)}/insights?feature=${encodeURIComponent(feature)}`),
   dedupState: (camera: string, feature: string) =>

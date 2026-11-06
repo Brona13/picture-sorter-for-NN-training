@@ -4,7 +4,7 @@ import { api, DATA_CHANGED, PipelineInfo } from "./api";
 import PipelineChips, { LabelProgress } from "./PipelineChips";
 
 /** Pages that work on one ROI, so the step bar belongs on them. */
-const FEATURE_PAGES = new Set(["roi", "detector", "edge-angle", "dedup", "classify", "insights", "augmentation", "versions"]);
+const FEATURE_PAGES = new Set(["roi", "detector", "edge-angle", "dedup", "classify", "augmentation", "versions"]);
 
 /**
  * A slim bar above the page showing where the ROI being worked on stands in the pipeline. Click a stage to

@@ -287,10 +287,11 @@ The Dedup page is the trial ground for a new page layout; the plan is to copy it
 
 ### Insights
 
-- Method-level comparison of current scored results
-- Confusion-style summaries against existing human labels
-- Visibility into agreement and disagreement between methods
-- Every non-zero matrix cell is clickable (rows = your label, columns = the method's leaning), so false positives and false negatives can be reviewed: `GET /cameras/{camera}/insights/cell` returns the held-out frames behind the cell (same rule as the count; goldens excluded) as Classify card data. They are shown as the same cards with the same hover keys, and the same paged grid and per-page / column setting as Classify. Labeling, golden or deleting a card refreshes the counts; the open list keeps its cards until closed
+Insights is a view of a **step-2 Classifier** (the *▥ Insights* button next to Grid, Scatter and Outliers on the Classify page), not a menu page; the old *Insights* page and route were removed in v1.159.0.
+
+- One confusion matrix per method in use (`GET /cameras/{camera}/insights`, `insights.py`): rows = your label, columns = the method's leaning. Goldens are left out, and so are pictures muted in this Classifier, so every other labeled picture is a test of what the goldens teach. The accuracy of each matrix and the pictures it could not score are shown under it.
+- A number in the matrix opens the **one Classify Grid** on that cell: each cell is an entry of the *Show* box (`classify_view.matrix_view_name`, offered for a step-2 Classifier, one per cell and method). The Show box therefore says which cell is open, and *Order by*, paging, the keys and the coloured borders of step 2 are the Grid's own. OK is the positive class: a labeled OK the method calls NG is a *false negative*, a labeled NG it calls OK a *false positive*, and the entries add the plain meaning in brackets, e.g. `R50 · False negative (labeled OK, model says NG)`. With classes other than OK / NG the entry reads `R50 · A → leans B`.
+- No scores yet, fewer than two golden classes, or no test pictures: the view says what is missing instead of showing a matrix.
 
 These views evaluate the curation aid; they do not establish classifier accuracy.
 
@@ -367,19 +368,19 @@ All are flat modules in `app/backend/` (see `CLAUDE.md` for the import rule); th
 
 One thin router per area, each delegating to the domain modules above:
 `cameras` (also `DELETE /cameras/{camera}` with its delete preview), `status`, `versions_api`, `ingest_api`, `frames_api` (frames and thumbnails),
-`roi_api` (also the product list and product renames), `chain_api` (the Chain canvas and its layout), `classify_api` (also the whole-camera file-name search of the grid, `unmute`, live counts), `insights_api`, `dedup_api` (also `scatter/cached`), `overview_api` (all cameras with reference frame and ROIs for the Overview page), `outliers_api`, `similar_api`, `config_api` (active scoring methods), `rules_api`, `motion_api`, `vision_api` (filter catalogue, per-feature filter/mask/detector settings, live preview, detection job and review).
+`roi_api` (also the product list and product renames), `chain_api` (the Chain canvas and its layout), `classify_api` (also the whole-camera file-name search of the grid, `unmute`, live counts), `insights_api` (the matrices; their cells are Show entries of `classify_api`), `dedup_api` (also `scatter/cached`), `overview_api` (all cameras with reference frame and ROIs for the Overview page), `outliers_api`, `similar_api`, `config_api` (active scoring methods), `rules_api`, `motion_api`, `vision_api` (filter catalogue, per-feature filter/mask/detector settings, live preview, detection job and review).
 
 ### Frontend (`app/frontend/src/`)
 
 - `App.tsx` — top bar (title, the four sections, camera, product, hardware badge, version and ⚙️) with a second-level tool bar for sections that hold several pages and routes; `lastSession.ts` — what the browser remembers
 - `SidePanel.tsx` (options panel, `PanelGroup`, `PanelSection`, `PanelPortal`: a view writes its controls into the panel), `RankContext.ts` + `RankSelect.tsx` (the top bar's *Rank using*), `CameraDelete.tsx` (delete a camera), `InfoTip.tsx`, `ProductSelect.tsx`, `WheelRange.tsx` (slider that answers the wheel), `HardwareBadge.tsx`, `StepBar.tsx`
 - `api.ts` — typed API client
-- `views/` — Overview, Chain, Status, Ingest, Dedup, ROI editor, Detector, Edge angle, Classify, Insights, Verdict, Augmentation, Versions (grouped into sections in `views.ts`)
+- `views/` — Overview, Chain, Status, Ingest, Dedup, ROI editor, Detector, Edge angle, Classify, Verdict, Augmentation, Versions (grouped into sections in `views.ts`)
 - `classify/` — `PictureGrid` (shared paged card grid + viewer), card, bulk, clear-labels, auto-assign, suggested-goldens panels, SVG scatter (drag a rectangle to zoom and list the frames inside, optionally delete them with a note, or label them all as one of the feature's classes with the "Label N as <class>" buttons, which overwrite existing labels and keep goldens in step; right-click resets), per-day Deleted view (follows the Classify per-page / column setting and pages through the days, newest first; v1.29.1), `FrameViewer.tsx` (full-size picture overlay), cluster browser (row of cluster tabs, paged card grid per cluster with its own grid size per ROI; cards can be labeled, made golden, made representative or deleted, with the same hover keys as Classify, plus Delete)
 - `views/PictureEditsPanel.tsx`, `PictureEditsWork.tsx`, `pictureEdits.ts` (`usePictureEdits`), `FilterParams.tsx` — the Picture edits box page (steps list with drag order, live Before/After picture) and the shared filter parameter controls (slider, toggle, drop-down)
 - `chain/chainModel.ts` + `views/ChainView.tsx` — the Chain canvas (React Flow, `@xyflow/react`); `classify/` also holds `ClassifyKpis` (the clickable numbers), `ClassifyScatter` / `ClassifyOutliers` (the Scatter and Outliers views of Classify) over the shared `ScatterWorkbench` (map, projection job, selection) and `OutlierPanel`, `useDedupState` (embedding choice), `SearchExtras` (the viewer's Product row, Show again and the zoom-line note), `ProductNamesEditor` (rename products), `CardGrid` (also the pager's file-name search), `toolInfo`, `paint` / `painter` / `useGridCard` (sweeps)
 - `RoiCanvas.tsx` + `roiGeometry.ts` — pointer-driven ROI draw/move/resize in normalised coordinates
-- `views/ConfigurationView.tsx` (method checkboxes), `methodTags.ts` (CPU/R18/R50), `views.ts` (menu icons, `SECTIONS` = Overview (Overview, Status), Management (Ingest), Manipulation (Dedup, ROI editor, Detector, Edge angle, Classify, Insights, Verdict, Augmentation), Export (Versions); `CONFIG_VIEW` is the ⚙️ button at the right of the top bar)
+- `views/ConfigurationView.tsx` (method checkboxes), `methodTags.ts` (CPU/R18/R50), `views.ts` (menu icons, `SECTIONS` = Overview (Overview, Status), Management (Ingest), Manipulation (Dedup, ROI editor, Detector, Edge angle, Classify, Verdict, Augmentation), Export (Versions); `CONFIG_VIEW` is the ⚙️ button at the right of the top bar)
 - `ZoomPane.tsx` + `zoomGeometry.ts` — zoomable, pannable bordered picture viewport (used by `LineCanvas`; planned for the other canvases)
 - `DetectorPanel.tsx` — frame strip, run bar and review panel of the tabbed Detector page (`views/DetectorView.tsx`: Filter / Detector / Review / Mask tabs, sticky save bar, shared preview); `CopyButton.tsx` — copy-to-clipboard button (Versions export path)
 - `ShapeCanvas.tsx` + `shapeGeometry.ts` — editable mask shape (rectangle, circle, polygon) with drag handles

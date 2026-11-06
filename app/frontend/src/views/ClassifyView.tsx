@@ -1,5 +1,6 @@
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import ClassifyKpis from "../classify/ClassifyKpis";
+import ClassifyInsights from "../classify/ClassifyInsights";
 import ClassifyOutliers from "../classify/ClassifyOutliers";
 import ClassifyScatter from "../classify/ClassifyScatter";
 import { useNodeName } from "../chain/useNodeName";
@@ -69,7 +70,7 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
   const [viewing, setViewing] = useState<string | null>(null); // the picture viewer, on a frame of this page
   const [revision, setRevision] = useState(0);
   const [search, setSearch] = useState(""); // a part of a file name: the grid then lists matching pictures of the whole camera
-  const [mode, setMode] = useState<"grid" | "scatter" | "outliers">("grid");
+  const [mode, setMode] = useState<"grid" | "scatter" | "outliers" | "insights">("grid");
   const [similarSeed, setSimilarSeed] = useState<{ frame: string; label: string } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   // What the last refresh did; it is shown on the Refresh line, not as a notice under it.
@@ -93,6 +94,10 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
   );
 
   useEffect(() => setSimilarSeed(null), [feature]);
+  // Insights belong to a step-2 Classifier, the one that has goldens: any other goes back to the Grid.
+  useEffect(() => {
+    if (mode === "insights" && st && st.step !== 2) setMode("grid");
+  }, [mode, st]); // eslint-disable-line react-hooks/exhaustive-deps
   // With a single method switched on there is nothing to disagree about: leave that filter.
   useEffect(() => {
     if (st && st.methods.length < 2 && view === "Methods disagree") setView("All");
@@ -260,6 +265,11 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
       <button type="button" aria-pressed={mode === "outliers"} onClick={() => setMode("outliers")}>
         ◎ Outliers
       </button>
+      {st?.step === 2 && (
+        <button type="button" aria-pressed={mode === "insights"} onClick={() => setMode("insights")} title="How well the goldens reproduce your labels: one confusion matrix per method">
+          ▥ Insights
+        </button>
+      )}
     </div>
   );
   const progress = job?.progress ?? {};
@@ -269,7 +279,7 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
   // Refreshing the scores belongs to the grid, so it sits on the navigation line while the grid is shown, with what the
   // page has to say about the scores (stale, missing, running) to its right.
   const refreshRow =
-    mode === "grid" && st ? (
+    (mode === "grid" || mode === "insights") && st ? (
       <>
         <span aria-hidden="true" style={{ width: 14 }} />
         <button
@@ -472,6 +482,18 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
 
       {mode === "scatter" && st && (
         <ClassifyScatter camera={camera} feature={feature} mode={stepMode} mute={stepMode.muting ? stepTwoMute : undefined} grid={st.settings} onGrid={changeSetting} onChanged={bump} onNotice={setNotice} onError={setError} />
+      )}
+
+      {mode === "insights" && st?.step === 2 && (
+        <ClassifyInsights
+          camera={camera}
+          feature={feature}
+          revision={revision}
+          onPick={(v) => {
+            setView(v);
+            setMode("grid");
+          }}
+        />
       )}
 
       {mode === "outliers" && st && (

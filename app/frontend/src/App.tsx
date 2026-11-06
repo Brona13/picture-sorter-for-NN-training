@@ -22,7 +22,6 @@ import DetectorView from "./views/DetectorView";
 import AugmentationView from "./views/AugmentationView";
 import EdgeAngleView from "./views/EdgeAngleView";
 import DedupView, { DedupTool } from "./views/DedupView";
-import InsightsView from "./views/InsightsView";
 import IngestView from "./views/IngestView";
 import RoiEditorView from "./views/RoiEditorView";
 import OverviewView from "./views/OverviewView";
@@ -386,10 +385,6 @@ export default function App() {
           <Route
             path="/classify"
             element={<ClassifyView camera={camera} product={product || undefined} focus={focusFeature ? { feature: focusFeature, onBack: () => toChain(focusFeature) } : undefined} />}
-          />
-          <Route
-            path="/insights"
-            element={<InsightsView camera={camera} product={product || undefined} />}
           />
           <Route path="/augmentation" element={<AugmentationView camera={camera} product={product || undefined} />} />
           <Route path="/edge-angle" element={<EdgeAngleView camera={camera} product={product || undefined} />} />

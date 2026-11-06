@@ -13,6 +13,9 @@ from tests.api_helpers import ApiTestCase
 from tests.test_api_classify import CAM, FEAT, write_two_groups
 from tests.test_classify_view import A, B, C, G, fs
 import datamodel
+import db
+import flow
+import labels
 from roi import ROI
 
 
@@ -196,14 +199,47 @@ class SuggestInsightsApiTests(ApiTestCase):
         self.assertEqual(cpu["matrix"], {"OK": {"OK": 3, "NG": 0}, "NG": {"OK": 0, "NG": 3}})
         self.assertEqual(cpu["accuracy"], 100.0)
 
-        cell = self.client.get(f"{url}/cell", params={"feature": FEAT, "method": "cpu", "true_cls": "OK", "pred_cls": "OK"}).json()
-        self.assertEqual(sorted(c["frame"] for c in cell["items"]), sorted(self.blue[1:]))
-        self.assertEqual({c["label"] for c in cell["items"]}, {"OK"})
-        self.assertIn("bars", cell["items"][0])
-        self.assertEqual(cell["classes"], ["OK", "NG"])
-        empty = self.client.get(f"{url}/cell", params={"feature": FEAT, "method": "cpu", "true_cls": "OK", "pred_cls": "NG"}).json()
-        self.assertEqual(empty["items"], [])
-        self.assertEqual(self.client.get(f"{url}/cell", params={"feature": FEAT, "method": "x", "true_cls": "OK", "pred_cls": "OK"}).status_code, 422)
+        # each cell names its Show entry; a Classifier in step 2 offers it, and the grid lists exactly the cell's frames
+        views = cpu["views"]
+        self.assertEqual(views["OK"]["NG"], "CPU · False negative (labeled OK, model says NG)")
+        self.assertEqual(views["NG"]["OK"], "CPU · False positive (labeled NG, model says OK)")
+        self.assertEqual(views["OK"]["OK"], "CPU · True positive (labeled OK, model says OK)")
+        self.assertEqual(views["NG"]["NG"], "CPU · True negative (labeled NG, model says NG)")
+        grid = lambda view: self.client.get(f"{self.base}/classify/grid", params={"feature": FEAT, "rank": "cpu", "view": view})
+        self.assertEqual(grid(views["OK"]["OK"]).status_code, 422)  # step 1: no goldens are marked, so the cells are not offered
+        self.assertNotIn(views["OK"]["OK"], self.client.get(f"{self.base}/classify/state", params={"feature": FEAT}).json()["views"])
+        flow.set_roi_step(CAM, FEAT, 2)
+        self.assertIn(views["OK"]["OK"], self.client.get(f"{self.base}/classify/state", params={"feature": FEAT}).json()["views"])
+        tp = grid(views["OK"]["OK"]).json()
+        self.assertEqual(sorted(c["frame"] for c in tp["items"]), sorted(self.blue[1:]))
+        self.assertEqual({c["label"] for c in tp["items"]}, {"OK"})
+        self.assertEqual(grid(views["OK"]["NG"]).json()["items"], [])  # no false negatives here
+
+        # a label the method gets wrong shows up under the right name
+        self.label(self.red[1], "OK")  # labeled OK, but it looks like the NG group
+        self.refresh()
+        fn = grid(views["OK"]["NG"]).json()
+        self.assertEqual([c["frame"] for c in fn["items"]], [self.red[1]])
+        body = self.client.get(url, params={"feature": FEAT}).json()
+        self.assertEqual(body["matrices"]["cpu"]["matrix"]["OK"]["NG"], 1)
+
+    def test_insights_leaves_out_pictures_muted_in_this_classifier(self) -> None:
+        self.label(self.blue[0], "OK", golden=True)
+        self.label(self.red[0], "NG", golden=True)
+        for b in self.blue[1:]:
+            self.label(b, "OK")
+        for r in self.red[1:]:
+            self.label(r, "NG")
+        self.refresh()
+        url = f"{self.base}/insights"
+        self.assertEqual(self.client.get(url, params={"feature": FEAT}).json()["evaluable"], 6)
+        db.add_dedup_mutes(CAM, FEAT, [(self.blue[1], labels.frame_hash(CAM, self.blue[1]), 1)])
+        body = self.client.get(url, params={"feature": FEAT}).json()
+        self.assertEqual((body["evaluable"], body["matrices"]["cpu"]["total"]), (5, 5))
+
+    def test_the_old_cell_list_endpoint_is_gone(self) -> None:
+        r = self.client.get(f"{self.base}/insights/cell", params={"feature": FEAT, "method": "cpu", "true_cls": "OK", "pred_cls": "OK"})
+        self.assertEqual(r.status_code, 404)
 
 
 class CenterTests(unittest.TestCase):

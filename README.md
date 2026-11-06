@@ -95,7 +95,7 @@ The application provides these views:
 - **Classify** — label frames and compare scoring opinions
 - **Configuration** (⚙️, bottom of the menu) — tick which scoring methods (CPU, ResNet18, ResNet50) take part in the flow; see *Choosing the scoring methods*
 - **Verdict** (⚖️) — one OK / NG verdict per picture from all ROIs; decide contradictions and stale decisions (see *Project verdicts*)
-- **Insights** — compare method behavior against human labels; click a confusion-matrix number to review those frames as cards (false positives / negatives)
+- **Insights** — a view of a step-2 Classifier, next to Grid, Scatter and Outliers (**▥ Insights**): one confusion matrix per method in use, rows = your label, columns = the method's leaning, goldens and muted pictures left out. A number opens those pictures in the Grid: the *Show* box then names the cell, e.g. `R50 · False negative (labeled OK, model says NG)` (OK is the positive class: a labeled OK the method calls NG is a false negative, a labeled NG it calls OK is a false positive; with other classes the entry reads `R50 · A → leans B`). It is the same Grid, so *Order by* (e.g. *Worst fit first*), paging and the keys all work inside the cell
 - **Augmentation** — measure how far the object moves between frames and keep movement ranges for the training side (see *Augmentation ranges* below)
 - **Versions** — freeze verdicts as project versions and export them; freeze and revert ROI snapshots
 

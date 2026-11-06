@@ -66,6 +66,21 @@ let state: any;
 let grid: any;
 let goldenGate: Promise<void> | null = null; // holds the golden answer back, to see the screen before it
 let goldenRefused = false;
+let insights: any = null;
+const FN = "R50 \u00b7 False negative (labeled OK, model says NG)";
+const matrixBody = () => ({
+  feature: "seal", classes: ["OK", "NG"], methods: ["resnet50"], goldens_in: ["OK", "NG"], evaluable: 6, reason: null, has_results: true,
+  matrices: {
+    resnet50: {
+      matrix: { OK: { OK: 3, NG: 1 }, NG: { OK: 0, NG: 2 } },
+      views: {
+        OK: { OK: "R50 \u00b7 True positive (labeled OK, model says OK)", NG: FN },
+        NG: { OK: "R50 \u00b7 False positive (labeled NG, model says OK)", NG: "R50 \u00b7 True negative (labeled NG, model says NG)" },
+      },
+      skipped: 0, correct: 5, total: 6, accuracy: 83.3,
+    },
+  },
+});
 
 function install() {
   vi.stubGlobal(
@@ -120,6 +135,7 @@ function install() {
       if (url.includes("/classify/auto") && method === "GET")
         return ok({ candidates: 4, total: 4, per_class: [{ cls: "OK", count: 3, avg_margin: 0.2 }, { cls: "NG", count: 1, avg_margin: 0.3 }], lo: 0.1, hi: 0.5, min_margin: 0.1 });
       if (url.includes("/classify/auto")) return ok({ labeled: 4, counts: { OK: 4 } });
+      if (url.includes("/insights?")) return ok(insights);
       if (url.includes("/dedup/state"))
         return ok({
           feature: "seal", reason: null, backbones: ["resnet50"], params: { method: "resnet50", epsilon: 0.02, min_points: 2 },
@@ -154,6 +170,7 @@ function install() {
 }
 
 beforeEach(() => {
+  insights = matrixBody();
   calls = [];
   state = baseState();
   grid = () => gridBody([card("a.png"), card("b.png", { label: "OK", golden: "OK", bars: null })]);
@@ -1309,4 +1326,37 @@ test("step 1 cards keep the plain border (they have the class buttons)", async (
 test("the heading shows the name given on the Chain, not the system name", async () => {
   render(<ClassifyView camera="camA" focus={{ feature: "seal", onBack: () => {} }} />);
   expect(await screen.findByRole("heading", { name: /Classify — camA › Seal check/ })).toBeInTheDocument();
+});
+
+test("Insights shows one confusion matrix per method in step 2; a cell turns the Grid to its Show entry", async () => {
+  state = baseState({ step: 2, views: [...baseState().views, FN] });
+  render(<ClassifyView camera="camA" />);
+  await cardEl("a.png");
+  await userEvent.click(screen.getByRole("button", { name: /Insights/ }));
+  const matrix = await screen.findByTestId("matrix-resnet50");
+  expect(within(matrix).getByText(/Accuracy/)).toHaveTextContent("83.3%");
+  expect(within(matrix).getByText("model says NG", { selector: "th" })).toBeInTheDocument();
+  expect(within(matrix).getByText("labeled OK", { selector: "th" })).toBeInTheDocument();
+  expect(within(matrix).getByRole("button", { name: "0", hidden: true })).toBeDisabled(); // a cell with no picture opens nothing
+  await userEvent.click(within(matrix).getByTitle(`Open the 1 picture(s) in the Grid: ${FN}`));
+  await cardEl("a.png");
+  expect(screen.getByLabelText("Show")).toHaveValue(FN); // the Show box names the cell, so it is clear the grid is filtered
+  await waitFor(() => expect(calls.some((c) => c.url.includes("/classify/grid") && new URL(c.url, "http://x").searchParams.get("view") === FN)).toBe(true));
+});
+
+test("Insights is not offered in step 1, where no goldens are marked", async () => {
+  state = baseState({ step: 1 });
+  render(<ClassifyView camera="camA" />);
+  await cardEl("a.png");
+  expect(screen.queryByRole("button", { name: /Insights/ })).toBeNull();
+});
+
+test("Insights explains what is missing instead of an empty matrix", async () => {
+  state = baseState({ step: 2 });
+  insights = { ...matrixBody(), reason: "needs_two_golden_classes", goldens_in: ["OK"], has_results: false, matrices: {} };
+  render(<ClassifyView camera="camA" />);
+  await cardEl("a.png");
+  await userEvent.click(screen.getByRole("button", { name: /Insights/ }));
+  expect(await screen.findByText(/needs goldens in at least two classes/)).toBeInTheDocument();
+  insights = { ...matrixBody(), reason: null, has_results: false, matrices: {} };
 });

@@ -72,10 +72,10 @@ test("Manipulation opens a second-level bar with the tools, without the pages th
   expect(screen.queryByRole("navigation", { name: "Manipulation tools" })).toBeNull();
   await userEvent.click(sections.getByRole("link", { name: "Manipulation" }));
   const tools = within(await screen.findByRole("navigation", { name: "Manipulation tools" }));
-  for (const label of ["Detector", "Edge angle", "Insights", "Verdict", "Augmentation"]) {
+  for (const label of ["Detector", "Edge angle", "Verdict", "Augmentation"]) {
     expect(tools.getByRole("link", { name: new RegExp(label) })).toBeInTheDocument();
   }
-  for (const label of ["Scatter", "Clusters", "Outliers", "ROI editor", "Classify"]) {
+  for (const label of ["Scatter", "Clusters", "Outliers", "ROI editor", "Classify", "Insights"]) {
     expect(tools.queryByRole("link", { name: new RegExp(label) })).toBeNull();
   }
   await userEvent.click(tools.getByRole("link", { name: /Detector/ }));
@@ -343,7 +343,7 @@ test("tool icons are muted until the tool has left a trace on the camera, and co
   const used = async (id: string) => (await screen.findByTestId(`tool-icon-${id}`)).getAttribute("data-used");
   await waitFor(async () => expect(await used("detector")).toBe("true"));
   expect(await used("edge-angle")).toBe("false");
-  expect(await used("insights")).toBe("false"); // a tracked tool the answer does not mention is unused
+  expect(await used("verdict")).toBe("false"); // a tracked tool the answer does not mention is unused
   expect(screen.getByRole("link", { name: /Detector/ })).toHaveAttribute("title", "Detector — used on this camera");
   expect(screen.getByRole("link", { name: /Edge angle/ })).toHaveAttribute("title", "Edge angle — not used on this camera yet");
 });

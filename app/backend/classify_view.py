@@ -5,7 +5,9 @@ them without any UI framework.
 """
 from __future__ import annotations
 
+import insights
 import labels
+import methods_config
 
 CLOSE_CALL_RATIO = 0.90
 DISAGREE_VIEW = "Disagrees with label"  # a labeled picture that a method leans away from (what you assigned vs what the network sees)
@@ -24,12 +26,42 @@ MEASURE_VIEW_PREFIX = "Measurement: "
 MEASURE_VIEWS = [f"{MEASURE_VIEW_PREFIX}{v}" for v in EDGE_VERDICTS]
 
 
-def valid_views(classes: list[str], *, edge_angle: bool = False, measurement: bool = False) -> list[str]:
+POSITIVE_CLASS = "OK"  # the class the confusion-matrix names are counted from: a labeled OK the method calls NG is a false negative
+_BINARY_KIND = {
+    ("OK", "OK"): "True positive",
+    ("OK", "NG"): "False negative",
+    ("NG", "NG"): "True negative",
+    ("NG", "OK"): "False positive",
+}
+
+
+def matrix_view_name(method: str, true_c: str, pred_c: str, classes: list[str]) -> str:
+    """The Show entry for one cell of one method's confusion matrix (rows = your label, columns = the method's leaning).
+    OK / NG: ``R50 · False negative (labeled OK, model says NG)``; any other classes: ``R50 · A → leans B``."""
+    tag = methods_config.INFO.get(method, {}).get("tag", method.upper())
+    kind = _BINARY_KIND.get((true_c, pred_c)) if set(classes) == {"OK", "NG"} and len(classes) == 2 else None
+    if kind:
+        return f"{tag} · {kind} (labeled {true_c}, model says {pred_c})"
+    return f"{tag} · {true_c} → leans {pred_c}"
+
+
+def matrix_lookup(classes: list[str], methods: list[str]) -> dict[str, tuple[str, str, str]]:
+    """Show entry -> (method, your label, the method's leaning), for every cell of every given method's matrix."""
+    if len(classes) < 2:
+        return {}
+    return {matrix_view_name(m, t, p, classes): (m, t, p) for m in methods for t in classes for p in classes}
+
+
+def valid_views(
+    classes: list[str], *, edge_angle: bool = False, measurement: bool = False, matrix_methods: list[str] | None = None
+) -> list[str]:
     """The Show filter choices; the edge-angle ones only exist while a rule with an expected angle has fresh
-    results, the measurement ones while an Evaluation box on the chain is arrowed into this feature."""
+    results, the measurement ones while an Evaluation box on the chain is arrowed into this feature, and the
+    confusion-matrix ones (one per cell and method, v1.159.0) for the methods named in ``matrix_methods``."""
     return [
         *BASE_VIEWS[:2], *[f"Labeled {c}" for c in classes], *BASE_VIEWS[2:-1],
-        *(EDGE_VIEWS if edge_angle else []), *(MEASURE_VIEWS if measurement else []), BASE_VIEWS[-1],
+        *(EDGE_VIEWS if edge_angle else []), *(MEASURE_VIEWS if measurement else []),
+        *matrix_lookup(classes, matrix_methods or []), BASE_VIEWS[-1],
     ]
 
 
@@ -61,6 +93,7 @@ def filter_and_sort(
     deleted: set[str] | None = None,
     edge_verdicts: dict[str, str] | None = None,
     measure_verdicts: dict[str, str] | None = None,
+    matrix_cells: dict[str, tuple[str, str, str]] | None = None,
 ) -> list:
     """Apply the Show filter + the Order sort.
 
@@ -95,6 +128,11 @@ def filter_and_sort(
                 if r.frame in lab and labels.golden_class_of(gold, r.frame) is None
                 and any(l not in (None, lab[r.frame]) for l in leanings(r))
             ]
+        elif matrix_cells and view in matrix_cells:
+            # one cell of a confusion matrix: your label, not a golden, and where the method leans (the cell's own count)
+            method, true_c, pred_c = matrix_cells[view]
+            keep = set(insights.cell_frames(items, insights.evaluable_labels(lab, gold), method, true_c, pred_c))
+            items = [r for r in items if r.frame in keep]
         elif view.startswith(EDGE_VIEW_PREFIX):
             want = view[len(EDGE_VIEW_PREFIX):]
             items = [r for r in items if (edge_verdicts or {}).get(r.frame) == want]

@@ -154,6 +154,11 @@ class Ctx:
     measure: dict = dataclasses.field(default_factory=lambda: {"verdicts": {}, "values": {}})
 
 
+def _matrix_methods(camera: str, feature: str, methods: list[str]) -> list[str]:
+    """The methods whose confusion-matrix cells are offered in Show: not in step 1, where no goldens are marked."""
+    return [] if flow.roi_step(camera, feature) == 1 else list(methods)
+
+
 def _build(camera: str, q: GridQuery, *, apply_auto_preview: bool = True) -> Ctx:
     require_feature(camera, q.feature)
     _refresh_verdicts(camera, q.feature)
@@ -164,7 +169,8 @@ def _build(camera: str, q: GridQuery, *, apply_auto_preview: bool = True) -> Ctx
         raise HTTPException(status_code=422, detail=f"Unknown rank method: {rank}")
     edge = _edge_state(camera, q.feature)
     measure = _measure_state(camera, q.feature)
-    if q.view not in cv.valid_views(classes, edge_angle=bool(edge["verdicts"]), measurement=bool(measure["verdicts"])):
+    matrix_methods = _matrix_methods(camera, q.feature, methods)
+    if q.view not in cv.valid_views(classes, edge_angle=bool(edge["verdicts"]), measurement=bool(measure["verdicts"]), matrix_methods=matrix_methods):
         raise HTTPException(status_code=422, detail=f"Unknown view: {q.view}")
     if q.order not in cv.ORDERS:
         raise HTTPException(status_code=422, detail=f"Unknown order: {q.order}")
@@ -181,7 +187,7 @@ def _build(camera: str, q: GridQuery, *, apply_auto_preview: bool = True) -> Ctx
     items = cv.filter_and_sort(
         visible, view=q.view, rank_method=rank, order=q.order, scored=scored,
         methods=methods, lab=lab, gold=gold, deleted=deleted, edge_verdicts=edge["verdicts"],
-        measure_verdicts=measure["verdicts"],
+        measure_verdicts=measure["verdicts"], matrix_cells=cv.matrix_lookup(classes, matrix_methods),
     )
     ctx = Ctx(camera, q.feature, classes, methods, rank, results, gold, lab, deleted, scored, items, edge, measure)
     if apply_auto_preview and q.auto_preview and scored:
@@ -254,6 +260,7 @@ def state(camera: str, feature: str) -> dict:
         "views": cv.valid_views(
             classes, edge_angle=bool(_edge_state(camera, feature)["verdicts"]),
             measurement=bool(_measure_state(camera, feature)["verdicts"]),
+            matrix_methods=_matrix_methods(camera, feature, methods),
         ),
         "orders": cv.ORDERS,
         "has_results": results is not None,

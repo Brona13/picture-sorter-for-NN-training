@@ -65,6 +65,33 @@ class FilterSortTests(unittest.TestCase):
                                  methods=["cpu"], lab={"zero.png": "OK", "gap.png": "NG"}, gold={})
         self.assertEqual([r.frame for r in out], ["zero.png", "gap.png"])
 
+    def test_matrix_names_say_what_the_cell_means(self) -> None:
+        name = lambda t, p: cv.matrix_view_name("resnet50", t, p, ["OK", "NG"])
+        self.assertEqual(name("OK", "OK"), "R50 \u00b7 True positive (labeled OK, model says OK)")
+        self.assertEqual(name("OK", "NG"), "R50 \u00b7 False negative (labeled OK, model says NG)")
+        self.assertEqual(name("NG", "OK"), "R50 \u00b7 False positive (labeled NG, model says OK)")
+        self.assertEqual(name("NG", "NG"), "R50 \u00b7 True negative (labeled NG, model says NG)")
+        self.assertEqual(cv.matrix_view_name("cpu", "A", "B", ["A", "B", "C"]), "CPU \u00b7 A \u2192 leans B")
+        self.assertEqual(cv.matrix_view_name("cpu", "OK", "NG", ["OK", "NG", "X"]), "CPU \u00b7 OK \u2192 leans NG")  # not a two-class pair
+
+    def test_matrix_views_are_offered_per_method_and_only_when_asked(self) -> None:
+        self.assertFalse([v for v in cv.valid_views(["OK", "NG"]) if "model says" in v])
+        both = [v for v in cv.valid_views(["OK", "NG"], matrix_methods=["cpu", "resnet50"]) if "model says" in v]
+        self.assertEqual(len(both), 8)
+        self.assertEqual(cv.valid_views(["OK", "NG"], matrix_methods=["cpu"])[-1], "Deleted")
+        self.assertEqual(cv.matrix_lookup(["OK"], ["cpu"]), {})  # one class: no matrix
+
+    def test_a_matrix_view_lists_the_cells_pictures_without_goldens(self) -> None:
+        cells = cv.matrix_lookup(["OK", "NG"], ["cpu"])
+        lab = {"a.png": "OK", "b.png": "NG", "c.png": "OK", "g.png": "OK"}
+        run = lambda t, p: [r.frame for r in cv.filter_and_sort(
+            [A, B, C, G], view=cv.matrix_view_name("cpu", t, p, ["OK", "NG"]), rank_method="cpu", order="Name", scored=True,
+            methods=["cpu"], lab=lab, gold={"OK": ["g.png"]}, matrix_cells=cells)]
+        self.assertEqual(run("OK", "OK"), ["a.png"])  # a leans OK; g is a golden, so it is never counted
+        self.assertEqual(run("NG", "OK"), ["b.png"])  # b is labeled NG, the method leans OK
+        self.assertEqual(run("OK", "NG"), ["c.png"])  # c is labeled OK, the method leans NG
+        self.assertEqual(run("NG", "NG"), [])
+
     def test_unscored_sorts_by_name(self) -> None:
         self.assertEqual(self.run_filter(scored=False), ["a.png", "b.png", "c.png", "g.png"])
 
