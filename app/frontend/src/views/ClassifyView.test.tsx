@@ -1328,35 +1328,87 @@ test("the heading shows the name given on the Chain, not the system name", async
   expect(await screen.findByRole("heading", { name: /Classify — camA › Seal check/ })).toBeInTheDocument();
 });
 
-test("Insights shows one confusion matrix per method in step 2; a cell turns the Grid to its Show entry", async () => {
+const regions = () => within(screen.getByRole("complementary", { name: "Options" }));
+
+test("a step-2 Classifier shows the confusion matrix first in the options panel, above the Grid controls", async () => {
   state = baseState({ step: 2, views: [...baseState().views, FN] });
   render(<ClassifyView camera="camA" />);
   await cardEl("a.png");
-  await userEvent.click(screen.getByRole("button", { name: /Insights/ }));
   const matrix = await screen.findByTestId("matrix-resnet50");
-  expect(within(matrix).getByText(/Accuracy/)).toHaveTextContent("83.3%");
-  expect(within(matrix).getByText("model says NG", { selector: "th" })).toBeInTheDocument();
+  const region = screen.getByTestId("matrix-region");
+  expect(region.compareDocumentPosition(screen.getByTestId("grid-controls")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(regions().getByTestId("matrix-region")).toBeInTheDocument(); // it lives in the right-hand pane
+  expect(within(matrix).getByText(/accuracy/)).toHaveTextContent("83.3%");
+  expect(within(matrix).getByText("says NG", { selector: "th" })).toBeInTheDocument();
   expect(within(matrix).getByText("labeled OK", { selector: "th" })).toBeInTheDocument();
-  expect(within(matrix).getByRole("button", { name: "0", hidden: true })).toBeDisabled(); // a cell with no picture opens nothing
-  await userEvent.click(within(matrix).getByTitle(`Open the 1 picture(s) in the Grid: ${FN}`));
+  expect(screen.queryByRole("button", { name: /Insights/ })).toBeNull(); // no separate view any more
+  expect(matrix).toHaveAttribute("data-outdated", "false");
+});
+
+test("a matrix cell turns the Grid to its Show entry, which then names the cell", async () => {
+  state = baseState({ step: 2, views: [...baseState().views, FN] });
+  render(<ClassifyView camera="camA" />);
   await cardEl("a.png");
-  expect(screen.getByLabelText("Show")).toHaveValue(FN); // the Show box names the cell, so it is clear the grid is filtered
+  const matrix = await screen.findByTestId("matrix-resnet50");
+  expect(within(matrix).getByRole("button", { name: "0" })).toBeDisabled(); // a cell with no picture opens nothing
+  await userEvent.click(within(matrix).getByTitle(`Open the 1 picture(s) in the Grid: ${FN}`));
+  expect(screen.getByLabelText("Show")).toHaveValue(FN);
   await waitFor(() => expect(calls.some((c) => c.url.includes("/classify/grid") && new URL(c.url, "http://x").searchParams.get("view") === FN)).toBe(true));
 });
 
-test("Insights is not offered in step 1, where no goldens are marked", async () => {
-  state = baseState({ step: 1 });
+test("the matrix stays first in the Scatter and Outliers views, and a click there goes back to the Grid", async () => {
+  state = baseState({ step: 2, views: [...baseState().views, FN] });
   render(<ClassifyView camera="camA" />);
   await cardEl("a.png");
-  expect(screen.queryByRole("button", { name: /Insights/ })).toBeNull();
+  await userEvent.click(screen.getByRole("button", { name: /Scatter/ }));
+  await screen.findByTestId("matrix-resnet50");
+  expect(screen.queryByTestId("grid-controls")).toBeNull();
+  await userEvent.click(screen.getByRole("button", { name: /Outliers/ }));
+  const matrix = await screen.findByTestId("matrix-resnet50");
+  const slot = screen.getByTestId("panel-slot");
+  expect(screen.getByTestId("matrix-region").compareDocumentPosition(slot) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy(); // above what the view adds
+  await userEvent.click(within(matrix).getByTitle(`Open the 1 picture(s) in the Grid: ${FN}`));
+  await cardEl("a.png");
+  expect(screen.getByLabelText("Show")).toHaveValue(FN);
 });
 
-test("Insights explains what is missing instead of an empty matrix", async () => {
+test("the matrix is greyed out with a note while the scores are older than the goldens", async () => {
+  state = baseState({ step: 2, stale: { goldens: true, frames: false } });
+  render(<ClassifyView camera="camA" />);
+  await cardEl("a.png");
+  expect(await screen.findByTestId("matrix-resnet50")).toHaveAttribute("data-outdated", "true");
+  expect(screen.getByText(/Outdated: goldens or pictures changed/)).toBeInTheDocument();
+});
+
+test("the matrix is read again after Refresh scores", async () => {
+  state = baseState({ step: 2 });
+  render(<ClassifyView camera="camA" />);
+  await cardEl("a.png");
+  await screen.findByTestId("matrix-resnet50");
+  const before = calls.filter((c) => c.url.includes("/insights?")).length;
+  await userEvent.click(screen.getByRole("button", { name: /Refresh scores/ }));
+  await waitFor(() => expect(calls.filter((c) => c.url.includes("/insights?")).length).toBeGreaterThan(before));
+});
+
+test("no matrix in step 1; in step 2 a hint says what is missing instead of an empty matrix", async () => {
+  state = baseState({ step: 1 });
+  const first = render(<ClassifyView camera="camA" />);
+  await cardEl("a.png");
+  expect(screen.queryByTestId("matrix-region")).toBeNull();
+  first.unmount();
+
   state = baseState({ step: 2 });
   insights = { ...matrixBody(), reason: "needs_two_golden_classes", goldens_in: ["OK"], has_results: false, matrices: {} };
   render(<ClassifyView camera="camA" />);
   await cardEl("a.png");
-  await userEvent.click(screen.getByRole("button", { name: /Insights/ }));
-  expect(await screen.findByText(/needs goldens in at least two classes/)).toBeInTheDocument();
-  insights = { ...matrixBody(), reason: null, has_results: false, matrices: {} };
+  expect(await screen.findByTestId("matrix-hint")).toHaveTextContent(/Needs goldens in both classes/);
+  expect(screen.queryByTestId("matrix-resnet50")).toBeNull();
+});
+
+test("when ResNet50 is switched off the matrix section says so", async () => {
+  state = baseState({ step: 2, methods: ["cpu"] });
+  insights = { ...matrixBody(), reason: "method_off", methods: [], has_results: false, matrices: {} };
+  render(<ClassifyView camera="camA" />);
+  await cardEl("a.png");
+  expect(await screen.findByTestId("matrix-hint")).toHaveTextContent(/ResNet50 is not switched on/);
 });

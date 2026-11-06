@@ -155,8 +155,9 @@ class Ctx:
 
 
 def _matrix_methods(camera: str, feature: str, methods: list[str]) -> list[str]:
-    """The methods whose confusion-matrix cells are offered in Show: not in step 1, where no goldens are marked."""
-    return [] if flow.roi_step(camera, feature) == 1 else list(methods)
+    """The methods whose confusion-matrix cells are offered in Show: only ``cv.MATRIX_METHOD`` (ResNet50) and only when it is
+    switched on, and not in step 1, where no goldens are marked."""
+    return [] if flow.roi_step(camera, feature) == 1 else [m for m in methods if m == cv.MATRIX_METHOD]
 
 
 def _build(camera: str, q: GridQuery, *, apply_auto_preview: bool = True) -> Ctx:

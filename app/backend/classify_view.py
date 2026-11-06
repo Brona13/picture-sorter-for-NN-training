@@ -26,6 +26,7 @@ MEASURE_VIEW_PREFIX = "Measurement: "
 MEASURE_VIEWS = [f"{MEASURE_VIEW_PREFIX}{v}" for v in EDGE_VERDICTS]
 
 
+MATRIX_METHOD = "resnet50"  # the one method the confusion matrix and its Show entries are made for (several methods: later)
 POSITIVE_CLASS = "OK"  # the class the confusion-matrix names are counted from: a labeled OK the method calls NG is a false negative
 _BINARY_KIND = {
     ("OK", "OK"): "True positive",

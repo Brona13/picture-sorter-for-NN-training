@@ -1203,7 +1203,7 @@ export interface InsightsResponse {
   methods: string[];
   goldens_in: string[];
   evaluable: number;
-  reason: "needs_two_golden_classes" | "no_held_out_labels" | null;
+  reason: "method_off" | "needs_two_golden_classes" | "no_held_out_labels" | null;
   has_results: boolean;
   matrices: Record<
     string,

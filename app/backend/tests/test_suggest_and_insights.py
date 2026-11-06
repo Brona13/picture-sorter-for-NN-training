@@ -6,6 +6,7 @@ from unittest import mock
 import numpy as np
 
 import classify
+import classify_view as cv
 import config
 import insights
 import suggest_goldens
@@ -95,11 +96,15 @@ class SuggestInsightsApiTests(ApiTestCase):
         super().setUp()
         self._emb = config.EMBEDDING_ENABLED
         config.EMBEDDING_ENABLED = False
+        # the matrix is made for ResNet50 only; these tests have no torch, so they run it on the classical method
+        self._matrix_method = mock.patch.object(cv, "MATRIX_METHOD", "cpu")
+        self._matrix_method.start()
         self.blue, self.red = write_two_groups(CAM)
         datamodel.save_rois(CAM, [ROI(name=FEAT, x=0, y=0, w=1, h=1)])
         self.base = f"/api/cameras/{CAM}"
 
     def tearDown(self) -> None:
+        self._matrix_method.stop()
         config.EMBEDDING_ENABLED = self._emb
         super().tearDown()
 
@@ -222,6 +227,19 @@ class SuggestInsightsApiTests(ApiTestCase):
         self.assertEqual([c["frame"] for c in fn["items"]], [self.red[1]])
         body = self.client.get(url, params={"feature": FEAT}).json()
         self.assertEqual(body["matrices"]["cpu"]["matrix"]["OK"]["NG"], 1)
+
+    def test_the_matrix_is_made_for_resnet50_only_and_says_so_when_it_is_off(self) -> None:
+        self._matrix_method.stop()  # the real setting: ResNet50, which is not in use here (no torch, classical method only)
+        try:
+            self.label(self.blue[0], "OK", golden=True)
+            self.label(self.red[0], "NG", golden=True)
+            body = self.client.get(f"{self.base}/insights", params={"feature": FEAT}).json()
+            self.assertEqual((body["reason"], body["methods"], body["matrices"]), ("method_off", [], {}))
+            flow.set_roi_step(CAM, FEAT, 2)
+            views = self.client.get(f"{self.base}/classify/state", params={"feature": FEAT}).json()["views"]
+            self.assertFalse([v for v in views if "model says" in v])
+        finally:
+            self._matrix_method.start()
 
     def test_insights_leaves_out_pictures_muted_in_this_classifier(self) -> None:
         self.label(self.blue[0], "OK", golden=True)

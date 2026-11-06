@@ -19,7 +19,7 @@ router = APIRouter()
 def insights_for(camera: str, feature: str) -> dict:
     require_feature(camera, feature)
     classes = datamodel.classes_for(camera, feature)
-    methods = classify.methods_available()
+    methods = [m for m in classify.methods_available() if m == cv.MATRIX_METHOD]  # one method for now (ResNet50)
     gold = labels.current_goldens(camera, feature)
     muted = db.muted_frames(camera, feature)  # hidden from this Classifier, so not part of the picture the matrix describes
     evaluable = {
@@ -36,6 +36,9 @@ def insights_for(camera: str, feature: str) -> dict:
         "has_results": False,
         "matrices": {},
     }
+    if not methods:
+        out["reason"] = "method_off"  # the matrix method is not switched on (Configuration)
+        return out
     if len(have) < 2:
         out["reason"] = "needs_two_golden_classes"
         return out

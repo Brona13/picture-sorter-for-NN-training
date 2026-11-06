@@ -30,6 +30,14 @@ const GRID_INFO = (
     scores. The tools below label, clear or auto-assign many pictures at once and act on the <em>whole</em> Show list, not only the page you see.
   </>
 );
+const MATRIX_INFO = (
+  <>
+    ResNet50 against your labels: rows are what you labeled, columns what the model says. Goldens and muted pictures are left out, so every other
+    labeled picture is a test of what the goldens teach. <strong>Click a number</strong> to open those pictures in the Grid (the Show box names the
+    cell). OK is the positive class: a labeled OK the model calls NG is a false negative, a labeled NG it calls OK a false positive. Updates when
+    you press <strong>Refresh scores</strong>; greyed out while the goldens or pictures are newer than the scores.
+  </>
+);
 const PHASES: Record<string, string> = {
   discovery: "Finding frames and goldens…",
   features: "Computing features…",
@@ -70,7 +78,7 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
   const [viewing, setViewing] = useState<string | null>(null); // the picture viewer, on a frame of this page
   const [revision, setRevision] = useState(0);
   const [search, setSearch] = useState(""); // a part of a file name: the grid then lists matching pictures of the whole camera
-  const [mode, setMode] = useState<"grid" | "scatter" | "outliers" | "insights">("grid");
+  const [mode, setMode] = useState<"grid" | "scatter" | "outliers">("grid");
   const [similarSeed, setSimilarSeed] = useState<{ frame: string; label: string } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   // What the last refresh did; it is shown on the Refresh line, not as a notice under it.
@@ -94,10 +102,6 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
   );
 
   useEffect(() => setSimilarSeed(null), [feature]);
-  // Insights belong to a step-2 Classifier, the one that has goldens: any other goes back to the Grid.
-  useEffect(() => {
-    if (mode === "insights" && st && st.step !== 2) setMode("grid");
-  }, [mode, st]); // eslint-disable-line react-hooks/exhaustive-deps
   // With a single method switched on there is nothing to disagree about: leave that filter.
   useEffect(() => {
     if (st && st.methods.length < 2 && view === "Methods disagree") setView("All");
@@ -265,11 +269,6 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
       <button type="button" aria-pressed={mode === "outliers"} onClick={() => setMode("outliers")}>
         ◎ Outliers
       </button>
-      {st?.step === 2 && (
-        <button type="button" aria-pressed={mode === "insights"} onClick={() => setMode("insights")} title="How well the goldens reproduce your labels: one confusion matrix per method">
-          ▥ Insights
-        </button>
-      )}
     </div>
   );
   const progress = job?.progress ?? {};
@@ -279,7 +278,7 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
   // Refreshing the scores belongs to the grid, so it sits on the navigation line while the grid is shown, with what the
   // page has to say about the scores (stale, missing, running) to its right.
   const refreshRow =
-    (mode === "grid" || mode === "insights") && st ? (
+    mode === "grid" && st ? (
       <>
         <span aria-hidden="true" style={{ width: 14 }} />
         <button
@@ -417,13 +416,32 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
       </PanelSection>
     ) : null;
 
+  // The confusion matrix is the first region of the options panel in every view (Grid, Scatter, Outliers) of a step-2 Classifier.
+  // A cell turns the Grid to its Show entry. Greyed out while the scores are older than the goldens or the pictures.
+  const matrixPanel =
+    st?.step === 2 ? (
+      <PanelSection title="Confusion matrix" info={MATRIX_INFO} testId="matrix-region">
+        <ClassifyInsights
+          camera={camera}
+          feature={feature}
+          revision={revision}
+          outdated={st.stale.goldens || st.stale.frames || (st.missing_methods ?? []).includes("resnet50")}
+          onPick={(v) => {
+            setSearch("");
+            setView(v);
+            setMode("grid");
+          }}
+        />
+      </PanelSection>
+    ) : null;
+
   return (
     <section>
       <h2>
         Classify — {camera}
         {focus ? ` › ${focusName}` : product ? ` › ${product}` : ""}
       </h2>
-      <SidePanel panel={gridPanel} wide>
+      <SidePanel panel={<>{matrixPanel}{gridPanel}</>} wide>
       {focus && (
         // Locked to one ROI: the way back and the three views are all navigation, so they share one line.
         <div style={navRow}>
@@ -482,18 +500,6 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
 
       {mode === "scatter" && st && (
         <ClassifyScatter camera={camera} feature={feature} mode={stepMode} mute={stepMode.muting ? stepTwoMute : undefined} grid={st.settings} onGrid={changeSetting} onChanged={bump} onNotice={setNotice} onError={setError} />
-      )}
-
-      {mode === "insights" && st?.step === 2 && (
-        <ClassifyInsights
-          camera={camera}
-          feature={feature}
-          revision={revision}
-          onPick={(v) => {
-            setView(v);
-            setMode("grid");
-          }}
-        />
       )}
 
       {mode === "outliers" && st && (

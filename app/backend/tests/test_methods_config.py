@@ -158,7 +158,7 @@ class MethodsConfigTests(ApiTestCase):
         st = self.state()
         self.assertEqual((st["methods"], st["default_rank"]), (["resnet18"], "resnet18"))
         ins = self.client.get(f"/api/cameras/{CAM}/insights", params={"feature": FEAT}).json()
-        self.assertEqual(ins["methods"], ["resnet18"])
+        self.assertEqual((ins["methods"], ins["reason"]), ([], "method_off"))  # the matrix is for ResNet50 only, which is off here
 
     # --- other users of the embeddings ---
     def test_dedup_outliers_and_similar_only_offer_active_embeddings(self) -> None:
