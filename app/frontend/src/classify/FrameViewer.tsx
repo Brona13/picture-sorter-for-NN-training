@@ -1,6 +1,6 @@
 import { sampleLabel } from "../samples";
 import { ReactNode, useEffect, useRef, useState } from "react";
-import { api, flowPictureUrl, frameCutoutUrl, FlowEdit, RoiInfo } from "../api";
+import { api, flowPictureUrl, frameCutoutUrl, frameImageUrl, FlowEdit, RoiInfo } from "../api";
 import FramePane from "./FramePane";
 import PictureViewer from "./PictureViewer";
 import { useBrowse } from "./useBrowse";
@@ -113,6 +113,16 @@ export default function FrameViewer({ camera, feature, pictureFeature, frames, s
   const showCutout = boxMode && cutout && !boxMissing;
   const boxPictureUrl = !boxMode ? undefined : showCutout ? frameCutoutUrl(camera, frame, pictureFeature!) : boxInfo!.input ? flowPictureUrl(camera, boxInfo!.input, frame, { stage: "output" }) : undefined;
   const boxOutline = boxMode && !showCutout && boxHere && boxInfo!.anchored && boxInfo!.rect ? boxInfo!.rect : null;
+  // The pictures the arrows lead to next (two ahead, one behind), in the form the pane would show them, fetched ahead of time.
+  const urlFor = (f: string): string | undefined =>
+    boxMode
+      ? showCutout ? frameCutoutUrl(camera, f, pictureFeature!) : boxInfo!.input ? flowPictureUrl(camera, boxInfo!.input, f, { stage: "output" }) : undefined
+      : roi?.input
+        ? flowPictureUrl(camera, roi.input, f, version === "original" && boxSteps ? { stage: "output", steps: boxSteps.filter((s) => s.op !== "filter") } : { stage: "output" })
+        : undefined;
+  const preload = [index + 1, index + 2, index - 1]
+    .filter((i) => i >= 0 && i < frames.length)
+    .map((i) => urlFor(frames[i]) ?? frameImageUrl(camera, frames[i]));
   const outline = boxMode ? boxOutline : roi && showRoi ? (roi.anchored ? (placed && placed.frame === frame && placed.rect ? { ...roi, ...placed.rect } : null) : roi) : null;
   const noAnchor = !!roi?.anchored && placed?.frame === frame && placed.rect === null;
 
@@ -255,7 +265,7 @@ export default function FrameViewer({ camera, feature, pictureFeature, frames, s
         </>
       }
     >
-      {(width) => <FramePane camera={camera} frame={frame} width={width} outline={outline} imageUrl={boxMode ? boxPictureUrl : pictureUrl} info={boxMissing ? "The detector found no box on this picture" : noAnchor && !boxMode ? `${roi!.short_name}: the detector found no box here, so there is no ROI on this picture` : note?.(frame)} />}
+      {(width) => <FramePane camera={camera} frame={frame} width={width} outline={outline} imageUrl={boxMode ? boxPictureUrl : pictureUrl} preload={preload} info={boxMissing ? "The detector found no box on this picture" : noAnchor && !boxMode ? `${roi!.short_name}: the detector found no box here, so there is no ROI on this picture` : note?.(frame)} />}
     </PictureViewer>
   );
 }
