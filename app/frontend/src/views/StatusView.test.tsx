@@ -28,7 +28,7 @@ test("renders metrics and a feature row", async () => {
   expect(await screen.findByText("Status — camA")).toBeInTheDocument();
   expect(screen.getByText("OK: 3 · NG: 1")).toBeInTheDocument();
   expect(screen.getByText("OK: 1 · NG: 0")).toBeInTheDocument();
-  expect(screen.getByText("v2")).toBeInTheDocument();
+  expect(screen.getByText("V02")).toBeInTheDocument();
   expect(screen.getByText("— all")).toBeInTheDocument();
 });
 

@@ -93,7 +93,7 @@ class FieldsTests(unittest.TestCase):
             self.assertIn(text, str(ctx.exception))
 
     def test_zip_name_defaults_to_the_dataset_name_and_version(self) -> None:
-        self.assertEqual(ds_export.zip_file_name(fields(), 3), "200_M13_podvozek_test_V02_v003.zip")
+        self.assertEqual(ds_export.zip_file_name(fields(), 3), "200_M13_podvozek_test_V02_V03.zip")
         self.assertEqual(ds_export.zip_file_name(fields(zip_name="mine"), 3), "mine.zip")
         self.assertEqual(ds_export.zip_file_name(fields(zip_name="a/b.ZIP"), 3), "a-b.ZIP")
 
@@ -221,8 +221,8 @@ class BuildMultiTests(unittest.TestCase):
         self.assertIn("Collection name", str(ctx.exception))
 
     def test_the_build_number_makes_the_collection_name_unique(self) -> None:
-        self.assertEqual(ds_export.build_name(" My model ", 1), "My model_v001")
-        self.assertEqual(ds_export.build_name("My model", 12), "My model_v012")
+        self.assertEqual(ds_export.build_name(" My model ", 1), "My model_V01")
+        self.assertEqual(ds_export.build_name("My model", 12), "My model_V12")
 
 
 class WriteCollectionZipTests(unittest.TestCase):

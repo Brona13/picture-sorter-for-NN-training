@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, CameraStatus, FeatureStatus } from "../api";
+import { versionLabel } from "../versionLabel";
 
 export function scopeOf(f: FeatureStatus): string {
   if (f.role === "classify") return "(defines products)";
@@ -82,7 +83,7 @@ export default function StatusView({ camera }: { camera: string }) {
                 <td>{f.unlabeled}</td>
                 <td>{f.total}</td>
                 <td>{f.version_count}</td>
-                <td>{f.active_version !== null ? `v${f.active_version}` : "—"}</td>
+                <td>{f.active_version !== null ? versionLabel(f.active_version) : "—"}</td>
               </tr>
             ))}
           </tbody>

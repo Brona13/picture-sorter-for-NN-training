@@ -34,6 +34,7 @@ import ds_assets
 import labels
 import samples
 import versions
+from vlabel import label
 
 DEFAULT_OK_COLOR = "#06e52b"  # RGB(6, 229, 43), the green of a real DS export
 DEFAULT_NG_COLOR = "#f44336"  # RGB(244, 67, 54), the red of a real DS export
@@ -124,8 +125,8 @@ def _remember(camera: str, version_id: int, fields: Fields, dest: Path, written:
 
 def zip_file_name(fields: Fields, number: int) -> str:
     """The zip file name: the one typed, or the dataset name plus the version number; always ends in ``.zip``."""
-    base = fields.zip_name or f"{fields.dataset_name}_v{number:03d}"
-    base = re.sub(r'[\\/:*?"<>|]', "-", base).strip(" .") or f"dataset_v{number:03d}"
+    base = fields.zip_name or f"{fields.dataset_name}_{label(number)}"
+    base = re.sub(r'[\\/:*?"<>|]', "-", base).strip(" .") or f"dataset_{label(number)}"
     return base if base.lower().endswith(".zip") else base + ".zip"
 
 
@@ -333,7 +334,7 @@ class Entry:
 
 def build_name(model_name: str, number: int) -> str:
     """The collection name of build ``number``: DS refuses a second import of the same name, so every build gets its own."""
-    return f"{model_name.strip()}_v{number:03d}"
+    return f"{model_name.strip()}_{label(number)}"
 
 
 def check_subs(subs: list[SubFields]) -> list[SubFields]:

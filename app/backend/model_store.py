@@ -5,7 +5,7 @@ A **model** has a name, the **datasets** it is built from (one pinned freeze per
 class names and colours, in the order they are written) and the tick "include pictures without a rectangle". Pinned means a camera
 that gets a newer freeze keeps its pinned one until the user changes it; the model only says that a newer one exists (``newer``).
 
-A **build** writes the collection zip ``<data>/models/<model name>/<model name>_v001.zip`` (the number counts the builds of the
+A **build** writes the collection zip ``<data>/models/<model name>/<model name>_V01.zip`` (the number counts the builds of the
 model and is never reused; DS refuses a second import of the same collection name) and records the build: the datasets as built,
 the report and the **manifest**, one row per picture (camera, freeze, dataset folder, DS name, original file, app frame, hash,
 class, box, size). The manifest stays in the database because DS renames pictures and ids on import. Paths of zips are kept

@@ -9,6 +9,7 @@ import PictureSizeSlider, { usePictureSize } from "../PictureSize";
 import RoiCanvas from "../RoiCanvas";
 import { FIT_VIEW, View } from "../zoomGeometry";
 import { Box, round4, roundBox, sameBox } from "../roiGeometry";
+import { versionLabel } from "../versionLabel";
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const NUM_FIELDS: (keyof Box)[] = ["x", "y", "w", "h"];
@@ -511,7 +512,7 @@ function RoiCard({ camera, frame, roi, scopeIsCamera, allProducts, confirming, o
           <strong>{roi.short_name}</strong> <small>{chip(roi)}</small>
           <div style={{ fontSize: 12, opacity: 0.7 }}>
             {frames} · {roi.goldens} golden{roi.goldens === 1 ? "" : "s"} · {roi.labeled} labeled ·{" "}
-            {roi.active_version !== null ? `v${roi.active_version} active` : "no version yet"}
+            {roi.active_version !== null ? `${versionLabel(roi.active_version)} active` : "no version yet"}
           </div>
         </div>
         {confirming && (

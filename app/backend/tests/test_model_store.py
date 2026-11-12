@@ -47,7 +47,7 @@ class CreateAndReadTests(ModelApiCase):
                          [("camA", "camA", "camA-OK", "camA-NG"), ("camB", "camB", "camB-OK", "camB-NG")])
         self.assertEqual([(d["ok"], d["ng"], d["no_rect"], d["size"]) for d in m["datasets"]], [(2, 1, 1, "200x200"), (1, 1, 0, "200x200")])
         self.assertEqual([c["name"] for c in m["classes"]], ["camA-OK", "camA-NG", "camB-OK", "camB-NG"])
-        self.assertEqual(m["next_build"], {"number": 1, "collection_name": "Round one_v001"})
+        self.assertEqual(m["next_build"], {"number": 1, "collection_name": "Round one_V01"})
         self.assertEqual((m["changed"], m["stale"]), (False, []))
         got = self.client.get(f"/api/models/{m['id']}").json()
         self.assertEqual(got["datasets"], m["datasets"])
@@ -138,19 +138,19 @@ class BuildTests(ModelApiCase):
         r = self.client.post(f"/api/models/{m['id']}/build")
         self.assertEqual(r.status_code, 201, r.text)
         b = r.json()
-        self.assertEqual((b["number"], b["collection_name"], b["written"], b["exists"]), (1, "Round one_v001", 5, True))
-        self.assertEqual(b["zip"], "models/Round one/Round one_v001.zip")
+        self.assertEqual((b["number"], b["collection_name"], b["written"], b["exists"]), (1, "Round one_V01", 5, True))
+        self.assertEqual(b["zip"], "models/Round one/Round one_V01.zip")
         zip_file = config.DATA_DIR / b["zip"]
         with zipfile.ZipFile(zip_file) as z:
             data = json.loads(z.read("datasetCollection.json"))
             self.assertEqual(sorted(n for n in z.namelist() if n != "datasetCollection.json"), sorted([*[f"camA/{n}" for n in self.a[:3]], *[f"camB/{n}" for n in self.b]]))
             self.assertEqual(z.read(f"camB/{self.b[0]}"), (datamodel.unsorted_dir("camB") / self.b[0]).read_bytes())
-        self.assertEqual(data["Name"], "Round one_v001")
+        self.assertEqual(data["Name"], "Round one_V01")
         self.assertEqual(b["report"]["written"], 5)
         self.assertEqual(b["datasets"][0]["camera"], "camA")
         after = self.client.get(f"/api/models/{m['id']}").json()
         self.assertEqual((after["builds"], after["last_build"]["number"], after["changed"]), (1, 1, False))
-        self.assertEqual(after["next_build"], {"number": 2, "collection_name": "Round one_v002"})
+        self.assertEqual(after["next_build"], {"number": 2, "collection_name": "Round one_V02"})
 
     def test_every_build_gets_its_own_number_and_collection_name(self) -> None:
         m = self.create().json()
@@ -159,10 +159,10 @@ class BuildTests(ModelApiCase):
         self.assertEqual((first["number"], second["number"]), (1, 2))
         self.assertNotEqual(first["zip"], second["zip"])
         with zipfile.ZipFile(config.DATA_DIR / second["zip"]) as z:
-            self.assertEqual(json.loads(z.read("datasetCollection.json"))["Name"], "Round one_v002")
+            self.assertEqual(json.loads(z.read("datasetCollection.json"))["Name"], "Round one_V02")
         listed = self.client.get(f"/api/models/{m['id']}/builds").json()["builds"]
         self.assertEqual([x["number"] for x in listed], [2, 1])
-        self.assertEqual(self.client.get(f"/api/models/{m['id']}/builds/1").json()["collection_name"], "Round one_v001")
+        self.assertEqual(self.client.get(f"/api/models/{m['id']}/builds/1").json()["collection_name"], "Round one_V01")
         self.assertEqual(self.client.get(f"/api/models/{m['id']}/builds/7").status_code, 404)
 
     def test_the_manifest_is_kept_and_can_be_paged(self) -> None:
@@ -210,7 +210,7 @@ class BuildTests(ModelApiCase):
         old = self.client.post(f"/api/models/{m['id']}/build").json()
         self.client.put(f"/api/models/{m['id']}", json={"name": "Round 1"})
         new = self.client.post(f"/api/models/{m['id']}/build").json()
-        self.assertEqual((new["number"], new["zip"]), (2, "models/Round 1/Round 1_v002.zip"))
+        self.assertEqual((new["number"], new["zip"]), (2, "models/Round 1/Round 1_V02.zip"))
         self.assertTrue((config.DATA_DIR / old["zip"]).exists())
         self.assertTrue(self.client.get(f"/api/models/{m['id']}/builds/1").json()["exists"])
 

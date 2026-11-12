@@ -3,6 +3,7 @@ import { api, ExportReport, ProjectVersionsResponse } from "./api";
 import CopyButton from "./CopyButton";
 import VerdictBar from "./VerdictBar";
 import VersionResults from "./VersionResults";
+import { versionLabel } from "./versionLabel";
 
 const fmt = (ts: number) => new Date(ts * 1000).toISOString().slice(0, 16).replace("T", " ");
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -47,7 +48,7 @@ export default function ProjectVersions({ camera }: { camera: string }) {
     e.preventDefault();
     try {
       const v = await api.freezeProject(camera, name, notes, goldensOnly);
-      setNotice(`Froze project v${v.number} — OK ${v.counts.ok}, NG ${v.counts.ng}.`);
+      setNotice(`Froze project ${versionLabel(v.number)} — OK ${v.counts.ok}, NG ${v.counts.ng}.`);
       setName("");
       setNotes("");
       setReport(null);
@@ -68,7 +69,7 @@ export default function ProjectVersions({ camera }: { camera: string }) {
   async function onDelete(id: number, number: number) {
     try {
       await api.deleteVersion(camera, PROJECT, id);
-      setNotice(`Deleted project v${number}.`);
+      setNotice(`Deleted project ${versionLabel(number)}.`);
       setConfirmDelete(null);
       load();
     } catch (err) {

@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { api, VersionInfo, VersionResult } from "./api";
+import { versionLabel } from "./versionLabel";
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const today = () => new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD in the local time zone
@@ -72,7 +73,7 @@ export default function VersionResults({
       const input = { name, value: number, note, measured };
       if (editing) await api.updateVersionResult(camera, feature, editing.version_id, editing.id, input);
       else await api.addVersionResult(camera, feature, chosen.id, input);
-      onNotice(editing ? "Result updated." : `Recorded ${name.trim()} for v${chosen.number}.`);
+      onNotice(editing ? "Result updated." : `Recorded ${name.trim()} for ${versionLabel(chosen.number)}.`);
       reset();
       onChanged();
     } catch (err) {
@@ -109,7 +110,7 @@ export default function VersionResults({
               <th>metric</th>
               {shown.map((v) => (
                 <th key={v.id} className={v.deleted !== null ? "deleted-version" : undefined}>
-                  v{v.number}
+                  {versionLabel(v.number)}
                 </th>
               ))}
             </tr>
@@ -134,14 +135,14 @@ export default function VersionResults({
       )}
 
       <form onSubmit={submit} style={{ marginTop: 12 }}>
-        <strong>{editing ? `Edit a result of v${versions.find((v) => v.id === editing.version_id)?.number ?? ""}` : "Record a result"}</strong>
+        <strong>{editing ? `Edit a result of ${versionLabel(versions.find((v) => v.id === editing.version_id)?.number)}` : "Record a result"}</strong>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "end", margin: "6px 0" }}>
           <label>
             Version{" "}
             <select aria-label="Version" value={versionId ?? ""} disabled={editing !== null} onChange={(e) => setVersionId(Number(e.target.value))}>
               {versions.map((v) => (
                 <option key={v.id} value={v.id}>
-                  v{v.number} {v.name}
+                  {versionLabel(v.number)} {v.name}
                   {v.deleted !== null ? " (deleted)" : ""}
                 </option>
               ))}
@@ -182,7 +183,7 @@ export default function VersionResults({
       {chosen && (
         <>
           <h4 style={{ marginBottom: 4 }}>
-            Recorded for v{chosen.number} {chosen.name}
+            Recorded for {versionLabel(chosen.number)} {chosen.name}
           </h4>
           {rows.length === 0 ? (
             <p style={{ fontSize: 13 }}>Nothing recorded for this version yet.</p>

@@ -126,7 +126,7 @@ test("Ingest OK is made in step 2, shows its pictures and the freeze it reads, a
   const pile = await screen.findByTestId("chain-node-inok:1");
   expect(pile).toHaveTextContent("Ingest OK 1");
   expect(pile).toHaveTextContent("3");
-  expect(pile).toHaveTextContent("❄ v1");
+  expect(pile).toHaveTextContent("❄ V01");
   expect(pile.querySelector(".react-flow__handle.target, [data-handlepos='left']")).toBeNull(); // nothing feeds a pile
   fireEvent.click(screen.getByRole("tab", { name: /Step 1/ }));
   expect(screen.queryByTestId("chain-node-inok:1")).toBeNull(); // drawn only in step 2

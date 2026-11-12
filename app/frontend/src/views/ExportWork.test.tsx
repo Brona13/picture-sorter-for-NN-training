@@ -87,7 +87,7 @@ test("freezes with a name, lists the freeze, then exports it and shows where it 
   await waitFor(() => expect(calls.some((c) => c.url.endsWith("/export/freeze") && c.body.name === "x")).toBe(true));
 
   const row = within((await screen.findByRole("table", { name: "Frozen versions" })).querySelector("tbody tr") as HTMLElement);
-  expect(row.getByText("v2")).toBeInTheDocument();
+  expect(row.getByText("V02")).toBeInTheDocument();
   expect(row.getByText("x")).toBeInTheDocument();
   expect(row.getByText("Not exported")).toBeInTheDocument();
   expect(row.getByText("exports/project/v002__x")).toBeInTheDocument();
@@ -104,8 +104,8 @@ test("every freeze has a row, newest first, and only the newest can say the Chai
   mount();
   const rows = Array.from((await screen.findByRole("table", { name: "Frozen versions" })).querySelectorAll("tbody tr"));
   expect(rows).toHaveLength(2);
-  expect(within(rows[0] as HTMLElement).getByText("v3")).toBeInTheDocument();
-  expect(within(rows[1] as HTMLElement).getByText("v2")).toBeInTheDocument();
+  expect(within(rows[0] as HTMLElement).getByText("V03")).toBeInTheDocument();
+  expect(within(rows[1] as HTMLElement).getByText("V02")).toBeInTheDocument();
   expect(within(rows[0] as HTMLElement).getByText("Chain changed")).toBeInTheDocument();
   expect(within(rows[1] as HTMLElement).queryByText("Chain changed")).not.toBeInTheDocument();
   expect(within(rows[1] as HTMLElement).getByText("Exported")).toBeInTheDocument();
@@ -118,7 +118,7 @@ test("an older backend that only sends the latest freeze still fills the table",
       ? { folders: {}, total: 0, ok: 0, ng: 0, both: 0, not_golden: 0, no_product: 0, uses_product: false, goldens_only: true, lines: { ok: 0, ng: 0 }, latest: frozen[0] }
       : detail)));
   mount();
-  expect(await screen.findByText("v2")).toBeInTheDocument();
+  expect(await screen.findByText("V02")).toBeInTheDocument();
 });
 
 test("the goldens tick goes through the node update", async () => {
@@ -179,7 +179,7 @@ test("the DS card opens from a freeze row, takes the fields, says what was writt
   expect(screen.queryByRole("region", { name: "DS import file" })).not.toBeInTheDocument(); // closed until a row asks for it
   fireEvent.click(screen.getByRole("button", { name: "DS dataset of version 2" }));
   const card = within(screen.getByRole("region", { name: "DS import file" }));
-  expect(card.getByText(/3 · DS dataset from v2/)).toBeInTheDocument();
+  expect(card.getByText(/3 · DS dataset from V02/)).toBeInTheDocument();
   expect(card.queryByLabelText("Freeze for the DS file")).not.toBeInTheDocument(); // the row chose the freeze
   expect(card.getByLabelText("Dataset name")).toHaveValue("camA");
   expect(card.getByLabelText("NG colour")).toHaveValue("#f44336");

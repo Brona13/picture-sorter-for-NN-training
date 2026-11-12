@@ -18,6 +18,7 @@ import time
 from pathlib import Path
 
 import datamodel
+from vlabel import label
 import samples
 import db
 import labels
@@ -58,7 +59,7 @@ def freeze(
                 camera,
                 feature,
                 number,
-                name.strip() or f"v{number}",
+                name.strip() or label(number),
                 notes.strip(),
                 time.time(),
                 json.dumps(counts),
@@ -316,7 +317,7 @@ def insert_project_version(camera: str, name: str, notes: str, counts: dict, sta
         cur = con.execute(
             "INSERT INTO versions(camera, feature, number, name, notes, created, counts_json, stats_json, active) "
             "VALUES (?,?,?,?,?,?,?,?,1)",
-            (camera, PROJECT, number, name.strip() or f"v{number}", notes.strip(), time.time(), json.dumps(counts), json.dumps(stats)),
+            (camera, PROJECT, number, name.strip() or label(number), notes.strip(), time.time(), json.dumps(counts), json.dumps(stats)),
         )
         vid = cur.lastrowid
         con.executemany(
@@ -330,9 +331,12 @@ def insert_project_version(camera: str, name: str, notes: str, counts: dict, sta
 
 
 def export_dir(camera: str, number: int, name: str) -> Path:
-    """Where exporting project version ``number`` writes: ``exports/project/v<NNN>__<name>``."""
+    """Where exporting project version ``number`` writes: ``exports/project/V<NN>__<name>`` (v1.161.0). An export made before
+    that, in a folder ``v<NNN>__<name>``, stays where it is and is still the one found."""
     safe = "".join(c if c.isalnum() or c in "-_" else "-" for c in name)
-    return datamodel.camera_dir(camera) / "exports" / "project" / f"v{number:03d}__{safe}"
+    base = datamodel.camera_dir(camera) / "exports" / "project"
+    legacy = base / f"v{number:03d}__{safe}"
+    return legacy if legacy.is_dir() else base / f"{label(number)}__{safe}"
 
 
 def export(camera: str, version_id: int) -> tuple[Path, dict]:

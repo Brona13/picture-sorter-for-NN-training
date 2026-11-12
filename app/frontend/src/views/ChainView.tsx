@@ -28,6 +28,7 @@ import StepIcons from "../chain/StepIcons";
 import { deleteNote, disconnectError, replaceNote, scopeNote, type LineNote } from "../chain/lineEffects";
 import { useSharedFeature } from "../SharedFeature";
 import SidePanel from "../SidePanel";
+import { versionLabel } from "../versionLabel";
 
 type BoxData = {
   node: ChainNode;
@@ -123,7 +124,7 @@ function Box({ data, selected }: NodeProps<BoxNode>) {
             <Counter icon="▦" value={node.flow?.total ?? 0} title="Pictures that would be exported" />
             <Counter icon="⇄" value={node.flow?.both ?? 0} title="Left out: reach both OK and NG" />
             {node.flow?.goldens_only && <Counter icon="☆" value={node.flow?.not_golden ?? 0} title="Left out because they are not golden (Golden only is on in this box's panel)" />}
-            <span title="Last freeze">{node.flow?.frozen ? `❄ v${node.flow.frozen}${node.flow.changed ? " ≠" : ""}` : "❄ –"}</span>
+            <span title="Last freeze">{node.flow?.frozen ? `❄ ${versionLabel(node.flow.frozen)}${node.flow.changed ? " ≠" : ""}` : "❄ –"}</span>
           </div>
         </>
       ) : node.kind === "box" ? (
@@ -134,7 +135,7 @@ function Box({ data, selected }: NodeProps<BoxNode>) {
       ) : isPileKind(node.kind) ? (
         <div className="chain-node-counters" aria-label="Counters" title={describeNode(node)}>
           <Counter icon="▦" value={node.flow?.frames ?? 0} title={`${node.flow?.cls ?? ""} pictures of the last freeze of step 1`} />
-          <span title={node.flow?.warning ?? `Reads freeze v${node.flow?.freeze}`}>{node.flow?.warning ? "⚠" : `❄ v${node.flow?.freeze}`}</span>
+          <span title={node.flow?.warning ?? `Reads freeze ${versionLabel(node.flow?.freeze)}`}>{node.flow?.warning ? "⚠" : `❄ ${versionLabel(node.flow?.freeze)}`}</span>
         </div>
       ) : node.kind === "dedup" ? (
         <div className="chain-node-counters" aria-label="Counters" title={describeNode(node)}>

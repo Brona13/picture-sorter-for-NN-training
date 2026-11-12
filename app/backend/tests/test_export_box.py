@@ -136,7 +136,7 @@ class ExportBoxTests(ApiTestCase):
         self.assertEqual([r["name"] for r in rows], ["second", "first"])
         self.assertEqual(state["latest"]["number"], rows[0]["number"])
         self.assertEqual([r["exported"] for r in rows], [False, True])
-        self.assertTrue(all(r["folder"].endswith(f"v{r['number']:03d}__{r['name']}") for r in rows))
+        self.assertTrue(all(r["folder"].endswith(f"V{r['number']:02d}__{r['name']}") for r in rows))
         self.assertEqual([r["changed"] for r in rows], [False, False])  # only the newest is compared with the Chain
         self.assertEqual(rows[1]["counts"]["ok"], 2)
         labels.mark_golden(CAM, "seal", self.frames[5], "NG")

@@ -18,6 +18,7 @@ import labels
 import motion
 import versions
 import vision_settings
+from vlabel import label
 
 # id, label, page that does it, optional. The order is the usual order of work.
 STAGES = [
@@ -93,8 +94,8 @@ def stages(camera: str, feature: str, *, counts: dict[str, int] | None = None, v
         "scored": (scored, "goldens changed since" if scored == STALE else ""),
         "edge": (DONE if edge_fresh else PARTIAL if edge_rule else TODO, "" if edge_fresh or not edge_rule else "not measured yet"),
         "augment": (DONE if aug_ranges else PARTIAL if aug else TODO, "" if aug_ranges or not aug else "no ranges saved yet"),
-        "version": (DONE if version else TODO, f"v{version['number']}" if version else ""),
-        "exported": (DONE if exported else TODO, f"project v{latest['number']}" if exported else ""),
+        "version": (DONE if version else TODO, label(version['number']) if version else ""),
+        "exported": (DONE if exported else TODO, f"project {label(latest['number'])}" if exported else ""),
     }
     out = [
         {"id": sid, "label": label, "view": view, "optional": optional, "status": state[sid][0], "detail": state[sid][1]}

@@ -3,6 +3,7 @@ import { usePublishFeature, useSharedFeature } from "../SharedFeature";
 import { api, VersionInfo, VersionsResponse, VisionSnapshot } from "../api";
 import ProjectVersions from "../ProjectVersions";
 import VersionResults from "../VersionResults";
+import { versionLabel } from "../versionLabel";
 
 const fmt = (ts: number) => new Date(ts * 1000).toISOString().slice(0, 16).replace("T", " ");
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -92,7 +93,7 @@ export default function VersionsView({ camera, product }: { camera: string; prod
     try {
       const info = await api.freeze(camera, feature, name, notes);
       setNotice(
-        `Froze v${info.number} — ` +
+        `Froze ${versionLabel(info.number)} — ` +
           (data?.classes ?? []).map((c) => `${c}: ${info.counts[c] ?? 0}`).join(", "),
       );
       setName("");
@@ -106,7 +107,7 @@ export default function VersionsView({ camera, product }: { camera: string; prod
   async function onRevert(v: VersionInfo) {
     try {
       const res = await api.revert(camera, feature, v.id);
-      setNotice(`Reverted to v${v.number}: ${res.labels} labels, ${res.goldens} golden marks.`);
+      setNotice(`Reverted to ${versionLabel(v.number)}: ${res.labels} labels, ${res.goldens} golden marks.`);
       setConfirming(null);
       load();
     } catch (err) {
@@ -117,7 +118,7 @@ export default function VersionsView({ camera, product }: { camera: string; prod
   async function onDelete(v: VersionInfo) {
     try {
       await api.deleteVersion(camera, feature, v.id);
-      setNotice(`Deleted v${v.number}.`);
+      setNotice(`Deleted ${versionLabel(v.number)}.`);
       setConfirmingDelete(null);
       load();
     } catch (err) {
@@ -215,7 +216,7 @@ export default function VersionsView({ camera, product }: { camera: string; prod
               {[...data.versions].reverse().map((v) => (
                 <tr key={v.id} className={v.deleted !== null ? "deleted-version" : undefined}>
                   <td>{v.deleted !== null ? "deleted" : v.active ? "▶ active" : ""}</td>
-                  <td>v{v.number}</td>
+                  <td>{versionLabel(v.number)}</td>
                   <td>{v.name}</td>
                   <td>{fmt(v.created)}</td>
                   {classes.map((c) => (
@@ -240,10 +241,10 @@ export default function VersionsView({ camera, product }: { camera: string; prod
                     {v.deleted === null && (
                       <>
                         <button disabled={v.active} onClick={() => setConfirming(v.id)}>
-                          ⏪ Revert v{v.number}
+                          ⏪ Revert {versionLabel(v.number)}
                         </button>{" "}
                         <button disabled={v.active} onClick={() => setConfirmingDelete(v.id)}>
-                          🗑 Delete v{v.number}
+                          🗑 Delete {versionLabel(v.number)}
                         </button>
                       </>
                     )}
@@ -259,7 +260,7 @@ export default function VersionsView({ camera, product }: { camera: string; prod
             .map((v) => (
               <div key={v.id} role="alertdialog" aria-label="Confirm revert">
                 <p>
-                  Revert the working state to <strong>v{v.number}</strong>? Current labels and golden
+                  Revert the working state to <strong>{versionLabel(v.number)}</strong>? Current labels and golden
                   marks will be replaced by that snapshot. Other saved versions remain available.
                 </p>
                 <button onClick={() => onRevert(v)}>✅ Yes, revert</button>{" "}
@@ -272,7 +273,7 @@ export default function VersionsView({ camera, product }: { camera: string; prod
             .map((v) => (
               <div key={v.id} role="alertdialog" aria-label="Confirm delete">
                 <p>
-                  Delete <strong>v{v.number}</strong> ({v.name})? The saved snapshot is removed for good, but the row
+                  Delete <strong>{versionLabel(v.number)}</strong> ({v.name})? The saved snapshot is removed for good, but the row
                   stays in the history greyed out, and the number is never reused. Your current labels and goldens
                   are not affected, and files already exported stay on disk.
                 </p>

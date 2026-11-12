@@ -1,4 +1,5 @@
 import type { ChainCanvas, ChainEdge, ChainLayout, ChainNode, ExportRef, FlowSummary } from "../api";
+import { versionLabel } from "../versionLabel";
 
 /** The handle id a product leaves the product Classifier by (matches `chain.product_handle`). */
 export const productHandle = (product: string) => `p:${product}`;
@@ -154,12 +155,12 @@ function describeFlowBox(kind: string, f: FlowSummary | undefined): string {
   if (kind === "ingest_ok" || kind === "ingest_ng") {
     const n = f?.frames ?? 0;
     const what = `${n} ${kind === "ingest_ok" ? "OK" : "NG"} picture${n === 1 ? "" : "s"}`;
-    return f?.warning ? `${what} · ${f.warning}` : `${what} · from freeze v${f?.freeze}`;
+    return f?.warning ? `${what} · ${f.warning}` : `${what} · from freeze ${versionLabel(f?.freeze)}`;
   }
   if (kind === "export") {
     const n = (f?.lines?.ok ?? 0) + (f?.lines?.ng ?? 0);
     if (!n) return "connect lines to OK or NG";
-    const frozen = f?.frozen ? ` · frozen v${f.frozen}${f.changed ? " (changed)" : ""}` : "";
+    const frozen = f?.frozen ? ` · frozen ${versionLabel(f.frozen)}${f.changed ? " (changed)" : ""}` : "";
     return `${f?.ok ?? 0} OK · ${f?.ng ?? 0} NG${frozen}`;
   }
   if (kind === "merge") {

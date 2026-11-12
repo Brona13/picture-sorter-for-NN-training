@@ -23,7 +23,7 @@ const detail = (over: object = {}) => ({
   id: 7, name: "Round one", created: 1, updated: 1, include_without_box: false, dataset_count: 1, builds: 0, last_build: null, folder: "models/Round one",
   datasets: [{ camera: "camA", version_id: 11, folder_name: "camA", ok_name: "camA-OK", ng_name: "camA-NG", ok_color: "#06e52b", ng_color: "#f44336",
     gone: false, number: 1, newer: { id: 12, number: 2, name: "Export 2", created: 1 } }],
-  build_list: [], next_build: { number: 1, collection_name: "Round one_v001" }, changed: false, stale: ["camA"], classes, notes: [], ...over,
+  build_list: [], next_build: { number: 1, collection_name: "Round one_V01" }, changed: false, stale: ["camA"], classes, notes: [], ...over,
 });
 
 type Call = { url: string; method: string; body: unknown };
@@ -98,7 +98,7 @@ test("a saved model offers the newer freeze and saves the change", async () => {
 });
 
 test("building reports the zip and lists the build with a download link", async () => {
-  const build = { id: 1, number: 1, collection_name: "Round one_v001", created: 1, zip: "models/Round one/Round one_v001.zip", exists: true, written: 9, include_without_box: false };
+  const build = { id: 1, number: 1, collection_name: "Round one_V01", created: 1, zip: "models/Round one/Round one_V01.zip", exists: true, written: 9, include_without_box: false };
   let built = false;
   mockServer({
     "GET /models/7": () => detail({ builds: built ? 1 : 0, build_list: built ? [build] : [] }),
@@ -109,8 +109,8 @@ test("building reports the zip and lists the build with a download link", async 
   });
   render(<ModelsView />);
   await userEvent.click(await screen.findByRole("button", { name: "Round one" }));
-  await userEvent.click(await screen.findByRole("button", { name: "Build Round one_v001" }));
-  expect(await screen.findByRole("status")).toHaveTextContent("Built Round one_v001: 9 pictures");
+  await userEvent.click(await screen.findByRole("button", { name: "Build Round one_V01" }));
+  expect(await screen.findByRole("status")).toHaveTextContent("Built Round one_V01: 9 pictures");
   const table = await screen.findByRole("table", { name: "Builds" });
   expect(within(table).getByRole("link", { name: "Download" })).toHaveAttribute("href", "/api/models/7/builds/1/zip");
 });

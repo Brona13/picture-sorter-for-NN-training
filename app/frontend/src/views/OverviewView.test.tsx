@@ -33,7 +33,7 @@ test("shows each camera with its picture, ROI boxes and ROI cards", async () => 
   expect(screen.getByAltText("camA reference frame").parentElement).toHaveStyle({ maxWidth: "400px" });
   expect(screen.getByTestId("box-camA-seal")).toHaveStyle({ left: "10%", width: "30%" });
   const card = screen.getByRole("button", { name: "ROI seal of camA" });
-  expect(card).toHaveTextContent("3 labeled · 1 golden · v2");
+  expect(card).toHaveTextContent("3 labeled · 1 golden · V02");
   expect(screen.getByRole("button", { name: "ROI label of camA" })).toHaveTextContent("classify");
   expect(screen.getByText("No frames yet.")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Select camera camA" })).toHaveAttribute("aria-pressed", "true");

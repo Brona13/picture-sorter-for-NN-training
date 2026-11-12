@@ -1,6 +1,7 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { api, DsExportFields, DsExportReport, ExportLatest, ExportLeftOut, ExportReport, ExportState, FlowExport, FlowNodeDetail, frameThumbUrl } from "../api";
 import CopyButton from "../CopyButton";
+import { isDefaultVersionName, versionLabel } from "../versionLabel";
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -186,7 +187,7 @@ export default function ExportWork({ camera, nodeId, detail, setDetail, onError 
               <tbody>
                 {frozen.map((v, i) => (
                   <tr key={v.id}>
-                    <td>v{v.number}</td>
+                    <td>{versionLabel(v.number)}</td>
                     <td>{v.name || <span className="muted">—</span>}</td>
                     <td>{when(v.created)}</td>
                     <td className="num">{v.counts.ok ?? 0}</td>
@@ -242,7 +243,7 @@ export default function ExportWork({ camera, nodeId, detail, setDetail, onError 
       {dsChosen && (
         <section className="export-card" aria-label="DS import file">
           <div className="export-card-head">
-            <h3>3 · DS dataset from v{dsChosen.number}{dsChosen.name && dsChosen.name !== `v${dsChosen.number}` ? ` · ${dsChosen.name}` : ""}</h3>
+            <h3>3 · DS dataset from {versionLabel(dsChosen.number)}{dsChosen.name && !isDefaultVersionName(dsChosen.name, dsChosen.number) ? ` · ${dsChosen.name}` : ""}</h3>
             <button type="button" onClick={() => setDsFor(null)}>Close</button>
           </div>
           {(
@@ -273,7 +274,7 @@ export default function ExportWork({ camera, nodeId, detail, setDetail, onError 
               </label>
               <label className="ds-field ds-wide">
                 <span>Zip file name</span>
-                <input aria-label="Zip file name" placeholder={`${ds.dataset_name || "dataset"}_v${String(dsChosen?.number ?? 0).padStart(3, "0")}.zip`} value={ds.zip_name} onChange={(e) => setField("zip_name", e.target.value)} />
+                <input aria-label="Zip file name" placeholder={`${ds.dataset_name || "dataset"}_${versionLabel(dsChosen?.number ?? 0)}.zip`} value={ds.zip_name} onChange={(e) => setField("zip_name", e.target.value)} />
                 <small>Empty: the dataset name and the version number. Written to the exports folder of the camera.</small>
               </label>
               <div className="ds-actions ds-wide">

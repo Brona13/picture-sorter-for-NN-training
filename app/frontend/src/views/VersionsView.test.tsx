@@ -57,8 +57,8 @@ test("lists history newest first with the active marker", async () => {
   expect(await screen.findByText("History (2)")).toBeInTheDocument();
   expect(screen.getByText("▶ active")).toBeInTheDocument();
   const rows = screen.getAllByRole("row").slice(1);
-  expect(rows[0]).toHaveTextContent("v2");
-  expect(screen.getByRole("button", { name: /Revert v2/ })).toBeDisabled();
+  expect(rows[0]).toHaveTextContent("V02");
+  expect(screen.getByRole("button", { name: /Revert V02/ })).toBeDisabled();
 });
 
 test("freeze posts feature, name and notes and reloads", async () => {
@@ -67,7 +67,7 @@ test("freeze posts feature, name and notes and reloads", async () => {
   await userEvent.type(screen.getByLabelText(/Version name/), "batch1");
   await userEvent.type(screen.getByLabelText(/Notes/), "why");
   await userEvent.click(screen.getByRole("button", { name: /Freeze version/ }));
-  await screen.findByText("Froze v3 — OK: 7, NG: 1");
+  await screen.findByText("Froze V03 — OK: 7, NG: 1");
   const post = calls.find((c) => c.method === "POST")!;
   expect(JSON.parse(post.body!)).toEqual({ feature: "seal", name: "batch1", notes: "why" });
 });
@@ -75,31 +75,31 @@ test("freeze posts feature, name and notes and reloads", async () => {
 test("revert needs confirmation and can be cancelled", async () => {
   render(<VersionsView camera="camA" />);
   await screen.findByText("History (2)");
-  await userEvent.click(screen.getByRole("button", { name: /Revert v1/ }));
+  await userEvent.click(screen.getByRole("button", { name: /Revert V01/ }));
   expect(screen.getByRole("alertdialog")).toBeInTheDocument();
   await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
   expect(screen.queryByRole("alertdialog")).toBeNull();
   expect(calls.some((c) => c.url.includes("/revert"))).toBe(false);
 
-  await userEvent.click(screen.getByRole("button", { name: /Revert v1/ }));
+  await userEvent.click(screen.getByRole("button", { name: /Revert V01/ }));
   await userEvent.click(screen.getByRole("button", { name: /Yes, revert/ }));
-  await screen.findByText("Reverted to v1: 3 labels, 1 golden marks.");
+  await screen.findByText("Reverted to V01: 3 labels, 1 golden marks.");
   expect(calls.find((c) => c.url.includes("/revert"))!.url).toContain("/versions/1/revert?feature=seal");
 });
 
 test("delete is disabled for the active version and needs confirmation", async () => {
   render(<VersionsView camera="camA" />);
   await screen.findByText("History (2)");
-  expect(screen.getByRole("button", { name: /Delete v2/ })).toBeDisabled();
+  expect(screen.getByRole("button", { name: /Delete V02/ })).toBeDisabled();
 
-  await userEvent.click(screen.getByRole("button", { name: /Delete v1/ }));
+  await userEvent.click(screen.getByRole("button", { name: /Delete V01/ }));
   expect(screen.getByRole("alertdialog", { name: "Confirm delete" })).toBeInTheDocument();
   await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
   expect(calls.some((c) => c.method === "DELETE")).toBe(false);
 
-  await userEvent.click(screen.getByRole("button", { name: /Delete v1/ }));
+  await userEvent.click(screen.getByRole("button", { name: /Delete V01/ }));
   await userEvent.click(screen.getByRole("button", { name: /Yes, delete/ }));
-  await screen.findByText("Deleted v1.");
+  await screen.findByText("Deleted V01.");
   const del = calls.find((c) => c.method === "DELETE")!;
   expect(del.url).toContain("/versions/1?feature=seal");
 });
@@ -109,11 +109,11 @@ test("a deleted version stays in the history, greyed out, without actions", asyn
   render(<VersionsView camera="camA" />);
   expect(await screen.findByText(/History \(1\)/)).toHaveTextContent("History (1) · 1 deleted");
   const row = screen.getAllByRole("row").slice(1)[1]; // newest first -> v1 is last
-  expect(row).toHaveTextContent("v1");
+  expect(row).toHaveTextContent("V01");
   expect(row).toHaveTextContent("deleted");
   expect(row).toHaveClass("deleted-version");
-  expect(screen.queryByRole("button", { name: /Revert v1/ })).toBeNull();
-  expect(screen.queryByRole("button", { name: /Delete v1/ })).toBeNull();
+  expect(screen.queryByRole("button", { name: /Revert V01/ })).toBeNull();
+  expect(screen.queryByRole("button", { name: /Delete V01/ })).toBeNull();
 });
 
 test("shows the vision settings frozen with a version", async () => {

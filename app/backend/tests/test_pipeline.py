@@ -111,7 +111,7 @@ class PipelineTests(ApiTestCase):
         r = self.client.post(f"/api/cameras/{CAM}/versions", json={"feature": FEAT, "name": "first", "notes": ""})
         self.assertEqual(r.status_code, 201, r.text)
         st = self.stages()
-        self.assertEqual((st["version"]["status"], st["version"]["detail"], st["exported"]["status"]), ("done", "v1", "todo"))
+        self.assertEqual((st["version"]["status"], st["version"]["detail"], st["exported"]["status"]), ("done", "V01", "todo"))
         self.assertEqual(pipeline.stages(CAM, FEAT)["next"], "exported")
         pv = self.client.post(f"/api/cameras/{CAM}/project-versions", json={"name": "first"})
         self.assertEqual(pv.status_code, 201, pv.text)
@@ -119,7 +119,7 @@ class PipelineTests(ApiTestCase):
         exp = self.client.post(f"/api/cameras/{CAM}/project-versions/{pv.json()['id']}/export")
         self.assertEqual(exp.status_code, 200, exp.text)
         self.assertEqual(self.stages()["exported"]["status"], "done")
-        self.assertEqual(self.stages()["exported"]["detail"], "project v1")
+        self.assertEqual(self.stages()["exported"]["detail"], "project V01")
         self.assertIsNone(pipeline.stages(CAM, FEAT)["next"])
 
     def test_a_deleted_version_no_longer_counts(self) -> None:
@@ -127,7 +127,7 @@ class PipelineTests(ApiTestCase):
         first = self.client.post(f"/api/cameras/{CAM}/versions", json={"feature": FEAT, "name": "a", "notes": ""}).json()["id"]
         self.client.post(f"/api/cameras/{CAM}/versions", json={"feature": FEAT, "name": "b", "notes": ""})
         self.client.delete(f"/api/cameras/{CAM}/versions/{first}", params={"feature": FEAT})
-        self.assertEqual(self.stages()["version"]["detail"], "v2")
+        self.assertEqual(self.stages()["version"]["detail"], "V02")
 
 
 class PipelineApiTests(ApiTestCase):

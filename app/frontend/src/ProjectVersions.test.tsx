@@ -59,7 +59,7 @@ test("freeze posts the name and notes and reloads", async () => {
   await userEvent.type(screen.getByLabelText(/Project notes/), "first");
   await userEvent.click(screen.getByRole("button", { name: /Freeze verdicts/ }));
   await waitFor(() => expect(calls.find((c) => c.method === "POST")?.body).toEqual({ name: "batch 1", notes: "first", goldens_only: true }));
-  expect(await screen.findByText(/Froze project v3 — OK 4, NG 2/)).toBeInTheDocument();
+  expect(await screen.findByText(/Froze project V03 — OK 4, NG 2/)).toBeInTheDocument();
 });
 
 test("goldens only is on by default: says how many are frozen and left out, and can be unticked", async () => {

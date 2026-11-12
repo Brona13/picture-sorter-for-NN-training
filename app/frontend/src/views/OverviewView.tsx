@@ -8,6 +8,7 @@ import PictureSizeSlider, { usePictureSize } from "../PictureSize";
 import PipelineChips, { LabelProgress } from "../PipelineChips";
 import TagEditor from "../TagEditor";
 import VerdictBar from "../VerdictBar";
+import { versionLabel } from "../versionLabel";
 
 const SIZE_MIN = 150;
 const SIZE_MAX = 800;
@@ -400,7 +401,7 @@ export default function OverviewView({
                       <div style={{ fontSize: 12, color: "var(--muted)" }}>{scopeOf(r)}</div>
                       <div style={{ fontSize: 12 }}>
                         {r.labeled} labeled · {r.goldens} golden
-                        {r.active_version !== null ? ` · v${r.active_version}` : ""}
+                        {r.active_version !== null ? ` · ${versionLabel(r.active_version)}` : ""}
                       </div>
                     </button>
                     {r.pipeline && (

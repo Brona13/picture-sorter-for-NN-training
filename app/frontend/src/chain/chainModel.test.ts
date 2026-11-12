@@ -327,7 +327,7 @@ test("Export boxes: a Classifier or Evaluation dot or a passing box feeds the OK
 
 test("describeFlow: an Export box says its lines, counts and freeze", () => {
   expect(describeFlow("export", { lines: { ok: 0, ng: 0 } } as any)).toBe("connect lines to OK or NG");
-  expect(describeFlow("export", { lines: { ok: 1, ng: 1 }, ok: 5, ng: 2, frozen: 3, changed: true } as any)).toBe("5 OK · 2 NG · frozen v3 (changed)");
+  expect(describeFlow("export", { lines: { ok: 1, ng: 1 }, ok: 5, ng: 2, frozen: 3, changed: true } as any)).toBe("5 OK · 2 NG · frozen V03 (changed)");
 });
 
 const mergeCanvas: ChainCanvas = {
@@ -388,7 +388,7 @@ test("Ingest OK feeds the OK dot of a Classifier and Ingest NG its NG dot; the w
   expect(flowConnect(piles, { source: "inok:1", sourceHandle: null, target: "roi:pick", targetHandle: "in:NG" })).toEqual({ error: "Ingest OK 1 holds OK pictures, not NG." });
   expect(flowConnect(piles, { source: "inok:1", sourceHandle: null, target: "roi:pick", targetHandle: "main" })).toHaveProperty("error"); // not a class dot
   expect(flowConnect(piles, { source: "inok:1", sourceHandle: null, target: "inng:1", targetHandle: null })).toHaveProperty("error"); // nothing feeds a pile
-  expect(describeFlow("ingest_ok", { frames: 3, freeze: 2 })).toBe("3 OK pictures · from freeze v2");
+  expect(describeFlow("ingest_ok", { frames: 3, freeze: 2 })).toBe("3 OK pictures · from freeze V02");
   expect(describeFlow("ingest_ng", { frames: 0, freeze: null, warning: "Step 1 is not frozen yet." })).toBe("0 NG pictures · Step 1 is not frozen yet.");
 });
 

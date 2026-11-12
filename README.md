@@ -697,8 +697,8 @@ Project versions cannot be reverted, because verdicts are derived from the label
 **Export** copies the OK and NG pictures of a project version, unmodified and with their original filenames, into
 
 ```text
-cameras/<camera>/exports/project/v<NNN>__<name>/OK/
-cameras/<camera>/exports/project/v<NNN>__<name>/NG/
+cameras/<camera>/exports/project/V<NN>__<name>/OK/
+cameras/<camera>/exports/project/V<NN>__<name>/NG/
 ```
 
 No cutouts and no extra files are written. After an export the folder is shown with a **Copy path** button.

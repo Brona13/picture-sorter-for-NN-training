@@ -285,7 +285,7 @@ class BoxChainTests(ApiTestCase):
         self.assertEqual(r.status_code, 200, r.text)
         done = r.json()
         self.assertEqual((done["written"], done["no_box"], done["left_out"]), (2, 0, 0))
-        self.assertTrue(done["destination"].endswith(f"My set_v{frozen['number']:03d}.zip"))
+        self.assertTrue(done["destination"].endswith(f"My set_V{frozen['number']:02d}.zip"))
         with zipfile.ZipFile(done["destination"]) as z:
             self.assertEqual(sorted(z.namelist()), sorted(["datasetCollection.json", f"200/{f[0]}", f"200/{f[4]}"]))
             data = json.loads(z.read("datasetCollection.json"))

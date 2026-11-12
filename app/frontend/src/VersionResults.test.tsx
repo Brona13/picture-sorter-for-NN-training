@@ -55,7 +55,7 @@ test("records a result against the active version with the typed values", async 
   expect(calls[0].url).toBe("/api/cameras/camA/versions/2/results");
   expect(calls[0].body).toEqual({ feature: "seal", name: "NG recall", value: 0.915, note: "run 3", measured: "2026-10-14" });
   await waitFor(() => expect(onChanged).toHaveBeenCalled());
-  expect(onNotice).toHaveBeenCalledWith("Recorded NG recall for v2.");
+  expect(onNotice).toHaveBeenCalledWith("Recorded NG recall for V02.");
   expect((screen.getByLabelText("Metric") as HTMLInputElement).value).toBe(""); // the form is ready for the next one
 });
 
@@ -114,7 +114,7 @@ test("deleting a result calls the API for that result and reloads", async () => 
 
 test("a deleted version can still be chosen and is marked", () => {
   renderIt([version(1, 1, false, [result(1, 1, "accuracy", 0.9, "2026-10-01")], 1_700_000_100), version(2, 2, true)]);
-  expect(screen.getByRole("option", { name: "v1 ver1 (deleted)" })).toBeInTheDocument();
+  expect(screen.getByRole("option", { name: "V01 ver1 (deleted)" })).toBeInTheDocument();
 });
 
 test("an API error is reported and the form keeps what was typed", async () => {
