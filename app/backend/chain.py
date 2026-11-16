@@ -267,7 +267,7 @@ def _flow_nodes(camera: str, graph: dict, stored: dict) -> list[dict]:
             summary = box_module.summary(camera, graph, node_id)
         elif kind == "export":
             st = export_box.state(camera, node_id)
-            summary = {"lines": st["lines"], "folders": st["folders"], "total": st["total"], "ok": st["ok"], "ng": st["ng"], "both": st["both"],
+            summary = {"lines": st["lines"], "folders": st["folders"], "total": st["total"], "ok": st["ok"], "ng": st["ng"], "both": st["both"], "decided": st["decided"], "undecided": st["undecided"],
                        "uses_product": st["uses_product"], "not_golden": st["not_golden"], "goldens_only": st["goldens_only"], "frozen": (st["latest"] or {}).get("number"), "changed": (st["latest"] or {}).get("changed"),
                        "exported": (st["latest"] or {}).get("exported")}
         else:

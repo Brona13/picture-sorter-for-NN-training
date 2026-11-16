@@ -149,6 +149,8 @@ A version is an immutable snapshot recipe for one camera and feature. It stores 
 
 ## Project versions and export
 
+**Freeze decisions (v1.163.0).** A step-1 Export box (the Freeze) reads only the lines drawn into its OK and NG inputs. A picture that reaches both is a contradiction: it stays out of the freeze until the user decides it OK or NG on the Freeze page. The decision is stored as the setting `freeze.decisions.<box>` (frame hash -> class and a signature of the labels and verdicts behind the lines), is **not** a label (no label, golden or mute changes), applies to that box only, and is stale, so it does not count, when the signature no longer matches. Nothing resolves a contradiction by itself.
+
 A **project version** freezes the camera's verdicts. It is stored in the same tables as the ROI versions under the reserved feature name `@project` (ROI names cannot start with `@`); its items have `kind="verdict"` and class `OK` or `NG`, with the content hash. Only pictures with a valid verdict at freeze time are in it (open, contradictory, stale and deleted pictures are not; duplicates only if they have a verdict). Its counts record ok, ng, contradiction, stale, open, duplicates, deleted and total. It has numbering, active flag, soft deletion and downstream results like any version, but it cannot be reverted.
 
 Export copies a project version's pictures unmodified (original filenames, no cutouts, no manifest) under `cameras/<camera>/exports/project/V<NN>__<name>/<OK|NG>/` (before v1.161.0 the folder was `v<NNN>__<name>`; those stay as they are). ROI versions are not exported; goldens are used for scoring only.

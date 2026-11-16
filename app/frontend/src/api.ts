@@ -508,6 +508,9 @@ export interface FlowSummary {
   ok?: number;
   ng?: number;
   both?: number;
+  /** Freeze (v1.163.0): of the pictures on both inputs, how many the user decided and how many are still left out. */
+  decided?: number;
+  undecided?: number;
   /** Export: pictures left out because they are not golden (while Golden only is on). */
   not_golden?: number;
   goldens_only?: boolean;
@@ -704,12 +707,30 @@ export interface ExportLeftOut {
   /** "Classifier: reason" -> how many pictures. */
   reasons: Record<string, number>;
 }
+/** The pictures that reach both the OK and the NG input of a Freeze box (v1.163.0), with the decision made for each. */
+export interface ExportContradictions {
+  total: number;
+  decided: number;
+  undecided: number;
+  /** Decisions made on other answers than the lines give now: decide again. */
+  stale: number;
+  /** The Classifiers (or Evaluation / Merge boxes) on the OK lines and on the NG lines, by name. */
+  ok_from?: string[];
+  ng_from?: string[];
+  /** The Classifiers behind the lines, to open them and change a label there. */
+  features?: string[];
+  items: { frame: string; decision: "OK" | "NG" | null; stale: boolean }[];
+}
 export interface ExportState {
   folders: Record<string, number>;
   total: number;
   ok: number;
   ng: number;
   both: number;
+  /** Freeze (step 1): of the pictures on both inputs, how many the user decided, how many are still left out, how many decisions went stale. */
+  decided?: number;
+  undecided?: number;
+  stale?: number;
   not_golden: number;
   no_product: number;
   uses_product: boolean;
@@ -1815,6 +1836,14 @@ export const api = {
     request<ExportState>(`/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/export`),
   flowExportLeftOut: (camera: string, id: string) =>
     request<ExportLeftOut>(`/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/export/left-out`),
+  flowExportContradictions: (camera: string, id: string) =>
+    request<ExportContradictions>(`/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/export/contradictions`),
+  /** Decide pictures that reach both inputs as OK or NG (`null` takes the decision back). For the freeze only: no label changes. */
+  flowExportDecide: (camera: string, id: string, frames: string[], cls: "OK" | "NG" | null) =>
+    request<{ both: number; decided: number; undecided: number; stale: number; ok: number; ng: number }>(
+      `/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/export/decision`,
+      send("PUT", { frames, cls }),
+    ),
   flowExportFreeze: (camera: string, id: string, name = "", notes = "") =>
     request<{ id: number; number: number; counts: Record<string, number> }>(
       `/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/export/freeze`,

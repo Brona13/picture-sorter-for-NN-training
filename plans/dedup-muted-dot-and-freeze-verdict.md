@@ -60,7 +60,7 @@ covers still count as pass or fail. The user wants them out of the calculation, 
 - Add the output dot, the line rules, and the union with duplicates counted once.
 - The Merge must accept the Classifier's NG dot, and Freeze the Merge (`flow.py`, `export_box.py`); verify, do not assume.
 
-### Part 3 (v1.163.0): Verdict inside Freeze
+### Part 3 (v1.163.0): Verdict inside Freeze (done; the decisions are a setting, not a table; the old Verdict page stays until item 0000 retires it)
 - Replace the "reads all quality labels of the camera" logic of `verdicts.py` for the Freeze path with "reads the lines drawn
   into Freeze". Decide what happens to the old Verdict page and the old project freeze (open item 0000 in
   `docs/current-project.md`: retire the old Versions freeze / export).

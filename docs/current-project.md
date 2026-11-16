@@ -103,7 +103,7 @@ This section summarises what exists. Each behaviour was added in a numbered vers
 - **Dedup box** (v1.93.0): mutes and deletes pictures, and never labels (v1.115.0). Tools: Grid, Scatter, Clusters (with a sweep chart, v1.132.0) and Outliers. *Compares* chooses what the box looks at: the whole picture, a Picture edits output, or a found box (v1.138.0). It flags *View changed* and *Set changed* when boxes above it change (v1.139.0). A Dedup box can feed another Dedup box, a detector, a Picture edits box or a Classifier. Its **Muted dot** (v1.162.0) hands the pictures the box muted, and only those, to a Classifier, where they can be labeled by hand; the box's mute hides them nowhere else but its normal output.
 - **Classifier** (v1.92.0): one box per ROI, in mode *Feature* (OK / NG) or *Product* (the classes are product names). It has an input dot per class (v1.126.0). A line into it hands over its pictures (v1.120.0). A new Classifier has no rectangle: it uses the picture as it comes in, or the found box of a detector (v1.117.0), with no margin (v1.116.0). In step 1 the Classify page labels and deletes but marks no goldens (v1.143.0).
 - **Merge** (v1.123.0, v1.124.0): collects the dots of Classifiers and Evaluations and passes them on as one line, with any / all logic.
-- **Freeze** (a step-1 Export box): freezes every OK / NG picture as a numbered version (v1.140.0).
+- **Freeze** (a step-1 Export box): freezes every OK / NG picture as a numbered version (v1.140.0). A picture on both the OK and the NG input is left out unless the user decides it on the Freeze page (v1.163.0): the decision is for the freeze only, changes no label, is remembered and goes stale when the answers behind it change.
 
 ### Step 2 modules
 

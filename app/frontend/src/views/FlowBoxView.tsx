@@ -75,7 +75,7 @@ export type FlowFocus = { nodeId: string; onBack: () => void };
  * pictures in the middle. A detector: draw example crops and review the boxes it found. Calculate and Evaluation: the
  * measured value of every picture (and the nominal and tolerance against the histogram).
  */
-export default function FlowBoxView({ camera, focus }: { camera: string; focus: FlowFocus }) {
+export default function FlowBoxView({ camera, focus, onOpenClassifier }: { camera: string; focus: FlowFocus; onOpenClassifier?: (feature: string) => void }) {
   const { nodeId } = focus;
   const [detail, setDetail] = useState<FlowNodeDetail | null>(null);
   const [label, setLabel] = useState<string>("");
@@ -113,7 +113,7 @@ export default function FlowBoxView({ camera, focus }: { camera: string; focus: 
         {detail?.kind === "crop" && <PictureEditsWork camera={camera} nodeId={nodeId} detail={detail} edits={edits} onError={setError} />}
         {detail?.kind === "detector" && <DetectorWork camera={camera} nodeId={nodeId} detail={detail} setDetail={setDetail} version={version} onChanged={changed} onError={setError} />}
         {detail?.kind === "box" && <BoxWork camera={camera} nodeId={nodeId} detail={detail} setDetail={setDetail} onError={setError} />}
-        {detail?.kind === "export" && <ExportWork camera={camera} nodeId={nodeId} detail={detail} setDetail={setDetail} onError={setError} />}
+        {detail?.kind === "export" && <ExportWork camera={camera} nodeId={nodeId} detail={detail} setDetail={setDetail} onError={setError} onOpenClassifier={onOpenClassifier} />}
         {detail && detail.kind !== "detector" && detail.kind !== "crop" && detail.kind !== "export" && detail.kind !== "box" && (
           <ValuesWork camera={camera} nodeId={nodeId} detail={detail} setDetail={setDetail} version={version} onError={setError} />
         )}

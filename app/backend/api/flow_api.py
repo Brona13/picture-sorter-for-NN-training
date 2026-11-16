@@ -328,6 +328,26 @@ def get_export_left_out(camera: str, node_id: str) -> dict:
         return export_box.left_out(camera, node_id)
 
 
+@router.get("/cameras/{camera}/flow/nodes/{node_id}/export/contradictions")
+def get_export_contradictions(camera: str, node_id: str) -> dict:
+    """The pictures that reach both the OK and the NG input of a Freeze box, with the decision made for each."""
+    _export_box(camera, node_id)
+    with datamodel.render_snapshot():
+        return _guard(export_box.contradictions, camera, node_id)
+
+
+class ExportDecision(BaseModel):
+    frames: list[str]
+    cls: str | None = None  # "OK" or "NG"; null takes the decision back
+
+
+@router.put("/cameras/{camera}/flow/nodes/{node_id}/export/decision")
+def put_export_decision(camera: str, node_id: str, body: ExportDecision) -> dict:
+    """Decide pictures that reach both inputs (only for the freeze: no label changes). Returns the new counts."""
+    _export_box(camera, node_id)
+    return _guard(export_box.set_decisions, camera, node_id, body.frames, body.cls)
+
+
 @router.post("/cameras/{camera}/flow/nodes/{node_id}/export/freeze", status_code=201)
 def freeze_export(camera: str, node_id: str, body: ExportFreeze) -> dict:
     """Freeze what the box would export now as the next project version; the export follows (project-versions/{id}/export)."""

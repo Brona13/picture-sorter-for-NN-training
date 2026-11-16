@@ -361,7 +361,7 @@ export default function App() {
             path="/flow"
             element={
               focusFeature ? (
-                <FlowBoxView camera={camera} focus={{ nodeId: focusFeature, onBack: () => toChain(focusFeature) }} />
+                <FlowBoxView camera={camera} focus={{ nodeId: focusFeature, onBack: () => toChain(focusFeature) }} onOpenClassifier={(feature) => openRoi(feature, "classify")} />
               ) : (
                 <p className="muted">Open a Picture edits, detector, Calculate or Evaluation box from the Chain.</p>
               )

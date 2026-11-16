@@ -15,6 +15,7 @@ pictures than the last freeze.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 from collections import Counter
 
@@ -102,6 +103,10 @@ def plan(camera: str, node_id: str) -> dict:
     sel = selection(camera, node_id, graph)
     ok_in, ng_in = sel["ok"], sel["ng"]
     both = (ok_in & ng_in) if ok_in is not None and ng_in is not None else set()
+    decided: dict[str, str] = {}  # Freeze: the pictures the user decided here (v1.163.0), by frame
+    stale = 0
+    if both and flow.step_of(node) == 1:
+        decided, stale = _decided(camera, graph, node_id, both)
     goldens_only = flow.export_goldens_only(node)
     golden = labels.quality_golden_frames(camera) if goldens_only else set()
     product_roi = datamodel.classify_feature(camera) if flow.step_of(node) == 2 else None  # Freeze (step 1): plain OK / NG
@@ -109,7 +114,7 @@ def plan(camera: str, node_id: str) -> dict:
     items: list[tuple[str, str]] = []
     not_golden = no_product = 0
     for cls, frames in (("OK", ok_in), ("NG", ng_in)):
-        for frame in sorted((frames or set()) - both):
+        for frame in sorted(((frames or set()) - both) | {f for f, c in decided.items() if c == cls}):
             if goldens_only and frame not in golden:
                 not_golden += 1
                 continue
@@ -137,6 +142,9 @@ def plan(camera: str, node_id: str) -> dict:
         "ok": sum(1 for _, f in items if f.endswith("OK")),
         "ng": sum(1 for _, f in items if f.endswith("NG")),
         "both": len(both),
+        "decided": len(decided),
+        "undecided": len(both) - len(decided),
+        "stale": stale,
         "not_golden": not_golden,
         "no_product": no_product,
         "uses_product": bool(product_roi),
@@ -201,7 +209,7 @@ def freeze(camera: str, node_id: str, name: str = "", notes: str = "") -> dict:
             "Nothing arrives at this Export box yet: connect lines to its OK or NG input."
             if not any(p["lines"].values()) else "No picture comes through the lines of this Export box."
         )
-    counts = {"ok": p["ok"], "ng": p["ng"], "not_golden": p["not_golden"], "both": p["both"], "no_product": p["no_product"], "total": len(p["items"])}
+    counts = {"ok": p["ok"], "ng": p["ng"], "not_golden": p["not_golden"], "both": p["both"], "decided": p["decided"], "no_product": p["no_product"], "total": len(p["items"])}
     stats = {"export": {"goldens_only": 1 if p["goldens_only"] else 0, "box": node_id, "uid": flow.ensure_uid(camera, node_id), "source": "chain", "graph": flow.load_graph(camera)}}
     if p["box"]:  # the rectangles are frozen with the version, so the export of it is reproducible
         numbers = box_numbers(camera, p["box"], [frame for frame, _ in p["items"]])
@@ -209,6 +217,142 @@ def freeze(camera: str, node_id: str, name: str = "", notes: str = "") -> dict:
         stats["export"]["rectangles"] = {"box": p["box"], "format": p["box_format"], "rows": {frame: box_row(n, p["box_format"]) for frame, n in numbers.items()}}
         stats["export"]["sizes"] = model_sets.size_counts(camera, list(numbers))  # picture sizes of the pictures that have a rectangle (the Models page filters by them)
     return versions.insert_project_version(camera, name, notes, counts, stats, p["items"])
+
+
+# --- the pictures that reach both inputs: the user's decisions (v1.163.0) --------------------------
+DECISIONS_KEY = "freeze.decisions."  # setting freeze.decisions.<box> = {frame hash: {"cls": "OK" | "NG", "sig": signature of what the lines said}}
+
+
+def _leaf_refs(graph: dict, ref: dict, _seen: frozenset = frozenset()) -> list[dict]:
+    """The Classifier dots and Evaluation dots a line comes from, through any Merges."""
+    if ref.get("from"):
+        box = ref["from"]
+        if flow.kind_of(box) == "merge" and box not in _seen and box in graph["nodes"]:
+            return [leaf for r in flow.merge_lines(graph["nodes"][box]) for leaf in _leaf_refs(graph, r, _seen | {box})]
+        return []
+    return [ref] if ref.get("feature") or ref.get("box") else []
+
+
+def _signer(camera: str, graph: dict, node_id: str):
+    """A function frame -> signature of what the lines into the box say about it: for every Classifier dot its label, for
+    every Evaluation dot its verdict. A decision made on other answers than the ones now is stale."""
+    leaves = [leaf for refs in flow.export_lines(graph, node_id).values() for ref in refs for leaf in _leaf_refs(graph, ref)]
+    feats = sorted({leaf["feature"] for leaf in leaves if leaf.get("feature")})
+    boxes = sorted({leaf["box"] for leaf in leaves if leaf.get("box") and leaf["box"] in graph["nodes"]})
+    labs = {f: labels.current_labels(camera, f) for f in feats}
+    verdicts = {b: flow.evaluation_state(camera, b)["verdicts"] for b in boxes if flow.kind_of(b) == "evaluation"}
+
+    def sign(frame: str) -> str:
+        said = [("f", f, labs[f].get(frame)) for f in feats] + [("e", b, v.get(frame)) for b, v in verdicts.items()]
+        return hashlib.sha1(json.dumps(said).encode()).hexdigest()[:12]
+
+    return sign
+
+
+def load_decisions(camera: str, node_id: str) -> dict[str, dict]:
+    raw = db.get_setting(camera, f"{DECISIONS_KEY}{node_id}")
+    try:
+        data = json.loads(raw) if raw else {}
+    except ValueError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _decided(camera: str, graph: dict, node_id: str, both: set[str]) -> tuple[dict[str, str], int]:
+    """The decisions that still hold for the pictures that reach both inputs: ``({frame: "OK" | "NG"}, stale count)``.
+    A decision goes stale when the answers of the lines changed since it was made."""
+    stored = load_decisions(camera, node_id)
+    if not stored:
+        return {}, 0
+    hmap = labels.hash_map(camera)
+    sign = _signer(camera, graph, node_id)
+    decided: dict[str, str] = {}
+    stale = 0
+    for frame in both:
+        d = stored.get(hmap.get(frame) or "")
+        if not d or d.get("cls") not in ("OK", "NG"):
+            continue
+        if d.get("sig") == sign(frame):
+            decided[frame] = d["cls"]
+        else:
+            stale += 1
+    return decided, stale
+
+
+def set_decisions(camera: str, node_id: str, frames: list[str], cls: str | None) -> dict:
+    """Decide pictures that reach both inputs of a Freeze box as ``cls`` (OK or NG), or take the decision back (``None``).
+    A decision is for the freeze only: it changes no label anywhere. Returns the new counts."""
+    graph = flow.load_graph(camera)
+    node = graph["nodes"].get(node_id)
+    if node is None or node.get("kind") != "export":
+        raise flow.FlowError(f"Unknown Export box: {node_id}")
+    if flow.step_of(node) != 1:
+        raise flow.FlowError("Only a Freeze box (step 1) takes decisions.")
+    if cls not in (None, "OK", "NG"):
+        raise flow.FlowError("A decision is OK or NG.")
+    sel = selection(camera, node_id, graph)
+    both = (sel["ok"] & sel["ng"]) if sel["ok"] is not None and sel["ng"] is not None else set()
+    unknown = [f for f in frames if f not in both]
+    if unknown:
+        raise flow.FlowError(f"{unknown[0]} does not reach both inputs of {node_id}, so there is nothing to decide.")
+    stored = load_decisions(camera, node_id)
+    hmap = labels.hash_map(camera)
+    sign = _signer(camera, graph, node_id)
+    for frame in frames:
+        key = hmap.get(frame)
+        if not key:
+            continue
+        if cls is None:
+            stored.pop(key, None)
+        else:
+            stored[key] = {"cls": cls, "sig": sign(frame)}
+    if stored:
+        db.set_setting(camera, f"{DECISIONS_KEY}{node_id}", json.dumps(stored, sort_keys=True))
+    else:
+        db.delete_setting(camera, f"{DECISIONS_KEY}{node_id}")
+    p = plan(camera, node_id)
+    return {k: p[k] for k in ("both", "decided", "undecided", "stale", "ok", "ng")}
+
+
+def contradictions(camera: str, node_id: str) -> dict:
+    """The pictures that reach both the OK and the NG input of a Freeze box, with what the lines said and the decision:
+    ``{"total", "decided", "undecided", "stale", "items": [{"frame", "ok_from", "ng_from", "features", "decision", "stale"}]}``."""
+    graph = flow.load_graph(camera)
+    node = graph["nodes"].get(node_id)
+    if node is None or node.get("kind") != "export":
+        raise flow.FlowError(f"Unknown Export box: {node_id}")
+    sel = selection(camera, node_id, graph)
+    both = (sel["ok"] & sel["ng"]) if sel["ok"] is not None and sel["ng"] is not None else set()
+    if not both:
+        return {"total": 0, "decided": 0, "undecided": 0, "stale": 0, "items": []}
+    stored = load_decisions(camera, node_id)
+    hmap = labels.hash_map(camera)
+    sign = _signer(camera, graph, node_id)
+    names = _box_names(camera, graph)
+    lines_in = flow.export_lines(graph, node_id)
+
+    def named(where: str) -> list[str]:
+        out: list[str] = []
+        for ref in lines_in.get(where, []):
+            for leaf in _leaf_refs(graph, ref) or [ref]:
+                label = (chain_label(camera, leaf["feature"]) or leaf["feature"].split("::")[-1]) if leaf.get("feature") else names.get(leaf.get("box") or leaf.get("from") or "", "")
+                if label and label not in out:
+                    out.append(label)
+        return out
+
+    ok_from, ng_from = named("ok"), named("ng")
+    features = sorted({leaf["feature"] for refs in lines_in.values() for ref in refs for leaf in _leaf_refs(graph, ref) if leaf.get("feature")})
+    items = []
+    decided = stale = 0
+    for frame in sorted(both):
+        d = stored.get(hmap.get(frame) or "")
+        valid = bool(d and d.get("cls") in ("OK", "NG") and d.get("sig") == sign(frame))
+        old = bool(d and d.get("cls") in ("OK", "NG") and not valid)
+        decided += valid
+        stale += old
+        if len(items) < LEFT_OUT_LIMIT:
+            items.append({"frame": frame, "decision": d["cls"] if valid else None, "stale": old})
+    return {"total": len(both), "decided": decided, "undecided": len(both) - decided, "stale": stale, "ok_from": ok_from, "ng_from": ng_from, "features": features, "items": items}
 
 
 # --- the pictures that reach neither input --------------------------------------------------------

@@ -348,3 +348,111 @@ class LeftOutTests(ApiTestCase):
             out = export_box.left_out(CAM, self.box)
         gone = next(i for i in out["items"] if i["frame"] == f[5])
         self.assertEqual(gone["missing"], [{"classifier": "foam", "feature": "foam", "state": "absent", "why": "muted in this Classifier"}])
+
+
+class FreezeDecisionTests(ApiTestCase):
+    """v1.163.0: a picture that reaches both inputs of a Freeze box can be decided there; the decision is for the freeze only."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.frames = write_frames(CAM, 8)
+        datamodel.save_rois(CAM, [
+            ROI("seal", 0, 0, 1, 1, classes=["OK", "NG"]),
+            ROI("h2", 0, 0, 1, 1, classes=["OK", "NG"]),
+            ROI("h3", 0, 0, 1, 1, classes=["OK", "NG"]),
+        ])
+        f = self.frames
+        for frame, cls in zip(f[:6], ["OK", "OK", "OK", "NG", "NG", "NG"]):
+            labels.set_label(CAM, "seal", frame, cls)
+        for frame, cls in zip(f[:6], ["NG", "NG", "OK", "NG", "OK", "NG"]):
+            labels.set_label(CAM, "h2", frame, cls)
+        self.box = flow.create_node(CAM, "export")  # the Freeze
+        self.base = f"/api/cameras/{CAM}/flow/nodes/{self.box}"
+        flow.update_node(CAM, self.box, {"add_line": {"input": "ok", "ref": {"feature": "seal", "dot": "OK"}}})
+        flow.update_node(CAM, self.box, {"add_line": {"input": "ng", "ref": {"feature": "h2", "dot": "NG"}}})  # OK: f0 f1 f2; NG: f0 f1 f3 f5; both: f0 f1
+
+    def items(self) -> dict[str, str]:
+        return dict(export_box.plan(CAM, self.box)["items"])
+
+    def test_pictures_on_both_inputs_stay_out_until_decided(self) -> None:
+        f = self.frames
+        p = export_box.plan(CAM, self.box)
+        self.assertEqual((p["both"], p["decided"], p["undecided"], p["stale"]), (2, 0, 2, 0))
+        self.assertEqual(self.items(), {f[2]: "OK", f[3]: "NG", f[5]: "NG"})
+
+    def test_a_decision_puts_the_picture_into_the_freeze_and_changes_no_label(self) -> None:
+        f = self.frames
+        counts = export_box.set_decisions(CAM, self.box, [f[0]], "NG")
+        self.assertEqual((counts["both"], counts["decided"], counts["undecided"]), (2, 1, 1))
+        export_box.set_decisions(CAM, self.box, [f[1]], "OK")
+        self.assertEqual(self.items(), {f[0]: "NG", f[1]: "OK", f[2]: "OK", f[3]: "NG", f[5]: "NG"})
+        self.assertEqual((labels.current_labels(CAM, "seal")[f[0]], labels.current_labels(CAM, "h2")[f[0]]), ("OK", "NG"))  # the labels are as they were
+        export_box.set_decisions(CAM, self.box, [f[0]], None)  # taken back
+        self.assertNotIn(f[0], self.items())
+        with self.assertRaises(flow.FlowError):
+            export_box.set_decisions(CAM, self.box, [f[0]], "MAYBE")
+        with self.assertRaises(flow.FlowError):
+            export_box.set_decisions(CAM, self.box, [f[2]], "OK")  # it reaches only OK: nothing to decide
+        step_two = flow.create_node(CAM, "export", 2)
+        with self.assertRaises(flow.FlowError):
+            export_box.set_decisions(CAM, step_two, [f[0]], "OK")
+
+    def test_a_decision_is_remembered_when_the_picture_stops_and_starts_being_contradictory_with_the_same_answers(self) -> None:
+        f = self.frames
+        export_box.set_decisions(CAM, self.box, [f[0]], "NG")
+        labels.set_label(CAM, "seal", f[0], "NG")  # now only NG: clear, no contradiction
+        self.assertEqual(self.items()[f[0]], "NG")
+        self.assertEqual(export_box.plan(CAM, self.box)["both"], 1)
+        labels.set_label(CAM, "seal", f[0], "OK")  # the same answers again
+        self.assertEqual(export_box.plan(CAM, self.box)["decided"], 1)
+
+    def test_a_decision_goes_stale_when_the_answers_behind_it_change(self) -> None:
+        f = self.frames
+        labels.set_label(CAM, "h3", f[0], "NG")
+        merge = flow.create_node(CAM, "merge")
+        flow.update_node(CAM, merge, {"add_line": {"feature": "seal", "dot": "OK"}})
+        flow.update_node(CAM, merge, {"add_line": {"feature": "h3", "dot": "OK"}})
+        flow.update_node(CAM, self.box, {"remove_line": {"input": "ok", "ref": {"feature": "seal", "dot": "OK"}}})
+        flow.update_node(CAM, self.box, {"add_line": {"input": "ok", "ref": {"from": merge}}})  # any: seal OK or h3 OK
+        export_box.set_decisions(CAM, self.box, [f[0]], "NG")  # seal says OK, h3 NG, h2 says NG
+        self.assertEqual(export_box.plan(CAM, self.box)["decided"], 1)
+        labels.set_label(CAM, "seal", f[0], "NG")
+        labels.set_label(CAM, "h3", f[0], "OK")  # still on both inputs, but now h3 is the one that says OK
+        p = export_box.plan(CAM, self.box)
+        self.assertEqual((p["decided"], p["stale"], p["undecided"]), (0, 1, 2))
+        item = next(i for i in export_box.contradictions(CAM, self.box)["items"] if i["frame"] == f[0])
+        self.assertEqual((item["decision"], item["stale"]), (None, True))
+        export_box.set_decisions(CAM, self.box, [f[0]], "OK")  # decided again on the new answers
+        self.assertEqual(export_box.plan(CAM, self.box)["decided"], 1)
+
+    def test_a_freeze_holds_the_decided_pictures_and_says_so(self) -> None:
+        f = self.frames
+        export_box.set_decisions(CAM, self.box, [f[0], f[1]], "NG")
+        made = export_box.freeze(CAM, self.box, "with decisions")
+        self.assertEqual((made["counts"]["decided"], made["counts"]["both"]), (2, 2))
+        self.assertEqual({(i["frame"], i["class"]) for i in versions.load_items(made["id"])}, {(f[0], "NG"), (f[1], "NG"), (f[2], "OK"), (f[3], "NG"), (f[5], "NG")})
+        self.assertFalse(export_box.state(CAM, self.box)["latest"]["changed"])
+        export_box.set_decisions(CAM, self.box, [f[1]], "OK")  # another decision after the freeze: the Chain would now pick other pictures
+        self.assertTrue(export_box.state(CAM, self.box)["latest"]["changed"])
+
+    def test_the_page_lists_the_contradictions_and_takes_decisions(self) -> None:
+        f = self.frames
+        got = self.client.get(f"{self.base}/export/contradictions").json()
+        self.assertEqual((got["total"], got["undecided"], got["ok_from"], got["ng_from"], got["features"]), (2, 2, ["seal"], ["h2"], ["h2", "seal"]))
+        self.assertEqual([(i["frame"], i["decision"]) for i in got["items"]], [(f[0], None), (f[1], None)])
+        r = self.client.put(f"{self.base}/export/decision", json={"frames": [f[0], f[1]], "cls": "NG"})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual((r.json()["decided"], r.json()["undecided"]), (2, 0))
+        state = self.client.get(f"{self.base}/export").json()
+        self.assertEqual((state["both"], state["decided"], state["undecided"], state["ng"]), (2, 2, 0, 4))
+        self.assertEqual(self.client.put(f"{self.base}/export/decision", json={"frames": [f[2]], "cls": "OK"}).status_code, 422)
+        self.assertEqual(self.client.put(f"{self.base}/export/decision", json={"frames": [f[0]], "cls": None}).status_code, 200)
+        self.assertEqual(self.client.get(f"{self.base}/export/contradictions").json()["decided"], 1)
+
+    def test_deleting_the_box_forgets_its_decisions(self) -> None:
+        import db
+
+        export_box.set_decisions(CAM, self.box, [self.frames[0]], "NG")
+        self.assertIsNotNone(db.get_setting(CAM, f"{export_box.DECISIONS_KEY}{self.box}"))
+        flow.delete_node(CAM, self.box)
+        self.assertIsNone(db.get_setting(CAM, f"{export_box.DECISIONS_KEY}{self.box}"))

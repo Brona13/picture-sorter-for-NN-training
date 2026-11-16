@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import { api, DsExportFields, DsExportReport, ExportLatest, ExportLeftOut, ExportReport, ExportState, FlowExport, FlowNodeDetail, frameThumbUrl } from "../api";
+import { api, DsExportFields, DsExportReport, ExportContradictions, ExportLatest, ExportLeftOut, ExportReport, ExportState, FlowExport, FlowNodeDetail, frameThumbUrl } from "../api";
 import CopyButton from "../CopyButton";
 import { isDefaultVersionName, versionLabel } from "../versionLabel";
 
@@ -16,12 +16,14 @@ export const when = (created: number | string): string =>
  * OK and NG inputs are not repeated here: they are drawn on the Chain. The old Versions page stays until this one has
  * proved itself.
  */
-export default function ExportWork({ camera, nodeId, detail, setDetail, onError }: {
+export default function ExportWork({ camera, nodeId, detail, setDetail, onError, onOpenClassifier }: {
   camera: string;
   nodeId: string;
   detail: FlowExport;
   setDetail: (d: FlowNodeDetail) => void;
   onError: (e: string | null) => void;
+  /** Opens a Classifier's page, to change a label there (the decisions here change no label). */
+  onOpenClassifier?: (feature: string) => void;
 }) {
   const [state, setState] = useState<ExportState | null>(null);
   const [name, setName] = useState("");
@@ -29,6 +31,7 @@ export default function ExportWork({ camera, nodeId, detail, setDetail, onError 
   const [report, setReport] = useState<ExportReport | null>(null);
   const [left, setLeft] = useState<ExportLeftOut | null>(null); // the pictures in neither pile, once asked for
   const [leftBusy, setLeftBusy] = useState(false);
+  const [contra, setContra] = useState<ExportContradictions | null>(null); // the pictures on both inputs (Freeze only)
   const [ds, setDs] = useState<DsExportFields>({
     dataset_name: camera, folder_name: camera, ok_name: "OK", ng_name: "NG", ok_color: "#06e52b", ng_color: "#f44336", include_without_box: false, zip_name: "",
   });
@@ -45,6 +48,18 @@ export default function ExportWork({ camera, nodeId, detail, setDetail, onError 
   }, [camera, nodeId, onError]);
   useEffect(load, [load, detail]);
   useEffect(() => setLeft(null), [camera, nodeId, detail]); // the list was made for the lines as they were
+  const bothCount = state?.both ?? 0;
+  const loadContra = useCallback(() => {
+    if ((detail.step ?? 1) !== 1 || bothCount === 0) { setContra(null); return; }
+    api.flowExportContradictions(camera, nodeId).then(setContra).catch((e) => onError(msg(e)));
+  }, [camera, nodeId, detail, bothCount, onError]);
+  useEffect(loadContra, [loadContra]);
+  /** Decide pictures for the freeze only (no label changes), then read the counts and the list again. */
+  const decide = (frames: string[], cls: "OK" | "NG" | null) => {
+    if (frames.length === 0) return;
+    onError(null);
+    api.flowExportDecide(camera, nodeId, frames, cls).then(() => { load(); loadContra(); }).catch((e) => onError(msg(e)));
+  };
   const showLeft = () => {
     setLeftBusy(true);
     api.flowExportLeftOut(camera, nodeId).then(setLeft).catch((e) => onError(msg(e))).finally(() => setLeftBusy(false));
@@ -74,7 +89,7 @@ export default function ExportWork({ camera, nodeId, detail, setDetail, onError 
   const folders = Object.entries(state?.folders ?? {});
   const leftOut: [string, number][] = state
     ? [
-        ["Left out: they reach both OK and NG", state.both],
+        ["Left out: they reach both OK and NG, not decided", state.undecided ?? state.both],
         ["Left out: not golden", state.goldens_only ? state.not_golden : 0],
         ["Left out: no product", state.uses_product ? state.no_product : 0],
       ]
@@ -132,6 +147,41 @@ export default function ExportWork({ camera, nodeId, detail, setDetail, onError 
           </div>
         )}
       </section>
+
+      {(detail.step ?? 1) === 1 && state && contra && contra.total > 0 && (
+        <section className="export-card" aria-label="Pictures with both answers" data-testid="contradictions">
+          <div className="export-card-head">
+            <h3>Pictures with both answers ({contra.total})</h3>
+          </div>
+          <p>
+            These pictures are OK on the OK lines{contra.ok_from?.length ? ` (${contra.ok_from.join(", ")})` : ""} and NG on the NG lines{contra.ng_from?.length ? ` (${contra.ng_from.join(", ")})` : ""}.
+            Without a decision a freeze leaves them out. Your decision is for the freeze only: it changes no label. It is remembered, and goes stale when the answers behind it change.
+            {" "}<strong>{contra.decided}</strong> decided, <strong>{contra.undecided}</strong> still left out{contra.stale > 0 ? <>, <strong>{contra.stale}</strong> to decide again (the answers changed)</> : null}.
+          </p>
+          <div className="export-freeze" role="group" aria-label="Decide all listed">
+            <button type="button" onClick={() => decide(contra.items.filter((i) => !i.decision).map((i) => i.frame), "OK")}>All undecided OK</button>
+            <button type="button" onClick={() => decide(contra.items.filter((i) => !i.decision).map((i) => i.frame), "NG")}>All undecided NG</button>
+            <button type="button" onClick={() => decide(contra.items.filter((i) => i.decision).map((i) => i.frame), null)}>Take all decisions back</button>
+            {onOpenClassifier && (contra.features ?? []).map((f) => (
+              <button type="button" key={f} title="Open this Classifier to change a label there" onClick={() => onOpenClassifier(f)}>Open {f.split("::").pop()}</button>
+            ))}
+          </div>
+          {contra.total > contra.items.length && <p className="muted">The first {contra.items.length} are listed below.</p>}
+          <ul style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: 8, padding: 0, listStyle: "none" }}>
+            {contra.items.map((i) => (
+              <li key={i.frame} data-testid={`contradiction-${i.frame}`} style={{ border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: 6, background: "var(--panel)", minWidth: 0 }}>
+                <img src={frameThumbUrl(camera, i.frame)} alt={i.frame} loading="lazy" style={{ width: "100%", display: "block" }} />
+                <div style={{ fontSize: 12, wordBreak: "break-all", margin: "4px 0 2px" }}>{i.frame}</div>
+                {i.stale && <div className="flow-missing" style={{ fontSize: 12 }}>The answers changed: decide again</div>}
+                <div role="group" aria-label={`Decision for ${i.frame}`} style={{ display: "flex", gap: 4 }}>
+                  <button type="button" aria-pressed={i.decision === "OK"} onClick={() => decide([i.frame], i.decision === "OK" ? null : "OK")}>OK</button>
+                  <button type="button" aria-pressed={i.decision === "NG"} onClick={() => decide([i.frame], i.decision === "NG" ? null : "NG")}>NG</button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {(detail.step ?? 1) === 1 && state && state.total > 0 && (
         <section className="export-card" aria-label="Pictures left out" data-testid="left-out">

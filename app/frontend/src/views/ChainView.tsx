@@ -122,7 +122,7 @@ function Box({ data, selected }: NodeProps<BoxNode>) {
           ))}
           <div className="chain-node-counters" aria-label="Counters" title={describeNode(node)}>
             <Counter icon="▦" value={node.flow?.total ?? 0} title="Pictures that would be exported" />
-            <Counter icon="⇄" value={node.flow?.both ?? 0} title="Left out: reach both OK and NG" />
+            <Counter icon="⇄" value={node.flow?.undecided ?? node.flow?.both ?? 0} title="Left out: reach both OK and NG and are not decided (decide them on the Freeze page)" />
             {node.flow?.goldens_only && <Counter icon="☆" value={node.flow?.not_golden ?? 0} title="Left out because they are not golden (Golden only is on in this box's panel)" />}
             <span title="Last freeze">{node.flow?.frozen ? `❄ ${versionLabel(node.flow.frozen)}${node.flow.changed ? " ≠" : ""}` : "❄ –"}</span>
           </div>

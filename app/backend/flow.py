@@ -990,6 +990,8 @@ def delete_node(camera: str, node_id: str) -> None:
     _refollow(graph, followed_before)  # a deleted Dedup box takes the target it read away from the boxes behind it
     save_graph(camera, graph)
     _drop_results(camera, node_id)
+    if kind_of(node_id) == "export":
+        db.delete_setting(camera, f"freeze.decisions.{node_id}")  # the decisions made on its page (export_box.DECISIONS_KEY)
 
 
 def drop_classify_edges(camera: str, feature: str) -> None:

@@ -5,6 +5,7 @@ import ExportWork, { when } from "./ExportWork";
 let calls: { url: string; method: string; body?: any }[];
 let frozen: any[];
 let boxState: Record<string, unknown>;
+let contradictions: { total: number; decided: number; undecided: number; stale: number; ok_from: string[]; ng_from: string[]; features: string[]; items: { frame: string; decision: "OK" | "NG" | null; stale: boolean }[] };
 let counts: { both: number; not_golden: number; no_product: number; total: number; folders: Record<string, number> };
 const detail = { kind: "export" as const, lines: { ok: [{ feature: "seal", dot: "OK" }], ng: [{ box: "eval:1", dot: "fail" }] }, goldens_only: true, step: 2 as const };
 
@@ -16,6 +17,7 @@ beforeEach(() => {
   calls = [];
   frozen = [];
   boxState = {};
+  contradictions = { total: 2, decided: 0, undecided: 2, stale: 0, ok_from: ["seal"], ng_from: ["Evaluation 1"], features: ["seal"], items: [{ frame: "c1.png", decision: null, stale: false }, { frame: "c2.png", decision: null, stale: true }] };
   counts = { both: 1, not_golden: 4, no_product: 2, total: 5, folders: { "A/OK": 3, "A/NG": 2 } };
   vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
     const method = init?.method ?? "GET";
@@ -33,6 +35,14 @@ beforeEach(() => {
           { frame: "b.png", missing: [{ classifier: "foam-1", feature: "foam1", state: "absent", why: "Detector 2 found no target" }], said: {} },
         ],
       }));
+    if (url.endsWith("/export/contradictions")) return new Response(JSON.stringify(contradictions));
+    if (url.endsWith("/export/decision") && method === "PUT") {
+      const { frames, cls } = JSON.parse(init!.body as string);
+      contradictions.items = contradictions.items.map((i) => (frames.includes(i.frame) ? { ...i, decision: cls, stale: false } : i));
+      contradictions.decided = contradictions.items.filter((i) => i.decision).length;
+      contradictions.undecided = contradictions.total - contradictions.decided;
+      return new Response(JSON.stringify({ both: 2, decided: contradictions.decided, undecided: contradictions.undecided, stale: 0, ok: 3, ng: 2 }));
+    }
     if (url.endsWith("/export/freeze")) { frozen = [version(), ...frozen]; return new Response(JSON.stringify({ id: 7, number: 2, counts: {} }), { status: 201 }); }
     if (url.endsWith("/project-versions/7/export")) {
       frozen = frozen.map((v) => (v.id === 7 ? { ...v, exported: true } : v));
@@ -54,7 +64,7 @@ test("one table holds the folders, what is left out and why, and the total", asy
   mount();
   expect(await screen.findByText("A/OK")).toBeInTheDocument();
   expect(screen.getAllByRole("table")).toHaveLength(1);
-  expect(screen.getByText("Left out: they reach both OK and NG").nextSibling).toHaveTextContent("1");
+  expect(screen.getByText("Left out: they reach both OK and NG, not decided").nextSibling).toHaveTextContent("1");
   expect(screen.getByText("Left out: not golden").nextSibling).toHaveTextContent("4");
   expect(screen.getByText("Left out: no product").nextSibling).toHaveTextContent("2");
   expect(screen.getByText("Total to export").nextSibling).toHaveTextContent("5");
@@ -242,4 +252,34 @@ test("the step-2 Export has no such list", async () => {
   mount();
   await screen.findByText("A/OK");
   expect(screen.queryByTestId("left-out")).toBeNull();
+});
+
+test("Freeze: the pictures with both answers get OK / NG decisions, for the freeze only", async () => {
+  counts.both = 2;
+  const open = vi.fn();
+  render(<ExportWork camera="camA" nodeId="export:1" detail={{ ...detail, step: 1 }} setDetail={() => {}} onError={() => {}} onOpenClassifier={open} />);
+  const card = await screen.findByTestId("contradictions");
+  expect(card).toHaveTextContent("Pictures with both answers (2)");
+  expect(card).toHaveTextContent("seal");
+  expect(card).toHaveTextContent("Evaluation 1");
+  expect(card).toHaveTextContent("changes no label");
+  expect(screen.getByTestId("contradiction-c2.png")).toHaveTextContent("The answers changed: decide again");
+  fireEvent.click(within(screen.getByTestId("contradiction-c1.png")).getByRole("button", { name: "NG" }));
+  await waitFor(() => expect(within(screen.getByTestId("contradiction-c1.png")).getByRole("button", { name: "NG" })).toHaveAttribute("aria-pressed", "true"));
+  expect(calls.find((c) => c.method === "PUT" && c.url.endsWith("/export/decision"))?.body).toEqual({ frames: ["c1.png"], cls: "NG" });
+  expect(screen.getByTestId("contradictions")).toHaveTextContent("1 decided");
+  fireEvent.click(within(screen.getByTestId("contradiction-c1.png")).getByRole("button", { name: "NG" })); // pressing again takes it back
+  await waitFor(() => expect(calls.filter((c) => c.method === "PUT").pop()?.body).toEqual({ frames: ["c1.png"], cls: null }));
+  fireEvent.click(screen.getByRole("button", { name: "All undecided OK" }));
+  await waitFor(() => expect(calls.filter((c) => c.method === "PUT").pop()?.body).toEqual({ frames: ["c1.png", "c2.png"], cls: "OK" }));
+  fireEvent.click(screen.getByRole("button", { name: "Open seal" }));
+  expect(open).toHaveBeenCalledWith("seal");
+});
+
+test("the step-2 Export and a Freeze with no contradictions show no such card", async () => {
+  counts.both = 2;
+  mount(); // step 2
+  await screen.findByText("A/OK");
+  expect(screen.queryByTestId("contradictions")).toBeNull();
+  expect(calls.some((c) => c.url.endsWith("/export/contradictions"))).toBe(false);
 });
