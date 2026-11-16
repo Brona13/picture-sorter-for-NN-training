@@ -1413,7 +1413,7 @@ def _dedup_source(camera: str, node_id: str, raw: object) -> dict | None:
         raise FlowError(f"Unknown ROI: {feature}")
     if dot != lines.ALL_DOT and dot not in datamodel.classes_for(camera, feature):
         raise FlowError(f"{feature} has no class {dot}.")
-    if node_id in db.dedup_inputs(camera, feature):
+    if node_id in db.dedup_inputs(camera, feature) or node_id in db.dedup_muted_inputs(camera, feature):
         raise FlowError(f"{node_id} feeds {feature}, so it cannot read it.")
     return {"feature": feature, "dot": dot}
 

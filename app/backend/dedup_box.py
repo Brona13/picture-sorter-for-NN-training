@@ -70,6 +70,12 @@ def inputs_of(camera: str, feature: str) -> list[str]:
     return db.dedup_inputs(camera, feature)
 
 
+def muted_inputs_of(camera: str, feature: str) -> list[str]:
+    """The Dedup boxes whose Muted dot feeds a Classifier (v1.162.0): it gets the pictures each box muted, and the box's
+    mute does not hide them there. A mute is "not passed on through the normal output", not a global hide."""
+    return db.dedup_muted_inputs(camera, feature)
+
+
 def input_of(camera: str, feature: str) -> str | None:
     """The first Dedup box a Classifier reads through, or ``None``."""
     boxes = inputs_of(camera, feature)
@@ -77,19 +83,37 @@ def input_of(camera: str, feature: str) -> str | None:
 
 
 def fed_by(camera: str) -> dict[str, list[str]]:
-    """box id -> the Classifiers it feeds."""
+    """box id -> the Classifiers it feeds (through its normal output, a class dot or, since v1.162.0, its Muted dot)."""
     out: dict[str, list[str]] = {}
     for roi in datamodel.load_rois(camera):
-        for box in db.feeding_boxes(camera, roi.name):
-            out.setdefault(box, []).append(roi.name)
+        for box in [*db.feeding_boxes(camera, roi.name), *muted_inputs_of(camera, roi.name)]:
+            if roi.name not in out.setdefault(box, []):
+                out[box].append(roi.name)
     return out
 
 
-def set_input(camera: str, feature: str, box: str | None, remove: bool = False) -> None:
+def set_input(camera: str, feature: str, box: str | None, remove: bool = False, muted: bool = False) -> None:
     """Add ``box`` to the Dedup boxes a Classifier reads through (several are allowed, the Classifier gets the union of
-    their pictures). ``remove`` takes that one box away; ``box`` ``None`` removes them all."""
+    their pictures). ``remove`` takes that one box away; ``box`` ``None`` removes them all. ``muted`` is the box's Muted
+    dot instead of its normal output (v1.162.0): the Classifier gets the pictures the box muted."""
     if datamodel.get_roi(camera, feature) is None:
         raise DedupBoxError(f"Unknown ROI: {feature}")
+    if muted:
+        if box is None:
+            db.set_dedup_muted_inputs(camera, feature, [])
+            return
+        listed = muted_inputs_of(camera, feature)
+        if remove:
+            db.set_dedup_muted_inputs(camera, feature, [b for b in listed if b != box])
+            return
+        if not exists(camera, box):
+            raise DedupBoxError(f"{box} is not a Dedup box.")
+        src = source_of(camera, box)
+        if src and src["feature"] == feature:
+            raise DedupBoxError(f"{box} reads {feature}, so it cannot feed it back.")
+        if box not in listed:
+            db.set_dedup_muted_inputs(camera, feature, [*listed, box])
+        return
     if box is None:
         db.delete_setting(camera, f"{INPUT_KEY}{feature}")
         return
@@ -153,6 +177,9 @@ def drop_box(camera: str, box: str) -> dict[str, int]:
         boxes = inputs_of(camera, roi.name)
         if box in boxes:
             db.set_dedup_inputs(camera, roi.name, [b for b in boxes if b != box])
+        listed = muted_inputs_of(camera, roi.name)
+        if box in listed:
+            db.set_dedup_muted_inputs(camera, roi.name, [b for b in listed if b != box])
     con = db.connect()
     try:
         out = {"mutes": con.execute("DELETE FROM dedup_mute WHERE camera=? AND feature=?", (camera, box)).rowcount}

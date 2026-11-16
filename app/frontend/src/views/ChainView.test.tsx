@@ -305,6 +305,8 @@ test("a Dedup box shows icon counters (pictures, muted, bin) instead of a text l
   expect(box).toHaveTextContent("🔇 5");
   expect(box).toHaveTextContent("🗑 2");
   expect(box).not.toHaveTextContent("whole camera");
+  expect(box.querySelector('[data-handleid="p:muted"]')).not.toBeNull(); // v1.162.0: the Muted dot, a second output beside the main dot
+  expect(box).toHaveTextContent("muted5");
 });
 
 test("double-clicking a box opens its page: a feature Classifier on Classify, the product Classifier on its editor, Ingest on Ingest", async () => {

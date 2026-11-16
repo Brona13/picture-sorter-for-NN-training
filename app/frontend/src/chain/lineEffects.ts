@@ -1,5 +1,5 @@
 import type { ChainCanvas, ChainEdge, ChainNode } from "../api";
-import { ALL_HANDLE, disconnectAction, isAnchorEdge, isClassLineEdge, isDedupInputEdge, isDedupSourceEdge, isFlowKind, isRoiInputEdge, productOfHandle, targetOfHandle } from "./chainModel";
+import { ALL_HANDLE, MUTED_HANDLE, disconnectAction, isAnchorEdge, isClassLineEdge, isDedupInputEdge, isDedupSourceEdge, isFlowKind, isRoiInputEdge, productOfHandle, targetOfHandle } from "./chainModel";
 import type { Connection, FlowLink } from "./chainModel";
 
 /** What the confirmation overlay says: a title and one line per effect. */
@@ -62,6 +62,9 @@ export function deleteNote(canvas: ChainCanvas, edge: ChainEdge): LineNote | nul
   if (isClassLineEdge(canvas, edge)) {
     const cls = edge.target_handle?.slice(3);
     return { title, lines: [`Only the line goes. The pictures it gave ${target} as ${cls} are no longer in it.`, "Their labels stay as hand labels: you can change them again."] };
+  }
+  if (isDedupInputEdge(canvas, edge) && edge.source_handle === MUTED_HANDLE) {
+    return { title, lines: [`Only the line goes. ${target} no longer gets the pictures ${source} muted.`, `Labels already set there stay as they are. ${source} keeps its mutes.`] };
   }
   if (isDedupInputEdge(canvas, edge)) {
     return { title, lines: [`Only the line goes. ${target} no longer reads through ${source}: the pictures ${source} muted come back to ${target}.`, `${source} keeps its mutes.`] };

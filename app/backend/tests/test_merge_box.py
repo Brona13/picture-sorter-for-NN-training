@@ -102,6 +102,26 @@ class MergeBoxTests(ApiTestCase):
             flow.update_node(CAM, export, {"add_line": {"input": "ng", "ref": {"from": self.merge}}})
         self.assertIn("collects OK", str(ctx.exception))
 
+    def test_muted_pictures_labeled_ng_in_a_classifier_reach_the_freeze_ng_input_with_another_ng_stream(self) -> None:
+        """v1.162.0: Dedup Muted dot -> Classifier (labeled NG by hand) -> Merge (with an NG stream of another branch) -> Freeze."""
+        import db
+        import dedup_box
+
+        f = self.frames
+        box = flow.create_node(CAM, "dedup")
+        flow.connect(CAM, "ingest", box)
+        db.add_dedup_mutes(CAM, box, [(name, db.frame_hash_for(CAM, name), 1) for name in f[6:8]])  # covered by a foreign object
+        dedup_box.set_input(CAM, "h1", box, muted=True)
+        self.assertEqual(sorted(datamodel.frames_for_feature(CAM, "h1")), sorted(f[6:8]))
+        for frame in f[6:8]:
+            labels.set_label(CAM, "h1", frame, "NG")  # the user labels them in the Classifier
+        export = flow.create_node(CAM, "export")
+        flow.update_node(CAM, export, {"goldens_only": False})
+        self.add({"feature": "h1", "dot": "NG"})
+        self.add({"feature": "h2", "dot": "NG"})  # another branch's NG pictures: f1 f4 f5
+        flow.update_node(CAM, export, {"add_line": {"input": "ng", "ref": {"from": self.merge}}})
+        self.assertEqual(export_box.selection(CAM, export)["ng"], {f[1], f[4], f[5], f[6], f[7]})
+
     def test_a_merge_feeds_a_detector_and_another_merge(self) -> None:
         f = self.frames
         self.add({"feature": "h1", "dot": "OK"})

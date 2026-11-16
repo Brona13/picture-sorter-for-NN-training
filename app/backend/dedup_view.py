@@ -78,7 +78,7 @@ def _ancestors(camera: str, box: str, graph: dict) -> set[str]:
         edits = roi_input.get_input(camera, feature)
         roots = [spec["detector"]] if spec else []
         roots += [edits["box"]] if edits else []
-        roots += db.dedup_inputs(camera, feature)
+        roots += db.dedup_inputs(camera, feature) + db.dedup_muted_inputs(camera, feature)
         for root in roots:
             if root in graph["nodes"]:
                 found.add(root)

@@ -41,7 +41,7 @@ covers still count as pass or fail. The user wants them out of the calculation, 
 
 ## Build order (three separate versions, each with tests and a changelog entry)
 
-### Part 1 (v1.161.0): Calculate through Dedup
+### Part 1 (v1.161.0): Calculate through Dedup (done)
 - `flow.edge_allowed`, `flow.connect`: allow ("dedup", "calc"); carry `point` (the target the Dedup box reads). Check the
   "Calculate takes two points" limit still counts points, not lines.
 - The values of Calculate and Evaluation skip pictures muted by a Dedup box on the path; the stale flag follows the Dedup
@@ -52,7 +52,7 @@ covers still count as pass or fail. The user wants them out of the calculation, 
 - Tests in `test_flow.py` (allowed line, the point carried, muted pictures excluded, one-point filtering, stale when a mute
   changes) and frontend tests for the line.
 
-### Part 2 (v1.162.0): the Muted dot
+### Part 2 (v1.162.0): the Muted dot (done, see the changelog)
 - Check first: a Classifier hides pictures muted for its own feature (`classify_api.py`, `db.muted_frames`). A picture arriving
   through a Dedup box's Muted dot must not be hidden by that box's mute. Also check that a Classifier can take a line without
   a class (class dots, `class_lines.py`) and that bulk labeling works on pictures that arrive this way. If not, report what

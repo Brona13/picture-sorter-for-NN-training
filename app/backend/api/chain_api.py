@@ -101,6 +101,7 @@ def put_step(camera: str, feature: str, body: StepBody) -> dict:
 class DedupInputBody(BaseModel):
     box: str | None = None
     remove: bool = False  # take this one box away (several can feed a Classifier); box null removes them all
+    muted: bool = False  # the box's Muted dot (the pictures it muted) instead of its normal output (v1.162.0)
 
 
 @router.put("/cameras/{camera}/chain/{feature:path}/dedup")
@@ -108,7 +109,7 @@ def put_dedup_input(camera: str, feature: str, body: DedupInputBody) -> dict:
     """Make a Dedup box the one a Classifier reads through (``box`` null removes it)."""
     require_camera(camera)
     try:
-        dedup_box.set_input(camera, feature, body.box, body.remove)
+        dedup_box.set_input(camera, feature, body.box, body.remove, body.muted)
     except dedup_box.DedupBoxError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return chain.get_canvas(camera)

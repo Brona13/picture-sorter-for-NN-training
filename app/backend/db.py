@@ -1402,6 +1402,7 @@ def clear_dedup_mutes(camera: str, feature: str) -> int:
 ROI_STEP_KEY = "roi.step."  # setting roi.step.<feature> = "2": a step-2 Classifier (absent = step 1; see flow.roi_step)
 DETACHED_KEY = "roi.detached."  # setting roi.detached.<feature> = "1": a Classifier with no line from Ingest (v1.133.0: with no other input either it has no pictures)
 DEDUP_INPUT_KEY = "roi.dedup."  # setting roi.dedup.<feature> = the Dedup box a Classifier reads through
+DEDUP_MUTED_KEY = "roi.dedup.muted."  # setting roi.dedup.muted.<feature> = JSON list of the Dedup boxes whose Muted dot feeds the Classifier (v1.162.0)
 
 
 CLASS_LINES_KEY = "class.lines."  # setting class.lines.<feature> = the lines into a Classifier's class dots (class_lines.py)
@@ -1427,6 +1428,23 @@ def set_dedup_inputs(camera: str, feature: str, boxes: list[str]) -> None:
         delete_setting(camera, f"{DEDUP_INPUT_KEY}{feature}")
     else:
         set_setting(camera, f"{DEDUP_INPUT_KEY}{feature}", boxes[0] if len(boxes) == 1 else json.dumps(boxes))
+
+
+def dedup_muted_inputs(camera: str, feature: str) -> list[str]:
+    """The Dedup boxes whose **Muted** dot feeds a Classifier: it works on the pictures each of them muted (v1.162.0)."""
+    raw = get_setting(camera, f"{DEDUP_MUTED_KEY}{feature}")
+    try:
+        parsed = json.loads(raw) if raw else []
+    except ValueError:
+        return []
+    return [b for b in parsed if isinstance(b, str)] if isinstance(parsed, list) else []
+
+
+def set_dedup_muted_inputs(camera: str, feature: str, boxes: list[str]) -> None:
+    if not boxes:
+        delete_setting(camera, f"{DEDUP_MUTED_KEY}{feature}")
+    else:
+        set_setting(camera, f"{DEDUP_MUTED_KEY}{feature}", json.dumps(boxes))
 
 
 def feeding_boxes(camera: str, feature: str) -> list[str]:

@@ -232,6 +232,12 @@ test("Dedup boxes: Ingest / Picture edits / a Classifier dot feed them, they fee
   expect(flowConnect(twoBoxes, link("dedup:1", "dedup:2"))).toEqual({ source: "dedup:1", target: "dedup:2" }); // a Dedup box can feed another one
   expect(flowConnect(twoBoxes, link("dedup:1", "dedup:1"))).toEqual({ error: "A box cannot feed itself." });
   expect(flowConnect(twoBoxes, link("dedup:2", "roi:seal"))).toEqual({ dedupInput: { feature: "seal", box: "dedup:2" } }); // several Dedup boxes may feed one Classifier
+  // v1.162.0: the Muted dot hands the muted pictures to a Classifier; nothing else takes it
+  const muted = (target: string) => ({ source: "dedup:1", sourceHandle: "p:muted", target });
+  expect(flowConnect(withBox, muted("roi:seal"))).toEqual({ dedupInput: { feature: "seal", box: "dedup:1", muted: true } });
+  expect(flowConnect(withBox, muted("det:1"))).toHaveProperty("error");
+  expect(flowConnect(withBox, muted("calc:1"))).toHaveProperty("error");
+  expect(flowConnect(withBox, { source: "dedup:1", sourceHandle: "p:other", target: "roi:seal" })).toHaveProperty("error");
   expect(flowConnect(withBox, link("dedup:1", "calc:1"))).toEqual({ source: "dedup:1", target: "calc:1" }); // v1.161.0: it carries the point it reads and filters the pictures
   expect(flowConnect(withBox, link("dedup:1", "eval:1"))).toHaveProperty("error"); // but still nothing goes into Evaluation but Calculate
 });

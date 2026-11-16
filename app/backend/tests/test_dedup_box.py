@@ -279,6 +279,67 @@ class DedupBoxTests(ApiTestCase):
         self.assertEqual(self.client.put(f"{self.base}/chain/seal/dedup", json={"box": None}).status_code, 200)
         self.assertIsNone(dedup_box.input_of(CAM, "seal"))
 
+    def test_the_muted_dot_gives_a_classifier_the_pictures_the_box_muted(self) -> None:
+        """v1.162.0: the Muted dot hands on what the box muted; there they are normal pictures that can be labeled."""
+        flow.connect(CAM, "ingest", self.d1)
+        self.mute(self.d1, self.frames[4:6])
+        dedup_box.set_input(CAM, "seal", self.d1, muted=True)
+        self.assertEqual(dedup_box.muted_inputs_of(CAM, "seal"), [self.d1])
+        self.assertEqual(sorted(datamodel.frames_for_feature(CAM, "seal")), sorted(self.frames[4:6]))  # only what the box muted
+        self.assertEqual(db.muted_frames(CAM, "seal"), set())  # and the box's mute does not hide them there
+        self.assertEqual(dedup_box.frames(CAM, self.d1), self.frames)  # the box itself still sees them all
+        self.assertIn((self.d1, "p:muted", "roi:seal"), self.edges())
+        self.assertNotIn(("ingest", None, "roi:seal"), self.edges())  # it hangs from the dot
+        self.assertEqual(self.node(self.d1)["flow"]["feeds"], ["seal"])
+        # the Classifier of the labels: the muted pictures arrive unlabeled and can be labeled by hand
+        dedup_box.set_input(CAM, "type", self.d1, muted=True)
+        self.assertEqual(sorted(datamodel.frames_for_feature(CAM, "type")), sorted(self.frames[4:6]))
+        labels.set_label(CAM, "type", self.frames[4], "B")
+        self.assertEqual(lines.frames_on_dot(CAM, "type", "B"), [self.frames[4]])
+        # a Classifier behind the normal output still loses them: a mute is per output, not a global hide
+        flow.connect(CAM, "ingest", self.d2)
+        dedup_box.set_input(CAM, "type", None)
+        dedup_box.set_input(CAM, "type", self.d1)
+        self.assertEqual(db.muted_frames(CAM, "type"), set(self.frames[4:6]))
+
+    def test_two_muted_dots_count_a_picture_once_and_a_muted_dot_adds_to_a_normal_input(self) -> None:
+        flow.connect(CAM, "ingest", self.d1)
+        flow.connect(CAM, "ingest", self.d2)
+        self.mute(self.d1, self.frames[:2])
+        self.mute(self.d2, self.frames[1:3])  # the second picture is muted by both
+        dedup_box.set_input(CAM, "seal", self.d1, muted=True)
+        dedup_box.set_input(CAM, "seal", self.d2, muted=True)
+        got = datamodel.frames_for_feature(CAM, "seal")
+        self.assertEqual(sorted(got), sorted(self.frames[:3]))
+        self.assertEqual(len(got), 3)
+        self.assertEqual(self.node("roi:seal")["frames"], 3)
+        dedup_box.set_input(CAM, "seal", self.d2)  # the normal output of box 2 on top: its pictures too (the ones it did not mute)
+        self.assertEqual(sorted(datamodel.frames_for_feature(CAM, "seal")), sorted(self.frames))
+
+    def test_the_muted_dot_line_is_removed_and_cleaned_up(self) -> None:
+        flow.connect(CAM, "ingest", self.d1)
+        self.mute(self.d1, self.frames[:2])
+        r = self.client.put(f"{self.base}/chain/seal/dedup", json={"box": self.d1, "muted": True})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertIn((self.d1, "p:muted", "roi:seal"), {(e["source"], e["source_handle"], e["target"]) for e in r.json()["edges"]})
+        self.assertEqual(self.client.put(f"{self.base}/chain/seal/dedup", json={"box": "crop:1", "muted": True}).status_code, 422)
+        r = self.client.put(f"{self.base}/chain/seal/dedup", json={"box": self.d1, "muted": True, "remove": True})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(dedup_box.muted_inputs_of(CAM, "seal"), [])
+        self.assertIn(("ingest", None, "roi:seal"), self.edges())
+        dedup_box.set_input(CAM, "seal", self.d1, muted=True)
+        r = self.client.delete(f"{self.base}/flow/nodes/{self.d1}")
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(dedup_box.muted_inputs_of(CAM, "seal"), [])  # a deleted box leaves no dangling input
+
+    def test_a_box_cannot_feed_the_classifier_it_reads_through_its_muted_dot(self) -> None:
+        flow.update_node(CAM, self.d1, {"source": {"feature": "type", "dot": "all"}})
+        with self.assertRaises(dedup_box.DedupBoxError):
+            dedup_box.set_input(CAM, "type", self.d1, muted=True)
+        dedup_box.set_input(CAM, "seal", self.d2, muted=True)
+        with self.assertRaises(flow.FlowError):
+            flow.update_node(CAM, self.d2, {"source": {"feature": "seal", "dot": "all"}})  # and the other way round
+
     def test_the_box_list_for_the_page(self) -> None:
         self.client.put(f"{self.base}/chain/layout", json={"nodes": {self.d2: {"x": 1, "y": 2, "label": "Whole set"}}})
         boxes = self.client.get(f"{self.base}/dedup/boxes").json()

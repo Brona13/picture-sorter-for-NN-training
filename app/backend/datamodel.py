@@ -394,11 +394,14 @@ def _input_scope(camera: str, feature: str) -> set[str] | None:
             given = set(flow.node_frames(camera, box, graph))
             scope = given if scope is None else scope & given
         live_dedups = [b for b in dedups if b in graph["nodes"]]
-        if live_dedups:
+        live_muted = [b for b in dedup_box.muted_inputs_of(camera, feature) if b in graph["nodes"]]
+        if live_dedups or live_muted:
             wired = True
             union: set[str] = set()
             for box in live_dedups:
                 union |= set(flow.node_frames(camera, box, graph))
+            for box in live_muted:  # the Muted dot (v1.162.0): the pictures the box saw and muted; a picture muted by two boxes counts once
+                union |= set(flow.node_frames(camera, box, graph)) & db.muted_frames(camera, box)
             scope = union if scope is None else scope & union
     finally:
         _resolving.reset(token)

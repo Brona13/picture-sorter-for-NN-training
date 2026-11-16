@@ -16,7 +16,7 @@ import {
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api, ChainCanvas, ChainDeletePreview, ChainEdge, ChainNode, ChainViewport, FlowDeletePreview } from "../api";
-import { ALL_HANDLE, INGEST_ID, hasRectangle, fitCanvasHeight, targetHandle, targetOfHandle, connectAction, describeNode, disconnectAction, classLineOf, exportLineOf, flowConnect, isClassLineEdge, freshName, isAnchorEdge, isMergeLineEdge, mergeLineOf, isDedupInputEdge, isEvaluationLabelEdge, isDedupSourceEdge, isExportLineEdge, isRoiInputEdge, isFlowKind, isPileKind, layoutOf, productHandle } from "../chain/chainModel";
+import { ALL_HANDLE, MUTED_HANDLE, INGEST_ID, hasRectangle, fitCanvasHeight, targetHandle, targetOfHandle, connectAction, describeNode, disconnectAction, classLineOf, exportLineOf, flowConnect, isClassLineEdge, freshName, isAnchorEdge, isMergeLineEdge, mergeLineOf, isDedupInputEdge, isEvaluationLabelEdge, isDedupSourceEdge, isExportLineEdge, isRoiInputEdge, isFlowKind, isPileKind, layoutOf, productHandle } from "../chain/chainModel";
 import ClassifierMode from "../chain/ClassifierMode";
 import Counter from "../chain/Counter";
 import { KindIcon } from "../chain/kindIcons";
@@ -199,6 +199,13 @@ function Box({ data, selected }: NodeProps<BoxNode>) {
             <span title="In the bin (deleted)">🗑 {node.deleted ?? 0}</span>
           </div>
         </>
+      )}
+      {node.kind === "dedup" && (
+        <div className="chain-node-product" title={`muted: ${node.flow?.muted ?? 0} pictures this box muted. Drag this dot onto a Classifier: it then works on these pictures, to label them there.`}>
+          <span className="chain-node-class">muted</span>
+          <span className="chain-node-count">{node.flow?.muted ?? 0}</span>
+          <Handle type="source" position={Position.Right} id={MUTED_HANDLE} isConnectable />
+        </div>
       )}
       {node.kind === "evaluation" && (
         <>
@@ -429,7 +436,7 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
       note = replaceNote(canvas, link, flowArrow);
     } else if ("dedupInput" in flowArrow) {
       const a = flowArrow.dedupInput; // a Dedup box dropped on a Classifier: the Classifier hides what the box muted
-      run = () => void applyFlow(() => api.setChainDedup(camera, a.feature, a.box));
+      run = () => void applyFlow(() => api.setChainDedup(camera, a.feature, a.box, false, a.muted ?? false));
       note = replaceNote(canvas, link, flowArrow);
     } else if ("evaluationOf" in flowArrow) {
       const a = flowArrow.evaluationOf; // an Evaluation dropped on a Classifier: its verdicts become the labels (pass = OK, fail = NG)
@@ -475,7 +482,7 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
       if (line) void applyFlow(() => api.flowUpdate(camera, edge.target, { remove_line: line }));
     } else if (isDedupSourceEdge(canvas, edge)) void applyFlow(() => api.flowUpdate(camera, edge.target, { source: null }));
     else if (isEvaluationLabelEdge(canvas, edge)) void applyFlow(() => api.setChainEvaluation(camera, targetNode!.ref!, null));
-    else if (isDedupInputEdge(canvas, edge)) void applyFlow(() => api.setChainDedup(camera, targetNode!.ref!, edge.source, true));
+    else if (isDedupInputEdge(canvas, edge)) void applyFlow(() => api.setChainDedup(camera, targetNode!.ref!, edge.source, true, edge.source_handle === MUTED_HANDLE));
     else if (isRoiInputEdge(canvas, edge)) void api.clearRoiInput(camera, targetNode!.ref!).then(() => reload()).catch(fail);
     else if (isAnchorEdge(canvas, edge)) void api.clearRoiAnchor(camera, targetNode!.ref!).then(() => reload()).catch(fail);
     else if (ends.some((k) => isFlowKind(k))) void applyFlow(() => api.flowDisconnect(camera, edge.source, edge.target, targetOfHandle(edge.source_handle) ?? undefined));

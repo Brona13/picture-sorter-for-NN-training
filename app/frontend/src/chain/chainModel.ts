@@ -5,6 +5,8 @@ import { versionLabel } from "../versionLabel";
 export const productHandle = (product: string) => `p:${product}`;
 /** The dot that passes every classified picture (matches `lines.ALL_DOT`). */
 export const ALL_HANDLE = "all";
+/** The Muted dot of a Dedup box: the pictures the box muted (v1.162.0). It feeds a Classifier. */
+export const MUTED_HANDLE = productHandle("muted");
 export const INGEST_ID = "ingest";
 
 /** The product a `p:<product>` handle stands for, or null for any other handle. */
@@ -209,7 +211,7 @@ export const isFlowKind = (kind: string | undefined): boolean => !!kind && (FLOW
 export const targetHandle = (target: string) => `t:${target}`;
 export const targetOfHandle = (handle: string | null | undefined): string | null => (handle && handle.startsWith("t:") ? handle.slice(2) : null);
 
-export type FlowLink = { classLine: { feature: string; cls: string; box: string; dot?: string } } | { mergeLine: { box: string; ref: ExportRef } } | { exportLine: { box: string; input: "ok" | "ng"; ref: ExportRef } } | { source: string; target: string; point?: string } | { dedupSource: { box: string; feature?: string; evaluation?: string; dot: string } } | { dedupInput: { feature: string; box: string } } | { evaluationOf: { feature: string; box: string } } | { anchor: { feature: string; detector: string; target: string } } | { roiInput: { feature: string; box: string } } | { error: string } | null;
+export type FlowLink = { classLine: { feature: string; cls: string; box: string; dot?: string } } | { mergeLine: { box: string; ref: ExportRef } } | { exportLine: { box: string; input: "ok" | "ng"; ref: ExportRef } } | { source: string; target: string; point?: string } | { dedupSource: { box: string; feature?: string; evaluation?: string; dot: string } } | { dedupInput: { feature: string; box: string; muted?: boolean } } | { evaluationOf: { feature: string; box: string } } | { anchor: { feature: string; detector: string; target: string } } | { roiInput: { feature: string; box: string } } | { error: string } | null;
 
 /** The class an Evaluation verdict gives its pictures. */
 const CLASS_OF_VERDICT: Record<string, string> = { pass: "OK", fail: "NG" };
@@ -307,11 +309,14 @@ export function flowConnect(canvas: ChainCanvas, c: Connection): FlowLink {
     return { error: "A Classifier's dots feed a Dedup box, Picture edits, a detector or another Classifier." };
   }
   if (source.kind === "dedup" && target.kind === "roi") {
-    // A Dedup box dropped on a Classifier: the Classifier hides what the box muted.
-    if (c.sourceHandle) return { error: "Use the Dedup box's main dot." };
+    // A Dedup box dropped on a Classifier: the Classifier hides what the box muted. Its Muted dot hands the muted pictures over instead.
+    if (c.sourceHandle && c.sourceHandle !== MUTED_HANDLE) return { error: "Use the Dedup box's main dot or its Muted dot." };
     if (!target.ref) return { error: "Unknown box." };
     if (source.flow?.source?.feature === target.ref) return { error: `${source.label} reads ${target.label}, so it cannot feed it back.` };
-    return { dedupInput: { feature: target.ref, box: source.id } };
+    return c.sourceHandle === MUTED_HANDLE ? { dedupInput: { feature: target.ref, box: source.id, muted: true } } : { dedupInput: { feature: target.ref, box: source.id } };
+  }
+  if (source.kind === "dedup" && c.sourceHandle === MUTED_HANDLE) {
+    return { error: "The Muted dot feeds a Classifier: label the pictures the box muted there. Use the main dot for anything else." };
   }
   if (source.kind === "dedup" && isFlowKind(target.kind) && target.kind !== "detector" && target.kind !== "crop" && target.kind !== "dedup" && target.kind !== "calc") {
     return { error: "A Dedup box feeds a Classifier, a detector, a Picture edits box, another Dedup box or Calculate." };
