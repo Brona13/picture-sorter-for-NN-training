@@ -9,6 +9,7 @@ import numpy as np
 
 import benchmark_rotsearch as bench
 import datamodel
+import db
 import flow
 import ingest
 from roi import ROI
@@ -1086,6 +1087,88 @@ class FlowTests(ApiTestCase):
         self.post("/edges", {"source": "ingest", "target": dedup})
         self.assertIsNone(self.node_detail(d2)["input_point"])
         self.assertEqual(self.node_detail(d2)["input"], "ingest")
+
+    def _dedup_calc(self):
+        """One detector with two targets; a Dedup box on each target; both Dedup boxes feed Calculate, then Evaluation."""
+        det = self.detector({"A": LEFT_BOX, "B": RIGHT_BOX})
+        da, db_, calc, tol = self.node("dedup"), self.node("dedup"), self.node("calc"), self.node("evaluation")
+        self.post("/edges", {"source": det, "target": da, "point": "A"})
+        self.post("/edges", {"source": det, "target": db_, "point": "B"})
+        self.post("/edges", {"source": da, "target": calc})
+        self.post("/edges", {"source": db_, "target": calc})
+        self.post("/edges", {"source": calc, "target": tol})
+        self.run_all()
+        return det, da, db_, calc, tol
+
+    def _mute(self, box: str, frame: str) -> None:
+        import labels  # noqa: PLC0415
+
+        db.add_dedup_mutes(CAM, box, [(frame, labels.hash_map(CAM)[frame], 0)])
+
+    def test_a_dedup_box_feeds_calculate_with_the_point_it_reads(self) -> None:
+        """v1.161.0: target dot -> Dedup -> Calculate carries the point; muted pictures are not measured."""
+        import labels  # noqa: PLC0415
+
+        det, da, db_, calc, tol = self._dedup_calc()
+        graph = flow.load_graph(CAM)
+        self.assertEqual(flow.calc_points(graph, calc), [(det, "A"), (det, "B")])
+        self.assertEqual(flow.calc_filter(CAM, calc, graph), set(self.names))  # nothing muted yet: every picture counts
+        everything = flow.calc_values(CAM, calc)
+        self.assertEqual(len(everything), len(self.names))
+        hmap = labels.hash_map(CAM)
+        self._mute(da, self.names[0])  # covered at A
+        self._mute(db_, self.names[1])  # covered at B
+        self._mute(db_, self.names[0])  # covered at both: counts once
+        values = flow.calc_values(CAM, calc)
+        self.assertEqual(set(values), {hmap[n] for n in self.names[2:]})
+        for key, value in values.items():
+            self.assertEqual(value, everything[key])  # the same numbers, only fewer pictures
+        verdicts = flow.evaluation_state(CAM, tol)["verdicts"]
+        self.assertEqual(set(verdicts), set(self.names[2:]))  # muted pictures are neither pass nor fail
+        self.assertEqual(set(flow.calc_boxes(CAM, calc)), set(self.names[2:]))
+        canvas = self.client.get(f"/api/cameras/{CAM}/chain").json()
+        self.assertEqual({e["source"] for e in canvas["edges"] if e["target"] == calc}, {da, db_})
+        self.node_detail(calc)  # the Calculate page still loads
+
+    def test_one_dedup_line_filters_the_whole_of_calculate(self) -> None:
+        """A Dedup box on one point only: the other point may come straight from the detector, the filter still applies."""
+        det = self.detector({"A": LEFT_BOX, "B": RIGHT_BOX})
+        da, calc = self.node("dedup"), self.node("calc")
+        self.post("/edges", {"source": det, "target": da, "point": "A"})
+        self.post("/edges", {"source": da, "target": calc})
+        self.post("/edges", {"source": det, "target": calc, "point": "B"})
+        self.run_all()
+        self.assertEqual(flow.calc_points(flow.load_graph(CAM), calc), [(det, "A"), (det, "B")])
+        self._mute(da, self.names[3])
+        self.assertEqual(len(flow.calc_values(CAM, calc)), len(self.names) - 1)
+
+    def test_a_dedup_line_replaces_the_direct_line_of_the_same_point(self) -> None:
+        det = self.detector({"A": LEFT_BOX, "B": RIGHT_BOX})
+        da, calc = self.node("dedup"), self.node("calc")
+        self.post("/edges", {"source": det, "target": calc, "point": "A"})
+        self.post("/edges", {"source": det, "target": calc, "point": "B"})
+        self.post("/edges", {"source": det, "target": da, "point": "A"})
+        self.post("/edges", {"source": da, "target": calc})
+        into = [(e["source"], e.get("point")) for e in flow.load_graph(CAM)["edges"] if e["target"] == calc]
+        self.assertEqual(sorted(into, key=str), sorted([(det, "B"), (da, None)], key=str))  # one line per point
+        self.assertEqual(sorted(flow.calc_points(flow.load_graph(CAM), calc)), [(det, "A"), (det, "B")])
+
+    def test_a_dedup_box_that_reads_no_target_cannot_feed_calculate(self) -> None:
+        da, calc = self.node("dedup"), self.node("calc")
+        self.post("/edges", {"source": "ingest", "target": da})
+        r = self.client.post(f"{self.base}/edges", json={"source": da, "target": calc})
+        self.assertEqual(r.status_code, 422)
+        self.assertIn("target", r.text)
+        self.assertEqual(flow.load_graph(CAM)["edges"], [{"source": "ingest", "target": da}])
+
+    def test_calculate_still_takes_two_points_in_all_with_dedup_lines(self) -> None:
+        det, da, db_, calc, _ = self._dedup_calc()
+        other = self.detector({"C": LEFT_BOX})
+        dc = self.node("dedup")
+        self.post("/edges", {"source": other, "target": dc, "point": "C"})
+        r = self.client.post(f"{self.base}/edges", json={"source": dc, "target": calc})
+        self.assertEqual(r.status_code, 422)
+        self.assertIn("two points", r.text)
 
     def test_a_picture_without_the_parent_box_is_skipped_for_the_cascaded_target(self) -> None:
         import labels

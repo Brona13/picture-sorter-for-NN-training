@@ -313,8 +313,8 @@ export function flowConnect(canvas: ChainCanvas, c: Connection): FlowLink {
     if (source.flow?.source?.feature === target.ref) return { error: `${source.label} reads ${target.label}, so it cannot feed it back.` };
     return { dedupInput: { feature: target.ref, box: source.id } };
   }
-  if (source.kind === "dedup" && isFlowKind(target.kind) && target.kind !== "detector" && target.kind !== "crop" && target.kind !== "dedup") {
-    return { error: "A Dedup box feeds a Classifier, a detector, a Picture edits box or another Dedup box." };
+  if (source.kind === "dedup" && isFlowKind(target.kind) && target.kind !== "detector" && target.kind !== "crop" && target.kind !== "dedup" && target.kind !== "calc") {
+    return { error: "A Dedup box feeds a Classifier, a detector, a Picture edits box, another Dedup box or Calculate." };
   }
   if (source.kind === "dedup" && (target.kind === "detector" || target.kind === "crop" || target.kind === "dedup")) {
     if (c.sourceHandle) return { error: "Use the Dedup box's main dot." };
@@ -347,11 +347,12 @@ export function flowConnect(canvas: ChainCanvas, c: Connection): FlowLink {
     ((source.kind === "ingest" || source.kind === "crop") && (target.kind === "crop" || target.kind === "detector" || target.kind === "dedup")) ||
     (source.kind === "detector" && (target.kind === "detector" || target.kind === "calc" || target.kind === "crop" || target.kind === "dedup")) ||
     (source.kind === "calc" && target.kind === "evaluation") ||
+    (source.kind === "dedup" && target.kind === "calc") || // v1.161.0: the Dedup box carries the point it reads and filters the pictures
     (isPileKind(source.kind) && target.kind === "box") ||
     (source.kind === "merge" && (target.kind === "crop" || target.kind === "detector" || target.kind === "dedup"));
   if (!ok) {
     return {
-      error: `${source.label} cannot feed ${target.label}. Ingest or a Picture edits box feeds a Picture edits box, a detector or a Dedup box, a detector (one target) feeds a Picture edits box, a detector feeds a detector or Calculate, Calculate feeds Evaluation, and an Evaluation's dots (pass, fail, all) feed a Dedup box, Picture edits or a detector. An Evaluation is picked in a Classifier's panel, not drawn to it.`,
+      error: `${source.label} cannot feed ${target.label}. Ingest or a Picture edits box feeds a Picture edits box, a detector or a Dedup box, a detector (one target) feeds a Picture edits box, a detector feeds a detector or Calculate, a Dedup box that reads a detector's target feeds Calculate, Calculate feeds Evaluation, and an Evaluation's dots (pass, fail, all) feed a Dedup box, Picture edits or a detector. An Evaluation is picked in a Classifier's panel, not drawn to it.`,
     };
   }
   if (c.source === c.target) return { error: "A box cannot feed itself." };

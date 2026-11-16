@@ -146,7 +146,7 @@ class DedupBoxTests(ApiTestCase):
         self.assertIsNone(flow.edge_allowed(graph, crop, self.d1))
         self.assertIsNone(flow.edge_allowed(graph, self.d1, crop))  # a Dedup box feeds Picture edits (v1.107.0)
         calc = flow.create_node(CAM, "calc")
-        self.assertIn("Calculate takes", flow.edge_allowed(flow.load_graph(CAM), self.d1, calc) or "")
+        self.assertIn("carries the point of the target it reads", flow.edge_allowed(flow.load_graph(CAM), self.d1, calc) or "")  # v1.161.0: only a Dedup box that reads a target feeds Calculate
         det = flow.create_node(CAM, "detector")
         self.assertIsNone(flow.edge_allowed(flow.load_graph(CAM), det, self.d1))  # a detector target feeds it (v1.99.0)
         with self.assertRaises(flow.FlowError):

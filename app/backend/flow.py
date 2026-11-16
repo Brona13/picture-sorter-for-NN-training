@@ -859,16 +859,18 @@ def edge_allowed(graph: dict, source: str, target: str) -> str | None:
         return "A box cannot feed itself."
     if step_of_id(graph, source) != step_of_id(graph, target):
         return "A line stays inside its step: step 1 and step 2 boxes cannot be connected."
-    why = lines.line_error(ks, kt)
+    why = lines.line_error(ks, kt, carries=lines.POINT if (ks, kt) == ("dedup", "calc") else None)  # a Dedup box feeding Calculate carries the point it reads
     if why:
         return why
-    if (ks, kt) not in {("ingest", "crop"), ("crop", "crop"), ("crop", "detector"), ("ingest", "detector"), ("detector", "detector"), ("detector", "crop"), ("detector", "calc"), ("calc", "evaluation"), ("evaluation", "classify"), ("ingest", "dedup"), ("crop", "dedup"), ("detector", "dedup"), ("dedup", "dedup"), ("dedup", "detector"), ("dedup", "crop"), ("merge", "dedup"), ("merge", "crop"), ("merge", "detector"), ("ingest_ok", "box"), ("ingest_ng", "box")}:
+    if (ks, kt) not in {("dedup", "calc"), ("ingest", "crop"), ("crop", "crop"), ("crop", "detector"), ("ingest", "detector"), ("detector", "detector"), ("detector", "crop"), ("detector", "calc"), ("calc", "evaluation"), ("evaluation", "classify"), ("ingest", "dedup"), ("crop", "dedup"), ("detector", "dedup"), ("dedup", "dedup"), ("dedup", "detector"), ("dedup", "crop"), ("merge", "dedup"), ("merge", "crop"), ("merge", "detector"), ("ingest_ok", "box"), ("ingest_ng", "box")}:
         names = {"ingest": "Ingest", "crop": "Picture edits", "detector": "a detector", "calc": "Calculate", "evaluation": "Evaluation", "classify": "a Classify box", "dedup": "a Dedup box", "merge": "a Merge", "ingest_ok": "Ingest OK", "ingest_ng": "Ingest NG", "box": "a Box"}
         return f"{names.get(ks, ks)} cannot feed {names.get(kt, kt)}."
     if is_flow_id(source) and source not in graph["nodes"]:
         return f"Unknown box: {source}"
     if is_flow_id(target) and target not in graph["nodes"]:
         return f"Unknown box: {target}"
+    if (ks, kt) == ("dedup", "calc") and _target_behind_dedup(graph, source) is None:
+        return "A Dedup box feeding Calculate carries the point of the target it reads: draw the line from a detector's target dot into the Dedup box first."
     if ks == "dedup" and kt in ("detector", "crop", "dedup"):
         seen: set[str] = set()
         ancestor = parent_of_any(graph, source)
@@ -908,6 +910,10 @@ def connect(camera: str, source: str, target: str, point: str | None = None) -> 
         # Several arrows feed a Calculate box (the whole detector or single targets), two points in all.
         before = calc_points(graph, target)
         graph["edges"] = [e for e in graph["edges"] if not (e["source"] == source and e["target"] == target and e.get("point") == point)]
+        if kind_of(source) == "dedup":
+            # The Dedup line carries the point it reads and filters the pictures: a direct line for the same point goes (one line per point).
+            read = _target_behind_dedup(graph, source)
+            graph["edges"] = [e for e in graph["edges"] if not (e["target"] == target and kind_of(e["source"]) == "detector" and e.get("point") == read["target"] and e["source"] == read["detector"])]
         graph["edges"].append(edge)
         after = calc_points(graph, target)
         if len(before) >= 2 and len(after) > len(before):
@@ -2106,7 +2112,14 @@ def calc_points(graph: dict, calc_id: str) -> list[tuple[str, str]]:
     detector carries all its targets that have examples, an arrow from one target dot carries that target."""
     out: list[tuple[str, str]] = []
     for e in graph["edges"]:
-        if e["target"] != calc_id or kind_of(e["source"]) != "detector":
+        if e["target"] != calc_id:
+            continue
+        if kind_of(e["source"]) == "dedup":  # the point of the target the Dedup box (or the Dedup boxes in a row) reads
+            read = _target_behind_dedup(graph, e["source"])
+            if read and read["target"] in _detector_targets(graph, read["detector"]) and (read["detector"], read["target"]) not in out:
+                out.append((read["detector"], read["target"]))
+            continue
+        if kind_of(e["source"]) != "detector":
             continue
         names = _detector_targets(graph, e["source"])
         for name in ([e["point"]] if e.get("point") in names else [] if e.get("point") else names):
@@ -2192,6 +2205,20 @@ def compute(op: str, a: tuple[float, float], b: tuple[float, float], clockwise: 
     raise FlowError(f"Unknown operation: {op}")
 
 
+def calc_filter(camera: str, calc_id: str, graph: dict) -> set[str] | None:
+    """The pictures (by name) a Calculate box may use, or None when no Dedup box feeds it (every picture counts).
+    A Dedup box on a line into Calculate filters: a picture it muted, or one it never saw (v1.161.0), is not measured, so
+    it is neither pass nor fail behind an Evaluation. With several Dedup lines a picture must pass all of them."""
+    allowed: set[str] | None = None
+    for e in graph["edges"]:
+        if e["target"] != calc_id or kind_of(e["source"]) != "dedup" or e["source"] not in graph["nodes"]:
+            continue
+        muted = db.muted_frames(camera, e["source"])
+        passed = {f for f in node_frames(camera, e["source"], graph) if f not in muted}
+        allowed = passed if allowed is None else allowed & passed
+    return allowed
+
+
 def _calc_pairs(camera: str, calc_id: str, graph: dict) -> dict[str, tuple[tuple[float, float], tuple[float, float]] | None]:
     """Points A and B by frame hash on the whole picture (None when a point is missing). The two points may come from
     different detectors; each is moved by the offset of the crops above its detector."""
@@ -2228,6 +2255,10 @@ def _calc_pairs(camera: str, calc_id: str, graph: dict) -> dict[str, tuple[tuple
                 continue
             pa, pb = map_a.point(*pa), map_b.point(*pb)
         pairs[key] = (pa, pb)
+    allowed = calc_filter(camera, calc_id, graph)
+    if allowed is not None:  # only the pictures the Dedup boxes in front pass on (the keys are picture hashes)
+        keep = {h for f, h in labels.hash_map(camera).items() if f in allowed}
+        pairs = {k: v for k, v in pairs.items() if k in keep}
     return pairs
 
 
@@ -2265,7 +2296,9 @@ def calc_boxes(camera: str, calc_id: str, graph: dict | None = None) -> dict[str
     a, b = effective_points(graph, calc_id)
     if a is None or b is None:
         return {}
-    return whole_picture_boxes(camera, graph, {a: keys[a], b: keys[b]})
+    boxes = whole_picture_boxes(camera, graph, {a: keys[a], b: keys[b]})
+    allowed = calc_filter(camera, calc_id, graph)
+    return boxes if allowed is None else {f: v for f, v in boxes.items() if f in allowed}
 
 
 def calc_values(camera: str, calc_id: str, graph: dict | None = None) -> dict[str, float | None]:
