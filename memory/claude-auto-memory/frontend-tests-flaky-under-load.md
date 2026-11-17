@@ -13,3 +13,5 @@ On the home Linux machine the full `npm test` run (vitest, 96 files) sometimes f
 **Why:** timing races (late renders after the test's globals are removed, 1 s `findBy` waits) under CPU load, not a regression.
 
 **How to apply:** when one unrelated frontend test is red, rerun that file alone a few times, then run the whole suite with `cd app/frontend && npx vitest run --maxWorkers=2` (or 3) before changing code. Do not stash the working tree while another test run is going in the background. Say plainly in the delivery note that a flake happened and how it was cleared. The backend suite (`.venv/bin/python -m pytest`, about 3.5 min) has not shown this.
+
+**Seen again 2026-11-16:** `DedupView.test.tsx` ("clustering lives in the panel's Clusters controls ...") failed once in a full `npm test`, passed alone, and the full suite passed with `--maxWorkers=2`.

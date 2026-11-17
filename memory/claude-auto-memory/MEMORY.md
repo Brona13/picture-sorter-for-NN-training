@@ -1,5 +1,5 @@
 - [Stay within the project folder](stay-within-project-folder.md) — don't inspect paths outside the project root without asking; the vault holds unrelated personal projects.
-- [Git push state and Windows workflow](migration-push-state.md) — push only on "push it" / "commit and push"; Windows work arrives as commits (pull --ff-only); everything pushed at the end of 2026-10-20 (v1.74.0, dd986cb + a docs commit); schema v8.
+- [Git push state and Windows workflow](migration-push-state.md) — push only on "push" / "push it" / "commit and push"; patches arrive in `patches/` (apply with `git am`, delete the processed file, keep the folder); last push 2026-11-17 (v1.164.0, 86b6ec6).
 - [User dictates by voice](user-voice-dictation.md) — speech-to-text errors ("data page" = Dedup, "cutter tool" = Scatter, "course" = colours, "texture page" = Detector); resolve by context.
 - [Agree before building](feedback-agree-before-building.md) — restate, list open/contradicting points, ask in plain text (not pop-ups), build only when none; tweaks just get done.
 - [Gate commits on tests](feedback-test-gate-commit.md) — chain on the test exit code, not a grep pipe.
@@ -10,3 +10,4 @@
 - [Stale page after an update](feedback-stale-page-after-update.md) — unreproducible bug right after an update: ask for hard refresh / recreate the box and read the Log page first.
 - [Frontend tests flaky under load](frontend-tests-flaky-under-load.md) — one random unrelated vitest fails when the machine is busy; rerun the file alone, then `--maxWorkers=2`.
 - [Memory lives in the project](memory-lives-in-the-project.md) — Claude's own memory is stored in `memory/claude-auto-memory/` of the project; `~/.claude/.../memory` is a symlink to it; how to relink on another machine.
+- [One question at a time, simple terms](feedback-one-question-simple-terms.md) — design talks: one open question per message, plain words, an example from their chain, my recommendation; settled answers are not re-asked; no new module when an existing one fits.
