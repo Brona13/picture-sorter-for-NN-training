@@ -12,8 +12,10 @@ const VERDICT_COLORS: Record<string, string> = { pass: "#3ccf6e", fail: "#ff5b5b
  * screen width at any zoom; every line has a dark one under it so it shows on a white part of the picture.
  * On the Evaluation page `evaluation` adds the pass region of its rule (`evalGeometry.ts`) under the rest, in the colour
  * of this picture's verdict, and a ring in that colour around B.
+ * `ruleOnly` (a step-2 Classifier's viewer) draws just what the rule judges: its region, box B with its centre and, for
+ * a rule measured from A (angle, distance, dx, dy), the point A; no box A behind a zone, no A to B shapes, no text.
  */
-export default function CalcGeometry({ size, op, names, clockwise, boxes, value, unit, evaluation }: {
+export default function CalcGeometry({ size, op, names, clockwise, boxes, value, unit, evaluation, ruleOnly = false }: {
   size: { w: number; h: number };
   op: string;
   names: [string, string];
@@ -22,16 +24,17 @@ export default function CalcGeometry({ size, op, names, clockwise, boxes, value,
   value: number | null;
   unit: string;
   evaluation?: { spec: EvalSpec; verdict?: string };
+  ruleOnly?: boolean;
 }) {
   const a = boxes?.[names[0]] && drawn(boxes[names[0]]);
   const b = boxes?.[names[1]] && drawn(boxes[names[1]]);
   const u = Math.max(size.w, size.h) / 100;
-  const g = a && b ? calcShapes(op, a, b, names, clockwise, value, unit, u) : null;
+  const g = a && b && !ruleOnly ? calcShapes(op, a, b, names, clockwise, value, unit, u) : null;
   const layer = evaluation && a && b ? evalLayer(evaluation.spec, a, b, size, value, u) : null;
   const tint = (evaluation?.verdict && VERDICT_COLORS[evaluation.verdict]) || "#c9ced6";
   const halo = { vectorEffect: "non-scaling-stroke" as const, pointerEvents: "none" as const };
   return (
-    <svg data-testid="calc-geometry" viewBox={`0 0 ${size.w} ${size.h}`} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}>
+    <svg data-testid={ruleOnly ? "rule-geometry" : "calc-geometry"} viewBox={`0 0 ${size.w} ${size.h}`} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}>
       {layer && (
         <g data-testid="evaluation-geometry" data-verdict={evaluation?.verdict ?? "none"}>
           {layer.regions.map((r, i) => <path key={`r${i}`} d={r.d} fillRule={r.evenodd ? "evenodd" : undefined} fill={tint} fillOpacity={0.16} stroke="none" />)}
@@ -47,7 +50,7 @@ export default function CalcGeometry({ size, op, names, clockwise, boxes, value,
               <line x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2} stroke={tint} strokeWidth={2} strokeDasharray={s.dashed ? "6 4" : undefined} {...halo} />
             </g>
           ))}
-          {layer.labels.map((l, i) => (
+          {!ruleOnly && layer.labels.map((l, i) => (
             <text key={`el${i}`} x={l.x} y={l.y} textAnchor={l.anchor} fontSize={2 * u} fontWeight={700} fill={tint} stroke="#000" strokeWidth={3.5} paintOrder="stroke" strokeLinejoin="round">{l.text}</text>
           ))}
           {b && <circle cx={b.x} cy={b.y} r={1.4 * u} fill="none" stroke={tint} strokeWidth={2.5} vectorEffect="non-scaling-stroke" />}
@@ -55,7 +58,7 @@ export default function CalcGeometry({ size, op, names, clockwise, boxes, value,
       )}
       {names.map((n, i) => {
         const box = i === 0 ? a : b;
-        if (!box) return null;
+        if (!box || (ruleOnly && i === 0)) return null; // rule only: box A is not part of what the rule judges
         return (
           <g key={n} transform={`translate(${box.x} ${box.y}) rotate(${-box.angle})`}>
             <rect x={-box.w / 2} y={-box.h / 2} width={box.w} height={box.h} fill="none" stroke="rgba(0,0,0,.75)" strokeWidth={4} {...halo} />
@@ -63,6 +66,8 @@ export default function CalcGeometry({ size, op, names, clockwise, boxes, value,
           </g>
         );
       })}
+      {ruleOnly && b && <circle data-testid="rule-b-centre" cx={b.x} cy={b.y} r={0.6 * u} fill={COLORS[1]} stroke="#000" strokeWidth={1} vectorEffect="non-scaling-stroke" />}
+      {ruleOnly && a && evaluation?.spec.mode !== "zone" && <circle data-testid="rule-a-point" cx={a.x} cy={a.y} r={0.6 * u} fill={COLORS[0]} stroke="#000" strokeWidth={1} vectorEffect="non-scaling-stroke" />}
       {g?.segments.map((s, i) => (
         <g key={`s${i}`}>
           <line x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2} stroke="rgba(0,0,0,.75)" strokeWidth={s.strong ? 5 : 4} strokeDasharray={s.dashed ? "6 4" : undefined} {...halo} />

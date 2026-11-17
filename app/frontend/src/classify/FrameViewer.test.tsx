@@ -115,7 +115,7 @@ test("the feature's ROI is outlined on the full frame, and the toggle hides it",
   setup({ feature: "seal" });
   const box = await screen.findByTestId("viewer-roi");
   expect(box).toHaveStyle({ left: "25%", top: "10%", width: "50%", height: "40%" });
-  expect(urls).toEqual(["/api/cameras/camA/rois"]);
+  expect(urls.filter((u) => !u.includes("/measures"))).toEqual(["/api/cameras/camA/rois"]); // (the step-1 measures summary is asked too)
   const toggle = screen.getByRole("button", { name: "Show ROI" });
   expect(toggle).toHaveAttribute("aria-pressed", "true");
   await userEvent.click(toggle);
@@ -128,7 +128,7 @@ test("a product's ROI is looked up in that product's scope; without a ROI there 
   vi.stubGlobal("fetch", vi.fn(async (url: string) => (urls.push(url), new Response(JSON.stringify(roiBody("P1::seal"))))));
   setup({ feature: "P1::seal" });
   await screen.findByTestId("viewer-roi");
-  expect(urls).toEqual(["/api/cameras/camA/rois?product=P1"]);
+  expect(urls.filter((u) => !u.includes("/measures"))).toEqual(["/api/cameras/camA/rois?product=P1"]);
   vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 404 })));
 });
 
@@ -244,4 +244,49 @@ test("a Dedup box fed by a detector target: the cutout or the whole picture with
   fireEvent.keyDown(window, { key: "ArrowRight" });
   expect(await screen.findByText(/detector found no box on this picture/)).toBeInTheDocument();
   expect(src("c.png")).toBe("/api/cameras/camA/frames/c.png/image"); // no cutout to show: the whole picture
+});
+
+test("a step-2 Classifier's viewer draws the step-1 measurements behind a switch, rule only, per picture", async () => {
+  localStorage.clear();
+  const box = (x: number, y: number) => ({ x, y, w: 10, h: 6, angle: 0, score: 1, source: "auto" });
+  const zone = { evaluation: "eval:1", mode: "zone", op: "offset", clockwise: false, zone: { shape: "circle", center: [40, 0], radius: 5, half: [5, 5] }, nominal: null, tolerance: 0, unit: "px", a: box(30, 30) };
+  const angle = { evaluation: "eval:2", mode: "tolerance", op: "angle", clockwise: false, zone: { shape: "circle", center: null, radius: 5, half: [5, 5] }, nominal: 0, tolerance: 2, unit: "°", verdict: "pass", a: box(30, 30), b: box(70, 30) };
+  const urls: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+    urls.push(url);
+    if (url.endsWith("/rois/pick/measures")) return new Response(JSON.stringify({ available: true, evaluations: 2, changed: true }));
+    if (url.includes("/rois/pick/measures?frame=b.png")) return new Response(JSON.stringify({ frame: "b.png", measures: [{ ...zone, verdict: "pass", b: box(70, 30) }, angle] }));
+    if (url.includes("/rois/pick/measures?frame=c.png")) return new Response(JSON.stringify({ frame: "c.png", measures: [{ ...zone, verdict: "fail", b: box(90, 30) }] }));
+    return new Response(JSON.stringify({ rois: [] }));
+  }));
+  setup({ feature: "pick" });
+  const toggle = await screen.findByRole("button", { name: "Show step 1 measurements" });
+  expect(toggle).toHaveAttribute("aria-pressed", "false"); // off until switched on
+  expect(screen.queryByTestId("rule-geometry")).toBeNull();
+  expect(urls.some((u) => u.includes("measures?frame="))).toBe(false); // nothing fetched while off
+  await userEvent.click(toggle);
+  expect(localStorage.getItem("picturesorter.viewer.measures")).toBe("1");
+  await waitFor(() => expect(screen.getAllByTestId("rule-geometry")).toHaveLength(2)); // every Evaluation draws
+  expect(toggle).toHaveTextContent("⚠"); // step 1 changed since its freeze
+  const [zoneLayer, angleLayer] = screen.getAllByTestId("rule-geometry");
+  expect(zoneLayer.querySelector("[data-testid=evaluation-geometry]")).toHaveAttribute("data-verdict", "pass");
+  expect(zoneLayer.querySelectorAll("text")).toHaveLength(0); // no numbers, no names
+  expect(zoneLayer.querySelectorAll("rect")).toHaveLength(2); // box B only (outline and its dark edge), no box A
+  expect(zoneLayer.querySelector("[data-testid=rule-b-centre]")).not.toBeNull();
+  expect(zoneLayer.querySelector("[data-testid=rule-a-point]")).toBeNull(); // a zone does not need A on screen
+  expect(angleLayer.querySelector("[data-testid=rule-a-point]")).not.toBeNull(); // an angle is measured from A
+  expect(angleLayer.querySelectorAll("text")).toHaveLength(0);
+  fireEvent.keyDown(window, { key: "ArrowRight" });
+  await waitFor(() => expect(screen.getAllByTestId("rule-geometry")).toHaveLength(1)); // the next picture's own measurements
+  expect(screen.getByTestId("evaluation-geometry")).toHaveAttribute("data-verdict", "fail");
+  await userEvent.click(toggle);
+  expect(screen.queryByTestId("rule-geometry")).toBeNull();
+  expect(localStorage.getItem("picturesorter.viewer.measures")).toBe("0");
+});
+
+test("a viewer of a Classifier without step-1 measurements has no switch", async () => {
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => new Response(JSON.stringify(url.includes("/measures") ? { available: false, evaluations: 0, changed: false } : { rois: [] }))));
+  setup({ feature: "seal" });
+  await new Promise((r) => setTimeout(r, 20));
+  expect(screen.queryByRole("button", { name: "Show step 1 measurements" })).toBeNull();
 });

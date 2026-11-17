@@ -3,7 +3,7 @@ name: current-project
 description: Authoritative snapshot of the current purpose, architecture, capabilities, limitations, and open work; per-version history is in changelog.md
 status: current
 document_type: project-status
-last_updated: 2026-11-06
+last_updated: 2026-11-17
 ---
 
 # Current project
@@ -110,6 +110,7 @@ This section summarises what exists. Each behaviour was added in a numbered vers
 - **Ingest OK / Ingest NG** (v1.141.0): the OK and NG pictures of the last Freeze, read from the frozen version. With no Freeze, or before its first freeze, a pile is empty and the box shows why.
 - **Box** (v1.144.0): one upright rectangle per picture, made from one detector box or two (left and right), measured from the box edge or its centre, with four margins in pixels; with two boxes the rectangle turns with the part and is then squared off. It works only with step-1 detector boxes (not Calculate or Evaluation). Ingest OK and Ingest NG can be drawn into it (v1.147.0); with no line it works on every picture. Its page shows the rectangle and lets the margins be dragged.
 - **Classifier on a Box:** labels come from the piles and are final. It is used to choose goldens: *Suggested goldens* offers labeled pictures nearest the border between the classes, spread by diversity (v1.145.0); *Suggested center* (v1.157.0) offers the density peaks of the pictures in the current view in the ResNet embedding, one pick per look, and follows the view filter. *Mute* takes pictures out of this Classifier only (v1.143.0). Cards say the rectangle's size (v1.150.1).
+- **Step-1 measurements in a step-2 viewer** (v1.164.0, `step_two_measures.py`, `classify/StepOneOverlay.tsx`): the 📐 switch in the picture viewer of a step-2 Classifier draws every step-1 Evaluation over the whole picture: the rule's zone, angle wedge, distance ring or dx / dy band, box B with its centre (point A only for a rule measured from A), green pass, red fail; no numbers and no names. It shows step 1 as it is **now**; ⚠ on the switch says step 1 changed since its last freeze. Not offered over a cutout or a Picture edits output.
 - **Export** (v1.146.0): keeps what the Export box always did (OK and NG inputs from a Classifier's dots, goldens only, product folders) and adds the Box rectangles to the freeze. Exporting a version writes the OK / NG folders and `boxes.csv`; the numbers are frozen with the version, so changing the Box later does not change an exported version.
 
 ### DS export and Models
@@ -335,7 +336,7 @@ The application is a FastAPI backend (`app/backend/`) that wraps the domain modu
 
 All are flat modules in `app/backend/` (see `CLAUDE.md` for the import rule); their versions are in [[changelog]].
 
-- `flow.py`: the Chain graph (boxes, lines, step flag, numbering and `uid`), the detector search with `rotsearch.py`, Calculate and Evaluation values. `lines.py` and `class_lines.py`: what a line carries and which lines are allowed, and the lines into a Classifier's class dots. `anchor.py`: a Classifier anchored to a detector or a Box. `masking.py`: the mask step of Picture edits.
+- `flow.py`: the Chain graph (boxes, lines, step flag, numbering and `uid`), the detector search with `rotsearch.py`, Calculate and Evaluation values. `lines.py` and `class_lines.py`: what a line carries and which lines are allowed, and the lines into a Classifier's class dots. `anchor.py`: a Classifier anchored to a detector or a Box. `step_two_measures.py`: the step-1 Evaluations a step-2 Classifier's viewer draws (v1.164.0). `masking.py`: the mask step of Picture edits.
 - `dedup_box.py`, `dedup_view.py`, `dedup_basis.py`: the Dedup box, what it compares, and the fingerprint that flags changes above it.
 - `piles.py`: Ingest OK / Ingest NG, read from the last Freeze. `box_module.py`: the Box and its rectangles. `export_box.py`: Freeze and Export, including the rectangles stored in a freeze.
 - `ds_export.py` (with `ds_assets.py`): the DS import zip, one camera or a collection. `model_sets.py`: the datasets a model can be built from. `model_store.py` with `api/models_api.py`: saved models, numbered builds, their manifests and the overlap check; schema v11 holds `models`, `model_builds` and `model_build_items`.

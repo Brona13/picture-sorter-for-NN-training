@@ -9,6 +9,7 @@ import { classColor } from "./colors";
 import { MAX_SHORTCUT_CLASSES } from "./Card";
 import { isClearKey } from "./paint";
 import { lastSession } from "../lastSession";
+import StepOneOverlay, { useStepOneMeasures } from "./StepOneOverlay";
 
 interface Props {
   camera: string;
@@ -128,6 +129,9 @@ export default function FrameViewer({ camera, feature, pictureFeature, frames, s
   }
   const outline = boxMode ? boxOutline : roi && showRoi ? (roi.anchored ? (placed && placed.frame === frame && placed.rect ? { ...roi, ...placed.rect } : null) : roi) : null;
   const noAnchor = !!roi?.anchored && placed?.frame === frame && placed.rect === null;
+  // A step-2 Classifier: the step-1 Evaluations drawn over the whole picture (not over a cutout or a Picture edits output).
+  const step1 = useStepOneMeasures(camera, feature, frame, !boxMode && !roi?.input);
+  const measures = step1.measures;
 
   const latest = useRef({ frame, classes, labeling, goldens, deleting, busy, marks, onLabel, onGolden, onDelete, deleted, labelsLocked, onMute });
   latest.current = { frame, classes, labeling, goldens, deleting, busy, marks, onLabel, onGolden, onDelete, deleted, labelsLocked, onMute };
@@ -244,6 +248,18 @@ export default function FrameViewer({ camera, feature, pictureFeature, frames, s
               {showCutout ? "Cutout" : "Whole"}
             </button>
           )}
+          {step1.available && (
+            <button
+              type="button"
+              aria-label="Show step 1 measurements"
+              aria-pressed={step1.on}
+              title={`${step1.on ? "Hide" : "Show"} what the step-1 Evaluations judged on this picture: the zone, angle or band of each rule and box B, green pass, red fail${step1.changed ? ". Step 1 has changed since its last freeze: the drawing shows step 1 as it is now, not as it was frozen" : ""}`}
+              onClick={step1.toggle}
+              style={step1.on ? { background: "rgba(80,160,255,.3)", borderColor: "#4a90e2" } : undefined}
+            >
+              📐{step1.on && step1.changed ? " ⚠" : ""}
+            </button>
+          )}
           {roi && !boxMode && (
             <button
               type="button"
@@ -268,7 +284,7 @@ export default function FrameViewer({ camera, feature, pictureFeature, frames, s
         </>
       }
     >
-      {(width) => <FramePane camera={camera} frame={frame} width={width} outline={outline} imageUrl={boxMode ? boxPictureUrl : pictureUrl} preload={preload} info={boxMissing ? "The detector found no box on this picture" : noAnchor && !boxMode ? `${roi!.short_name}: the detector found no box here, so there is no ROI on this picture` : note?.(frame)} />}
+      {(width) => <FramePane camera={camera} frame={frame} width={width} outline={outline} overlay={measures ? (size) => <StepOneOverlay size={size} measures={measures} /> : undefined} imageUrl={boxMode ? boxPictureUrl : pictureUrl} preload={preload} info={boxMissing ? "The detector found no box on this picture" : noAnchor && !boxMode ? `${roi!.short_name}: the detector found no box here, so there is no ROI on this picture` : note?.(frame)} />}
     </PictureViewer>
   );
 }

@@ -2,6 +2,7 @@ import { ReactNode, useEffect, useState } from "react";
 import { api, CardData, frameThumbUrl } from "../api";
 import ClassifyCard from "../classify/Card";
 import CardGrid from "../classify/CardGrid";
+import NominalButton, { VerdictWord } from "./NominalButton";
 import FramePane from "../classify/FramePane";
 import PictureViewer from "../classify/PictureViewer";
 import { PagerSettings } from "../classify/Pager";
@@ -36,7 +37,8 @@ function stored(): { per_page: number; cols: number } {
 const show = (r: ValueRow, unit: string) => (r.value === null ? "not measured" : `${r.value.toFixed(2)}${unit ? ` ${unit}` : ""}`);
 
 /** What a card (and the viewer) says under the file name instead of the value: a page whose pictures have no value (Ingest) gives its own line. */
-type Info = (row: ValueRow) => ReactNode;
+/** What a picture shows under its card (`where` "card") and in the viewer's toolbar ("viewer"). */
+type Info = (row: ValueRow, where: "card" | "viewer") => ReactNode;
 
 const VERDICT_EDGE: Record<string, string> = { pass: "#3ccf6e", fail: "#ff5b5b" };
 
@@ -55,18 +57,10 @@ function Card({ camera, row, unit, onOpen, onNominal, onCentre, info, thumb }: {
       </button>
       <div title={row.frame} style={{ fontSize: 12, margin: "4px 0", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{row.frame}</div>
       <div style={{ margin: "2px 0", fontSize: 13 }}>
-        {info ? info(row) : <><strong>{show(row, unit)}</strong> {row.verdict && <span className={`flow-verdict ${row.verdict}`}>{row.verdict}</span>}</>}
+        {info ? info(row, "card") : <><strong>{show(row, unit)}</strong> <VerdictWord verdict={row.verdict} /></>}
       </div>
-      {onNominal && (
-        <button type="button" disabled={row.value === null} title="Take this picture's value as the nominal" onClick={onNominal}>
-          Use as nominal
-        </button>
-      )}
-      {onCentre && (
-        <button type="button" disabled={!row.point} title="Take this picture's offset as the nominal of B" onClick={onCentre}>
-          Use as nominal
-        </button>
-      )}
+      {onNominal && <NominalButton disabled={row.value === null} title="Use as nominal: take this picture's value as the nominal" onClick={onNominal} />}
+      {onCentre && <NominalButton disabled={!row.point} title="Use as nominal: take this picture's offset as the nominal of B" onClick={onCentre} />}
     </article>
   );
 }
@@ -76,6 +70,7 @@ export interface ViewerExtras {
   imageUrl?: (frame: string) => string;
   overlay?: (row: ValueRow, size: { w: number; h: number }) => ReactNode;
   /** A line in the viewer's toolbar (what the overlay shows, or why it shows nothing). */
+  /** A grey note after the value; nothing when it gives null. */
   note?: (row: ValueRow) => ReactNode;
   /** The reference point of a picture (picture pixels, point A of the Calculate box); offers the viewer's "Fix reference point" toggle. */
   fixPoint?: (row: ValueRow) => { x: number; y: number } | null;
@@ -133,10 +128,10 @@ function Viewer({ camera, rows, start, unit, onClose, onNominal, onCentre, info,
       hint={`Wheel zooms · drag pans · ← → browse${reference ? " · hold Space: reference picture" : ""} · Esc closes`}
       toolbar={
         <span data-testid="viewer-value" style={{ fontSize: 13 }}>
-          {info ? info(row) : <><strong>{show(row, unit)}</strong> {row.verdict && <span className={`flow-verdict ${row.verdict}`}>{row.verdict}</span>}</>}{" "}
-          {onNominal && row.value !== null && <button type="button" onClick={() => onNominal(row.value!)}>Use as nominal</button>}
-          {onCentre && row.point && <button type="button" onClick={() => onCentre(row)}>Use as nominal</button>}
-          {extras?.note && <span className="muted"> · {extras.note(row)}</span>}
+          {info ? info(row, "viewer") : <><strong>{show(row, unit)}</strong> <VerdictWord verdict={row.verdict} /></>}{" "}
+          {onNominal && row.value !== null && <NominalButton title="Use as nominal: take this picture's value as the nominal" onClick={() => onNominal(row.value!)} />}
+          {onCentre && row.point && <NominalButton title="Use as nominal: take this picture's offset as the nominal of B" onClick={() => onCentre(row)} />}
+          {(() => { const n = extras?.note?.(row); return n ? <span className="muted"> · {n}</span> : null; })()}
           {extras?.fixPoint && (
             <label style={{ marginLeft: 8, whiteSpace: "nowrap" }} title="Keep point A at the same place on screen while browsing; the picture moves under it">
               <input type="checkbox" checked={fixed} onChange={(e) => chooseFixed(e.target.checked)} /> Fix reference point
@@ -244,8 +239,8 @@ export default function ValueGrid({ camera, rows, unit = "", onNominal, onCentre
               onRestore={() => void act(r.frame, (f) => api.restoreFrame(camera, f, r.frame))}
               extra={
                 <>
-                  {onNominal && <button type="button" disabled={r.value === null} title="Take this picture's value as the nominal" onClick={() => onNominal(r.value!)}>Use as nominal</button>}
-                  {onCentre && <button type="button" disabled={!r.point} title="Take this picture's offset as the nominal of B" onClick={() => onCentre(r)}>Use as nominal</button>}
+                  {onNominal && <NominalButton disabled={r.value === null} title="Use as nominal: take this picture's value as the nominal" onClick={() => onNominal(r.value!)} />}
+                  {onCentre && <NominalButton disabled={!r.point} title="Use as nominal: take this picture's offset as the nominal of B" onClick={() => onCentre(r)} />}
                 </>
               }
             />

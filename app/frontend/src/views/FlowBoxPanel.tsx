@@ -501,7 +501,7 @@ function EvaluationOptions({ detail, onUpdate }: { detail: FlowEvaluation; onUpd
           ± Tolerance
           <input type="number" step="any" min={0} key={`t${detail.tolerance}`} defaultValue={detail.tolerance} onBlur={(e) => onUpdate({ tolerance: Number(e.target.value) })} />
         </label>
-        <p className="muted">Type it, click a bar of the histogram, drag the band on it (middle = nominal, edges = tolerance), or use “Use as nominal” on a picture in the list.{detail.wrap ? " 359° and 1° are 2° apart." : ""}</p>
+        <p className="muted">Type it, click a bar of the histogram, drag the band on it (middle = nominal, edges = tolerance), or press the aim button (Use as nominal) on a picture in the list.{detail.wrap ? " 359° and 1° are 2° apart." : ""}</p>
       </PanelSection>
   );
   const zonePanel = (
@@ -538,7 +538,7 @@ function EvaluationOptions({ detail, onUpdate }: { detail: FlowEvaluation; onUpd
           </label>
         </>
       )}
-      <p className="muted">The nominal is where B should lie relative to A. A picture passes when B is inside the zone around the nominal (the edge counts as inside), and the chart and cards show how far B is from the nominal. Type the numbers, click a dot, or use “Use as nominal” on an OK picture; drag the square on the chart to resize the zone.</p>
+      <p className="muted">The nominal is where B should lie relative to A. A picture passes when B is inside the zone around the nominal (the edge counts as inside), and the chart and cards show how far B is from the nominal. Type the numbers, click a dot, or press the aim button (Use as nominal) on an OK picture; drag the square on the chart to resize the zone.</p>
     </PanelSection>
   );
   return (

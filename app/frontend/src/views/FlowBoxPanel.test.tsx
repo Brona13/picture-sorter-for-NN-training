@@ -693,3 +693,34 @@ test("Detector panel: the angle can be limited to ± some degrees, or left to se
   await userEvent.click(screen.getByLabelText("Limit the angle"));
   await waitFor(() => expect(calls.some((c) => c.method === "PUT" && JSON.stringify(c.body) === JSON.stringify({ angle_range: null }))).toBe(true));
 });
+
+test("Evaluation page, zone: a card shows dx, dy and a distance line; the viewer keeps them on one line without the operation note", async () => {
+  const box = (x: number, y: number) => ({ x, y, w: 40, h: 40, angle: 0, score: 0.9, source: "auto" });
+  const zoneDetail = {
+    kind: "evaluation", mode: "zone", zone: { shape: "circle", center: [100, 0], radius: 10, half: [10, 10] }, nominal: null, tolerance: 3, calc: "calc:1", wrap: false, unit: "px",
+    counts: { pass: 1, fail: 1, undetermined: 0 }, histogram: null, features: [],
+  };
+  const calcDetail = { kind: "calc", op: "offset", operations: { offset: "Offset of B from A (dx, dy; judged by a zone)" }, points: ["left", "right"], a: "left", b: "right", clockwise: false, measured: 2, input: "det:1", crops: [] };
+  routes(zoneDetail, (url) => {
+    if (url.includes("/nodes/eval%3A1/values")) {
+      return { values: { "a.png": 5, "b.png": 15 }, verdicts: { "a.png": "pass", "b.png": "fail" }, unit: "px", mode: "zone",
+        points: { "a.png": [103, 4], "b.png": [109, 12] }, deviations: { "a.png": [3, 4], "b.png": [9, 12] } };
+    }
+    if (url.includes("/nodes/det%3A1/boxes")) return { boxes: { "a.png": { left: box(100, 200), right: box(203, 204) }, "b.png": { left: box(100, 200), right: box(209, 212) } }, review: [] };
+    if (url.includes("/nodes/calc%3A1")) return calcDetail;
+    return undefined;
+  });
+  render(<FlowBoxView camera="camA" focus={{ nodeId: "eval:1", onBack: () => {} }} />);
+  const card = await screen.findByTestId("value-card-b.png");
+  expect(card).toHaveTextContent("dx 9.0, dy 12.0 px");
+  expect(within(card).getByTestId("card-distance")).toHaveTextContent("distance 15.0 px");
+  expect(card).not.toHaveTextContent("from nominal");
+  // the least bad picture comes first: sorted by the distance from the nominal
+  expect(screen.getAllByTestId(/^value-card-/).map((c) => c.dataset.testid)).toEqual(["value-card-a.png", "value-card-b.png"]);
+  await userEvent.click(screen.getByRole("button", { name: "Open b.png" }));
+  const value = await screen.findByTestId("viewer-value");
+  await waitFor(() => expect(value).toHaveTextContent("dx 9.0, dy 12.0 px · distance 15.0 px"));
+  expect(value).not.toHaveTextContent("from nominal");
+  expect(value).not.toHaveTextContent("Offset of B");
+  expect(within(value).queryByTestId("card-distance")).toBeNull();
+});

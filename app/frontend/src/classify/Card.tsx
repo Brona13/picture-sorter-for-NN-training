@@ -4,6 +4,7 @@ import { methodTag } from "../methodTags";
 import { classColor, clusterColor } from "./colors";
 import { cursorFor, DELETE_MODE, isClearKey, labelPainter, markPainted } from "./paint";
 import { useGridCard } from "./useGridCard";
+import { zoneDistanceText, zoneOffsetText } from "../zoneText";
 
 interface Props {
   camera: string;
@@ -275,9 +276,14 @@ export default function Card({ camera, feature, pictureFeature, classes, labelin
             style={badge(m.verdict === "pass" ? "#1a7f37" : m.verdict === "fail" ? "#c62828" : "#777")}
           >
             {m.mode === "zone"
-              ? (m.point ? `dx ${m.point[0].toFixed(1)}, dy ${m.point[1].toFixed(1)} px${m.relative ? " from nominal" : ""}` : "not measured")
-              : (m.value === null ? "not measured" : `${m.value.toFixed(1)}${m.unit ? ` ${m.unit}` : ""}`)} · {m.verdict}
+              ? zoneOffsetText(m.point)
+              : (m.value === null ? "not measured" : `${m.value.toFixed(1)}${m.unit ? ` ${m.unit}` : ""}`)}{edgeColor ? "" : ` · ${m.verdict}`/* a pass / fail edge already says it (value grids); the Classify page has no such edge */}
           </span>
+          {m.mode === "zone" && m.relative && m.value !== null && (
+            <div style={{ marginTop: 2 }} data-testid="measure-distance">
+              <span style={badge("#555")} title="How far B lies from the nominal (the centre of the zone)">{zoneDistanceText(m.value)}</span>
+            </div>
+          )}
         </div>
       ))}
 

@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { beforeEach, expect, test } from "vitest";
+import { beforeEach, expect, test, vi } from "vitest";
 import ValueGrid, { ValueRow } from "./ValueGrid";
 
 beforeEach(() => localStorage.clear());
@@ -56,7 +56,8 @@ test("with labeling the cards are Classify cards: class buttons, golden, delete,
     expect(card.style.border).toContain("rgb(60, 207, 110)");
     expect(screen.getByText("a.png").getAttribute("title")).toBe("a.png");
     expect(within(card).getByRole("button", { name: "OK" }).getAttribute("aria-pressed")).toBe("true");
-    expect(within(card).getByText(/pass/)).toBeTruthy(); // the measurement badge carries the verdict
+    expect(within(card).getByTestId("measure-badge")).not.toHaveTextContent("pass"); // the green edge says it; no word on top
+    expect(within(screen.getByTestId("card-c.png")).getByTestId("measure-badge")).toHaveTextContent("undetermined"); // plain edge: the word stays
     fireEvent.click(within(card).getByRole("button", { name: "NG" }));
     await waitFor(() => expect(within(screen.getByTestId("card-a.png")).getByRole("button", { name: "NG" }).getAttribute("aria-pressed")).toBe("true"));
     expect(calls.some((c) => c.includes("/frames/a.png/label") || c.includes("label"))).toBe(true);
@@ -69,4 +70,35 @@ test("without labeling the card keeps the plain look but the name is one line", 
   render(<ValueGrid camera="cam" rows={ROWS} />);
   expect(screen.queryByTestId("card-a.png")).toBeNull();
   expect(screen.getByText("a.png").style.whiteSpace).toBe("nowrap");
+});
+
+test("with labeling, a zone card shows dx, dy on one line and the distance from the nominal on the next, without 'from nominal'", () => {
+  const rows: ValueRow[] = [
+    { frame: "z.png", value: 15, verdict: "fail", point: [109, 12], deviation: [9, 12] },
+    { frame: "n.png", value: null, verdict: "undetermined", point: [109, 12], deviation: null }, // no nominal yet: no distance
+  ];
+  render(<ValueGrid camera="cam" rows={rows} labeling={{ feature: "seal", classes: ["OK", "NG"], marks: {} }} />);
+  const badge = within(screen.getByTestId("card-z.png")).getByTestId("measure-badge");
+  expect(badge).toHaveTextContent("dx 9.0, dy 12.0 px");
+  expect(badge).not.toHaveTextContent("fail");
+  expect(badge).not.toHaveTextContent("from nominal");
+  expect(within(badge).getByTestId("measure-distance")).toHaveTextContent("distance 15.0 px");
+  expect(within(screen.getByTestId("card-n.png")).queryByTestId("measure-distance")).toBeNull();
+});
+
+test("pass and fail are told by the edge only; 'Use as nominal' is a small aim icon on the card and in the viewer", () => {
+  const onNominal = vi.fn();
+  render(<ValueGrid camera="cam" rows={ROWS} onNominal={onNominal} />);
+  const card = screen.getByTestId("value-card-b.png");
+  expect(card).not.toHaveTextContent("fail");
+  expect(screen.getByTestId("value-card-c.png")).toHaveTextContent("undetermined");
+  const aim = within(card).getByRole("button", { name: "Use as nominal" });
+  expect(aim).not.toHaveTextContent("Use as nominal"); // an icon, not words
+  expect(aim.querySelector("svg")).not.toBeNull();
+  fireEvent.click(aim);
+  expect(onNominal).toHaveBeenCalledWith(9.9);
+  fireEvent.click(screen.getByAltText("b.png"));
+  const toolbar = screen.getByTestId("viewer-value");
+  expect(toolbar).not.toHaveTextContent("fail");
+  expect(within(toolbar).getByRole("button", { name: "Use as nominal" }).querySelector("svg")).not.toBeNull();
 });

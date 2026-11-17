@@ -19,6 +19,8 @@ import type { EvalSpec } from "../evalGeometry";
 import ExportWork from "./ExportWork";
 import BoxWork from "./BoxWork";
 import ValueGrid, { ViewerExtras } from "./ValueGrid";
+import { VerdictWord } from "./NominalButton";
+import { zoneDistanceText, zoneOffsetText } from "../zoneText";
 
 const CHART_STORE = "flow.histogram";
 const HEAT_STORE = "flow.heatmap"; // "heat" or "dots": what the zone chart draws
@@ -801,7 +803,9 @@ function ValuesWork(p: {
       note: (row) => {
         const found = foundBoxes[row.frame] ?? {};
         const missing = names.filter((n) => !found[n]);
-        return missing.length ? `not found here: ${missing.join(", ")}` : `${calc.operations[calc.op] ?? calc.op}: ${names[0]} → ${names[1]}`;
+        if (missing.length) return `not found here: ${missing.join(", ")}`;
+        // an Evaluation by a zone draws A, B and the zone over the picture: the operation and point names would only repeat it
+        return evalSpec?.mode === "zone" ? null : `${calc.operations[calc.op] ?? calc.op}: ${names[0]} → ${names[1]}`;
       },
     };
   }, [calc, detectorId, wholePicture, foundBoxes, camera, evalSpec, reference]);
@@ -946,9 +950,17 @@ function ValuesWork(p: {
         thumb={cardThumb}
         onNominal={tolerance && !zoneMode ? (v) => void useAsNominal(v) : undefined}
         onCentre={zoneMode ? (r) => { if (r.point) void setZone({ center: [Math.round(r.point[0] * 10) / 10, Math.round(r.point[1] * 10) / 10] }); } : undefined}
-        info={zoneMode ? (r) => (
-          <><strong>{(r.deviation ?? r.point) ? `dx ${(r.deviation ?? r.point)![0].toFixed(1)}, dy ${(r.deviation ?? r.point)![1].toFixed(1)} px${r.deviation ? " from nominal" : ""}` : "not measured"}</strong> {r.verdict && <span className={`flow-verdict ${r.verdict}`}>{r.verdict}</span>}</>
-        ) : undefined}
+        info={zoneMode ? (r, where) => {
+          // the card gives the distance a line of its own; the viewer keeps everything on one line
+          const distance = r.deviation && r.value !== null ? zoneDistanceText(r.value) : null;
+          return (
+            <>
+              <strong>{zoneOffsetText(r.deviation ?? r.point)}</strong>
+              {distance && where === "viewer" && <strong> · {distance}</strong>} <VerdictWord verdict={r.verdict} />
+              {distance && where === "card" && <div data-testid="card-distance">{distance}</div>}
+            </>
+          );
+        } : undefined}
       />
     </div>
   );

@@ -799,6 +799,21 @@ export interface FlowBox {
   h: number;
   source: "auto" | "human";
 }
+/** One step-1 Evaluation as a step-2 Classifier's viewer draws it on a picture (`step_two_measures.py`): the rule, the
+ * boxes A and B on the whole picture (as stored: the centre pixel's index; null when not found) and the verdict. */
+export interface StepOneMeasure {
+  evaluation: string;
+  mode: "tolerance" | "zone";
+  op: string;
+  clockwise: boolean;
+  zone: FlowZone;
+  nominal: number | null;
+  tolerance: number;
+  unit: string;
+  verdict: "pass" | "fail" | "undetermined";
+  a: FlowBox | null;
+  b: FlowBox | null;
+}
 export interface FlowBoxes {
   boxes: Record<string, Record<string, FlowBox>>;
   review: string[];
@@ -1864,6 +1879,16 @@ export const api = {
   roiRect: (camera: string, feature: string, frame: string) =>
     request<{ anchored: boolean; rect: { x: number; y: number; w: number; h: number } | null; box?: boolean; input?: string | null }>(
       `/cameras/${encodeURIComponent(camera)}/rois/${encodeURIComponent(feature)}/rect?frame=${encodeURIComponent(frame)}`,
+    ),
+  /** Whether a step-2 Classifier's viewer can draw the step-1 measurements, and whether step 1 changed since its freeze. */
+  roiMeasuresSummary: (camera: string, feature: string) =>
+    request<{ available: boolean; evaluations: number; changed: boolean }>(
+      `/cameras/${encodeURIComponent(camera)}/rois/${encodeURIComponent(feature)}/measures`,
+    ),
+  /** The step-1 measurements to draw on one picture of a step-2 Classifier. */
+  roiMeasures: (camera: string, feature: string, frame: string) =>
+    request<{ frame: string; measures: StepOneMeasure[] }>(
+      `/cameras/${encodeURIComponent(camera)}/rois/${encodeURIComponent(feature)}/measures?frame=${encodeURIComponent(frame)}`,
     ),
   setRoiInput: (camera: string, feature: string, box: string) =>
     request<{ feature: string; input: { box: string } }>(`/cameras/${encodeURIComponent(camera)}/rois/${encodeURIComponent(feature)}/input`, send("PUT", { box })),

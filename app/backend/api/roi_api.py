@@ -5,6 +5,7 @@ import anchor
 import region
 import roi_input
 import samples
+import step_two_measures
 import config
 import datamodel
 import db
@@ -272,6 +273,16 @@ def roi_rect(camera: str, feature: str, frame: str) -> dict:
         width, height = picture.size
     placed = engine.resolve_roi_for_frame(camera, feature, labels.hash_map(camera).get(frame, ""), width, height)
     return {"anchored": True, "rect": None if placed is None else {"x": placed.x, "y": placed.y, "w": placed.w, "h": placed.h}, **extra}
+
+
+@router.get("/cameras/{camera}/rois/{feature}/measures")
+def roi_measures(camera: str, feature: str, frame: str | None = None) -> dict:
+    """The step-1 measurements a step-2 Classifier's viewer can draw (``step_two_measures``): without ``frame`` whether it
+    is offered at all, with ``frame`` what to draw on that picture."""
+    require_camera(camera)
+    if frame is None:
+        return step_two_measures.summary(camera, feature)
+    return {"frame": frame, "measures": step_two_measures.frame_measures(camera, feature, frame)}
 
 
 class RegionBody(BaseModel):

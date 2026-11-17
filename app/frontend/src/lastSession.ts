@@ -43,6 +43,9 @@ export const lastSession = {
   /** The full-size viewer of a Dedup box: the cutout of the found box (default) or the whole picture. */
   viewerCutout: () => get("viewer.cutout") !== "0",
   setViewerCutout: (v: boolean) => set("viewer.cutout", v ? "1" : "0"),
+  /** A step-2 Classifier's viewer draws the step-1 measurements over the picture (off until switched on). */
+  viewerMeasures: () => get("viewer.measures") === "1",
+  setViewerMeasures: (v: boolean) => set("viewer.measures", v ? "1" : "0"),
   /** The Dedup sweep chart is open unless collapsed (shared by every box), and its range is kept per camera as JSON. */
   sweepOpen: () => get("dedup.sweepOpen") !== "0",
   setSweepOpen: (v: boolean) => set("dedup.sweepOpen", v ? "1" : "0"),
