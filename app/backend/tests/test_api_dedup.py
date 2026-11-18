@@ -306,6 +306,46 @@ class DedupApiTests(ApiTestCase):
         self._store_projection(self.frames[:-1])  # a frame was added after the projection
         self.assertFalse(self.cached())
 
+    def test_the_map_without_muted_pictures_leaves_them_out_and_lays_out_again(self) -> None:
+        """v1.173.0: the Dedup page maps the pictures it has not muted (Include muted ticked maps them all, as before)."""
+        db.add_dedup_mutes(CAM, FEAT, [(self.frames[0], "h", 0), (self.frames[1], "h", 0)])
+        seen: list[dict] = []
+
+        def recording(frames, matrix, **kw):
+            seen.append({"frames": list(frames), "rows": matrix.shape[0], **kw})
+            return self._fake_project(frames, matrix, **kw)
+
+        with mock.patch.object(scatter, "project", side_effect=recording):
+            job = wait_for_job(self.client, self.client.post(f"{self.base}/scatter", json={"feature": FEAT, "method": "resnet50", "include_muted": False}).json()["id"])
+            self.assertEqual(job["status"], "done", job)
+            self.assertEqual({p["frame"] for p in job["result"]["points"]}, set(self.frames[2:]))
+            self.assertEqual((seen[-1]["feature"], seen[-1]["keep_layout"]), (FEAT + dedup_api.WITHOUT_MUTED, False))
+            job = wait_for_job(self.client, self.client.post(f"{self.base}/scatter", json={"feature": FEAT, "method": "resnet50"}).json()["id"])
+            self.assertEqual(len(job["result"]["points"]), 6)  # included: every live picture, its own cache row
+            self.assertEqual((seen[-1]["feature"], seen[-1]["keep_layout"]), (FEAT, True))
+            self.cluster()  # the held clustering's vectors are reused, with the muted rows left out
+            db.add_dedup_mutes(CAM, FEAT, [(self.frames[5], "h", 0)])
+            job = wait_for_job(self.client, self.client.post(f"{self.base}/scatter", json={"feature": FEAT, "include_muted": False}).json()["id"])
+        self.assertEqual(job["status"], "done", job)
+        self.assertNotIn(self.frames[5], seen[-1]["frames"])
+        self.assertEqual(seen[-1]["rows"], len(seen[-1]["frames"]))
+
+    def test_the_cached_probe_of_the_map_without_muted_wants_exactly_that_set(self) -> None:
+        import json
+
+        db.add_dedup_mutes(CAM, FEAT, [(self.frames[0], "h", 0)])
+        kept = self.frames[1:]
+        db.save_scatter(CAM, FEAT + dedup_api.WITHOUT_MUTED, "umap", "resnet50", scatter.frames_signature(kept), json.dumps({"frames": kept, "xy": [[0.0, 0.0]] * len(kept)}).encode("utf-8"))
+        self.assertTrue(self.cached(include_muted=False))
+        db.add_dedup_mutes(CAM, FEAT, [(self.frames[1], "h", 0)])  # one more muted: the map is laid out again
+        self.assertFalse(self.cached(include_muted=False))
+
+    def test_too_few_unmuted_pictures_say_so(self) -> None:
+        db.add_dedup_mutes(CAM, FEAT, [(f, "h", 0) for f in self.frames[1:]])
+        r = self.client.post(f"{self.base}/scatter", json={"feature": FEAT, "method": "resnet50", "include_muted": False})
+        self.assertEqual(r.status_code, 409)
+        self.assertIn("Include muted", r.json()["detail"])
+
     def test_scatter_cached_probe_rejects_unknown_projection_and_feature(self) -> None:
         self.assertEqual(self.client.get(f"{self.base}/scatter/cached", params={"feature": FEAT, "projection": "pca", "method": "resnet50"}).status_code, 422)
         self.assertEqual(self.client.get(f"{self.base}/scatter/cached", params={"feature": "nope", "projection": "umap", "method": "resnet50"}).status_code, 404)

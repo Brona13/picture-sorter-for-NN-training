@@ -62,3 +62,38 @@ class PrewarmTests(unittest.TestCase):
             for t in threading.enumerate():
                 if t.name == "scatter-prewarm":
                     t.join(5)
+
+
+class KeepLayoutTests(unittest.TestCase):
+    """v1.173.0: the map without muted pictures is laid out again when its set shrinks; the normal map keeps its points."""
+
+    def setUp(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        import config
+
+        self.tmp = tempfile.TemporaryDirectory()
+        self.env = mock.patch.object(config, "DATA_DIR", Path(self.tmp.name))  # the scatter cache lives in a temp database
+        self.env.start()
+
+    def tearDown(self) -> None:
+        self.env.stop()
+        self.tmp.cleanup()
+
+    def test_a_smaller_set_is_projected_again_only_without_keep_layout(self) -> None:
+        frames = [f"f{i}.png" for i in range(8)]
+        m = blobs(8, 16)
+        calls = []
+
+        def fake_umap(matrix, progress=None):
+            calls.append(matrix.shape[0])
+            return np.zeros((matrix.shape[0], 2), dtype=np.float32)
+
+        with mock.patch.object(scatter, "_umap", side_effect=fake_umap):
+            scatter.project(frames, m, camera="c", feature="box", backbone="resnet50")
+            scatter.project(frames[:6], m[:6], camera="c", feature="box", backbone="resnet50")  # kept: no new layout
+            self.assertEqual(calls, [8])
+            scatter.project(frames, m, camera="c", feature="box#without-muted", backbone="resnet50", keep_layout=False)
+            scatter.project(frames[:6], m[:6], camera="c", feature="box#without-muted", backbone="resnet50", keep_layout=False)
+        self.assertEqual(calls, [8, 8, 6])

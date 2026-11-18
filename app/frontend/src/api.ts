@@ -2196,10 +2196,11 @@ export const api = {
     ),
   dedupOutliers: (camera: string, feature: string, method: string, k: number) =>
     request<Job<OutlierResult>>(`/cameras/${encodeURIComponent(camera)}/dedup/outliers`, post({ feature, method, k })),
-  dedupScatterCached: (camera: string, feature: string, projection: string, method: string) =>
+  /** `includeMuted` false maps only the pictures the box has not muted (the Dedup page, v1.173.0); left out, every live picture. */
+  dedupScatterCached: (camera: string, feature: string, projection: string, method: string, includeMuted?: boolean) =>
     request<{ cached: boolean }>(
-      `/cameras/${encodeURIComponent(camera)}/dedup/scatter/cached?feature=${encodeURIComponent(feature)}&projection=${encodeURIComponent(projection)}&method=${encodeURIComponent(method)}`,
+      `/cameras/${encodeURIComponent(camera)}/dedup/scatter/cached?feature=${encodeURIComponent(feature)}&projection=${encodeURIComponent(projection)}&method=${encodeURIComponent(method)}${includeMuted === false ? "&include_muted=false" : ""}`,
     ),
-  dedupScatter: (camera: string, feature: string, projection: string, method: string) =>
-    request<Job<ScatterResult>>(`/cameras/${encodeURIComponent(camera)}/dedup/scatter`, post({ feature, projection, method })),
+  dedupScatter: (camera: string, feature: string, projection: string, method: string, includeMuted?: boolean) =>
+    request<Job<ScatterResult>>(`/cameras/${encodeURIComponent(camera)}/dedup/scatter`, post({ feature, projection, method, ...(includeMuted === undefined ? {} : { include_muted: includeMuted }) })),
 };

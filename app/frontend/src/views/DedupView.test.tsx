@@ -222,10 +222,29 @@ test("scatter is computed on demand, without any clustering, and draws one marke
   await userEvent.click(within(group).getByRole("radio", { name: "tsne" }));
   await userEvent.click(within(group).getByRole("button", { name: "Compute projection" }));
   const svg = await screen.findByRole("img", { name: /2D scatter/ });
-  expect(calls.find((c) => c.url.endsWith("/dedup/scatter"))!.body).toEqual({ feature: "seal", projection: "tsne", method: "resnet50" });
+  expect(calls.find((c) => c.url.endsWith("/dedup/scatter"))!.body).toEqual({ feature: "seal", projection: "tsne", method: "resnet50", include_muted: false });
   expect(calls.some((c) => c.url.endsWith("/dedup/cluster"))).toBe(false);
   expect(within(svg).getByTestId("pt-a.png")).toBeInTheDocument();
   expect(within(svg).getByTestId("pt-f.png").querySelector("title")!.textContent).toContain("golden OK");
+});
+
+test("the map leaves muted pictures out unless Include muted is ticked; one muted after the map leaves it at once", async () => {
+  dbMuted = ["a.png"]; // muted after the (mocked) map was laid out: the backend would leave it out next time
+  render(<DedupView camera="camA" />);
+  const group = await screen.findByTestId("scatter-controls");
+  expect(within(group).getByRole("checkbox", { name: "Include muted" })).not.toBeChecked();
+  await userEvent.click(within(group).getByRole("button", { name: "Compute projection" }));
+  const svg = await screen.findByRole("img", { name: /2D scatter/ });
+  await waitFor(() => expect(within(svg).queryByTestId("pt-a.png")).toBeNull());
+  expect(within(svg).getByTestId("pt-f.png")).toBeInTheDocument();
+  expect(screen.getByTestId("muted-since-map")).toHaveTextContent("1 picture was muted since this map was computed and left it");
+  await userEvent.click(within(group).getByRole("checkbox", { name: "Include muted" }));
+  expect(screen.queryByRole("img", { name: /2D scatter/ })).toBeNull(); // another set of pictures: the old map goes
+  await userEvent.click(within(group).getByRole("button", { name: "Compute projection" }));
+  const all = await screen.findByRole("img", { name: /2D scatter/ });
+  expect(calls.filter((c) => c.url.endsWith("/dedup/scatter")).at(-1)!.body.include_muted).toBe(true);
+  expect(within(all).getByTestId("pt-a.png")).toBeInTheDocument();
+  expect(screen.queryByTestId("muted-since-map")).toBeNull();
 });
 
 async function openScatter() {

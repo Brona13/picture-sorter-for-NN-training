@@ -1,4 +1,4 @@
-import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, CardData, setPictureVersion, DedupParams, DedupResult, DedupState, DedupSweep, DedupSweepRange, OutlierResult } from "../api";
 import DeletedByDay from "../classify/DeletedByDay";
 import PictureGrid, { type GridMute } from "../classify/PictureGrid";
@@ -107,7 +107,16 @@ export default function DedupView({
   const clustering = clusterJob !== null && (cj === null || cj.status === "queued" || cj.status === "running");
   const sj = useJob<DedupSweep>(sweepJob);
   const sweeping = sweepJob !== null && (sj === null || sj.status === "queued" || sj.status === "running");
-  const map = useScatterMap({ camera, feature, method: params?.method ?? "", resetKey: viewRev, onError: setError });
+  // Which pictures this box has muted (loaded further down, where its comment explains it).
+  const [muted, setMuted] = useState<{ box: string; frames: Set<string> }>({ box: "", frames: new Set() });
+  const mutedNow = useRef<Set<string>>(new Set());
+  const boxKey = `${camera}/${feature}`;
+  // v1.173.0: the map leaves the box's muted pictures out and is laid out without them, unless "Include muted" is ticked.
+  const [includeMuted, setIncludeMuted] = useState(false);
+  const mapHide = useMemo(() => (includeMuted || muted.box !== boxKey ? undefined : muted.frames), [includeMuted, muted, boxKey]);
+  const map = useScatterMap({ camera, feature, method: params?.method ?? "", resetKey: viewRev, includeMuted, hide: mapHide, onError: setError });
+  // Pictures muted since the map was computed: they left it at once; the layout follows on the next Compute projection.
+  const mutedSinceMap = !includeMuted && map.scatter ? map.scatter.points.filter((p) => mapHide?.has(p.frame)).length : 0;
   const { scatter, projecting, projection, setProjection } = map;
   useEffect(() => setMarks(result?.marks ?? {}), [result]);
 
@@ -140,9 +149,6 @@ export default function DedupView({
   // Which pictures this box has muted, as the database says: the one answer for Clusters, Outliers and the Scatter (the Grid
   // reads the same list). It is reloaded whenever the box's mute count changes, and changed at once by every M, so a sweep
   // of many cards never works from an older picture of it (`mutedNow` is the latest, `muted` is what renders).
-  const [muted, setMuted] = useState<{ box: string; frames: Set<string> }>({ box: "", frames: new Set() });
-  const mutedNow = useRef<Set<string>>(new Set());
-  const boxKey = `${camera}/${feature}`;
   useEffect(() => {
     if (!camera || !feature) return;
     let stale = false;
@@ -531,6 +537,9 @@ export default function DedupView({
                   </label>
                 ))}
               </fieldset>
+              <label title="Off: the map leaves the pictures this box muted out and is laid out without them. On: every picture, muted ones too.">
+                <input type="checkbox" checked={includeMuted} onChange={(e) => setIncludeMuted(e.target.checked)} /> Include muted
+              </label>
               <label>
                 Colour by
                 <select value={colourBy} onChange={(e) => setColourBy(e.target.value as ColourBy)}>
@@ -684,6 +693,11 @@ export default function DedupView({
           {scatter && (
             <>
               {colourNote && <p role="note" style={{ fontSize: 12 }}>{colourNote}</p>}
+              {mutedSinceMap > 0 && (
+                <p role="note" data-testid="muted-since-map" style={{ fontSize: 12 }}>
+                  {mutedSinceMap} {mutedSinceMap === 1 ? "picture was" : "pictures were"} muted since this map was computed and left it. Press <strong>Compute projection</strong> to lay the map out without {mutedSinceMap === 1 ? "it" : "them"}.
+                </p>
+              )}
               <ScatterMapView
                 camera={camera}
                 feature={act}

@@ -89,6 +89,7 @@ def project(
     method: str = DEFAULT_METHOD,
     use_cache: bool = True,
     progress: ProgressFn | None = None,
+    keep_layout: bool = True,
 ) -> Projection:
     """Reduce ``matrix`` (N, D) to 2D using UMAP or t-SNE, with cache round-trip.
 
@@ -98,6 +99,9 @@ def project(
 
     Small frame sets (N < 4) skip projection and return zeros — projection is
     meaningless below that.
+
+    ``keep_layout`` False always projects again when the set changed, instead of keeping the remaining points where
+    they were (the map without muted pictures, v1.173.0: muting more is meant to lay the map out again).
     """
     if method not in SUPPORTED_METHODS:
         raise ValueError(f"unsupported method {method!r}; use one of {SUPPORTED_METHODS}")
@@ -113,7 +117,7 @@ def project(
                 xy=cached, from_cache=True,
             )
 
-    if use_cache and n >= 4:
+    if use_cache and keep_layout and n >= 4:
         # Frames were removed (soft-deleted) since the cached layout: keep every
         # remaining point where it was instead of re-projecting and reshuffling the map.
         subset = _load_subset(camera, feature, method, backbone, frames)
@@ -300,6 +304,11 @@ def is_cached(camera: str, feature: str, method: str, backbone: str, frames: lis
     ``project`` answers from the cache.
     """
     return bool(frames) and _load_subset(camera, feature, method, backbone, frames) is not None
+
+
+def is_exact_cached(camera: str, feature: str, method: str, backbone: str, frames: list[str]) -> bool:
+    """Whether the cached layout is of exactly these frames (a map that is laid out again whenever its set changes)."""
+    return bool(frames) and _load_cached(camera, feature, method, backbone, frames_signature(frames)) is not None
 
 
 def _load_cached(

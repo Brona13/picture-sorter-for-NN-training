@@ -489,15 +489,34 @@ class ScatterBody(BaseModel):
     projection: str = scatter.DEFAULT_METHOD
     #: Embedding to project; defaults to the one of the held clustering. No clustering is needed.
     method: str | None = None
+    #: False leaves the box's muted pictures out and lays the map out without them (v1.173.0); the Dedup page sends False
+    #: unless "Include muted" is ticked. True (the default) is the map of every live picture, as before.
+    include_muted: bool = True
+
+
+#: The cache row of the map without muted pictures is its own, so switching the tick back and forth costs nothing.
+WITHOUT_MUTED = "#without-muted"
+
+
+def _scatter_frames(camera: str, feature: str, include_muted: bool) -> list[str]:
+    """The pictures the map shows: the live ones, minus the muted ones unless they are included."""
+    live = dedup.live_frames(camera, feature)
+    if include_muted:
+        return live
+    muted = db.muted_frames(camera, feature)
+    return [f for f in live if f not in muted]
 
 
 @router.get("/cameras/{camera}/dedup/scatter/cached")
-def scatter_cached(camera: str, feature: str, projection: str, method: str) -> dict:
+def scatter_cached(camera: str, feature: str, projection: str, method: str, include_muted: bool = True) -> dict:
     """Whether the 2D map for this embedding and projection can be shown at once (nothing to compute)."""
     require_embeddable(camera, feature)
     if projection not in scatter.SUPPORTED_METHODS:
         raise HTTPException(status_code=422, detail=f"Unknown projection: {projection}")
-    return {"cached": scatter.is_cached(camera, feature, projection, method, dedup.live_frames(camera, feature))}
+    frames = _scatter_frames(camera, feature, include_muted)
+    if include_muted:
+        return {"cached": scatter.is_cached(camera, feature, projection, method, frames)}
+    return {"cached": scatter.is_exact_cached(camera, feature + WITHOUT_MUTED, projection, method, frames)}
 
 
 @router.post("/cameras/{camera}/dedup/scatter", status_code=202)
@@ -516,19 +535,22 @@ def run_scatter(camera: str, body: ScatterBody) -> dict:
         raise HTTPException(status_code=422, detail="Choose an embedding to project.")
     if method not in methods_config.active_backbones():
         raise HTTPException(status_code=422, detail=f"Embedding not available (switched off in Configuration?): {method}")
-    if len(dedup.live_frames(camera, body.feature)) < 2:
-        raise HTTPException(status_code=409, detail="Not enough frames to project.")
+    frames = _scatter_frames(camera, body.feature, body.include_muted)
+    if len(frames) < 2:
+        raise HTTPException(status_code=409, detail="Not enough frames to project." + ("" if body.include_muted else " Tick Include muted to map the muted ones too."))
+    keep = set(frames)
     result = held if held is not None and held.method == method else None
 
     def work(report):
         report({"phase": "projecting", "done": 0, "total": 1000})
-        if result is not None:
-            frame_order, matrix = result.frame_order, result.embeddings
+        if result is not None and result.embeddings.size:
+            rows = [i for i, f in enumerate(result.frame_order) if f in keep]  # the held clustering's vectors, muted rows left out
+            frame_order, matrix = [result.frame_order[i] for i in rows], result.embeddings[rows]
         else:
             def progress(done: int, total: int) -> None:
                 report({"phase": "embedding", "done": done, "total": total})
 
-            frame_order, matrix = dedup.fetch_embeddings(camera, body.feature, dedup.live_frames(camera, body.feature), method, progress)
+            frame_order, matrix = dedup.fetch_embeddings(camera, body.feature, frames, method, progress)
         if matrix.shape[0] < 2:
             raise RuntimeError("Not enough frames to project.")
         try:
@@ -536,8 +558,8 @@ def run_scatter(camera: str, body: ScatterBody) -> dict:
                 report({"phase": "projecting", "done": int(share * 1000), "total": 1000})
 
             proj = scatter.project(
-                frame_order, matrix, camera=camera, feature=body.feature,
-                backbone=method, method=body.projection, progress=layout_progress,
+                frame_order, matrix, camera=camera, feature=body.feature if body.include_muted else body.feature + WITHOUT_MUTED,
+                backbone=method, method=body.projection, progress=layout_progress, keep_layout=body.include_muted,
             )
         except ImportError as exc:
             raise RuntimeError(

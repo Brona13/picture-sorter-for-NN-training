@@ -23,6 +23,8 @@ export function useScatterMap({
   method,
   auto = false,
   resetKey = 0,
+  includeMuted,
+  hide,
   onError,
 }: {
   camera: string;
@@ -31,6 +33,10 @@ export function useScatterMap({
   auto?: boolean;
   /** Changes when the pictures behind the map change without the feature changing (a Dedup box got another view). */
   resetKey?: number;
+  /** false: map only the pictures not muted (the Dedup page's "Include muted" off, v1.173.0); undefined: every live picture. */
+  includeMuted?: boolean;
+  /** Pictures to leave off the map at once (muted since it was computed), until it is computed again without them. */
+  hide?: Set<string>;
   onError: (message: string) => void;
 }) {
   const [projection, setProjection] = useState("umap");
@@ -57,15 +63,15 @@ export function useScatterMap({
     setScatter(null);
     setJob(null);
     setCached(null);
-  }, [camera, feature, resetKey]);
+  }, [camera, feature, resetKey, includeMuted]);
   useEffect(() => {
     setScatter((s) => (s && s.method !== method ? null : s));
   }, [method]);
 
   const run = useCallback(() => {
     if (!method) return;
-    api.dedupScatter(camera, feature, projection, method).then((j) => setJob(j.id)).catch((e: unknown) => onError(msg(e)));
-  }, [camera, feature, projection, method, onError]);
+    api.dedupScatter(camera, feature, projection, method, includeMuted).then((j) => setJob(j.id)).catch((e: unknown) => onError(msg(e)));
+  }, [camera, feature, projection, method, includeMuted, onError]);
 
   useEffect(() => {
     if (sj?.status === "done" && sj.result) setScatter(sj.result);
@@ -78,7 +84,7 @@ export function useScatterMap({
     let cancelled = false;
     setCached(null);
     api
-      .dedupScatterCached(camera, feature, projection, method)
+      .dedupScatterCached(camera, feature, projection, method, includeMuted)
       .then((r) => {
         if (cancelled) return;
         setCached(r.cached);
@@ -88,11 +94,11 @@ export function useScatterMap({
     return () => {
       cancelled = true;
     };
-  }, [auto, camera, feature, projection, method]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [auto, camera, feature, projection, method, includeMuted]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const mapPoints = useMemo(
-    () => (scatter ? scatter.points.flatMap((p) => (p.frame in overrides ? (overrides[p.frame] === null ? [] : [{ ...p, ...overrides[p.frame] }]) : [p])) : []),
-    [scatter, overrides],
+    () => (scatter ? scatter.points.flatMap((p) => (hide?.has(p.frame) ? [] : p.frame in overrides ? (overrides[p.frame] === null ? [] : [{ ...p, ...overrides[p.frame] }]) : [p])) : []),
+    [scatter, overrides, hide],
   );
   const progress = (sj?.progress ?? {}) as Record<string, unknown>;
   return { projection, setProjection, scatter, projecting, progress, run, cached, selected, setSelected, overrides, setOverrides, mapPoints, gen: genRef.current.gen };
