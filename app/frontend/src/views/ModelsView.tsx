@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, ApiError, ModelBuild, ModelClass, ModelDatasetInput, ModelDatasets, ModelDetail, ModelFreeze, ModelOverlap, ModelSummary } from "../api";
+import MessageBar from "../MessageBar";
 
 /** One camera's line in the editor: ticked or not, which freeze, and the names and colours (empty = the server's default). */
 interface Row {
@@ -214,7 +215,7 @@ export default function ModelsView() {
       <p className="muted">
         A model combines the frozen step-2 datasets of several cameras (one freeze per camera) into one DS dataset collection. Each build writes a new zip.
       </p>
-      {error && <p role="alert">{error}</p>}
+      <MessageBar kind="error" text={error} onClose={() => setError(null)} />
       <div className="models-layout" style={{ display: "flex", gap: 24, alignItems: "flex-start", flexWrap: "wrap" }}>
         <aside aria-label="Saved models" style={{ minWidth: 200 }}>
           <button type="button" onClick={startNew}>

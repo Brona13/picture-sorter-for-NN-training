@@ -29,6 +29,7 @@ import LogView from "./views/LogView";
 import StatusView from "./views/StatusView";
 import VerdictView from "./views/VerdictView";
 import VersionsView from "./views/VersionsView";
+import MessageBar from "./MessageBar";
 
 /** A camera was deleted or created: the page starts over, so no picture, list or setting of an earlier camera with the
  *  same name can survive in the browser (memory cache of thumbnails, state held by views). The camera to open is
@@ -328,7 +329,7 @@ export default function App() {
         )}
       </header>
       <main className="main">
-        {error && <p role="alert">{error}</p>}
+        <MessageBar kind="error" text={error} onClose={() => setError(null)} />
         {section?.id !== "models" && <StepBar camera={camera} feature={feature} />}
         <Routes>
           <Route path="/" element={<Navigate to={startPage} replace />} />

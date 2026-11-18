@@ -5,7 +5,7 @@ import { createPainter } from "./painter";
  * Painting on the labeling grids: hold a class key (1-9), 0 or X, or Delete, and move the mouse over cards. Each card the
  * pointer enters gets that label, but only when it has none; labeled cards keep their label and goldens never change.
  * With 0 or X, labeled non-golden cards are cleared instead; with Delete, unlabeled non-golden cards are deleted (they
- * fade and stay in place, see `PictureGrid`). Golden has no paint mode. The holding, stroke and cursor logic is the shared
+ * stay in place with a line across, see `PictureGrid`), or, when the stroke began on a deleted card, deleted cards are restored. Golden has no paint mode. The holding, stroke and cursor logic is the shared
  * `painter.ts`; this is only the key map and the look of the cursor. X is the same mode as 0 ("clear").
  */
 export const DELETE_MODE = "delete";
@@ -34,6 +34,19 @@ export const setMuteStroke = (nowMuted: boolean) => labelPainter.setData(nowMute
 export function muteStrokeActs(muted: boolean): boolean {
   if (labelPainter.data() === undefined) labelPainter.setData(muted ? "unmute" : "mute");
   return labelPainter.data() === "mute" ? !muted : muted;
+}
+
+/** The Delete key was pressed on a card: its new state is what the whole stroke does (deleted now = the stroke deletes). */
+export const setDeleteStroke = (nowDeleted: boolean) => labelPainter.setData(nowDeleted ? "delete" : "restore");
+
+/**
+ * Whether a card in this state is changed by the Delete sweep. A stroke that began on a normal card deletes normal cards only
+ * and leaves deleted ones as they are; one that began on a deleted card restores deleted cards only. When the key went down
+ * with the pointer off the cards, the first card entered decides.
+ */
+export function deleteStrokeActs(deleted: boolean): boolean {
+  if (labelPainter.data() === undefined) labelPainter.setData(deleted ? "restore" : "delete");
+  return labelPainter.data() === "delete" ? !deleted : deleted;
 }
 
 /** Whether this key clears a label (0 and X). */

@@ -21,6 +21,7 @@ import BoxWork from "./BoxWork";
 import ValueGrid, { ViewerExtras } from "./ValueGrid";
 import { VerdictWord } from "./NominalButton";
 import { zoneDistanceText, zoneOffsetText } from "../zoneText";
+import MessageBar from "../MessageBar";
 
 const CHART_STORE = "flow.histogram";
 const HEAT_STORE = "flow.heatmap"; // "heat" or "dots": what the zone chart draws
@@ -111,7 +112,7 @@ export default function FlowBoxView({ camera, focus, onOpenClassifier }: { camer
         <p>
           <button type="button" onClick={focus.onBack}>← Back to chain</button>
         </p>
-        {error && <p role="alert">{error}</p>}
+        <MessageBar kind="error" text={error} onClose={() => setError(null)} />
         {detail?.kind === "crop" && <PictureEditsWork camera={camera} nodeId={nodeId} detail={detail} edits={edits} onError={setError} />}
         {detail?.kind === "detector" && <DetectorWork camera={camera} nodeId={nodeId} detail={detail} setDetail={setDetail} version={version} onChanged={changed} onError={setError} />}
         {detail?.kind === "box" && <BoxWork camera={camera} nodeId={nodeId} detail={detail} setDetail={setDetail} onError={setError} />}

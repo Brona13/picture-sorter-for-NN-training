@@ -4,6 +4,7 @@ import CopyButton from "./CopyButton";
 import VerdictBar from "./VerdictBar";
 import VersionResults from "./VersionResults";
 import { versionLabel } from "./versionLabel";
+import MessageBar from "./MessageBar";
 
 const fmt = (ts: number) => new Date(ts * 1000).toISOString().slice(0, 16).replace("T", " ");
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -89,8 +90,8 @@ export default function ProjectVersions({ camera }: { camera: string }) {
         A project version freezes the OK / NG verdict of the pictures you export. The verdict decides the class; by default only the golden pictures are frozen
         and exported. Pictures without a verdict are always left out.
       </p>
-      {error && <p role="alert">{error}</p>}
-      {notice && <p role="status">{notice}</p>}
+      <MessageBar kind="error" text={error} onClose={() => setError(null)} />
+      <MessageBar kind="info" text={notice} onClose={() => setNotice(null)} />
       {s && <VerdictBar summary={s} />}
       {s && attention > 0 && (
         <p data-testid="freeze-warning" style={{ fontSize: 13 }}>

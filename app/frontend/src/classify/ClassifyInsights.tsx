@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, InsightsResponse } from "../api";
 import { methodTag } from "../methodTags";
+import MessageBar from "../MessageBar";
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -53,7 +54,7 @@ export default function ClassifyInsights({
   const mm = method ? data?.matrices[method] : undefined;
   return (
     <div data-testid="classify-insights">
-      {error && <p role="alert">{error}</p>}
+      <MessageBar kind="error" text={error} onClose={() => setError(null)} />
       {data?.reason === "method_off" && hint("ResNet50 is not switched on (Configuration), so there is no matrix.")}
       {data?.reason === "needs_two_golden_classes" && hint(`Needs goldens in both classes (only ${data.goldens_in.join("/") || "none"} has them) and scores.`)}
       {data?.reason === "no_held_out_labels" && hint("No test pictures yet: every labeled picture is a golden.")}

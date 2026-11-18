@@ -13,6 +13,7 @@ import WheelRange from "../WheelRange";
 import { lastSession } from "../lastSession";
 import { useJob } from "../useJob";
 import DedupSweepChart from "./DedupSweepChart";
+import MessageBar from "../MessageBar";
 
 const DEFAULT_SWEEP: DedupSweepRange = { eps_from: 0.005, eps_to: 0.03, eps_step: 0.001, mp_from: 2, mp_to: 4 };
 
@@ -558,8 +559,8 @@ export default function DedupView({
           )}
         </div>
       )}
-      {error && <p role="alert">{error}</p>}
-      {notice && <p role="status">{notice}</p>}
+      <MessageBar kind="error" text={error} onClose={() => setError(null)} />
+      <MessageBar kind="info" text={notice} onClose={() => setNotice(null)} />
 
       {boxesLoaded && features.length === 0 && <p>There is no Dedup box yet. Add one on the Chain (the Dedup tile) and connect it.</p>}
       {st && st.frames === 0 && <p>This Dedup box has no pictures yet: ingest some, or label some for the Classifier it reads.</p>}

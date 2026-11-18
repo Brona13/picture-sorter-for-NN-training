@@ -96,9 +96,9 @@ test("a muted card is faded; a deleted card is not, it has the diagonal line", (
       <Card camera="c" feature="f" classes={["OK"]} methods={[]} card={{ frame: "d", ...base, deleted: true }} busy={false} onLabel={() => {}} onGolden={() => {}} onDelete={() => {}} onRestore={() => {}} />
     </ul>,
   );
-  expect(screen.getByTestId("card-m").querySelector("img")).toHaveStyle({ opacity: "0.4" });
+  expect(screen.getByTestId("card-m")).toHaveStyle({ opacity: "0.5" });
   expect(screen.queryByTestId("deleted-line-m")).toBeNull();
-  expect(screen.getByTestId("card-d").querySelector("img")).toHaveStyle({ opacity: "1" });
+  expect(screen.getByTestId("card-d")).toHaveStyle({ opacity: "1" });
   expect(screen.getByTestId("deleted-line-d")).toBeInTheDocument();
 });
 
@@ -109,7 +109,7 @@ const viewer = (extra: Record<string, unknown>) =>
 
 test("the viewer fades a muted picture", () => {
   viewer({ onMute: () => {}, isMuted: () => true });
-  expect(screen.getByAltText("a.png")).toHaveStyle({ opacity: "0.4" });
+  expect(screen.getByAltText("a.png")).toHaveStyle({ opacity: "0.5" });
   expect(screen.queryByTestId("viewer-deleted-line")).toBeNull();
 });
 

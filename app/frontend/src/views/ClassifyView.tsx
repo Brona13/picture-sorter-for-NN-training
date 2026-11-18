@@ -22,6 +22,7 @@ import CenterPanel from "../classify/CenterPanel";
 import SuggestPanel from "../classify/SuggestPanel";
 import { useJob } from "../useJob";
 import { STEP_TWO_HINT, modeOfStep } from "../classify/stepMode";
+import MessageBar from "../MessageBar";
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const GRID_INFO = (
@@ -453,8 +454,8 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
           {refreshRow}
         </div>
       )}
-      {error && <p role="alert">{error}</p>}
-      {notice && <p role="status">{notice}</p>}
+      <MessageBar kind="error" text={error} onClose={() => setError(null)} />
+      <MessageBar kind="info" text={notice} onClose={() => setNotice(null)} />
 
       {!focus && (
         <label>

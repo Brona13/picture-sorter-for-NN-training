@@ -4,6 +4,7 @@ import { daysOf, inPeriod, Period, timeOf } from "../ingestDays";
 import IngestTable from "./IngestTable";
 import ValueGrid from "./ValueGrid";
 import { useJob } from "../useJob";
+import MessageBar from "../MessageBar";
 
 const PHASE_LABELS: Record<string, string> = {
   scanning: "Scanning folder for images…",
@@ -126,8 +127,8 @@ export default function IngestView({ camera, onBack }: Props) {
           <button type="button" onClick={onBack}>← Back to chain</button>
         </p>
       )}
-      {error && <p role="alert">{error}</p>}
-      {notice && <p role="status">{notice}</p>}
+      <MessageBar kind="error" text={error} onClose={() => setError(null)} />
+      <MessageBar kind="info" text={notice} onClose={() => setNotice(null)} />
       <p className="muted">
         Everything for bringing pictures in. Duplicates are detected by file <strong>content</strong> (not filename), so the same picture is never ingested twice. Source pictures are never changed.
       </p>

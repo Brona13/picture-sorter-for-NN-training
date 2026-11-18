@@ -29,6 +29,7 @@ import { deleteNote, disconnectError, replaceNote, scopeNote, type LineNote } fr
 import { useSharedFeature } from "../SharedFeature";
 import SidePanel from "../SidePanel";
 import { versionLabel } from "../versionLabel";
+import MessageBar from "../MessageBar";
 
 type BoxData = {
   node: ChainNode;
@@ -723,7 +724,7 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
 
   return (
     <SidePanel panel={panel}>
-      {error && <p role="alert">{error}</p>}
+      <MessageBar kind="error" text={error} onClose={() => setError(null)} />
       {lineDialog && (
         <LineConfirm
           notes={lineDialog.notes}

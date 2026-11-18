@@ -3,6 +3,7 @@ import { api, LogPage, LogRecord, TimingRow } from "../api";
 import CopyButton from "../CopyButton";
 import { pageText, recordText } from "./logText";
 import TimingPanel from "./TimingPanel";
+import MessageBar from "../MessageBar";
 
 type Row = LogRecord & { children?: number };
 const LEVELS = ["DEBUG", "INFO", "WARNING", "ERROR"];
@@ -231,7 +232,7 @@ export default function LogView({ camera }: { camera: string }) {
         <button type="button" onClick={reset}>Reset filters</button>
         {rows.length > 0 && <CopyButton text={pageText(rows, expanded, version)} label={`Copy ${rows.length} for Claude`} />}
       </div>
-      {error && <p role="alert">{error}</p>}
+      <MessageBar kind="error" text={error} onClose={() => setError(null)} />
       {!page ? (
         <p>Loading…</p>
       ) : rows.length === 0 ? (

@@ -19,6 +19,7 @@ import { addVertex, defaultShape, MaskShape, ShapeKind } from "../shapeGeometry"
 import { useJob } from "../useJob";
 import { usePreview } from "../usePreview";
 import FilterParams from "./FilterParams";
+import MessageBar from "../MessageBar";
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -574,7 +575,7 @@ export default function DetectorView({ camera, product }: { camera: string; prod
         Detector — {camera}
         {product ? ` › ${product}` : ""}
       </h2>
-      {error && <p role="alert">{error}</p>}
+      <MessageBar kind="error" text={error} onClose={() => setError(null)} />
 
       <div
         style={{

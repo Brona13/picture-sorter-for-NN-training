@@ -54,7 +54,7 @@ test("switching a method back on tells the user to refresh scores", async () => 
   render(<ConfigurationView />);
   await userEvent.click(await screen.findByRole("checkbox", { name: "CPU" }));
   await waitFor(() => expect(puts).toEqual([{ active: ["resnet18", "resnet50", "cpu"] }]));
-  expect(await screen.findByText(/Refresh scores/, { selector: "p[role=status]" })).toBeInTheDocument();
+  expect(await screen.findByText(/Refresh scores/, { selector: "p[role=status] span" })).toBeInTheDocument();
 });
 
 test("the last active method cannot be switched off", async () => {

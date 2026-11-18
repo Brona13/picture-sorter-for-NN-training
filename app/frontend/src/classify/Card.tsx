@@ -2,7 +2,7 @@ import { sampleLabel } from "../samples";
 import { CardData, frameImageUrl, pictureVersionParam } from "../api";
 import { methodTag } from "../methodTags";
 import { classColor, clusterColor } from "./colors";
-import { cursorFor, DELETE_MODE, isClearKey, labelPainter, markPainted, MUTE_MODE, muteStrokeActs, setMuteStroke } from "./paint";
+import { cursorFor, DELETE_MODE, deleteStrokeActs, isClearKey, labelPainter, markPainted, MUTE_MODE, muteStrokeActs, setDeleteStroke, setMuteStroke } from "./paint";
 import { useGridCard } from "./useGridCard";
 import { zoneDistanceText, zoneOffsetText } from "../zoneText";
 
@@ -102,10 +102,19 @@ export default function Card({ camera, feature, pictureFeature, classes, labelin
       const isDeleteKey = e.key === "Delete";
       const clear = isClearKey(e);
       if (!isGoldenKey && !isDeleteKey && !clear && !/^[0-9]$/.test(e.key)) return false;
+      if (isDeleteKey && deleted) {
+        // Delete on a deleted card takes the deletion away again (like M), and the stroke then restores deleted cards only.
+        if (busy || !canRestore) return false;
+        markPainted(frame);
+        setDeleteStroke(false);
+        onRestore();
+        return true;
+      }
       if (busy || deleted || (outside && !isDeleteKey)) return false;
       if (!isGoldenKey) markPainted(frame);
       if (isDeleteKey) {
         if (!deleting) return false;
+        setDeleteStroke(true);
         onDelete();
         return true;
       }
@@ -132,6 +141,18 @@ export default function Card({ camera, feature, pictureFeature, classes, labelin
     // Painting: a class key labels unlabeled cards, 0 / X clear labeled non-golden ones, Delete deletes unlabeled non-golden
     // ones (a labeled picture is deleted by a single press only); a picture outside the ROI keeps its labels, so it is never swept.
     paint: (mode) => {
+      if (mode === DELETE_MODE) {
+        // The first card decides the stroke: it deletes normal cards (never labeled, golden or outside ones) or restores deleted ones.
+        if (busy || !deleteStrokeActs(deleted)) return false;
+        if (deleted) {
+          if (!canRestore) return false;
+          onRestore();
+          return true;
+        }
+        if (!deleting || golden || outside || label !== null) return false;
+        onDelete();
+        return true;
+      }
       if (busy || deleted || golden || outside) return false;
       if (mode === MUTE_MODE) {
         if (!onMute || !muteStrokeActs(muted)) return false;
@@ -139,11 +160,6 @@ export default function Card({ camera, feature, pictureFeature, classes, labelin
         return true;
       }
       if (!labeling && mode !== DELETE_MODE) return false;
-      if (mode === DELETE_MODE) {
-        if (!deleting || label !== null) return false;
-        onDelete();
-        return true;
-      }
       const n = Number(mode);
       if (n >= 1 && (n > MAX_SHORTCUT_CLASSES || classes[n - 1] === undefined)) return false;
       if (n === 0 ? label === null : label !== null) return false;
@@ -164,10 +180,11 @@ export default function Card({ camera, feature, pictureFeature, classes, labelin
         padding: outside || muted ? 5 : assigned ? 4 : edgeColor ? 5 : 6,
         listStyle: "none",
         position: "relative",
+        opacity: muted && !deleted ? 0.5 : 1, // a muted card is faded as a whole (border and buttons too); a deleted one has the line instead
       }}
     >
       {deleted && (
-        // A deleted card stays in place with one diagonal line across it (Restore is on the card); a muted one is faded instead.
+        // A deleted card stays in place with one diagonal line across it (Restore is on the card); a muted one is faded as a whole instead.
         <svg data-testid={`deleted-line-${frame}`} aria-hidden="true" viewBox="0 0 100 100" preserveAspectRatio="none" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none", zIndex: 1 }}>
           <line x1="0" y1="0" x2="100" y2="100" stroke="#d32f2f" strokeWidth="3" vectorEffect="non-scaling-stroke" />
         </svg>
@@ -178,7 +195,7 @@ export default function Card({ camera, feature, pictureFeature, classes, labelin
             src={thumb ? thumb(frame) : thumbUrl(camera, frame, pictureFeature ?? feature)}
             alt={sampleLabel(frame)}
             loading="lazy"
-            style={{ width: "100%", display: "block", borderRadius: 4, opacity: muted && !deleted ? 0.4 : 1 }}
+            style={{ width: "100%", display: "block", borderRadius: 4 }}
           />
         );
         return fullSize ? (

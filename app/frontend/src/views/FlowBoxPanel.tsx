@@ -5,6 +5,7 @@ import { useJob } from "../useJob";
 import type { PictureEdits } from "./pictureEdits";
 import PictureEditsPanel from "./PictureEditsPanel";
 import BoxOptions from "./BoxOptions";
+import MessageBar from "../MessageBar";
 
 /** Signed distance from the nominal; an angle wraps around (359 and 1 degrees are 2 degrees apart). */
 export function deviation(value: number, nominal: number, wrap: boolean): number {
@@ -249,7 +250,7 @@ export default function FlowBoxPanel({ camera, nodeId, detail, onDetail, onChang
 
   return (
     <>
-      {error && <p role="alert">{error}</p>}
+      <MessageBar kind="error" text={error} onClose={() => setError(null)} />
       {detail.kind === "crop" && edits && <PictureEditsPanel edits={edits} />}
       {detail.kind === "detector" && (
         <DetectorOptions

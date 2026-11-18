@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, MethodsConfig } from "../api";
+import MessageBar from "../MessageBar";
 
 /**
  * App-wide settings. For now: which scoring methods take part in the flow. A method that is off is not
@@ -44,8 +45,8 @@ export default function ConfigurationView() {
   return (
     <section>
       <h2>⚙️ Configuration</h2>
-      {error && <p role="alert">{error}</p>}
-      {notice && <p role="status">{notice}</p>}
+      <MessageBar kind="error" text={error} onClose={() => setError(null)} />
+      <MessageBar kind="info" text={notice} onClose={() => setNotice(null)} />
 
       <h3>Scoring methods</h3>
       <p style={{ fontSize: 13 }}>

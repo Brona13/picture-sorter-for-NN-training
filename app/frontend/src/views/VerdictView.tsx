@@ -9,6 +9,7 @@ import { useGridCard } from "../classify/useGridCard";
 import PictureViewer from "../classify/PictureViewer";
 import { useBrowse } from "../classify/useBrowse";
 import VerdictBar from "../VerdictBar";
+import MessageBar from "../MessageBar";
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -299,7 +300,7 @@ export default function VerdictView({ camera }: { camera: string }) {
         verdict is automatic and final. Any mix is a contradiction; decide it here. A decision of yours is marked stale when a label changes later. Deleted pictures
         are left out.
       </p>
-      {error && <p role="alert">{error}</p>}
+      <MessageBar kind="error" text={error} onClose={() => setError(null)} />
       {summary && <VerdictBar summary={summary} />}
       <p>
         <label>

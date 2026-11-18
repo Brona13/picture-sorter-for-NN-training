@@ -135,8 +135,8 @@ export default function FrameViewer({ camera, feature, pictureFeature, frames, s
   const step1 = useStepOneMeasures(camera, feature, frame, !boxMode && !roi?.input);
   const measures = step1.measures;
 
-  const latest = useRef({ frame, classes, labeling, goldens, deleting, busy, marks, onLabel, onGolden, onDelete, deleted, labelsLocked, onMute });
-  latest.current = { frame, classes, labeling, goldens, deleting, busy, marks, onLabel, onGolden, onDelete, deleted, labelsLocked, onMute };
+  const latest = useRef({ frame, classes, labeling, goldens, deleting, busy, marks, onLabel, onGolden, onDelete, deleted, labelsLocked, onMute, onRestore, canRestore });
+  latest.current = { frame, classes, labeling, goldens, deleting, busy, marks, onLabel, onGolden, onDelete, deleted, labelsLocked, onMute, onRestore, canRestore };
   // The label keys: 1-9 label, 0 clear, the key left of 1 golden, Delete deletes (the shell has Esc and the arrows).
   const onKey = (e: KeyboardEvent): boolean => {
     const cur = latest.current;
@@ -149,6 +149,11 @@ export default function FrameViewer({ camera, feature, pictureFeature, frames, s
     const digit = /^[0-9]$/.test(e.key);
     const clear = isClearKey(e);
     if (!isGolden && !isDelete && !digit && !clear) return false;
+    if (isDelete && !e.repeat && !cur.busy && cur.frame && cur.deleted?.(cur.frame)) {
+      // Delete on a deleted frame takes the deletion away again (like M for a mute), where this grid can restore it.
+      if (cur.onRestore && (cur.canRestore ? cur.canRestore(cur.frame) : true)) cur.onRestore(cur.frame);
+      return true;
+    }
     if (e.repeat || cur.busy || !cur.frame || cur.deleted?.(cur.frame)) return true; // a deleted frame takes no label
     if (!isDelete && cur.labelsLocked?.(cur.frame)) return true; // nor does a frame outside the ROI's scope
     if (isDelete ? !cur.deleting : isGolden ? !cur.goldens : !cur.labeling) return true;
@@ -185,7 +190,7 @@ export default function FrameViewer({ camera, feature, pictureFeature, frames, s
       onGo={go}
       onClose={onClose}
       onKey={onKey}
-      hint={`Wheel zooms · drag pans · ← → browse · ${labeling ? "1-9 label · 0 / X clear · " : ""}${goldens ? "` golden · " : ""}${onMute ? "M mutes / unmutes · " : ""}${deleting ? "Delete deletes · " : ""}Esc closes`}
+      hint={`Wheel zooms · drag pans · ← → browse · ${labeling ? "1-9 label · 0 / X clear · " : ""}${goldens ? "` golden · " : ""}${onMute ? "M mutes / unmutes · " : ""}${deleting ? "Delete deletes / restores · " : ""}Esc closes`}
       toolbar={
         <div style={{ flex: 1 }}>
         <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>

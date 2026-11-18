@@ -4,6 +4,7 @@ import { api, VersionInfo, VersionsResponse, VisionSnapshot } from "../api";
 import ProjectVersions from "../ProjectVersions";
 import VersionResults from "../VersionResults";
 import { versionLabel } from "../versionLabel";
+import MessageBar from "../MessageBar";
 
 const fmt = (ts: number) => new Date(ts * 1000).toISOString().slice(0, 16).replace("T", " ");
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -135,8 +136,8 @@ export default function VersionsView({ camera, product }: { camera: string; prod
         Versions — {camera}
         {product ? ` › ${product}` : ""}
       </h2>
-      {error && <p role="alert">{error}</p>}
-      {notice && <p role="status">{notice}</p>}
+      <MessageBar kind="error" text={error} onClose={() => setError(null)} />
+      <MessageBar kind="info" text={notice} onClose={() => setNotice(null)} />
       <ProjectVersions camera={camera} />
       <h3>ROI versions</h3>
       <p style={{ fontSize: 13 }}>

@@ -10,6 +10,7 @@ import RoiCanvas from "../RoiCanvas";
 import { FIT_VIEW, View } from "../zoomGeometry";
 import { Box, round4, roundBox, sameBox } from "../roiGeometry";
 import { versionLabel } from "../versionLabel";
+import MessageBar from "../MessageBar";
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const NUM_FIELDS: (keyof Box)[] = ["x", "y", "w", "h"];
@@ -193,8 +194,8 @@ export default function RoiEditorView({ camera, product, focus }: { camera: stri
           {target && <small>{chip(target)}</small>}
         </p>
       )}
-      {error && <p role="alert">{error}</p>}
-      {notice && <p role="status">{notice}</p>}
+      <MessageBar kind="error" text={error} onClose={() => setError(null)} />
+      <MessageBar kind="info" text={notice} onClose={() => setNotice(null)} />
       {focus && data && !target && <p role="alert">This ROI no longer exists. Go back to the chain.</p>}
 
       {focus ? null : product ? (

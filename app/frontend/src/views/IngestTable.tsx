@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, IngestOverviewFrame } from "../api";
 import { allKeys, buildMatrix, cellKey, columnKeys, effects, rowKeys, toggleGroup } from "../ingestTable";
+import MessageBar from "../MessageBar";
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -68,8 +69,8 @@ export default function IngestTable({ camera, revision, onChanged }: { camera: s
 
   return (
     <div className="ingest-table" data-testid="ingest-table">
-      {error && <p role="alert">{error}</p>}
-      {notice && <p role="status">{notice}</p>}
+      <MessageBar kind="error" text={error} onClose={() => setError(null)} />
+      <MessageBar kind="info" text={notice} onClose={() => setNotice(null)} />
       <div className="table-scroll">
         <table>
           <thead>

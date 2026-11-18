@@ -3,6 +3,7 @@ import { usePublishFeature, useSharedFeature } from "../SharedFeature";
 import { api, MotionAnalysis, MotionAxis, MotionRanges, MotionSettings, MotionState } from "../api";
 import Histogram from "../classify/Histogram";
 import { useJob } from "../useJob";
+import MessageBar from "../MessageBar";
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const AXES = [
@@ -144,8 +145,8 @@ export default function AugmentationView({ camera, product }: { camera: string; 
         Augmentation ranges — {camera}
         {product ? ` › ${product}` : ""}
       </h2>
-      {error && <p role="alert">{error}</p>}
-      {notice && <p role="status">{notice}</p>}
+      <MessageBar kind="error" text={error} onClose={() => setError(null)} />
+      <MessageBar kind="info" text={notice} onClose={() => setNotice(null)} />
       <p style={{ fontSize: 13 }}>
         How far does the object move between frames of this ROI? Every frame is compared with a reference frame and the shift (and, if you ask for it, the rotation) is
         measured. The central part of the distribution is suggested as a range; you edit it and save it, and it is frozen with the version for the training side. Nothing here

@@ -7,6 +7,7 @@ import { FIT_VIEW, View } from "../zoomGeometry";
 import { DEFAULT_HALF_WIDTH, Line } from "../lineGeometry";
 import { useJob } from "../useJob";
 import { usePreview } from "../usePreview";
+import MessageBar from "../MessageBar";
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const PREVIEW_DEBOUNCE_MS = 200;
@@ -174,8 +175,8 @@ export default function EdgeAngleView({ camera, product }: { camera: string; pro
         Edge angle — {camera}
         {product ? ` › ${product}` : ""}
       </h2>
-      {error && <p role="alert">{error}</p>}
-      {notice && <p role="status">{notice}</p>}
+      <MessageBar kind="error" text={error} onClose={() => setError(null)} />
+      <MessageBar kind="info" text={notice} onClose={() => setNotice(null)} />
       <p style={{ fontSize: 13 }}>
         A rule-based check: only the angle and direction you set count as OK. Draw a line along the edge, size the band, and look at the live
         measurement on the right. Direction comes from which side of the edge is brighter, not from the order of your clicks.

@@ -130,7 +130,7 @@ export default function FramePane({ camera, frame, width, outline, state, info, 
           alt={shown.frame}
           draggable={false}
           onLoad={(e) => { setSize({ w: e.currentTarget.naturalWidth || 4, h: e.currentTarget.naturalHeight || 3 }); setLoaded(shown.frame); }}
-          style={{ width: "100%", height: "100%", display: "block", opacity: state === "muted" ? 0.4 : 1 }}
+          style={{ width: "100%", height: "100%", display: "block", opacity: state === "muted" ? 0.5 : 1 }}
         />
       )}
       {showAlt && compare ? compare.overlay?.(altSize) : overlay?.(size)}
