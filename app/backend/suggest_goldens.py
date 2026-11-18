@@ -9,6 +9,8 @@ Pure logic, no UI. See ``plans/curation-loop-enhancements.md`` (Phase 4).
 """
 from __future__ import annotations
 
+import hashlib
+
 import numpy as np
 
 import dedup
@@ -179,16 +181,24 @@ def center(
     count = len(kept)
     if count < 3:
         return []
+    by_frame = {r.frame: r for r in items}
+    golden = {f for frames in gold.values() for f in frames}
+    return [by_frame[kept[i]] for i in peaks(kept, matrix, n, golden)]
+
+
+def peaks(kept: list[str], matrix: np.ndarray, n: int, golden: set[str]) -> list[int]:
+    """The row indexes of the density peaks (main crowd first), without the ``golden`` frames: the core of ``center`` over any set of
+    frames and their unit-norm embedding. A tie in density is broken by the wider similarity and finally by a hash of the file name, so
+    the order of the files never decides."""
+    count = len(kept)
     k = _neighbour_k(count)
     dens = density(matrix, k)
     # Equal densities (to 5 decimals) are ordered by the mean similarity to the nearest three quarters of the view: central, and still
-    # blind to the farthest quarter, so outliers cannot pull it. File order never decides.
+    # blind to the farthest quarter, so outliers cannot pull it.
     wide = density(matrix, max(k, int(0.75 * (count - 1))))
-    order = np.lexsort((-wide, -np.round(dens, 5)))
+    names = np.array([int.from_bytes(hashlib.sha1(f.encode("utf-8")).digest()[:6], "big") for f in kept], dtype=np.int64)
+    order = np.lexsort((names, -np.round(wide, 5), -np.round(dens, 5)))
     rank = np.empty(count, dtype=np.int64)
     rank[order] = np.arange(count)
     gamma = dens * peak_distance(matrix, rank)
-    by_frame = {r.frame: r for r in items}
-    golden = {f for frames in gold.values() for f in frames}
-    chosen = [int(i) for i in np.lexsort((rank, -np.round(gamma, 6))) if kept[int(i)] not in golden][:n]
-    return [by_frame[kept[i]] for i in chosen]
+    return [int(i) for i in np.lexsort((rank, -np.round(gamma, 6))) if kept[int(i)] not in golden][:n]

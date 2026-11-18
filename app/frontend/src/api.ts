@@ -1227,6 +1227,26 @@ export interface SuggestResponse {
   picks: { frame: string; label?: string | null; bars: CardData["bars"] }[];
 }
 
+/** Start goldens (`GET /classify/start-goldens`): the first goldens of one class from the embeddings alone. */
+export type StartMethod = "facility" | "medoid" | "density" | "cluster" | "farthest" | "boundary";
+export interface StartGoldensResponse {
+  available: boolean;
+  backbone: string | null;
+  cls: string;
+  method: StartMethod;
+  /** Pictures of the class the suggestion was made among. */
+  count: number;
+  picks: { frame: string; label: string }[];
+  /** Share (0..1) of the class within `radius` of a golden after 1, 2, ... picks. */
+  coverage: number[];
+  suggested: number;
+  radius: number;
+  left_out: number;
+  /** Boundary picks: also the likeliest mislabels. */
+  risky: boolean;
+  n_max: number;
+}
+
 /** The centers of the pictures in view (`GET /classify/center`): density peaks in the embedding, the main crowd's first. */
 export interface CenterResponse {
   available: boolean;
@@ -2068,6 +2088,10 @@ export const api = {
     request<SuggestResponse>(`/cameras/${encodeURIComponent(camera)}/classify/suggest?${gridParams(q, { n })}`),
   suggestCenter: (camera: string, q: GridQuery, n: number) =>
     request<CenterResponse>(`/cameras/${encodeURIComponent(camera)}/classify/center?${gridParams(q, { n })}`),
+  startGoldens: (camera: string, feature: string, cls: string, method: StartMethod, n: number) =>
+    request<StartGoldensResponse>(
+      `/cameras/${encodeURIComponent(camera)}/classify/start-goldens?feature=${encodeURIComponent(feature)}&cls=${encodeURIComponent(cls)}&method=${method}&n=${n}`,
+    ),
   promote: (camera: string, feature: string, frame: string, cls: string) =>
     request<CardUpdate>(`/cameras/${encodeURIComponent(camera)}/classify/promote`, post({ feature, frame, cls })),
   insights: (camera: string, feature: string) =>

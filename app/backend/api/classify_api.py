@@ -18,6 +18,7 @@ import engine
 import export_box
 import labels
 import picture_key
+import golden_start
 import suggest_goldens as suggest_goldens_mod
 from api import dedup_api, jobs
 from api.cameras import require_feature
@@ -860,6 +861,24 @@ def suggest_center(camera: str, q: QueryParams, n: int = 3) -> dict:
         "available": bool(picks),
         "picks": [{"frame": fs.frame, "label": ctx.lab.get(fs.frame)} for fs in picks],
     }
+
+
+@router.get("/cameras/{camera}/classify/start-goldens")
+def start_goldens(camera: str, feature: str, cls: str, method: str = golden_start.DEFAULT_METHOD, n: int = 3) -> dict:
+    """Start goldens: the first goldens of one class, from the embeddings alone (no scores, no golden needed). Computed on the class's own
+    pictures (Box rectangle in a step-2 Classifier), never changes a label; the human promotes the picks."""
+    require_feature(camera, feature)
+    if method not in golden_start.METHODS:
+        raise HTTPException(status_code=422, detail=f"Unknown method: {method}")
+    if not 1 <= n <= golden_start.N_MAX:
+        raise HTTPException(status_code=422, detail="n is out of range.")
+    if cls not in datamodel.classes_for(camera, feature):
+        raise HTTPException(status_code=422, detail=f"Unknown class: {cls}")
+    lab = labels.current_labels(camera, feature)
+    gold = labels.current_goldens(camera, feature)
+    hidden = db.muted_frames(camera, feature)
+    backbone = suggest_goldens_mod._diversity_backbone()
+    return golden_start.suggest(camera, feature, cls, lab, gold, hidden, method, n, backbone)
 
 
 @router.post("/cameras/{camera}/classify/promote")

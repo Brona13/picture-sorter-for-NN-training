@@ -19,6 +19,7 @@ import DeletedByDay from "../classify/DeletedByDay";
 import { ProductRow, SearchNote, ShowAgain, showsProductRow } from "../classify/SearchExtras";
 import SidePanel, { PanelSection } from "../SidePanel";
 import CenterPanel from "../classify/CenterPanel";
+import StartGoldensPanel from "../classify/StartGoldensPanel";
 import SuggestPanel from "../classify/SuggestPanel";
 import { useJob } from "../useJob";
 import { STEP_TWO_HINT, modeOfStep } from "../classify/stepMode";
@@ -55,6 +56,13 @@ export interface ClassifyFocus {
   feature: string;
   onBack: () => void;
 }
+
+const START_INFO = (
+  <>
+    Picks for the <strong>first goldens</strong> of a class, from the pictures' look alone (Box rectangle, ResNet): no golden and no score is needed,
+    and no label changes. You decide: each pick has a Make golden button.
+  </>
+);
 
 export default function ClassifyView({ camera, product, focus }: { camera: string; product?: string; focus?: ClassifyFocus }) {
   const [features, setFeatures] = useState<{ feature: string; label: string }[]>([]);
@@ -339,6 +347,25 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
   // The Grid view's properties live in the options panel, like the Dedup pages' tools: which pictures it lists and in what
   // order, and the tools that label, clear or auto-assign many pictures at once. (Scatter and Outliers put theirs there
   // themselves, through `PanelPortal`.) The suggested goldens stay in the page: they are a list of pictures.
+  // Start goldens: the first goldens of each class of a step-2 Classifier, available before any golden or score exists.
+  const startPanel =
+    st?.step === 2 && stepMode.goldens ? (
+      <PanelSection title="Start goldens" info={START_INFO} testId="start-goldens-region">
+        <StartGoldensPanel
+          camera={camera}
+          feature={feature}
+          classes={classes}
+          revision={revision}
+          onError={setError}
+          onPromoted={(frame, cls, c) => {
+            setNotice(`Promoted ${frame} → ⭐ ${cls}`);
+            setSt((s) => (s ? { ...s, counts: c } : s));
+            bump();
+          }}
+        />
+      </PanelSection>
+    ) : null;
+
   const gridPanel =
     mode === "grid" && st && st.has_results ? (
       <PanelSection title="Grid" info={GRID_INFO} testId="grid-controls">
@@ -442,7 +469,7 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
         Classify — {camera}
         {focus ? ` › ${focusName}` : product ? ` › ${product}` : ""}
       </h2>
-      <SidePanel panel={<>{matrixPanel}{gridPanel}</>} wide>
+      <SidePanel panel={<>{matrixPanel}{startPanel}{gridPanel}</>} wide>
       {focus && (
         // Locked to one ROI: the way back and the three views are all navigation, so they share one line.
         <div style={navRow}>
@@ -540,7 +567,7 @@ export default function ClassifyView({ camera, product, focus }: { camera: strin
             </p>
           )}
 
-          {st.scored && !search && stepMode.goldens && (
+          {st.scored && !search && stepMode.goldens && st.step !== 2 && (
             <CenterPanel
               camera={camera}
               query={query}

@@ -3,7 +3,7 @@ name: MEMORY
 description: Portable index of project memory files
 status: current
 document_type: index
-last_updated: 2026-11-16
+last_updated: 2026-11-18
 ---
 
 # Project Memory Index
@@ -60,3 +60,4 @@ Portable memory for the *Picture Sorter for NN Training* project. Kept inside th
 - [Session 2026-10-18: Chain page and Classify, 1.51.0-1.63.2](2026-10-18-chain-canvas-and-classify-session.md) — what was built per version, the rules agreed with the user (derived chain, locked pages, live numbers, search, sweeps, fade-and-stay, product rename), what is unverified in a browser, what is next, how to work with this user.
 - [Chain canvas v1, 1.51.0 (2026-10-18)](chain-canvas-v1.md) — Chain page: boxes = Ingest + ROI instances, arrows derived from ROIs (one handle per product), layout in `chain.canvas`; not clicked through in a browser; Merge box / detector boxes / run-all parked.
 - [TODO: anchor input dot on Classifiers](todo-anchor-input-dot.md) — separate anchor dot (detector position vs. product frames), upstream-only Anchor list, remaining Chain line gaps; discussion paused 2026-10-26.
+- [Session 2026-11-18: Start goldens](2026-11-18-start-goldens-session.md) — v1.168.0: per-class first-golden helper for step 2 (facility location default, medoid, density, cluster, farthest, boundary), coverage curve, human promotes; unverified on real pictures
