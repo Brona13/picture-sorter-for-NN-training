@@ -37,3 +37,4 @@ Then v1.170.0 (pair map on the detector page with the Calculate + Evaluation log
 Then v1.171.0 (needs-attention-first order with card reasons on the detector page) committed and pushed. Next: phase 4 (extra views: match score, box angle, box size) of `plans/detector-review-views.md`.
 Then v1.172.0 (box values: match score threshold + angle band, joining Outside and the attention order) committed and pushed. All four phases of `plans/detector-review-views.md` are built; only the deferred items (overlap view, cutout similarity, drift over time) remain.
 Then v1.173.0 (Dedup Scatter leaves muted pictures out and lays out again; "Include muted" tick, off by default) committed and pushed. Still open: guided `drone` mixed-product test; trying the detector review on real pictures before deciding on cutout similarity.
+Session saved 2026-11-18 (`memory/2026-11-18-detector-review-and-scatter-session.md`) and pushed with the memory notes.
