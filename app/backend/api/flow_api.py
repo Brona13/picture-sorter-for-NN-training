@@ -44,10 +44,12 @@ class EdgeBody(BaseModel):
 class TargetBody(BaseModel):
     name: str
     inside: str | None = None  # a cascaded detector: the input detector's target whose box this one searches in
+    inside_from: str | None = None  # an upstream detector (not the one wired in) whose target `inside` names
 
 
 class TargetInsideBody(BaseModel):
     inside: str | None = None
+    inside_from: str | None = None
 
 
 class TargetOutputsBody(BaseModel):
@@ -145,7 +147,7 @@ def remove_edge(camera: str, body: EdgeBody) -> dict:
 @router.post("/cameras/{camera}/flow/nodes/{node_id}/targets", status_code=201)
 def add_target(camera: str, node_id: str, body: TargetBody) -> dict:
     _known(camera, node_id)
-    _guard(flow.add_target, camera, node_id, body.name, body.inside)
+    _guard(flow.add_target, camera, node_id, body.name, body.inside, body.inside_from)
     return flow.node_detail(camera, node_id)
 
 
@@ -153,7 +155,7 @@ def add_target(camera: str, node_id: str, body: TargetBody) -> dict:
 def set_target(camera: str, node_id: str, name: str, body: TargetInsideBody) -> dict:
     """Change which target of the input detector this target searches inside."""
     _known(camera, node_id)
-    _guard(flow.set_target_inside, camera, node_id, name, body.inside)
+    _guard(flow.set_target_inside, camera, node_id, name, body.inside, body.inside_from)
     return flow.node_detail(camera, node_id)
 
 
@@ -181,7 +183,7 @@ def set_target_count(camera: str, node_id: str, name: str, body: TargetCountBody
 def remove_target(camera: str, node_id: str, name: str) -> dict:
     _known(camera, node_id)
     entry = flow.target_of(flow.load_graph(camera)["nodes"][node_id], name)
-    flow.remove_target(camera, node_id, name)
+    _guard(flow.remove_target, camera, node_id, name)
     for slot in (flow.slot_names(entry) if entry else [name]):
         anchor.drop_for_detector(camera, node_id, slot)
     return flow.node_detail(camera, node_id)

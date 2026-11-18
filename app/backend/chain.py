@@ -417,6 +417,12 @@ def _canvas(camera: str) -> dict:
                 "id": f"{e['source']}->{e['target']}" + (f"#{point}" if point else ""),
                 "source": e["source"], "source_handle": f"t:{point}" if point else None, "target": e["target"], "locked": False,
             })
+    for node_id, node in graph["nodes"].items():  # a target that searches inside an upstream detector's box: a dashed hint line (never drawn by hand, never deleted by hand)
+        for t in node.get("targets", []) if node.get("kind") == "detector" else []:
+            src = t.get("inside_from")
+            if src and src in known and node_id in known:
+                edges.append({"id": f"{src}~>{node_id}#{t['name']}", "source": src, "source_handle": f"t:{t['inside']}", "target": node_id,
+                              "locked": True, "kind": "inside", "label": f"{t['name']} searches inside {t['inside']}"})
     for roi in rois:  # a detector-anchored ROI hangs from the detector too (the arrow is stored in the anchor)
         spec = anchor.get_anchor(camera, roi.name)
         if spec and spec["detector"] in known:

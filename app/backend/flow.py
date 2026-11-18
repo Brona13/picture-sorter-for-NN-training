@@ -979,6 +979,10 @@ def delete_node(camera: str, node_id: str) -> None:
     del graph["nodes"][node_id]
     graph["edges"] = [e for e in graph["edges"] if node_id not in (e["source"], e["target"])]
     for other in graph["nodes"].values():  # a box that read a dot of the deleted Evaluation reads the whole camera again
+        for t in other.get("targets", []) if other.get("kind") == "detector" else []:
+            if t.get("inside_from") == node_id:  # a target that searched inside the deleted detector searches the whole picture again
+                t["inside"] = None
+                t.pop("inside_from", None)
         if isinstance(other.get("source"), dict) and other["source"].get("box") == node_id:
             other["source"] = None
         if other.get("kind") == "export":  # an Export box loses the lines that came from the deleted box
@@ -1428,15 +1432,56 @@ def parent_target_names(graph: dict, node_id: str) -> list[str]:
     return all_slots(graph["nodes"][parent], with_examples=True)
 
 
-def _clean_inside(graph: dict, node_id: str, inside: object) -> str | None:
-    """``inside`` is the input detector's target a cascaded target searches in; None outside a cascade or for "same name"."""
+def search_sources(graph: dict, node_id: str) -> list[dict]:
+    """The detectors upstream of this one (not the one wired straight into it, which is the cascade) whose found boxes a target
+    here can search inside (v1.167.0): every detector that feeds this one however far up (through Dedup, Calculate, Evaluation
+    ... boxes), and only when both work on the same picture (no Picture edits step between them, so a box found there lies
+    at the same place here). Each is ``{"detector", "slots"}`` with the slots of its targets that have examples."""
+    parent = parent_of(graph, node_id)
+    mine = input_rects(graph, node_id)
+    out = []
+    for up in sorted(_upstream_ids(graph, node_id)):
+        if up == parent or up == node_id or kind_of(up) != "detector" or up not in graph["nodes"]:
+            continue
+        slots = all_slots(graph["nodes"][up], with_examples=True)
+        if slots and input_rects(graph, up) == mine:
+            out.append({"detector": up, "slots": slots})
+    return out
+
+
+def _clean_inside(graph: dict, node_id: str, inside: object, inside_from: object = None) -> tuple[str | None, str | None]:
+    """``(inside, inside_from)``: the target slot a target searches in, and the upstream detector it belongs to (None: the
+    detector wired straight into this one, the cascade). Both None: the whole picture is searched."""
+    if inside_from in (None, "") or inside_from == parent_of(graph, node_id):
+        inside_from = None
     if inside in (None, ""):
-        return None
+        if inside_from:
+            raise FlowError("Choose which target of that detector to search inside.")
+        return None, None
+    if inside_from:
+        source = next((x for x in search_sources(graph, node_id) if x["detector"] == inside_from), None)
+        if source is None:
+            raise FlowError(f"{inside_from} is not a detector upstream of this one on the same picture (a Picture edits step in between makes the boxes lie elsewhere).")
+        if inside not in source["slots"]:
+            raise FlowError(f"{inside_from} has no target named {inside}.")
+        return str(inside), str(inside_from)
     names = parent_target_names(graph, node_id)
     if inside not in names:
         raise FlowError("A target can only search inside a target of the detector before this one." if not names
                         else f"The detector before this one has no target named {inside}.")
-    return str(inside)
+    return str(inside), None
+
+
+def _search_detector(graph: dict, node_id: str, target: dict) -> str | None:
+    """The detector whose boxes this target searches inside: the one it was told to use (if still upstream), else the
+    detector wired straight into this one, else None (the whole picture)."""
+    chosen = target.get("inside_from")
+    if chosen:
+        if not any(x["detector"] == chosen for x in search_sources(graph, node_id)):
+            raise FlowError(f"{target['name']} searches inside {chosen}, which is no longer upstream of this detector on the same picture. Choose another target to search inside.")
+        return str(chosen)
+    parent = parent_of(graph, node_id)
+    return parent if parent and kind_of(parent) == "detector" else None
 
 
 def inside_of(target: dict, line_point: str | None = None) -> str:
@@ -1460,7 +1505,7 @@ def input_line_point(graph: dict, node_id: str) -> str | None:
     return None
 
 
-def add_target(camera: str, node_id: str, name: str, inside: str | None = None) -> None:
+def add_target(camera: str, node_id: str, name: str, inside: str | None = None, inside_from: str | None = None) -> None:
     graph = load_graph(camera)
     node = _node(graph, node_id)
     if node["kind"] != "detector":
@@ -1470,7 +1515,8 @@ def add_target(camera: str, node_id: str, name: str, inside: str | None = None) 
         raise FlowError(f"There is already a target named {name}.")
     if len(node["targets"]) >= MAX_TARGETS:
         raise FlowError(f"A detector can have at most {MAX_TARGETS} targets.")
-    node["targets"].append({"name": name, "examples": [], "inside": _clean_inside(graph, node_id, inside), "outputs": list(DEFAULT_OUTPUTS)})
+    inside, inside_from = _clean_inside(graph, node_id, inside, inside_from)
+    node["targets"].append({"name": name, "examples": [], "inside": inside, **({"inside_from": inside_from} if inside_from else {}), "outputs": list(DEFAULT_OUTPUTS)})
     save_graph(camera, graph)
 
 
@@ -1542,7 +1588,9 @@ def set_target_count(camera: str, node_id: str, name: str, count: object) -> Non
     used = set(slot_names(entry)) | {name}
     users = sorted({e["target"] for e in graph["edges"] if e["source"] == node_id and e.get("point") in used}
                    | {n for n, other in graph["nodes"].items() if other.get("kind") == "detector" and parent_of(graph, n) == node_id
-                      and any(t.get("inside") in used for t in other.get("targets", []))})
+                      and any(t.get("inside") in used and not t.get("inside_from") for t in other.get("targets", []))}
+                   | {n for n, other in graph["nodes"].items() if other.get("kind") == "detector"
+                      and any(t.get("inside_from") == node_id and t.get("inside") in used for t in other.get("targets", []))})
     if users:
         raise FlowError(f"{', '.join(users)} use {name}. Delete those lines (or change what they search inside) first.")
     import anchor  # noqa: PLC0415
@@ -1555,20 +1603,30 @@ def set_target_count(camera: str, node_id: str, name: str, count: object) -> Non
     save_graph(camera, graph)
 
 
-def set_target_inside(camera: str, node_id: str, name: str, inside: str | None) -> None:
-    """Change which target of the input detector this target searches inside (the detector then needs a new run)."""
+def set_target_inside(camera: str, node_id: str, name: str, inside: str | None, inside_from: str | None = None) -> None:
+    """Change which target this target searches inside: one of the detector wired straight into this one, or (``inside_from``)
+    one of an upstream detector (the detector then needs a new run)."""
     graph = load_graph(camera)
     node = _node(graph, node_id)
     entry = next((t for t in node.get("targets", []) if t["name"] == name), None)
     if entry is None:
         raise FlowError(f"Unknown target: {name}")
-    entry["inside"] = _clean_inside(graph, node_id, inside)
+    entry["inside"], chosen_from = _clean_inside(graph, node_id, inside, inside_from)
+    if chosen_from:
+        entry["inside_from"] = chosen_from
+    else:
+        entry.pop("inside_from", None)
     save_graph(camera, graph)
 
 
 def remove_target(camera: str, node_id: str, name: str) -> None:
     graph = load_graph(camera)
     node = _node(graph, node_id)
+    gone = target_of(node, name)
+    searching = sorted(n for n, other in graph["nodes"].items() if other.get("kind") == "detector"
+                       for t in other.get("targets", []) if t.get("inside_from") == node_id and gone and t.get("inside") in slot_names(gone))
+    if searching:
+        raise FlowError(f"{', '.join(searching)} search inside {name}. Change what they search inside first.")
     node["targets"] = [t for t in node.get("targets", []) if t["name"] != name]
     save_graph(camera, graph)
 
@@ -1732,7 +1790,7 @@ def signature(graph: dict, node_id: str) -> str:
     parent = parent_of(graph, node_id)
     material = {
         "algo": ALGORITHM,
-        "targets": [(t["name"], [(e["png"], e["scale"]) if "scale" in e else e["png"] for e in t["examples"]]) + ((t["inside"],) if t.get("inside") else ()) + (("count", count_of(t)) if count_of(t) > 1 else ()) for t in node["targets"]],
+        "targets": [(t["name"], [(e["png"], e["scale"]) if "scale" in e else e["png"] for e in t["examples"]]) + ((t["inside"],) if t.get("inside") else ()) + (("from", t["inside_from"], signature(graph, t["inside_from"])) if t.get("inside_from") in graph["nodes"] else ()) + (("count", count_of(t)) if count_of(t) > 1 else ()) for t in node["targets"]],
         "rotate": node["rotate"],
         "range": node["angle_range"],
         "pad": node["pad"],
@@ -1937,6 +1995,9 @@ def detector_order(graph: dict) -> list[str]:
         parent = parent_of(graph, node_id)
         if parent and parent in graph["nodes"]:
             visit(parent)
+        for t in graph["nodes"][node_id].get("targets", []) if kind_of(node_id) == "detector" else []:
+            if t.get("inside_from") in graph["nodes"]:
+                visit(t["inside_from"])  # the detector whose boxes a target searches inside runs first
         if kind_of(node_id) == "detector":
             order.append(node_id)
 
@@ -1970,6 +2031,15 @@ def run_detector(camera: str, node_id: str, report=None, frames: list[str] | Non
         if status(camera, parent, graph) != "fresh":
             raise FlowError("Run the detector before this one first; its boxes are the search areas here.")
         parent_frames = load_stored(camera, parent)["frames"]
+    source_of: dict[str, str | None] = {t["name"]: _search_detector(graph, node_id, t) for t in usable}  # the detector each target searches inside
+    frames_of: dict[str, dict] = {}
+    for src in sorted({v for v in source_of.values() if v}):
+        if src != parent:
+            if status(camera, src, graph) != "fresh":
+                raise FlowError(f"Run {src} first; its boxes are the search areas for a target here.")
+            frames_of[src] = load_stored(camera, src)["frames"]
+        else:
+            frames_of[src] = parent_frames
     scale = match_scale(node)  # < 1 when an example was too large to match as it is: the picture shrinks with it
     examples = {t["name"]: [_search_example(e, scale) for e in t["examples"]] for t in usable}
     slots_of = {t["name"]: slot_names(t) for t in usable}
@@ -2001,8 +2071,8 @@ def run_detector(camera: str, node_id: str, report=None, frames: list[str] | Non
                     if not free:
                         continue
                     region = None
-                    if parent:
-                        inside = parent_frames.get(key, {}).get(inside_names[name])
+                    if source_of[name]:
+                        inside = frames_of[source_of[name]].get(key, {}).get(inside_names[name])
                         if inside is None:
                             continue
                         region = _as_match(inside).region(picture.shape, node["pad"])
@@ -2679,11 +2749,12 @@ def node_detail(camera: str, node_id: str, graph: dict | None = None) -> dict:
             "input": parent if parent and kind_of(parent) == "detector" else INGEST_ID,
             "input_box": parent,
             "parent_targets": parent_target_names(graph, node_id),
+            "search_sources": search_sources(graph, node_id),
             "input_point": input_line_point(graph, node_id),
             "crops": input_rects(graph, node_id),
             "no_crop": frames_without_crop(camera, graph, node_id),
             "targets": [
-                {"name": t["name"], "count": count_of(t), "slots": slot_names(t), "inside": t.get("inside"), "outputs": outputs_of(t), "examples": [{"frame": e["frame"], "box": e["box"], "png": "data:image/png;base64," + e["png"], "scale": e.get("scale", 1.0), "angle": e.get("angle", 0.0)} for e in t["examples"]]}
+                {"name": t["name"], "count": count_of(t), "slots": slot_names(t), "inside": t.get("inside"), "inside_from": t.get("inside_from"), "outputs": outputs_of(t), "examples": [{"frame": e["frame"], "box": e["box"], "png": "data:image/png;base64," + e["png"], "scale": e.get("scale", 1.0), "angle": e.get("angle", 0.0)} for e in t["examples"]]}
                 for t in node["targets"]
             ],
             "rotate": node["rotate"],

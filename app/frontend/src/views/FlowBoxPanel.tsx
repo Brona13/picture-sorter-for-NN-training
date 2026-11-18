@@ -261,7 +261,11 @@ export default function FlowBoxPanel({ camera, nodeId, detail, onDetail, onChang
           progress={job?.progress as { done?: number; total?: number } | undefined}
           onAdd={() => { const name = newTarget.trim(); if (name) { setNewTarget(""); void act(() => api.flowAddTarget(camera, nodeId, name, detail.parent_targets?.[0])); } }}
           onRemoveTarget={(name) => void act(() => api.flowRemoveTarget(camera, nodeId, name))}
-          onSetInside={(name, inside) => void act(() => api.flowSetTargetInside(camera, nodeId, name, inside))}
+          onSetInside={(name, choice) => {
+            // "" = the whole picture; "detector|target" = a box of an upstream detector; else a target of the detector wired in
+            const [from, slot] = choice.includes("|") ? choice.split("|") : [null, choice];
+            void act(() => api.flowSetTargetInside(camera, nodeId, name, slot || null, from));
+          }}
           onSetOutputs={(name, outputs) => void act(() => api.flowSetTargetOutputs(camera, nodeId, name, outputs))}
           onSetCount={(name, count) => void act(() => api.flowSetTargetCount(camera, nodeId, name, count))}
           onRemoveExample={(name, i) => void act(() => api.flowRemoveExample(camera, nodeId, name, i))}
@@ -321,6 +325,7 @@ function DetectorOptions(p: {
 }) {
   const d = p.detail;
   const cascade = d.input !== null && d.input !== "ingest";
+  const upstream = d.search_sources ?? [];
   const ready = d.targets.some((t) => t.examples.length > 0);
   return (
     <>
@@ -336,19 +341,25 @@ function DetectorOptions(p: {
               <strong>{t.name}</strong>
               <button type="button" className="danger" onClick={() => p.onRemoveTarget(t.name)} aria-label={`Remove target ${t.name}`}>Remove</button>
             </div>
-            {cascade && (
-              <label className="flow-inside">
-                Searches inside
-                <select
-                  aria-label={`Searches inside, target ${t.name}`}
-                  value={t.inside ?? d.input_point ?? t.name}
-                  onChange={(e) => p.onSetInside(t.name, e.target.value)}
-                >
-                  {!(d.parent_targets ?? []).includes(t.inside ?? d.input_point ?? t.name) && <option value={t.inside ?? d.input_point ?? t.name}>{t.inside ?? d.input_point ?? t.name} (not a target there)</option>}
-                  {(d.parent_targets ?? []).map((n) => <option key={n} value={n}>{n}</option>)}
-                </select>
-              </label>
-            )}
+            {(cascade || upstream.length > 0) && (() => {
+              const current = t.inside_from && t.inside ? `${t.inside_from}|${t.inside}` : cascade ? (t.inside ?? d.input_point ?? t.name) : "";
+              const known = current === "" || (d.parent_targets ?? []).includes(current) || upstream.some((u) => u.slots.some((n) => `${u.detector}|${n}` === current));
+              return (
+                <label className="flow-inside">
+                  Searches inside
+                  <select aria-label={`Searches inside, target ${t.name}`} value={current} onChange={(e) => p.onSetInside(t.name, e.target.value)}>
+                    {!cascade && <option value="">the whole picture</option>}
+                    {!known && <option value={current}>{current.replace("|", " · ")} (not available any more)</option>}
+                    {(d.parent_targets ?? []).map((n) => <option key={n} value={n}>{n}</option>)}
+                    {upstream.map((u) => (
+                      <optgroup key={u.detector} label={`${u.detector} (further up)`}>
+                        {u.slots.map((n) => <option key={n} value={`${u.detector}|${n}`}>{u.detector} · {n}</option>)}
+                      </optgroup>
+                    ))}
+                  </select>
+                </label>
+              );
+            })()}
             <label className="flow-count" title="Several similar elements in one picture: their boxes are numbered from left to right (hole 1, hole 2, ...)">
               How many in a picture{" "}
               <select aria-label={`How many ${t.name} in a picture`} value={t.count ?? 1} onChange={(e) => p.onSetCount(t.name, Number(e.target.value))}>

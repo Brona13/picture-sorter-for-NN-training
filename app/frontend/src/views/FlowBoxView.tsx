@@ -184,14 +184,22 @@ function DetectorWork(p: {
   useEffect(() => { api.flowNodeFrames(camera, nodeId).then((r) => { setFrames(r.frames); setHasInput(r.has_input); }).catch((e) => p.onError(msg(e))); }, [camera, nodeId, p.version]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { void loadBoxes(); }, [loadBoxes, p.version]);
 
-  // A cascade (its input is another detector) works on the boxes that detector found: one picture per found box.
+  // A cascade (its input is another detector) works on the boxes that detector found: one picture per found box. A detector
+  // further up (on the same picture) can be searched inside too; then it is a choice, the whole picture stays the default.
   const parentId = detail.input && detail.input !== "ingest" ? detail.input : null;
+  const parentNames = detail.parent_targets ?? [];
+  const sources = [
+    ...(parentId ? parentNames.map((n) => ({ det: parentId, slot: n, key: n })) : []),
+    ...(detail.search_sources ?? []).flatMap((s) => s.slots.map((n) => ({ det: s.detector, slot: n, key: `${s.detector}|${n}` }))),
+  ];
+  const selSrc = sources.find((s) => s.key === insidePick) ?? (parentId ? sources[0] : undefined);
+  const srcId = selSrc?.det ?? null; // the detector whose box is on show
   useEffect(() => {
-    if (!parentId) { setParentBoxes({}); return; }
+    if (!srcId) { setParentBoxes({}); return; }
     let current = true; // the answer for an earlier parent or version must not replace this one
-    api.flowBoxes(camera, parentId).then((b) => { if (current) setParentBoxes(b.boxes); }).catch((e) => p.onError(msg(e)));
+    api.flowBoxes(camera, srcId).then((b) => { if (current) setParentBoxes(b.boxes); }).catch((e) => p.onError(msg(e)));
     return () => { current = false; };
-  }, [camera, parentId, p.version]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [camera, srcId, p.version]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // With a Picture edits box above, the detector works on the edited picture (cut and filtered): pictures, thumbnails and coordinates are those of the cut-out.
   const cropped = detail.crops.length > 0;
@@ -204,15 +212,14 @@ function DetectorWork(p: {
   const cardUrl = (f: string) => (cropped ? flowPictureUrl(camera, nodeId, f, { size: 200, key: detail.crops }) : frameWholeThumbUrl(camera, f));
   const chosen = names.includes(target) ? target : names[0] ?? "";
   // A cascade: the input detector's target whose box is on show (this detector's targets each search inside one of them).
-  const parentNames = detail.parent_targets ?? [];
-  const insideSel = parentNames.includes(insidePick) ? insidePick : parentNames[0] ?? "";
+  const insideSel = selSrc?.slot ?? "";
   // With no target yet (or "+ New target" picked) a drag starts a new target: the rectangle first, its name next.
   const naming = mode === "draw" && (names.length === 0 || creating);
   const noCrop = useMemo(() => new Set(detail.no_crop ?? []), [detail.no_crop]);
   // A Picture edits box above that follows a detector has no rectangle where that detector found nothing: those pictures cannot be shown.
   const candidates = useMemo(
-    () => (parentId ? frames.filter((f) => parentBoxes[f]?.[insideSel]) : frames).filter((f) => !noCrop.has(f)),
-    [frames, parentId, parentBoxes, insideSel, noCrop],
+    () => (srcId ? frames.filter((f) => parentBoxes[f]?.[insideSel]) : frames).filter((f) => !noCrop.has(f)),
+    [frames, srcId, parentBoxes, insideSel, noCrop],
   );
   const shown = useMemo(() => (onlyReview ? candidates.filter((f) => review.includes(f)) : candidates), [candidates, review, onlyReview]);
   const at = Math.min(index, Math.max(0, shown.length - 1));
@@ -240,7 +247,7 @@ function DetectorWork(p: {
   // The part of the picture on show: all of it, or (cascade) the padded box the input detector found for this target.
   const view = useMemo(() => {
     if (!size) return null;
-    const b = parentId && frame ? parentBoxes[frame]?.[insideSel] : undefined;
+    const b = srcId && frame ? parentBoxes[frame]?.[insideSel] : undefined;
     if (!b || wholePictureView) return { x: 0, y: 0, w: size.w, h: size.h, crop: false };
     const t = (b.angle * Math.PI) / 180;
     const hw = (Math.abs(b.w * Math.cos(t)) + Math.abs(b.h * Math.sin(t))) / 2;
@@ -250,8 +257,8 @@ function DetectorWork(p: {
     const x1 = Math.min(size.w, Math.ceil(b.x + hw * (1 + 2 * detail.pad)));
     const y1 = Math.min(size.h, Math.ceil(b.y + hh * (1 + 2 * detail.pad)));
     return { x: x0, y: y0, w: Math.max(1, x1 - x0), h: Math.max(1, y1 - y0), crop: true };
-  }, [size, parentId, frame, parentBoxes, insideSel, detail.pad, wholePictureView]);
-  const parentBox = parentId && frame ? parentBoxes[frame]?.[insideSel] : undefined; // the box the input detector found, outlined on the picture
+  }, [size, srcId, frame, parentBoxes, insideSel, detail.pad, wholePictureView]);
+  const parentBox = srcId && frame ? parentBoxes[frame]?.[insideSel] : undefined; // the box the input detector found, outlined on the picture
 
   const point = (e: React.PointerEvent) => {
     const r = svg.current!.getBoundingClientRect();
@@ -390,7 +397,7 @@ function DetectorWork(p: {
       const box = rectOf(from, to);
       if (box[2] < 5 || box[3] < 5) { p.onError("Drag a rectangle around what to find."); return; }
       p.onError(null);
-      if (parentId) setNewName((cur) => cur || `${insideSel} detail`);
+      if (srcId) setNewName((cur) => cur || `${insideSel} detail`);
       setPending({ frame, box });
       return;
     }
@@ -424,7 +431,7 @@ function DetectorWork(p: {
     const name = newName.trim();
     if (!pending || !name) return;
     try {
-      if (!names.includes(name)) await api.flowAddTarget(camera, nodeId, name, parentId ? insideSel : undefined);
+      if (!names.includes(name)) await api.flowAddTarget(camera, nodeId, name, srcId ? insideSel : undefined, srcId && srcId !== parentId ? srcId : undefined);
       p.setDetail(await api.flowAddExample(camera, nodeId, name, pending.frame, pending.box));
       setTarget(name);
       setCreating(false);
@@ -443,30 +450,36 @@ function DetectorWork(p: {
           <button type="button" aria-pressed={mode === "place"} onClick={() => setMode("place")}>Place box</button>
           <button type="button" aria-pressed={mode === "reuse"} disabled={allExamples.length === 0} title="Copy an existing example rectangle onto this picture, turn it, and add it as an example" onClick={() => setMode("reuse")}>Reuse rectangle</button>
         </div>
-        {parentId && (
+        {srcId && (
           <div className="flow-segment" role="group" aria-label="View">
             <button type="button" aria-pressed={!wholePictureView} title="Only the found box and its surroundings" onClick={() => setWholePictureView(false)}>Cut-out of the box</button>
             <button type="button" aria-pressed={wholePictureView} title="The whole picture with the found box outlined" onClick={() => setWholePictureView(true)}>Whole picture</button>
           </div>
         )}
-        {parentId && (
+        {sources.length > 0 && (
           <div className="flow-chips" role="group" aria-label="Search inside">
             <span className="muted">Search inside:</span>
-            {parentNames.map((name) => (
+            {!parentId && (
+              <button type="button" className="flow-chip" aria-pressed={!selSrc} title="Draw on the whole picture" onClick={() => { setInsidePick(""); setPending(null); }}>
+                whole picture
+              </button>
+            )}
+            {sources.map((s) => (
               <button
-                key={name}
+                key={s.key}
                 type="button"
                 className="flow-chip"
-                aria-pressed={name === insideSel}
-                title={`Show the “${name}” box found by ${parentId}`}
+                aria-pressed={s.key === selSrc?.key}
+                title={`Show the “${s.slot}” box found by ${s.det}`}
                 onClick={() => {
-                  setInsidePick(name);
+                  setInsidePick(s.key);
                   setPending(null);
                   const own = detail.targets.find((t) => t.name === chosen);
-                  if (!own || (own.inside ?? detail.input_point ?? own.name) !== name) setCreating(true); // another parent box: a new target belongs there
+                  const ownFrom = own?.inside_from ?? null;
+                  if (!own || (own.inside ?? detail.input_point ?? own.name) !== s.slot || ownFrom !== (s.det === parentId ? null : s.det)) setCreating(true); // another box: a new target belongs there
                 }}
               >
-                {name}
+                {s.det === parentId ? s.slot : `${s.det} · ${s.slot}`}
               </button>
             ))}
           </div>
@@ -480,7 +493,7 @@ function DetectorWork(p: {
                 type="button"
                 className="flow-chip"
                 aria-pressed={!naming && name === chosen}
-                onClick={() => { setTarget(name); setReuseSrc(""); setCreating(false); setPending(null); if (parentId && t) setInsidePick(t.inside ?? detail.input_point ?? t.name); }}
+                onClick={() => { setTarget(name); setReuseSrc(""); setCreating(false); setPending(null); if (sources.length > 0 && t) setInsidePick(t.inside_from && t.inside ? `${t.inside_from}|${t.inside}` : parentId ? (t.inside ?? detail.input_point ?? t.name) : ""); }}
               >
                 <span className="flow-dot" style={{ background: COLORS[i % COLORS.length] }} />
                 {name}
@@ -496,14 +509,14 @@ function DetectorWork(p: {
         </div>
       </div>
       <p className="muted">
-        {parentId && parentNames.length === 0
+        {parentId && sources.length === 0
           ? "Run the detector before this one first (and give it a target): the pictures here are the boxes it finds."
-          : parentId && candidates.length === 0
-            ? `The detector before this one has no box named “${insideSel}” on any picture yet. Run it first.`
-            : parentId && naming
-              ? `Each picture is the “${insideSel}” box found by ${parentId}, with its surroundings. Drag a rectangle around what to find in it (the hole, say); you name the new target next. Pick another box above to give a target to another part.`
-              : parentId && mode === "draw"
-                ? `Each picture is the “${insideSel}” box found by ${parentId}. Drag a rectangle to add an example to “${chosen}”, or click an example rectangle to move or resize it. “+ New target” starts another target.`
+          : srcId && candidates.length === 0
+            ? `${srcId} has no box named “${insideSel}” on any picture yet. Run it first.`
+            : srcId && naming
+              ? `Each picture is the “${insideSel}” box found by ${srcId}, with its surroundings. Drag a rectangle around what to find in it (the hole, say); you name the new target next. Pick another box above to give a target to another part.`
+              : srcId && mode === "draw"
+                ? `Each picture is the “${insideSel}” box found by ${srcId}. Drag a rectangle to add an example to “${chosen}”, or click an example rectangle to move or resize it. “+ New target” starts another target.`
                 : naming
                   ? "Drag a rectangle around what to find (one hole, say) and include the geometry that tells it from its twin. You name it next."
                   : mode === "draw"

@@ -247,6 +247,9 @@ ul[style*="grid"] > li { min-width: 0; overflow-wrap: anywhere; }
 .chain-node-sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
 .chain-node-product { position: relative; margin-top: 6px; padding: 2px 14px 2px 8px; text-align: right; border-top: 1px dashed var(--border); font-size: 12px; }
 .chain-edge-locked path { stroke-dasharray: 5 4; }
+.chain-edge-inside path { stroke-dasharray: 2 5; stroke-linecap: round; opacity: .8; }
+.chain-lines label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.chain-lines { display: flex; flex-direction: column; gap: 8px; }
 .chain-panel h3 { margin: 12px 0 6px; font-size: 13px; }
 .chain-palette, .chain-selected, .chain-delete, .chain-form { display: flex; flex-direction: column; gap: 6px; }
 .chain-form label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }

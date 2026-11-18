@@ -605,9 +605,11 @@ export interface FlowDetector {
   no_crop?: string[];
   /** `inside`: in a cascade, the input detector's target whose box this target searches in (none = the same name). */
   /** `count` similar elements are looked for in a picture; their boxes go by `slots` ("hole 1", "hole 2" ... left to right). */
-  targets: { name: string; count?: number; slots?: string[]; inside?: string | null; outputs: FlowOutput[]; examples: FlowExample[] }[];
+  targets: { name: string; count?: number; slots?: string[]; inside?: string | null; /** An upstream detector (not the one wired in) the target searches inside, with `inside` its target. */ inside_from?: string | null; outputs: FlowOutput[]; examples: FlowExample[] }[];
   /** A cascade: the input detector's targets (with examples) a target here can search inside. */
   parent_targets?: string[];
+  /** Detectors further up (on the same picture) whose boxes a target here can search inside, with their targets that have examples. */
+  search_sources?: { detector: string; slots: string[] }[];
   input_point?: string | null; // the target of the input detector the line into this one leaves from
   rotate: boolean;
   angle_range: [number, number] | null;
@@ -862,6 +864,9 @@ export interface ChainEdge {
   target_handle?: string | null;
   /** An arrow fixed by the ROI's name (`<product>::<roi>`); it cannot be removed. */
   locked: boolean;
+  /** `inside`: a dashed hint line from the detector whose box a target of the detector it ends at searches inside (set on that detector's page). */
+  kind?: "inside";
+  label?: string;
 }
 
 export interface ChainViewport {
@@ -1900,8 +1905,11 @@ export const api = {
     request<{ feature: string; anchor: null }>(`/cameras/${encodeURIComponent(camera)}/rois/${encodeURIComponent(feature)}/anchor`, { method: "DELETE" }),
   flowDisconnect: (camera: string, source: string, target: string, point?: string) =>
     request<{ source: string; target: string }>(`/cameras/${encodeURIComponent(camera)}/flow/edges/remove`, send("POST", point ? { source, target, point } : { source, target })),
-  flowAddTarget: (camera: string, id: string, name: string, inside?: string) =>
-    request<FlowNodeDetail>(`/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/targets`, send("POST", inside ? { name, inside } : { name })),
+  flowAddTarget: (camera: string, id: string, name: string, inside?: string, insideFrom?: string) =>
+    request<FlowNodeDetail>(
+      `/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/targets`,
+      send("POST", inside ? (insideFrom ? { name, inside, inside_from: insideFrom } : { name, inside }) : { name }),
+    ),
   flowSetTargetCount: (camera: string, id: string, name: string, count: number) =>
     request<FlowNodeDetail>(
       `/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/targets/${encodeURIComponent(name)}/count`,
@@ -1912,10 +1920,10 @@ export const api = {
       `/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/targets/${encodeURIComponent(name)}/outputs`,
       send("PUT", { outputs }),
     ),
-  flowSetTargetInside: (camera: string, id: string, name: string, inside: string | null) =>
+  flowSetTargetInside: (camera: string, id: string, name: string, inside: string | null, insideFrom?: string | null) =>
     request<FlowNodeDetail>(
       `/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/targets/${encodeURIComponent(name)}`,
-      send("PUT", { inside }),
+      send("PUT", { inside, inside_from: insideFrom ?? null }),
     ),
   flowRemoveTarget: (camera: string, id: string, name: string) =>
     request<FlowNodeDetail>(

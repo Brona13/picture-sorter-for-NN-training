@@ -529,7 +529,38 @@ test("Detector panel in a cascade: each target says which parent target it searc
   expect(select).toHaveValue("hole left");
   await userEvent.selectOptions(select, "hole right");
   await waitFor(() => expect(calls.some((c) => c.method === "PUT" && c.url.includes("/targets/hole%20left%20detail"))).toBe(true));
-  expect(calls.find((c) => c.method === "PUT")!.body).toEqual({ inside: "hole right" });
+  expect(calls.find((c) => c.method === "PUT")!.body).toEqual({ inside: "hole right", inside_from: null });
+});
+
+test("Detector panel: a target can search inside a box of a detector further up, or go back to the whole picture", async () => {
+  const detail = {
+    kind: "detector", input: "det:2", crops: [], parent_targets: ["part"], search_sources: [{ detector: "det:1", slots: ["left", "right"] }], rotate: true, angle_range: null, pad: 0.3, status: "none",
+    targets: [{ name: "hole", inside: "part", outputs: ["position"], examples: [] }], summary: { frames: 0, found: {}, complete: 0, review: 0 },
+  };
+  routes(detail, () => detail);
+  render(<FlowBoxPanel camera="camA" nodeId="det:3" detail={detail as unknown as FlowNodeDetail} onDetail={() => {}} onChanged={() => {}} />);
+  const select = screen.getByLabelText("Searches inside, target hole");
+  expect(Array.from(select.querySelectorAll("option")).map((o) => o.textContent)).toEqual(["part", "det:1 · left", "det:1 · right"]);
+  await userEvent.selectOptions(select, "det:1|right");
+  await waitFor(() => expect(calls.some((c) => c.method === "PUT" && c.url.includes("/targets/hole"))).toBe(true));
+  expect(calls.find((c) => c.method === "PUT")!.body).toEqual({ inside: "right", inside_from: "det:1" });
+});
+
+test("Detector panel: a detector with no detector wired in offers the whole picture and the upstream boxes", async () => {
+  const detail = {
+    kind: "detector", input: "ingest", crops: [], search_sources: [{ detector: "det:1", slots: ["left"] }], rotate: true, angle_range: null, pad: 0.3, status: "none",
+    targets: [{ name: "hole", inside: "left", inside_from: "det:1", outputs: ["position"], examples: [] }, { name: "other", outputs: ["position"], examples: [] }],
+    summary: { frames: 0, found: {}, complete: 0, review: 0 },
+  };
+  routes(detail, () => detail);
+  render(<FlowBoxPanel camera="camA" nodeId="det:3" detail={detail as unknown as FlowNodeDetail} onDetail={() => {}} onChanged={() => {}} />);
+  expect(screen.getByLabelText("Searches inside, target hole")).toHaveValue("det:1|left");
+  const other = screen.getByLabelText("Searches inside, target other");
+  expect(other).toHaveValue("");
+  expect(Array.from(other.querySelectorAll("option")).map((o) => o.textContent)).toEqual(["the whole picture", "det:1 · left"]);
+  await userEvent.selectOptions(screen.getByLabelText("Searches inside, target hole"), "");
+  await waitFor(() => expect(calls.some((c) => c.method === "PUT")).toBe(true));
+  expect(calls.find((c) => c.method === "PUT")!.body).toEqual({ inside: null, inside_from: null });
 });
 
 test("Detector page: the picture size belongs to the picture it was measured on - a new picture never keeps the old size, and a cached load is not lost", async () => {

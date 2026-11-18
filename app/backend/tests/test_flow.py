@@ -1031,6 +1031,85 @@ class FlowTests(ApiTestCase):
         solo = self.node("detector")
         self.assertEqual(self.client.post(f"{self.base}/nodes/{solo}/targets", json={"name": "a", "inside": "left"}).status_code, 422)
 
+    def _three_in_a_row(self):
+        """d1 finds left and right; d2 (fed by d1) searches inside d1's left box; d3 (fed by d2) is the one under test."""
+        d1 = self.detector({"left": LEFT_BOX, "right": RIGHT_BOX})
+        d2 = self.node("detector")
+        self.post("/edges", {"source": d1, "target": d2})
+        self.post(f"/nodes/{d2}/targets", {"name": "part", "inside": "left"})
+        self.post(f"/nodes/{d2}/examples", {"target": "part", "frame": self.names[0], "box": LEFT_HOLE})
+        self.put(f"/nodes/{d2}", {"rotate": False})
+        d3 = self.node("detector")
+        self.post("/edges", {"source": d2, "target": d3})
+        return d1, d2, d3
+
+    def test_a_target_can_search_inside_a_box_of_any_upstream_detector(self) -> None:
+        import labels
+
+        d1, d2, d3 = self._three_in_a_row()
+        detail = self.node_detail(d3)
+        self.assertEqual(detail["parent_targets"], ["part"])  # the cascade offers only the detector wired in
+        self.assertEqual([x["detector"] for x in detail["search_sources"]], [d1])  # the one before it is offered too
+        self.assertEqual(detail["search_sources"][0]["slots"], ["left", "right"])
+        self.post(f"/nodes/{d3}/targets", {"name": "hole", "inside": "right", "inside_from": d1})
+        self.post(f"/nodes/{d3}/examples", {"target": "hole", "frame": self.names[0], "box": RIGHT_HOLE})
+        self.put(f"/nodes/{d3}", {"rotate": False})
+        self.assertEqual(self.node_detail(d3)["targets"][0]["inside_from"], d1)
+        self.run_all()
+        key = labels.hash_map(CAM)[self.names[0]]
+        found = flow.load_stored(CAM, d3)["frames"][key]
+        # searched in d1's right box, though the detector wired in (d2) only knows the left part
+        self.assertAlmostEqual(found["hole"]["x"], RIGHT_HOLE[0] + RIGHT_HOLE[2] / 2, delta=1.5)
+        self.assertEqual(self.node_detail(d3)["status"], "fresh")
+
+    def test_inside_an_upstream_detector_is_validated_and_follows_that_detector(self) -> None:
+        d1, d2, d3 = self._three_in_a_row()
+        post = lambda body: self.client.post(f"{self.base}/nodes/{d3}/targets", json=body)  # noqa: E731
+        self.assertEqual(post({"name": "a", "inside": "right", "inside_from": "detector:99"}).status_code, 422)  # not a box
+        self.assertEqual(post({"name": "a", "inside": "nope", "inside_from": d1}).status_code, 422)  # no such target
+        self.assertEqual(post({"name": "a", "inside_from": d1}).status_code, 422)  # which target?
+        side = self.node("detector")  # fed by nothing: not upstream of d3
+        self.assertEqual(post({"name": "a", "inside": "x", "inside_from": side}).status_code, 422)
+        self.assertEqual(post({"name": "a", "inside": "right", "inside_from": d1}).status_code, 201)
+        self.post(f"/nodes/{d3}/examples", {"target": "a", "frame": self.names[0], "box": RIGHT_HOLE})
+        before = flow.signature(flow.load_graph(CAM), d3)
+        self.post(f"/nodes/{d1}/targets", {"name": "extra"})
+        self.post(f"/nodes/{d1}/examples", {"target": "extra", "frame": self.names[0], "box": LEFT_BOX})
+        self.assertNotEqual(before, flow.signature(flow.load_graph(CAM), d3))  # d1 changed: d3 needs a new run
+        # d1's target cannot be removed while d3 searches inside it
+        self.assertEqual(self.client.delete(f"{self.base}/nodes/{d1}/targets/right").status_code, 422)
+        # the target can be pointed back at the detector wired in, or at the whole picture
+        moved = self.client.put(f"{self.base}/nodes/{d3}/targets/a", json={"inside": "part"})
+        self.assertEqual(moved.status_code, 200, moved.text)
+        self.assertIsNone(moved.json()["targets"][0]["inside_from"])
+        self.assertEqual(self.client.put(f"{self.base}/nodes/{d3}/targets/a", json={"inside": "right", "inside_from": d1}).status_code, 200)
+        # deleting d1 sends the target back to the whole picture
+        self.assertEqual(self.client.delete(f"{self.base}/nodes/{d1}").status_code, 200)
+        target = self.node_detail(d3)["targets"][0]
+        self.assertIsNone(target["inside"])
+        self.assertIsNone(target["inside_from"])
+
+    def test_a_picture_edit_between_two_detectors_means_no_shared_boxes(self) -> None:
+        from unittest import mock
+
+        d1, d2, d3 = self._three_in_a_row()
+        self.assertEqual([x["detector"] for x in self.node_detail(d3)["search_sources"]], [d1])
+        # a Picture edits step that only d3 works behind: d1's boxes lie on the whole picture, d3's picture is another one
+        real = flow.input_rects
+        with mock.patch.object(flow, "input_rects", side_effect=lambda g, n: [{"rect": [0, 0, 1, 1]}] if n == d3 else real(g, n)):
+            self.assertEqual(self.node_detail(d3)["search_sources"], [])
+            refused = self.client.post(f"{self.base}/nodes/{d3}/targets", json={"name": "a", "inside": "right", "inside_from": d1})
+            self.assertEqual(refused.status_code, 422)
+
+    def test_the_chain_draws_a_dashed_hint_line_for_a_search_inside_an_upstream_detector(self) -> None:
+        import chain
+
+        d1, d2, d3 = self._three_in_a_row()
+        self.post(f"/nodes/{d3}/targets", {"name": "hole", "inside": "right", "inside_from": d1})
+        edges = [e for e in chain.get_canvas(CAM)["edges"] if e.get("kind") == "inside"]
+        self.assertEqual(len(edges), 1)
+        self.assertEqual((edges[0]["source"], edges[0]["source_handle"], edges[0]["target"], edges[0]["locked"]), (d1, "t:right", d3, True))
+
     def test_a_line_from_one_target_dot_makes_the_next_detector_search_inside_that_box(self) -> None:
         d1 = self.detector({"left": LEFT_BOX, "right": RIGHT_BOX})
         d2 = self.node("detector")

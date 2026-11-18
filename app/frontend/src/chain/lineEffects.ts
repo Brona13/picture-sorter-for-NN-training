@@ -130,7 +130,7 @@ export function replaceNote(canvas: ChainCanvas, c: Connection, link: Exclude<Fl
   }
   if ("evaluationOf" in link || "classLine" in link) return null; // pass = OK and fail = NG apply by default: no question
   if ("dedupSource" in link) {
-    const taken = canvas.edges.find((e) => e.target === c.target && !(e.source === c.source && (e.source_handle ?? null) === (c.sourceHandle ?? null)));
+    const taken = canvas.edges.find((e) => e.kind !== "inside" && e.target === c.target && !(e.source === c.source && (e.source_handle ?? null) === (c.sourceHandle ?? null)));
     if (!taken) return null;
     return {
       title: `Replace the input of ${t}?`,
@@ -140,7 +140,7 @@ export function replaceNote(canvas: ChainCanvas, c: Connection, link: Exclude<Fl
   if ("dedupInput" in link) return null; // several Dedup boxes can feed one Classifier: the new line adds its pictures
   if ("source" in link) {
     if (!["crop", "detector", "evaluation", "dedup"].includes(target.kind)) return null; // Calculate and Classify take several lines
-    const existing = canvas.edges.filter((e) => e.target === c.target && e.source !== c.target);
+    const existing = canvas.edges.filter((e) => e.kind !== "inside" && e.target === c.target && e.source !== c.target); // a dashed "searches inside" hint is no input line
     const taken = existing.find((e) => !(e.source === c.source && (e.source_handle ?? null) === (c.sourceHandle ?? null)));
     const same = existing.some((e) => e.source === c.source && (e.source_handle ?? null) === (c.sourceHandle ?? null));
     if (!taken || same) return null;

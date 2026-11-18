@@ -30,6 +30,8 @@ import { useSharedFeature } from "../SharedFeature";
 import SidePanel from "../SidePanel";
 import { versionLabel } from "../versionLabel";
 import MessageBar from "../MessageBar";
+import LinesStyle from "../chain/LinesStyle";
+import { DEFAULT_LINE_STYLE, edgeLook, loadLineStyle, saveLineStyle, type LineStyle } from "../chain/lineStyle";
 
 type BoxData = {
   node: ChainNode;
@@ -259,16 +261,17 @@ function toFlowNode(n: ChainNode, onRename: BoxData["onRename"], selected: boole
   return { id: n.id, type: "box", position: { x: n.x, y: n.y }, data: { node: n, onRename }, selected, deletable: n.kind === "roi" || isFlowKind(n.kind) };
 }
 
-export function toFlowEdge(e: ChainCanvas["edges"][number]): Edge {
+export function toFlowEdge(e: ChainCanvas["edges"][number], style: LineStyle = DEFAULT_LINE_STYLE): Edge {
   return {
+    ...edgeLook(style),
     id: e.id,
     source: e.source,
     sourceHandle: e.source_handle,
     target: e.target,
     targetHandle: e.target_handle ?? (e.target.startsWith("roi:") ? MAIN_HANDLE : undefined), // a Classifier's plain input is the dot on its all row
-    type: "smoothstep",
     deletable: !e.locked,
-    className: e.locked ? "chain-edge-locked" : undefined,
+    className: e.kind === "inside" ? "chain-edge-inside" : e.locked ? "chain-edge-locked" : undefined,
+    ...(e.kind === "inside" ? { focusable: false, ariaLabel: e.label } : {}),
   };
 }
 
@@ -282,6 +285,8 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
+  const [lineStyle, setLineStyleState] = useState<LineStyle>(loadLineStyle);
+  const setLineStyle = (next: LineStyle) => { setLineStyleState(next); saveLineStyle(next); };
   const [preview, setPreview] = useState<ChainDeletePreview | null>(null);
   const [flowPreview, setFlowPreview] = useState<FlowDeletePreview | null>(null);
   // A line change waiting for Enter (do it) or Esc (leave everything as it is).
@@ -374,8 +379,8 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
   const inStep = useCallback((n: { step?: 1 | 2 }) => (n.step ?? 1) === activeStep, [activeStep]);
   const edges = useMemo(() => {
     const shown = new Set(canvas?.nodes.filter(inStep).map((n) => n.id));
-    return canvas?.edges.filter((e) => shown.has(e.source) && shown.has(e.target)).map((e) => ({ ...toFlowEdge(e), selected: e.id === selectedEdgeId })) ?? [];
-  }, [canvas, selectedEdgeId, inStep]);
+    return canvas?.edges.filter((e) => shown.has(e.source) && shown.has(e.target)).map((e) => ({ ...toFlowEdge(e, lineStyle), selected: e.id === selectedEdgeId })) ?? [];
+  }, [canvas, selectedEdgeId, inStep, lineStyle]);
   const shownNodes = useMemo(() => nodes.filter((n) => inStep(n.data.node)).map((n) => ({ ...n, selected: n.id === selectedId })), [nodes, selectedId, inStep]);
   const selected = canvas?.nodes.find((n) => n.id === selectedId) ?? null;
   const selectedLive = selected ? (nodes.find((n) => n.id === selected.id)?.data.node ?? selected) : null;
@@ -719,6 +724,8 @@ function Canvas({ camera, onOpenRoi, onOpenFlow }: { camera: string; onOpenRoi?:
           {selectedLive.kind === "merge" && <MergePanel camera={camera} node={selectedLive} onChanged={() => { setError(null); void reload(); }} onError={setError} />}
         </div>
       )}
+      <h3 className="chain-panel-title">Lines</h3>
+      <LinesStyle style={lineStyle} onChange={setLineStyle} />
     </div>
   );
 
