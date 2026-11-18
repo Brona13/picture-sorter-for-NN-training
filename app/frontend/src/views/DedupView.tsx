@@ -1,4 +1,4 @@
-import { ReactNode, useCallback, useEffect, useState } from "react";
+import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { api, CardData, setPictureVersion, DedupParams, DedupResult, DedupState, DedupSweep, DedupSweepRange, OutlierResult } from "../api";
 import DeletedByDay from "../classify/DeletedByDay";
 import PictureGrid, { type GridMute } from "../classify/PictureGrid";
@@ -137,29 +137,50 @@ export default function DedupView({
       setError(msg(e));
     }
   }, [camera, feature]);
-  // The M key in Clusters, Outliers and the Scatter selection: those lists only hold pictures the box still sees, so a picture
-  // is muted there exactly when it was muted here by M (and not taken back since).
-  const [mutedByKey, setMutedByKey] = useState<{ box: string; frames: Set<string> }>({ box: "", frames: new Set() });
-  const keyMuted = mutedByKey.box === `${camera}/${feature}` ? mutedByKey.frames : new Set<string>();
+  // Which pictures this box has muted, as the database says: the one answer for Clusters, Outliers and the Scatter (the Grid
+  // reads the same list). It is reloaded whenever the box's mute count changes, and changed at once by every M, so a sweep
+  // of many cards never works from an older picture of it (`mutedNow` is the latest, `muted` is what renders).
+  const [muted, setMuted] = useState<{ box: string; frames: Set<string> }>({ box: "", frames: new Set() });
+  const mutedNow = useRef<Set<string>>(new Set());
+  const boxKey = `${camera}/${feature}`;
+  useEffect(() => {
+    if (!camera || !feature) return;
+    let stale = false;
+    api
+      .dedupFrames(camera, feature)
+      .then((d) => {
+        if (stale) return;
+        mutedNow.current = new Set(d.muted);
+        setMuted({ box: boxKey, frames: mutedNow.current });
+      })
+      .catch((e: unknown) => setError(msg(e)));
+    return () => {
+      stale = true;
+    };
+  }, [camera, feature, boxKey, st?.muted_count]);
+  const mutedHere = muted.box === boxKey ? muted.frames : new Set<string>();
+  const setMutedNow = (f: string, on: boolean) => {
+    const next = new Set(mutedNow.current);
+    if (on) next.add(f);
+    else next.delete(f);
+    mutedNow.current = next;
+    setMuted({ box: boxKey, frames: next });
+  };
   const toolMute: GridMute = {
     showMuted,
-    is: (f) => keyMuted.has(f),
+    is: (f) => mutedHere.has(f),
     toggle: async (f) => {
-      const was = keyMuted.has(f);
-      if (was) await api.dedupUnmuteFrames(camera, feature, [f]);
-      else {
+      if (mutedNow.current.has(f)) {
+        await api.dedupUnmuteFrames(camera, feature, [f]);
+        setMutedNow(f, false);
+      } else {
         const r = await api.dedupMuteFrames(camera, feature, [f]);
-        if (r.muted === 0) {
-          setNotice(r.skipped_golden ? "A golden picture is never muted." : "This picture is already muted or not in the box any more.");
+        if (r.muted === 0 && !r.already) {
+          setNotice(r.skipped_golden ? "A golden picture is never muted." : "This picture is not in the box any more.");
           return;
         }
+        setMutedNow(f, true); // "already muted" only means this page did not know yet
       }
-      setMutedByKey(() => {
-        const next = new Set(keyMuted);
-        if (was) next.delete(f);
-        else next.add(f);
-        return { box: `${camera}/${feature}`, frames: next };
-      });
       load();
     },
   };

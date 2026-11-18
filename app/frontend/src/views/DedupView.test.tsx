@@ -47,6 +47,7 @@ const sweepResult = {
   method: "resnet50",
 };
 let heldSweep: any = null;
+let dbMuted: string[] = ["b.png"];
 
 let calls: { url: string; method: string; body?: any }[];
 let state: any;
@@ -55,6 +56,7 @@ let viewAnswer: (body: any) => unknown;
 beforeEach(() => {
   calls = [];
   heldSweep = null;
+  dbMuted = ["b.png"];
   try {
     localStorage.clear();
   } catch {
@@ -70,14 +72,24 @@ beforeEach(() => {
       const ok = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status });
       if (url.includes("/dedup/boxes")) return ok([{ feature: "seal", label: "seal" }]);
       if (url.includes("/dedup/frames"))
-        return ok({ frames: ["a.png", "b.png", "c.png"], muted: ["b.png"], source: "seal", classes: ["OK", "NG"], marks: {} });
+        return ok({ frames: ["a.png", "b.png", "c.png"], muted: dbMuted, source: "seal", classes: ["OK", "NG"], marks: {} });
       if (url.includes("/dedup/state")) return ok(state);
       if (url.includes("/dedup/settings")) return ok({ params });
       if (url.endsWith("/dedup/view")) return ok(viewAnswer(JSON.parse(init!.body as string)));
       if (url.includes("/classify/deleted?")) return ok({ items: [{ frame: "x.png", deleted_at: 1760000000, note: "" }] });
       if (url.endsWith("/classify/restore-bulk")) return ok({ restored: 1 });
-      if (url.endsWith("/dedup/mute-frames")) return ok({ muted: 2, skipped_golden: 0, already: 0 });
-      if (url.endsWith("/dedup/unmute-frames")) return ok({ unmuted: 1 });
+      if (url.endsWith("/dedup/mute-frames")) {
+        const fs: string[] = JSON.parse(init!.body as string).frames;
+        dbMuted = [...new Set([...dbMuted, ...fs])]; // the database keeps it, as the real backend does
+        state.muted_count = dbMuted.length;
+        return ok({ muted: 2, skipped_golden: 0, already: 0 });
+      }
+      if (url.endsWith("/dedup/unmute-frames")) {
+        const fs: string[] = JSON.parse(init!.body as string).frames;
+        dbMuted = dbMuted.filter((f) => !fs.includes(f));
+        state.muted_count = dbMuted.length;
+        return ok({ unmuted: fs.length });
+      }
       if (url.endsWith("/dedup/sweep") && method === "POST") return ok({ id: "w1", status: "queued", progress: {} }, 202);
       if (url.includes("/dedup/sweep")) return ok({ sweep: heldSweep });
       if (url === "/api/jobs/w1") return ok({ id: "w1", status: "done", progress: {}, result: sweepResult, error: null });
@@ -505,6 +517,7 @@ test("M on a grid card mutes the picture, and on a muted one takes the mute away
   await waitFor(() => expect(calls.find((c) => c.url.endsWith("/dedup/mute-frames"))?.body).toEqual({ feature: "seal", frames: ["a.png"] }));
   expect(screen.getByTestId("card-a.png")).toBeInTheDocument(); // stays in place until the grid is turned
   await userEvent.click(screen.getByLabelText("Show muted"));
+  fireEvent.mouseLeave(screen.getByTestId("card-a.png")); // the pointer has left the first card
   await userEvent.hover(await screen.findByTestId("card-b.png"));
   fireEvent.keyDown(window, { key: "M" });
   await waitFor(() => expect(calls.find((c) => c.url.endsWith("/dedup/unmute-frames"))?.body).toEqual({ feature: "seal", frames: ["b.png"] }));
@@ -701,4 +714,55 @@ test("the thumbnails of a box are loaded afresh when it compares another part (t
   await screen.findByLabelText("Compares");
   await waitFor(() => expect(document.querySelector('img[src*="dv%3Dabc123"]')).not.toBeNull());
   expect(document.querySelector('img[src*="/thumb"][src*="feature=seal"]')?.getAttribute("src")).toContain("&v=dv%3Dabc123");
+});
+
+const scoreOutliers = async (shown = true) => {
+  const user = userEvent.setup();
+  render(<DedupView camera="camA" tool="outliers" />);
+  const panel = await screen.findByRole("complementary", { name: "Options" });
+  await user.click(await within(panel).findByRole("button", { name: "Score outliers" }));
+  if (shown) await screen.findByText(/outlier 0\.420/);
+  else await within(panel).findByTestId("outlier-summary");
+  return { user, panel };
+};
+const pressM = (frame: string) => {
+  fireEvent.mouseEnter(screen.getByTestId(`card-${frame}`));
+  fireEvent.keyDown(window, { key: "m" });
+};
+
+test("Outliers: the score summary is in the options panel, not above the cards", async () => {
+  const { panel } = await scoreOutliers();
+  expect(within(panel).getByTestId("outlier-summary")).toHaveTextContent(/1 frame\(s\) · score min 0\.420/);
+  expect(within(screen.getByTestId("outlier-results")).queryByRole("status")).toBeNull();
+});
+
+test("Outliers: M on a picture the database already holds as muted unmutes it, with no message", async () => {
+  dbMuted = ["far.png"];
+  const { user, panel } = await scoreOutliers(false);
+  expect(screen.queryByTestId("card-far.png")).toBeNull(); // muted pictures leave the list
+  await user.click(within(panel).getByLabelText(/Show muted/));
+  const card = await screen.findByTestId("card-far.png");
+  await waitFor(() => expect(card).toHaveStyle({ opacity: "0.5" })); // faded as a muted card, though this page never pressed M on it
+  pressM("far.png");
+  await waitFor(() => expect(calls.some((c) => c.url.endsWith("/dedup/unmute-frames") && c.body.frames[0] === "far.png")).toBe(true));
+  expect(calls.some((c) => c.url.endsWith("/dedup/mute-frames"))).toBe(false);
+  await waitFor(() => expect(screen.getByTestId("card-far.png")).toHaveStyle({ opacity: "1" })); // the database no longer holds it
+  expect(screen.queryByRole("alert")).toBeNull();
+});
+
+test("Outliers: M on an unmuted picture mutes it and the card shows it", async () => {
+  await scoreOutliers();
+  pressM("far.png");
+  await waitFor(() => expect(calls.some((c) => c.url.endsWith("/dedup/mute-frames"))).toBe(true));
+  await waitFor(() => expect(screen.getByTestId("card-far.png")).toHaveStyle({ opacity: "0.5" }));
+});
+
+test("Clusters: M on a cluster card mutes it and the card shows it", async () => {
+  state = baseState({ result }); // the box holds its clustering, as the real one does when the page reloads its state
+  render(<DedupView camera="camA" tool="clusters" />);
+  await screen.findByTestId("cluster-browser");
+  await screen.findByTestId("card-a.png");
+  pressM("a.png");
+  await waitFor(() => expect(calls.some((c) => c.url.endsWith("/dedup/mute-frames") && c.body.frames[0] === "a.png")).toBe(true));
+  await waitFor(() => expect(screen.getByTestId("card-a.png")).toHaveStyle({ opacity: "0.5" }));
 });

@@ -52,7 +52,7 @@ export function useOutliers({ camera, feature, method, onResult, onError }: Args
 
 export type OutlierState = ReturnType<typeof useOutliers>;
 
-/** k slider, "Score outliers" button and progress. */
+/** k slider, "Score outliers" button, progress and, once scored, the summary of the scores (all in the options panel). */
 /** onStart is called when "Score outliers" is pressed, before the run begins. */
 export function OutlierControls({ o, onStart }: { o: OutlierState; onStart?: () => void }) {
   return (
@@ -73,6 +73,12 @@ export function OutlierControls({ o, onStart }: { o: OutlierState; onStart?: () 
       >
         Score outliers
       </button>
+      {o.result && (
+        <p role="status" data-testid="outlier-summary">
+          {o.result.scores.filter((r) => !o.gone.has(r.frame)).length} frame(s) · score min {o.result.summary.min.toFixed(3)} · median {o.result.summary.median.toFixed(3)} · 95th percentile{" "}
+          {o.result.summary.p95.toFixed(3)} · max {o.result.summary.max.toFixed(3)} (k = {o.result.k}, {o.result.method})
+        </p>
+      )}
       {o.running && (
         <p aria-live="polite">
           <progress value={Number(o.progress.done ?? 0)} max={Number(o.progress.total ?? 0) || undefined} /> Embedding {Number(o.progress.done ?? 0)}/{Number(o.progress.total ?? 0)}
@@ -132,10 +138,6 @@ export function OutlierResults({
 
   return (
     <div data-testid="outlier-results">
-      <p role="status">
-        {rows.length} frame(s) · score min {result.summary.min.toFixed(3)} · median {result.summary.median.toFixed(3)} · 95th percentile {result.summary.p95.toFixed(3)} · max{" "}
-        {result.summary.max.toFixed(3)} (k = {result.k}, {result.method})
-      </p>
       <PictureGrid
         camera={camera}
         feature={labelFeature ?? ranFor}
