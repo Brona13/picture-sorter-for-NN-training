@@ -16,6 +16,7 @@ import ZoneScatter from "./ZoneScatter";
 import { HeatControls, useHeatChoice } from "./heatChoice";
 import PositionMap, { startRadius } from "./PositionMap";
 import PairMap from "./PairMap";
+import { ATTENTION_SORTS, AttentionSort, attentionOf, attentionText, isAttentionSort, sortByAttention } from "../attention";
 import { judgeZone, Pt2, Zone } from "../zoneGeometry";
 import CalcGeometry from "./CalcGeometry";
 import type { EvalSpec } from "../evalGeometry";
@@ -27,6 +28,7 @@ import { zoneDistanceText, zoneOffsetText } from "../zoneText";
 import MessageBar from "../MessageBar";
 
 const CHART_STORE = "flow.histogram";
+const SORT_STORE = "flow.detectorSort"; // the detector page's order: needs attention first, furthest outside, weakest match, file name
 
 /** The look of a rectangle being drawn or edited, the same as in the ROI editor. */
 const ROI_RED = "#ff3030";
@@ -157,6 +159,14 @@ function DetectorWork(p: {
   const heatChoice = useHeatChoice();
   const [pairState, setPairState] = useState<FlowPairState | null>(null); // the pair map (v1.170.0)
   const [pairRange, setPairRange] = useState<[number, number] | null>(null); // the pair histogram's zoom: only those pictures
+  // The order of the strip and the grid (v1.171.0): needs attention first unless another signal is chosen; remembered here.
+  const [sort, setSort] = useState<AttentionSort>(() => {
+    try { const v = localStorage.getItem(SORT_STORE) ?? ""; return isAttentionSort(v) ? v : "attention"; } catch { return "attention"; }
+  });
+  const chooseSort = (v: AttentionSort) => {
+    setSort(v);
+    try { localStorage.setItem(SORT_STORE, v); } catch { /* not remembered */ }
+  };
   const [creating, setCreating] = useState(false);
   const [sel, setSel] = useState<{ name: string; index: number } | null>(null);
   const [edit, setEdit] = useState<{ kind: "move" | Handle; start: { x: number; y: number }; orig: Rect; cur: Rect } | null>(null);
@@ -245,6 +255,10 @@ function DetectorWork(p: {
     return why;
   }, [candidates, boxes, zones, pairState]);
   const outsideFrames = useMemo(() => candidates.filter((f) => outsideWhy.has(f)), [candidates, outsideWhy]);
+  const attention = useMemo(
+    () => new Map(candidates.map((f) => [f, attentionOf(f, boxes[f], mapSlots.map((s) => s.slot), zones, pairState)])),
+    [candidates, boxes, mapSlots.map((s) => s.slot).join("\u0000"), zones, pairState], // eslint-disable-line react-hooks/exhaustive-deps
+  );
   const outsideTip = useMemo(() => {
     const per = new Map<string, number>();
     for (const reasons of outsideWhy.values()) for (const r of reasons) per.set(r, (per.get(r) ?? 0) + 1);
@@ -259,8 +273,8 @@ function DetectorWork(p: {
     const base = show === "missing" ? missingFrames : show === "outside" ? outsideFrames : candidates;
     const inRange = (f: string) => { const v = pairState?.values[f]; return v != null && pairRange != null && v >= pairRange[0] && v <= pairRange[1]; };
     const near = spot ? base.filter((f) => { const b = boxes[f]?.[spot.slot]; return !!b && Math.hypot(b.x - spot.at[0], b.y - spot.at[1]) <= spot.radius; }) : base;
-    return pairRange ? near.filter(inRange) : near;
-  }, [show, missingFrames, outsideFrames, candidates, spot, boxes, pairRange, pairState]);
+    return sortByAttention(pairRange ? near.filter(inRange) : near, attention, sort);
+  }, [show, missingFrames, outsideFrames, candidates, spot, boxes, pairRange, pairState, attention, sort]);
   const at = Math.min(index, Math.max(0, shown.length - 1));
   const frame = shown[at];
   // The size counts only for the picture it was measured on. It used to be reset to "unknown" by an effect whenever the
@@ -269,7 +283,7 @@ function DetectorWork(p: {
   // until a hard refresh.
   const pictureSrc = frame ? pictureUrl(frame) : "";
   const size = useMemo(() => (measured && measured.src === pictureSrc ? { w: measured.w, h: measured.h } : null), [measured, pictureSrc]);
-  useEffect(() => setIndex(0), [show, spot, pairRange]);
+  useEffect(() => setIndex(0), [show, spot, pairRange, sort]);
   // The pair map's state: again after a run (version), a change of the pair, or new boxes.
   const savedPair = JSON.stringify(detail.review_pair ?? null);
   useEffect(() => {
@@ -736,7 +750,13 @@ function DetectorWork(p: {
         <span className="muted">{shown.length ? `${at + 1} / ${shown.length} · ${frame}` : ""}</span>
         {missing.length > 0 && detail.status === "fresh" && frame && <span role="status" className="flow-missing">Not found here: {missing.join(", ")}</span>}
         {noCrop.size > 0 && <span role="status" className="flow-missing">{noCrop.size} picture{noCrop.size === 1 ? "" : "s"} not shown: the Picture edits box above has no rectangle there (its detector found no target).</span>}
-        <span className="flow-segment flow-nav-right" role="group" aria-label="Show pictures">
+        <label className="flow-nav-right" title="The order of the strip and the cards: not found first, then the furthest outside a zone or band, then the weakest match">
+          Sort{" "}
+          <select aria-label="Sort pictures" value={sort} onChange={(e) => chooseSort(e.target.value as AttentionSort)}>
+            {ATTENTION_SORTS.map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+          </select>
+        </label>
+        <span className="flow-segment" role="group" aria-label="Show pictures">
           <button type="button" aria-pressed={show === "all"} onClick={() => setShow("all")}>All ({candidates.length})</button>
           <button type="button" aria-pressed={show === "missing"} title="Pictures where a target with examples has no box" onClick={() => setShow("missing")}>Not found ({missingFrames.length})</button>
           <button type="button" aria-pressed={show === "outside"} title={outsideTip} onClick={() => setShow("outside")}>Outside ({outsideFrames.length})</button>
@@ -818,6 +838,7 @@ function DetectorWork(p: {
           current={frame}
           size={size}
           imageUrl={cardUrl}
+          reason={(f) => attentionText(attention.get(f))}
           onPick={(f) => {
             setIndex(Math.max(0, shown.indexOf(f)));
             contentRef.current?.scrollIntoView?.({ block: "center", behavior: "smooth" });

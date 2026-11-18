@@ -630,6 +630,7 @@ test("Detector page: once the detector has run, a grid of findings below loads t
     summary: { frames: 2, found: { "left hole": 1 }, complete: 1, review: 1 },
   };
   routes(detector, (url) => (url.includes("/boxes") ? { boxes: { "a.png": { "left hole": { x: 20, y: 20, angle: 0, score: 1, w: 40, h: 30, source: "auto" } } }, review: ["b.png"] } : undefined));
+  localStorage.setItem("flow.detectorSort", "name"); // file-name order: a.png first (needs attention first would put b.png, not found, first)
   render(<FlowBoxView camera="camA" focus={{ nodeId: "det:1", onBack: () => {} }} />);
   const grid = await screen.findByTestId("detector-grid", {}, { timeout: 4000 });
   expect(await within(grid).findByTestId("finding-a.png", {}, { timeout: 4000 })).toHaveAttribute("aria-current", "true");
@@ -638,6 +639,7 @@ test("Detector page: once the detector has run, a grid of findings below loads t
   await userEvent.click(within(grid).getByRole("button", { name: "Load b.png in the canvas" }));
   await waitFor(() => expect(within(grid).getByTestId("finding-b.png")).toHaveAttribute("aria-current", "true"));
   expect(screen.getByRole("button", { name: "Show b.png" })).toHaveAttribute("aria-current", "true");
+  localStorage.removeItem("flow.detectorSort");
 });
 
 test("Detector page: no grid of findings before the detector has run", async () => {

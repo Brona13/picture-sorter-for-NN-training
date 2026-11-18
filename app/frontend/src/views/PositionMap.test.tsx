@@ -193,3 +193,18 @@ test("Detector page: zooming the pair histogram shows only the pictures in that 
   await userEvent.click(screen.getByRole("button", { name: "Show all" }));
   await waitFor(() => expect(strip()).toHaveLength(4));
 });
+
+test("Detector page: needs attention first orders the strip and says why on each card; Sort picks another order", async () => {
+  localStorage.removeItem("flow.detectorSort");
+  render(<FlowBoxView camera="camA" focus={{ nodeId: "det:1", onBack: () => {} }} />);
+  await screen.findByTestId("position-map");
+  // d.png: hole not found; c.png: its hole 15× out of the zone (radius 5, about 72 px away); a and b by score (equal: by name)
+  await waitFor(() => expect(strip()).toEqual(["Show d.png", "Show c.png", "Show a.png", "Show b.png"]));
+  expect(screen.getByTestId("finding-reason-d.png")).toHaveTextContent("hole not found");
+  expect(screen.getByTestId("finding-reason-c.png")).toHaveTextContent(/^hole zone \d+\.\d× outside$/);
+  expect(screen.getByTestId("finding-reason-a.png")).toHaveTextContent("score 0.90");
+  await userEvent.selectOptions(screen.getByLabelText("Sort pictures"), "name");
+  await waitFor(() => expect(strip()).toEqual(["Show a.png", "Show b.png", "Show c.png", "Show d.png"]));
+  expect(localStorage.getItem("flow.detectorSort")).toBe("name");
+  localStorage.removeItem("flow.detectorSort");
+});

@@ -42,7 +42,7 @@ export function sameSpot(found: Record<string, FlowBox> | undefined): [string, s
  * glance. Filter by target (whose boxes are drawn and counted) and by what was found; a click on a card loads that picture
  * in the canvas above, where another example can be drawn. Shown once the detector has run.
  */
-export default function DetectorGrid({ frames, boxes, targets, current, size, imageUrl, onPick }: {
+export default function DetectorGrid({ frames, boxes, targets, current, size, imageUrl, onPick, reason }: {
   frames: string[];
   boxes: Record<string, Record<string, FlowBox>>;
   /** The targets that have examples, in the order of the detector (their colour follows it). */
@@ -52,6 +52,8 @@ export default function DetectorGrid({ frames, boxes, targets, current, size, im
   size: { w: number; h: number } | null;
   imageUrl: (frame: string) => string;
   onPick: (frame: string) => void;
+  /** Why the picture ranks where it does in the page's order (a short line under its name), if anything. */
+  reason?: (frame: string) => string | null;
 }) {
   const [grid, setGrid] = useState(stored);
   const [page, setPage] = useState(1);
@@ -180,6 +182,7 @@ export default function DetectorGrid({ frames, boxes, targets, current, size, im
                   )}
                 </button>
                 <div style={{ fontSize: 12, margin: "4px 0 2px", wordBreak: "break-all" }}>{f}</div>
+                {reason?.(f) && <div data-testid={`finding-reason-${f}`} style={{ fontSize: 12, fontWeight: 600 }}>{reason(f)}</div>}
                 <div style={{ fontSize: 12, display: "flex", flexWrap: "wrap", gap: 6 }}>
                   {i.missing.map((t) => <span key={t} className="flow-missing" title={`${t} not found`}>✗ {t}</span>)}
                   {i.same.length > 0 && <span className="flow-missing" title={i.same.map(([a, b]) => `${a} and ${b}`).join("; ")}>same spot: {i.same.map(([a, b]) => `${a} = ${b}`).join(", ")}</span>}
