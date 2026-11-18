@@ -1418,6 +1418,30 @@ DEDUP_MUTED_KEY = "roi.dedup.muted."  # setting roi.dedup.muted.<feature> = JSON
 CLASS_LINES_KEY = "class.lines."  # setting class.lines.<feature> = the lines into a Classifier's class dots (class_lines.py)
 
 
+# Every setting a Classifier (a ROI) keeps under its name: ``<prefix><feature>``. A Classifier is named after the lowest free
+# number, so a deleted one's name comes back for the next; none of these may outlive the ROI, or the new one arrives with the
+# old one's lines. A new setting of this kind is added HERE (a test lists every ``*_KEY`` / ``KEY_PREFIX`` of the code).
+FEATURE_SETTING_PREFIXES = (
+    ROI_STEP_KEY, DETACHED_KEY, DEDUP_INPUT_KEY, DEDUP_MUTED_KEY, CLASS_LINES_KEY,
+    "roi.anchor.", "roi.input.", "roi.region.", "vision.",
+    "grid.cols.", "grid.perpage.", "dedup.method.", "dedup.epsilon.", "dedup.min_points.",
+)
+
+
+def forget_feature_settings(camera: str, feature: str) -> int:
+    """Delete everything the camera's settings hold under this Classifier's name; returns how many rows went."""
+    keys = [f"{prefix}{feature}" for prefix in FEATURE_SETTING_PREFIXES]
+    con = connect()
+    try:
+        count = con.execute(
+            f"DELETE FROM settings WHERE camera=? AND key IN ({','.join('?' for _ in keys)})", (camera, *keys)
+        ).rowcount
+        con.commit()
+        return count
+    finally:
+        con.close()
+
+
 def dedup_inputs(camera: str, feature: str) -> list[str]:
     """The Dedup boxes a Classifier reads through: the setting holds one box id (before v1.134.0) or a JSON list."""
     raw = get_setting(camera, f"{DEDUP_INPUT_KEY}{feature}")

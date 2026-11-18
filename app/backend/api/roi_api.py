@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import anchor
+import chain
 import region
 import roi_input
 import samples
@@ -166,6 +167,11 @@ def upsert_roi(camera: str, body: RoiUpsert) -> dict:
     if existing is not None and existing.role == "classify" and not body.make_classifier:
         raise HTTPException(status_code=422, detail="Cannot turn the product-sorting ROI into a quality ROI.")
     updated = [r for r in datamodel.load_rois(camera) if r.name != full]
+    if existing is None:
+        # A new Classifier starts with nothing: whatever an earlier one of this name (or an older version of the app) left under
+        # the name must not become its lines.
+        db.forget_feature_settings(camera, full)
+        chain.forget_boxes(camera, [chain.roi_node_id(full), chain.classify_node_id(full)])
     roi = ROI(
         full, body.x, body.y, body.w, body.h,
         role="classify" if body.make_classifier else "quality",
@@ -341,6 +347,10 @@ def delete_roi(camera: str, feature: str) -> dict:
     region.clear(camera, feature)
     flow.set_roi_step(camera, feature, 1)  # a Classifier of the same name later starts in step 1 again
     flow.drop_classify_edges(camera, feature)
+    # Its name comes back for the next Classifier, so nothing may stay under it: the Dedup boxes it read, its class-dot lines, its
+    # detached flag, its settings and its place on the canvas.
+    db.forget_feature_settings(camera, feature)
+    chain.forget_boxes(camera, [chain.roi_node_id(feature), chain.classify_node_id(feature)])
     return {"removed": labels.purge_feature(camera, feature)}
 
 

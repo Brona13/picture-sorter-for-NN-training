@@ -122,6 +122,14 @@ def save_layout(camera: str, raw: object) -> dict:
     return layout
 
 
+def forget_boxes(camera: str, node_ids: list[str]) -> None:
+    """The boxes of a deleted Classifier: forget their stored place and display name, so a new Classifier of the same name starts clean."""
+    layout = load_layout(camera)
+    kept = {k: v for k, v in layout["nodes"].items() if k not in node_ids}
+    if len(kept) != len(layout["nodes"]):
+        db.set_setting(camera, SETTING_KEY, json.dumps({**layout, "nodes": kept}, sort_keys=True))
+
+
 def _frame_count(camera: str, feature: str | None) -> int:
     if feature is None:
         return len(datamodel.list_unsorted(camera))
