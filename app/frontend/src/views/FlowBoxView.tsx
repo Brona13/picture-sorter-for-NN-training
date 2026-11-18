@@ -13,7 +13,9 @@ import ZoomPane from "../ZoomPane";
 import { FIT_VIEW, fitSize, View } from "../zoomGeometry";
 import FlowBoxPanel, { EvaluationHistogram } from "./FlowBoxPanel";
 import ZoneScatter from "./ZoneScatter";
-import { Zone } from "../zoneGeometry";
+import { HeatControls, useHeatChoice } from "./heatChoice";
+import PositionMap, { startRadius } from "./PositionMap";
+import { judgeZone, Pt2, Zone } from "../zoneGeometry";
 import CalcGeometry from "./CalcGeometry";
 import type { EvalSpec } from "../evalGeometry";
 import ExportWork from "./ExportWork";
@@ -24,8 +26,6 @@ import { zoneDistanceText, zoneOffsetText } from "../zoneText";
 import MessageBar from "../MessageBar";
 
 const CHART_STORE = "flow.histogram";
-const HEAT_STORE = "flow.heatmap"; // "heat" or "dots": what the zone chart draws
-const SMOOTH_STORE = "flow.heatSmoothing"; // the heat map's smoothing, as a power of two (0 = automatic)
 
 /** The look of a rectangle being drawn or edited, the same as in the ROI editor. */
 const ROI_RED = "#ff3030";
@@ -149,7 +149,11 @@ function DetectorWork(p: {
   const [reuseSrc, setReuseSrc] = useState("");
   const [stamp, setStamp] = useState<{ cx: number; cy: number; angle: number } | null>(null);
   const [stampDrag, setStampDrag] = useState<{ kind: "move" | "turn"; start: { x: number; y: number }; orig: { cx: number; cy: number } } | null>(null);
-  const [onlyReview, setOnlyReview] = useState(false);
+  // Which pictures the strip and the grid show: all, those where a target was not found, those outside a review zone.
+  const [show, setShow] = useState<"all" | "missing" | "outside">("all");
+  const [mapSlot, setMapSlot] = useState(""); // the target slot on the position map
+  const [spot, setSpot] = useState<{ slot: string; at: Pt2; radius: number } | null>(null); // a click on the map: only the pictures near it
+  const heatChoice = useHeatChoice();
   const [creating, setCreating] = useState(false);
   const [sel, setSel] = useState<{ name: string; index: number } | null>(null);
   const [edit, setEdit] = useState<{ kind: "move" | Handle; start: { x: number; y: number }; orig: Rect; cur: Rect } | null>(null);
@@ -221,7 +225,26 @@ function DetectorWork(p: {
     () => (srcId ? frames.filter((f) => parentBoxes[f]?.[insideSel]) : frames).filter((f) => !noCrop.has(f)),
     [frames, srcId, parentBoxes, insideSel, noCrop],
   );
-  const shown = useMemo(() => (onlyReview ? candidates.filter((f) => review.includes(f)) : candidates), [candidates, review, onlyReview]);
+  // The position map (v1.169.0): one target slot at a time, of the targets that have examples.
+  const mapSlots = slotList.filter((s) => withExamples.includes(detail.targets[s.ti].name));
+  const mapOn = mapSlots.find((s) => s.slot === mapSlot) ?? mapSlots[0];
+  const zones = useMemo(() => detail.review_zones ?? {}, [detail.review_zones]);
+  const reviewSet = useMemo(() => new Set(review), [review]);
+  const missingFrames = useMemo(() => candidates.filter((f) => reviewSet.has(f)), [candidates, reviewSet]);
+  const outsideFrames = useMemo(
+    () => candidates.filter((f) => Object.entries(zones).some(([slot, z]) => { const b = boxes[f]?.[slot]; return !!b && judgeZone([b.x, b.y], z) === "fail"; })),
+    [candidates, boxes, zones],
+  );
+  const mapPoints = useMemo(() => {
+    const out: Record<string, Pt2 | null> = {};
+    if (mapOn) for (const f of candidates) { const b = boxes[f]?.[mapOn.slot]; out[f] = b ? [b.x, b.y] : null; }
+    return out;
+  }, [candidates, boxes, mapOn?.slot]); // eslint-disable-line react-hooks/exhaustive-deps
+  const shown = useMemo(() => {
+    const base = show === "missing" ? missingFrames : show === "outside" ? outsideFrames : candidates;
+    if (!spot) return base;
+    return base.filter((f) => { const b = boxes[f]?.[spot.slot]; return !!b && Math.hypot(b.x - spot.at[0], b.y - spot.at[1]) <= spot.radius; });
+  }, [show, missingFrames, outsideFrames, candidates, spot, boxes]);
   const at = Math.min(index, Math.max(0, shown.length - 1));
   const frame = shown[at];
   // The size counts only for the picture it was measured on. It used to be reset to "unknown" by an effect whenever the
@@ -230,7 +253,7 @@ function DetectorWork(p: {
   // until a hard refresh.
   const pictureSrc = frame ? pictureUrl(frame) : "";
   const size = useMemo(() => (measured && measured.src === pictureSrc ? { w: measured.w, h: measured.h } : null), [measured, pictureSrc]);
-  useEffect(() => setIndex(0), [onlyReview]);
+  useEffect(() => setIndex(0), [show, spot]);
   useEffect(() => {
     (strip.current?.querySelector('[aria-current="true"]') as HTMLElement | null)?.scrollIntoView?.({ inline: "center", block: "nearest" });
   }, [frame]);
@@ -440,6 +463,23 @@ function DetectorWork(p: {
       p.onError(null);
       p.onChanged();
     } catch (e) { p.onError(msg(e)); }
+  };
+
+  // The review zone of a target slot: saved on the detector box, never makes its run stale (a review aid only).
+  const saveZone = async (slot: string, zone: Partial<Zone> | null) => {
+    try {
+      p.setDetail(await api.flowUpdate(camera, nodeId, { review_zone: { slot, zone } }));
+      p.onError(null);
+    } catch (e) { p.onError(msg(e)); }
+  };
+  const zoneOnDensest = async () => {
+    if (!mapOn) return;
+    const pts = Object.values(mapPoints).filter((q): q is Pt2 => !!q);
+    const at = densestSpot(pts, heatChoice.smoothing);
+    if (!at) return;
+    const center: Pt2 = [Math.round(at[0] * 10) / 10, Math.round(at[1] * 10) / 10];
+    const r = startRadius(pts, center);
+    await saveZone(mapOn.slot, zones[mapOn.slot] ? { center } : { shape: "circle", center, radius: r, half: [r, r] });
   };
 
   return (
@@ -657,7 +697,7 @@ function DetectorWork(p: {
           </ZoomPane>
         </>
       ) : (
-        <p className="muted">{onlyReview ? "Nothing to review." : hasInput ? "No pictures reach this box yet." : "Nothing is drawn into this box, so it has no pictures. Draw a line into it on the Chain."}</p>
+        <p className="muted">{spot ? "No pictures near that spot." : show === "missing" ? "Every target was found on every picture." : show === "outside" ? "No picture is outside a zone." : hasInput ? "No pictures reach this box yet." : "Nothing is drawn into this box, so it has no pictures. Draw a line into it on the Chain."}</p>
       )}
 
       <div className="flow-nav">
@@ -666,11 +706,19 @@ function DetectorWork(p: {
         <span className="muted">{shown.length ? `${at + 1} / ${shown.length} · ${frame}` : ""}</span>
         {missing.length > 0 && detail.status === "fresh" && frame && <span role="status" className="flow-missing">Not found here: {missing.join(", ")}</span>}
         {noCrop.size > 0 && <span role="status" className="flow-missing">{noCrop.size} picture{noCrop.size === 1 ? "" : "s"} not shown: the Picture edits box above has no rectangle there (its detector found no target).</span>}
-        <label className="flow-check flow-nav-right">
-          <input type="checkbox" checked={onlyReview} onChange={(e) => setOnlyReview(e.target.checked)} /> Only pictures to review ({review.length})
-        </label>
+        <span className="flow-segment flow-nav-right" role="group" aria-label="Show pictures">
+          <button type="button" aria-pressed={show === "all"} onClick={() => setShow("all")}>All ({candidates.length})</button>
+          <button type="button" aria-pressed={show === "missing"} title="Pictures where a target with examples has no box" onClick={() => setShow("missing")}>Not found ({missingFrames.length})</button>
+          <button type="button" aria-pressed={show === "outside"} title="Pictures where a box lies outside its target's review zone (position map)" onClick={() => setShow("outside")}>Outside a zone ({outsideFrames.length})</button>
+        </span>
       </div>
 
+      {spot && (
+        <p role="status" className="flow-spot">
+          Only the pictures where “{spot.slot}” was found near x {spot.at[0].toFixed(0)}, y {spot.at[1].toFixed(0)}: {shown.length}{" "}
+          <button type="button" onClick={() => setSpot(null)}>Show all</button>
+        </p>
+      )}
       <div className="flow-strip" ref={strip} aria-label="Pictures">
         {strip60.map((f) => (
           <button key={f} type="button" aria-label={`Show ${f}`} aria-current={f === frame} title={f} className={`flow-thumb ${statusOf(f)}`} onClick={() => setIndex(shown.indexOf(f))}>
@@ -678,6 +726,46 @@ function DetectorWork(p: {
           </button>
         ))}
       </div>
+
+      {detail.status !== "none" && mapOn && (
+        <details className="flow-position" open>
+          <summary>Position map: where each target was found</summary>
+          <div className="flow-nav">
+            {mapSlots.length > 1 && (
+              <span className="flow-segment" role="group" aria-label="Target on the map">
+                {mapSlots.map((s) => (
+                  <button key={s.slot} type="button" aria-pressed={s.slot === mapOn.slot} onClick={() => { setMapSlot(s.slot); setSpot(null); }}>
+                    <span className="flow-dot" style={{ background: COLORS[s.ti % COLORS.length] }} /> {s.slot}
+                  </button>
+                ))}
+              </span>
+            )}
+            <HeatControls choice={heatChoice} />
+            <button type="button" title="Put the review zone on the densest spot of this target (the red top of the heat map), sized to hold most of the pictures" onClick={() => void zoneOnDensest()}>
+              Put the zone on the densest spot
+            </button>
+            {zones[mapOn.slot] && (
+              <>
+                <span className="flow-segment" role="group" aria-label="Zone shape">
+                  <button type="button" aria-pressed={zones[mapOn.slot].shape === "circle"} onClick={() => void saveZone(mapOn.slot, { shape: "circle" })}>Circle</button>
+                  <button type="button" aria-pressed={zones[mapOn.slot].shape === "rect"} onClick={() => void saveZone(mapOn.slot, { shape: "rect" })}>Rectangle</button>
+                </span>
+                <button type="button" onClick={() => void saveZone(mapOn.slot, null)}>Remove zone</button>
+              </>
+            )}
+          </div>
+          <PositionMap
+            points={mapPoints}
+            extent={!srcId && size ? size : null}
+            zone={zones[mapOn.slot] ?? null}
+            onZone={(z) => void saveZone(mapOn.slot, z)}
+            onSpot={(at, radius) => setSpot({ slot: mapOn.slot, at, radius })}
+            heat={heatChoice.heatOn ? { smoothing: heatChoice.smoothing } : null}
+            missing={Object.values(mapPoints).filter((q) => !q).length}
+            label={mapOn.slot}
+          />
+        </details>
+      )}
 
       {detail.status !== "none" && withExamples.length > 0 && (
         <DetectorGrid
@@ -728,21 +816,8 @@ function ValuesWork(p: {
     try { return localStorage.getItem(CHART_STORE) !== "off"; } catch { return true; }
   });
   useEffect(() => setRange(null), [nodeId]);
-  const [heatOn, setHeatOn] = useState(() => {
-    try { return localStorage.getItem(HEAT_STORE) === "heat"; } catch { return false; }
-  });
-  const [smoothExp, setSmoothExp] = useState(() => {
-    try { const v = Number(localStorage.getItem(SMOOTH_STORE)); return Number.isFinite(v) && v >= -2 && v <= 2 ? v : 0; } catch { return 0; }
-  });
-  const smoothing = 2 ** smoothExp;
-  const chooseHeat = (on: boolean) => {
-    setHeatOn(on);
-    try { localStorage.setItem(HEAT_STORE, on ? "heat" : "dots"); } catch { /* not remembered */ }
-  };
-  const chooseSmooth = (v: number) => {
-    setSmoothExp(v);
-    try { localStorage.setItem(SMOOTH_STORE, String(v)); } catch { /* not remembered */ }
-  };
+  const heatChoice = useHeatChoice();
+  const { heatOn, smoothing } = heatChoice;
   const chooseChart = (on: boolean) => {
     setShowChart(on);
     try { localStorage.setItem(CHART_STORE, on ? "on" : "off"); } catch { /* not remembered */ }
@@ -910,17 +985,7 @@ function ValuesWork(p: {
         )}
         {tolerance && zoneMode && showChart && (
           <>
-            <span className="flow-segment" role="group" aria-label="Chart style">
-              <button type="button" aria-pressed={!heatOn} onClick={() => chooseHeat(false)}>Dots</button>
-              <button type="button" aria-pressed={heatOn} title="Colour by how many pictures lie around each place: blue few, red the most" onClick={() => chooseHeat(true)}>Heatmap</button>
-            </span>
-            {heatOn && (
-              <label title="How far each picture's bump reaches. Automatic in the middle; left shows small piles, right merges them">
-                Smoothing{" "}
-                <input type="range" min={-2} max={2} step={0.25} value={smoothExp} onChange={(e) => chooseSmooth(Number(e.target.value))} aria-label="Smoothing" />{" "}
-                {smoothExp === 0 ? "auto" : `×${smoothing.toFixed(2)}`}
-              </label>
-            )}
+            <HeatControls choice={heatChoice} />
           </>
         )}
         {tolerance && (

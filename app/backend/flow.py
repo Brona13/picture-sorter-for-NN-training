@@ -697,6 +697,29 @@ def clean_zone(raw: object, base: dict | None = None) -> dict:
     return zone
 
 
+def review_zones(node: dict) -> dict[str, dict]:
+    """The review zones of a detector (v1.169.0): per target slot, the area of the picture its box usually lies in, drawn on
+    the detector page's position map. A review aid only: no verdict, no label, and not part of ``signature``, so changing
+    one never makes the run stale. Zones of slots the detector no longer has are left out."""
+    slots = {s for t in node.get("targets", []) for s in slot_names(t)}
+    return {slot: clean_zone(None, zone) for slot, zone in (node.get("review_zones") or {}).items() if slot in slots}
+
+
+def set_review_zone(node: dict, raw: object) -> None:
+    """``{"slot": name, "zone": {...} | None}``: change (some fields of) one slot's review zone, or remove it."""
+    if not isinstance(raw, dict) or not isinstance(raw.get("slot"), str):
+        raise FlowError("A review zone names the target it belongs to.")
+    slot = raw["slot"]
+    if slot not in {s for t in node.get("targets", []) for s in slot_names(t)}:
+        raise FlowError(f"Unknown target: {slot}")
+    zones = {k: v for k, v in (node.get("review_zones") or {}).items()}
+    if raw.get("zone") is None:
+        zones.pop(slot, None)
+    else:
+        zones[slot] = clean_zone(raw["zone"], zones.get(slot))
+    node["review_zones"] = zones
+
+
 def zone_of(node: dict) -> dict:
     """An Evaluation box's zone; boxes saved before the zone existed get the default."""
     return clean_zone(None, node.get("zone"))
@@ -1176,6 +1199,8 @@ def update_node(camera: str, node_id: str, raw: dict) -> dict:
                 if hi < lo or hi - lo > 360:
                     raise FlowError("The angle range must go up and cover at most 360 degrees.")
                 node["angle_range"] = [lo, hi]
+        if "review_zone" in raw:
+            set_review_zone(node, raw["review_zone"])
     elif kind == "calc":
         if "op" in raw:
             if raw["op"] not in OPERATIONS:
@@ -2760,6 +2785,7 @@ def node_detail(camera: str, node_id: str, graph: dict | None = None) -> dict:
             "rotate": node["rotate"],
             "angle_range": node["angle_range"],
             "pad": node["pad"],
+            "review_zones": review_zones(node),
             "status": status(camera, node_id, graph),
             "summary": summarize_detector(camera, node_id),
         })

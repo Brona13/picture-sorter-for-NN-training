@@ -614,6 +614,8 @@ export interface FlowDetector {
   rotate: boolean;
   angle_range: [number, number] | null;
   pad: number;
+  /** Per target slot, the area its box usually lies in (the position map's review zone, v1.169.0). A review aid only. */
+  review_zones?: Record<string, FlowZone>;
   status: "none" | "fresh" | "stale";
   summary: { frames: number; found: Record<string, number>; complete: number; review: number };
 }

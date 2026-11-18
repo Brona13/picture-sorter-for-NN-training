@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from "react";
-import { autoBandwidth, density2d, heatPixels } from "../density";
+import { useHeatImage } from "./heatChoice";
 import { dragZone, edgeHandle, judgeZone, plotBounds, Pt2, Verdict, Zone } from "../zoneGeometry";
 
 const COLOUR: Record<Verdict, string> = { pass: "#1a7f37", fail: "#c62828", undetermined: "#888" };
@@ -32,23 +32,8 @@ export default function ZoneScatter({ points, zone, onZone, onCentre, heat, visi
   const shown: Zone = drag ?? { ...zone, center: nominal ? ORIGIN : null };
   const entries = Object.entries(points).map(([frame, p]) => [frame, p, p ? rel(p) : null] as const);
   const view = plotBounds(entries.map(([, , r]) => r), shown);
-  const heatMap = useMemo(() => {
-    if (!heat) return null;
-    const rel0 = heat.points.map((p): Pt2 => [p[0] - origin[0], p[1] - origin[1]]);
-    const d = density2d(rel0, view, autoBandwidth(rel0, view.w / 20) * heat.smoothing, 96);
-    let url: string | null = null;
-    try {
-      const canvas = document.createElement("canvas");
-      canvas.width = d.n;
-      canvas.height = d.n;
-      const ctx = canvas.getContext("2d");
-      if (ctx) {
-        ctx.putImageData(new ImageData(heatPixels(d), d.n, d.n), 0, 0);
-        url = canvas.toDataURL();
-      }
-    } catch { /* no canvas here: the legend still says where the pile is */ }
-    return { url, max: d.max, count: heat.points.length };
-  }, [heat, origin[0], origin[1], view.x, view.y, view.w, view.h]); // eslint-disable-line react-hooks/exhaustive-deps
+  const relHeat = useMemo(() => (heat ? heat.points.map((p): Pt2 => [p[0] - origin[0], p[1] - origin[1]]) : null), [heat, origin[0], origin[1]]); // eslint-disable-line react-hooks/exhaustive-deps
+  const heatMap = useHeatImage(relHeat, view, heat?.smoothing ?? 1);
   const u = view.w / 100; // one drawing unit: dots and handles keep about the same size on screen
   const handle = edgeHandle(shown);
   const at = (clientX: number, clientY: number): Pt2 => {
