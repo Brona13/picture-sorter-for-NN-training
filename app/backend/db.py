@@ -1387,6 +1387,16 @@ def add_dedup_unmutes(camera: str, feature: str, frames: list[str]) -> int:
         con.close()
 
 
+def own_mute_sources(camera: str, feature: str) -> dict[str, str]:
+    """frame -> who muted it, for the box's own mutes: ``dedup`` (a clustering Apply) or ``scatter`` (by hand: the M key, a Scatter selection)."""
+    con = connect()
+    try:
+        rows = con.execute("SELECT frame, source FROM dedup_mute WHERE camera=? AND feature=?", (camera, feature)).fetchall()
+    finally:
+        con.close()
+    return {r[0]: r[1] for r in rows}
+
+
 def clear_dedup_mutes(camera: str, feature: str) -> int:
     con = connect()
     try:

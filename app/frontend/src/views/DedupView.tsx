@@ -423,7 +423,7 @@ export default function DedupView({
                   <button
                     aria-label="Apply mute"
                     disabled={wouldMute === 0}
-                    title="Apply mute: mute every cluster member except its representative. Nothing is deleted."
+                    title="Apply mute: mute every cluster member except its representative. Pictures you muted by hand (M key, Scatter selection) stay muted. Nothing is deleted."
                     onClick={() =>
                       api
                         .dedupApply(camera, feature, validPicks)
@@ -433,6 +433,7 @@ export default function DedupView({
                               (r.skipped_labeled || r.skipped_golden
                                 ? ` · skipped: ${[r.skipped_labeled && `${r.skipped_labeled} labeled`, r.skipped_golden && `${r.skipped_golden} golden`].filter(Boolean).join(", ")}`
                                 : "") +
+                              (r.kept_by_hand ? ` · ${r.kept_by_hand} muted by hand kept` : "") +
                               ".",
                           );
                           setResult(null);

@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 import FrameViewer from "./FrameViewer";
-import { cursorFor, DELETE_MODE, isClearKey, labelPainter } from "./paint";
+import { cursorFor, DELETE_MODE, isClearKey, labelPainter, MUTE_MODE } from "./paint";
 import { reviewCursor } from "../reviewPaint";
 
 test("0, x and X are the clear keys; nothing else is", () => {
@@ -29,11 +29,13 @@ test("the label painter holds on the class keys, on 0 and X (the same clear mode
 test("clearing sweeps with the grey cross, deleting with a dark circle with a bin, a class with its colour; the Detector keeps its red cross", () => {
   const svg = (u: string | null) => decodeURIComponent(u ?? "");
   expect(svg(cursorFor("0", ["OK", "NG"]))).toContain("#555"); // grey cross
-  expect(svg(cursorFor(DELETE_MODE, ["OK", "NG"]))).toContain("#444"); // dark circle
-  expect(svg(cursorFor(DELETE_MODE, ["OK", "NG"]))).toContain("M8.5 9.5h9"); // the bin
+  expect(svg(cursorFor(DELETE_MODE, ["OK", "NG"]))).toContain("#d32f2f"); // a red X
+  expect(svg(cursorFor(DELETE_MODE, ["OK", "NG"]))).not.toContain("<circle");
+  expect(svg(cursorFor(MUTE_MODE, ["OK", "NG"]))).toContain("#111"); // mute: a black circle with a grey border
+  expect(svg(cursorFor(MUTE_MODE, ["OK", "NG"]))).toContain("#9e9e9e");
   expect(svg(cursorFor("1", ["OK", "NG"]))).toContain("#1a7f37"); // OK green
   expect(svg(reviewCursor("clear"))).toContain("#c0392b"); // the Detector's red cross stays
-  expect(svg(reviewCursor("delete"))).toContain("#444"); // but deleting looks the same everywhere
+  expect(svg(reviewCursor("delete"))).toContain("#d32f2f"); // but deleting looks the same everywhere
 });
 
 const renderViewer = (marks: { label: string | null; golden: string | null }) => {

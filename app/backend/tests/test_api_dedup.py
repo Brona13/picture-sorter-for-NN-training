@@ -169,6 +169,25 @@ class DedupApiTests(ApiTestCase):
         snap = dedup.load_snapshot(CAM, FEAT)
         self.assertTrue(snap[keep][1])  # representative flag recorded for Classify's chips
 
+    def test_apply_keeps_pictures_muted_by_hand_and_still_cleans_its_own(self) -> None:
+        db.add_dedup_mutes(CAM, FEAT, [(self.frames[5], "", 1)])  # an old cluster mute that no clustering wants now
+        res = self.cluster()["result"]
+        big = next(c for c in res["clusters"] if len(c["members"]) == 3)
+        keep, by_hand = big["members"][0], big["members"][1]
+        self.client.post(f"{self.base}/mute-frames", json={"feature": FEAT, "frames": [by_hand]})  # by hand, though the cluster would mute it too
+        r = self.client.post(f"{self.base}/apply", json={"feature": FEAT, "picks": {big["id"]: keep}}).json()
+        muted = db.muted_frames(CAM, FEAT)
+        self.assertNotIn(self.frames[5], muted)  # Apply still removes its own stale mute
+        self.assertIn(by_hand, muted)
+        self.assertEqual(db.own_mute_sources(CAM, FEAT)[by_hand], "scatter")  # and does not take the hand mute over
+        self.assertEqual(r["kept_by_hand"], 1)
+
+    def test_a_hand_mute_survives_an_apply_that_does_not_want_it(self) -> None:
+        self.client.post(f"{self.base}/mute-frames", json={"feature": FEAT, "frames": [self.frames[5]]})  # noise: no cluster mutes it
+        self.cluster()
+        self.client.post(f"{self.base}/apply", json={"feature": FEAT})
+        self.assertIn(self.frames[5], db.muted_frames(CAM, FEAT))
+
     def read_classifier(self) -> None:
         """Label every picture on the ROI and make the box read its "all" dot."""
         for f in self.frames:

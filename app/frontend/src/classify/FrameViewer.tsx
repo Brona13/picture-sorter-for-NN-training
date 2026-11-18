@@ -36,6 +36,8 @@ interface Props {
   /** A grid that keeps deleted frames on show: they cannot be labeled, and can be restored. */
   deleted?: (frame: string) => boolean;
   onRestore?: (frame: string) => void;
+  /** Which deleted frames the grid can restore (default: all, when `onRestore` is given). */
+  canRestore?: (frame: string) => boolean;
   /** Frames whose labels and golden cannot be changed here (a picture outside the ROI's scope found by search). */
   labelsLocked?: (frame: string) => boolean;
   /** Controls that start the label line, before the OK / NG buttons (a found picture's Product buttons). */
@@ -59,7 +61,7 @@ interface Props {
  * pan, the same pane the ROI editor uses), the ROI outline, and the card's own actions for the frame on screen
  * (1-9 label, 0 or X clear, the key left of 1 golden, Delete).
  */
-export default function FrameViewer({ camera, feature, pictureFeature, frames, start, classes, labeling = true, goldens = labeling, deleting = true, marks, busy, onLabel, onGolden, onDelete, deleted, onRestore, labelsLocked, lead, leadCaption, trail, note, onShow, onMute, isMuted, onClose }: Props) {
+export default function FrameViewer({ camera, feature, pictureFeature, frames, start, classes, labeling = true, goldens = labeling, deleting = true, marks, busy, onLabel, onGolden, onDelete, deleted, onRestore, canRestore, labelsLocked, lead, leadCaption, trail, note, onShow, onMute, isMuted, onClose }: Props) {
   const [roi, setRoi] = useState<RoiInfo | null>(null);
   const [showRoi, setShowRoi] = useState(true);
   useEffect(() => {
@@ -273,7 +275,7 @@ export default function FrameViewer({ camera, feature, pictureFeature, frames, s
             </button>
           )}
           {isDeleted ? (
-            <button type="button" aria-label="Restore frame" disabled={busy || !onRestore} title="Bring the deleted frame back" onClick={() => onRestore?.(frame)}>
+            <button type="button" aria-label="Restore frame" disabled={busy || !onRestore || (canRestore ? !canRestore(frame) : false)} title="Bring the deleted frame back" onClick={() => onRestore?.(frame)}>
               ♻
             </button>
           ) : deleting ? (
@@ -284,7 +286,7 @@ export default function FrameViewer({ camera, feature, pictureFeature, frames, s
         </>
       }
     >
-      {(width) => <FramePane camera={camera} frame={frame} width={width} outline={outline} overlay={measures ? (size) => <StepOneOverlay size={size} measures={measures} /> : undefined} imageUrl={boxMode ? boxPictureUrl : pictureUrl} preload={preload} info={boxMissing ? "The detector found no box on this picture" : noAnchor && !boxMode ? `${roi!.short_name}: the detector found no box here, so there is no ROI on this picture` : note?.(frame)} />}
+      {(width) => <FramePane camera={camera} frame={frame} width={width} outline={outline} state={isDeleted ? "deleted" : isMuted?.(frame) ? "muted" : undefined} overlay={measures ? (size) => <StepOneOverlay size={size} measures={measures} /> : undefined} imageUrl={boxMode ? boxPictureUrl : pictureUrl} preload={preload} info={boxMissing ? "The detector found no box on this picture" : noAnchor && !boxMode ? `${roi!.short_name}: the detector found no box here, so there is no ROI on this picture` : note?.(frame)} />}
     </PictureViewer>
   );
 }

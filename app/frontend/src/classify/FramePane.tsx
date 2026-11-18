@@ -17,10 +17,12 @@ export interface Outline {
  * optional yellow outline. The zoom and pan are kept when the frame changes, so the same spot can be compared across
  * pictures. Shared by the viewers that show a plain frame.
  */
-export default function FramePane({ camera, frame, width, outline, info, imageUrl, preload, overlay, view: given, onViewChange, fixPoint, compare }: {
+export default function FramePane({ camera, frame, width, outline, state, info, imageUrl, preload, overlay, view: given, onViewChange, fixPoint, compare }: {
   camera: string;
   frame: string;
   width: number;
+  /** "muted": the picture is faded; "deleted": one diagonal line is drawn across it. Neither changes the picture's size or place. */
+  state?: "muted" | "deleted";
   outline?: Outline | null;
   info?: ReactNode;
   /** Show this picture instead of the frame itself (a Chain box's cut-out), and draw `overlay` over it. */
@@ -128,10 +130,15 @@ export default function FramePane({ camera, frame, width, outline, info, imageUr
           alt={shown.frame}
           draggable={false}
           onLoad={(e) => { setSize({ w: e.currentTarget.naturalWidth || 4, h: e.currentTarget.naturalHeight || 3 }); setLoaded(shown.frame); }}
-          style={{ width: "100%", height: "100%", display: "block" }}
+          style={{ width: "100%", height: "100%", display: "block", opacity: state === "muted" ? 0.4 : 1 }}
         />
       )}
       {showAlt && compare ? compare.overlay?.(altSize) : overlay?.(size)}
+      {state === "deleted" && (
+        <svg data-testid="viewer-deleted-line" aria-hidden="true" viewBox="0 0 100 100" preserveAspectRatio="none" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}>
+          <line x1="0" y1="0" x2="100" y2="100" stroke="#d32f2f" strokeWidth="4" vectorEffect="non-scaling-stroke" />
+        </svg>
+      )}
       {compare && !showAlt && <img src={altUrl ?? undefined} alt="" aria-hidden="true" onLoad={(e) => setAltSize({ w: e.currentTarget.naturalWidth || 4, h: e.currentTarget.naturalHeight || 3 })} style={{ display: "none" }} />}
       {outline && (
         <div

@@ -2087,7 +2087,7 @@ export const api = {
   dedupGridSettings: (camera: string, feature: string, per_page: number, cols: number) =>
     request<DedupState["grid"]>(`/cameras/${encodeURIComponent(camera)}/dedup/grid-settings`, send("PUT", { feature, per_page, cols })),
   dedupApply: (camera: string, feature: string, picks: Record<number, string>) =>
-    request<{ muted: number; unmuted: number; skipped_labeled: number; skipped_golden: number }>(
+    request<{ muted: number; unmuted: number; skipped_labeled: number; skipped_golden: number; kept_by_hand?: number }>(
       `/cameras/${encodeURIComponent(camera)}/dedup/apply`,
       post({ feature, picks }),
     ),

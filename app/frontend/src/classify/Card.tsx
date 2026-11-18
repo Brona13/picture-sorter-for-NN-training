@@ -2,7 +2,7 @@ import { sampleLabel } from "../samples";
 import { CardData, frameImageUrl, pictureVersionParam } from "../api";
 import { methodTag } from "../methodTags";
 import { classColor, clusterColor } from "./colors";
-import { cursorFor, DELETE_MODE, isClearKey, labelPainter, markPainted } from "./paint";
+import { cursorFor, DELETE_MODE, isClearKey, labelPainter, markPainted, MUTE_MODE, muteStrokeActs, setMuteStroke } from "./paint";
 import { useGridCard } from "./useGridCard";
 import { zoneDistanceText, zoneOffsetText } from "../zoneText";
 
@@ -93,6 +93,8 @@ export default function Card({ camera, feature, pictureFeature, classes, labelin
     onKey: (e) => {
       if (onMute && (e.key === "m" || e.key === "M") && !e.ctrlKey && !e.metaKey && !e.altKey) {
         if (busy || deleted || e.repeat) return true;
+        markPainted(frame); // the card the key went down on is handled, and its new state is what the stroke does
+        setMuteStroke(!muted);
         onMute();
         return true;
       }
@@ -131,6 +133,11 @@ export default function Card({ camera, feature, pictureFeature, classes, labelin
     // ones (a labeled picture is deleted by a single press only); a picture outside the ROI keeps its labels, so it is never swept.
     paint: (mode) => {
       if (busy || deleted || golden || outside) return false;
+      if (mode === MUTE_MODE) {
+        if (!onMute || !muteStrokeActs(muted)) return false;
+        onMute();
+        return true;
+      }
       if (!labeling && mode !== DELETE_MODE) return false;
       if (mode === DELETE_MODE) {
         if (!deleting || label !== null) return false;
@@ -143,7 +150,7 @@ export default function Card({ camera, feature, pictureFeature, classes, labelin
       onLabel(n === 0 ? null : classes[n - 1]);
       return true;
     },
-    cursorOf: (mode) => (!labeling && mode !== DELETE_MODE ? null : cursorFor(mode, classes)), // no colour cursor where nothing is labeled
+    cursorOf: (mode) => (mode === MUTE_MODE ? (onMute ? cursorFor(mode, classes) : null) : !labeling && mode !== DELETE_MODE ? null : cursorFor(mode, classes)), // no colour cursor where nothing is labeled, no mute cursor where nothing mutes
   });
 
   return (
@@ -156,15 +163,22 @@ export default function Card({ camera, feature, pictureFeature, classes, labelin
         borderRadius: 8,
         padding: outside || muted ? 5 : assigned ? 4 : edgeColor ? 5 : 6,
         listStyle: "none",
+        position: "relative",
       }}
     >
+      {deleted && (
+        // A deleted card stays in place with one diagonal line across it (Restore is on the card); a muted one is faded instead.
+        <svg data-testid={`deleted-line-${frame}`} aria-hidden="true" viewBox="0 0 100 100" preserveAspectRatio="none" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none", zIndex: 1 }}>
+          <line x1="0" y1="0" x2="100" y2="100" stroke="#d32f2f" strokeWidth="3" vectorEffect="non-scaling-stroke" />
+        </svg>
+      )}
       {(() => {
         const img = (
           <img
             src={thumb ? thumb(frame) : thumbUrl(camera, frame, pictureFeature ?? feature)}
             alt={sampleLabel(frame)}
             loading="lazy"
-            style={{ width: "100%", display: "block", borderRadius: 4, opacity: deleted || muted ? 0.5 : 1 }}
+            style={{ width: "100%", display: "block", borderRadius: 4, opacity: muted && !deleted ? 0.4 : 1 }}
           />
         );
         return fullSize ? (

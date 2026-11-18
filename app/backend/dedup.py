@@ -360,6 +360,7 @@ class ApplyReport:
     skipped_labeled: int
     skipped_golden: int
     skipped_representative: int
+    kept_by_hand: int = 0
 
 
 def apply(
@@ -417,7 +418,11 @@ def apply(
     # Delta forward: insert anything new. Delta backward: delete anything stale.
     # Only actual state changes need writes.
     to_mute_now = [rec for rec in to_mute_records if rec[0] not in currently_muted]
-    to_unmute_now = sorted(currently_muted - want_muted)
+    # A picture muted by hand (the M key, a Scatter selection) is the user's decision: Apply neither removes it nor takes it over.
+    own = db.own_mute_sources(camera, feature)
+    by_hand = {f for f, source in own.items() if source != "dedup"}
+    to_mute_now = [rec for rec in to_mute_now if rec[0] not in by_hand]
+    to_unmute_now = sorted(f for f in currently_muted - want_muted if f not in by_hand)
 
     db.add_dedup_mutes(camera, feature, to_mute_now)
     db.add_dedup_unmutes(camera, feature, to_unmute_now)
@@ -432,6 +437,7 @@ def apply(
         skipped_labeled=skipped_labeled,
         skipped_golden=skipped_golden,
         skipped_representative=skipped_rep,
+        kept_by_hand=len(by_hand),
     )
 
 

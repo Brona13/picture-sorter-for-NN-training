@@ -100,9 +100,11 @@ export default function PictureGrid({
   onError: (message: string) => void;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
+  // Muted (or unmuted) here and kept in place, like a deleted card: a sweep that mutes would otherwise pull the cards out from under the pointer.
+  const [kept, setKept] = useState<Set<string>>(new Set());
   const hideMuted = !!mute && !mute.showMuted;
   const allFrames = frames;
-  frames = hideMuted ? allFrames.filter((f) => !mute!.is(f)) : allFrames; // a muted picture leaves the grid unless Show muted is ticked
+  frames = hideMuted ? allFrames.filter((f) => !mute!.is(f) || kept.has(f)) : allFrames; // a muted picture leaves the grid unless Show muted is ticked, or it was muted here since the grid was last turned
   const [viewing, setViewing] = useState<string | null>(null);
   // Deleted here and kept in place (a snapshot of the card), and restored from there (kept in place as normal cards).
   const [ghosts, setGhosts] = useState<Map<string, CardData>>(new Map());
@@ -120,6 +122,7 @@ export default function PictureGrid({
   const settle = () => {
     setGhosts(new Map());
     setRevived(new Set());
+    setKept(new Set());
   };
   useEffect(() => {
     if (replaced) settle();
@@ -128,7 +131,9 @@ export default function PictureGrid({
     const card = ghosts.get(f) ?? cardOf(f);
     return mute ? { ...card, muted: mute.is(f) } : card; // a muted picture shows its dashed frame
   };
-  const canRestore = restorable || !!onRestored;
+  // A picture deleted in this grid can always be restored in place: the restore is one call, and the card goes back to normal where it stands.
+  // `restorable` (the tool keeps deleted frames on show) and `onRestored` (the tool takes the picture back into its own list) widen that.
+  const canRestoreFrame = (f: string) => restorable || !!onRestored || ghosts.has(f);
 
   async function act(frame: string, call: () => Promise<CardUpdate>, then: (card: CardUpdate["card"]) => void) {
     setBusy(frame);
@@ -149,6 +154,7 @@ export default function PictureGrid({
       onDeleted(f, c);
     });
   const toggleMute = async (f: string) => {
+    setKept((k) => (k.has(f) ? k : new Set(k).add(f))); // before the call, so the card never leaves between the answer and the reload
     setBusy(f);
     try {
       await mute!.toggle(f);
@@ -159,7 +165,7 @@ export default function PictureGrid({
     }
   };
   const restore = (f: string) => {
-    if (!canRestore || !(ghosts.has(f) || restorable)) return undefined;
+    if (!canRestoreFrame(f)) return undefined;
     return act(f, () => api.restoreFrame(camera, feature, f), (c) => {
       if (ghosts.has(f)) {
         setGhosts((g) => {
@@ -210,7 +216,7 @@ export default function PictureGrid({
               onDelete={() => del(f)}
               onMute={mute ? () => void toggleMute(f) : undefined}
               onRestore={() => restore(f)}
-              canRestore={canRestore}
+              canRestore={canRestoreFrame(f)}
             />
           );
         }}
@@ -237,7 +243,8 @@ export default function PictureGrid({
           onMute={mute ? (f) => void toggleMute(f) : undefined}
           isMuted={mute?.is}
           deleted={(f) => cardAt(f).deleted}
-          onRestore={canRestore ? (f) => void restore(f) : undefined}
+          onRestore={(f) => void restore(f)}
+          canRestore={canRestoreFrame}
           onShow={(f) => {
             const at = display.indexOf(f);
             if (at >= 0) onPage(Math.floor(at / perPage) + 1);

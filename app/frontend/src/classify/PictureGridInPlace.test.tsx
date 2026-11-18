@@ -60,12 +60,14 @@ const shown = () => screen.queryAllByTestId(/^card-/).map((e) => e.getAttribute(
 const del = (f: string) => userEvent.click(within(screen.getByTestId(`card-${f}`)).getByRole("button", { name: "Delete frame" }));
 const next = () => userEvent.click(within(screen.getByRole("navigation", { name: "Pagination demo top" })).getByRole("button", { name: /Next/ }));
 
-test("a deleted card fades and stays exactly where it was, with Restore, while the tool's own list shrinks", async () => {
+test("a deleted card stays exactly where it was with one diagonal line across it and Restore, while the tool's own list shrinks", async () => {
   render(<Tool />);
   await del("a.png");
   await within(screen.getByTestId("card-a.png")).findByRole("button", { name: "Restore frame" });
   expect(shown()).toEqual(["a.png", "b.png"]); // nothing moved up from the next page
-  expect(within(screen.getByTestId("card-a.png")).getByRole("img", { name: "a.png" })).toHaveStyle({ opacity: "0.5" });
+  expect(screen.getByTestId("deleted-line-a.png")).toBeInTheDocument(); // the line, not a fade
+  expect(screen.queryByTestId("deleted-line-b.png")).toBeNull();
+  expect(within(screen.getByTestId("card-a.png")).getByRole("img", { name: "a.png" })).toHaveStyle({ opacity: "1" });
 });
 
 test("several deletes in a row keep all their cards in place", async () => {
@@ -123,12 +125,15 @@ test("a card deleted here can be restored in place when the tool takes pictures 
   expect(shown()).toEqual(["a.png", "b.png", "c.png", "d.png"]);
 });
 
-test("where the tool cannot take a picture back, the faded card's Restore is disabled and says where to restore it", async () => {
+test("where the tool passes no restore handler, a card deleted here can still be restored in place", async () => {
   render(<Tool takesBack={false} />);
   await del("a.png");
   const restore = await within(screen.getByTestId("card-a.png")).findByRole("button", { name: "Restore frame" });
-  expect(restore).toBeDisabled();
-  expect(restore).toHaveAttribute("title", expect.stringContaining("Show: Deleted"));
+  expect(restore).toBeEnabled();
+  await userEvent.click(restore);
+  await within(screen.getByTestId("card-a.png")).findByRole("button", { name: "Delete frame" });
+  expect(screen.queryByTestId("deleted-line-a.png")).toBeNull();
+  expect(shown()).toEqual(["a.png", "b.png"]); // and it did not move
 });
 
 test("a faded card takes no label", async () => {

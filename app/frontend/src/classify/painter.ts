@@ -21,6 +21,9 @@ export interface Painter<M extends string> {
   move: (e: { movementX: number; movementY: number }, frame: string, cursorOf: (mode: M) => string | null, paint: (mode: M) => boolean) => void;
   /** The mode being painted, if a key is held (for tests). */
   held: () => M | null;
+  /** One value the stroke carries from card to card (the Dedup mute sweep: mute or unmute, decided by the first card). Gone when the stroke ends. */
+  data: () => string | undefined;
+  setData: (value: string) => void;
 }
 
 const isTypingTarget = (t: EventTarget | null) => {
@@ -42,6 +45,7 @@ export function createPainter<M extends string>(modeOf: (e: KeyboardEvent) => M 
   let over: ((mode: M) => string | null) | null = null;
   let tracking = false;
   const stroke = new Set<string>(); // cards this stroke has already acted on
+  let data: string | undefined;
 
   const root = () => (typeof document === "undefined" ? null : document.documentElement);
   const show = () => {
@@ -57,6 +61,7 @@ export function createPainter<M extends string>(modeOf: (e: KeyboardEvent) => M 
   const end = () => {
     held = null;
     stroke.clear();
+    data = undefined;
     root()?.classList.remove("painting");
   };
 
@@ -94,5 +99,7 @@ export function createPainter<M extends string>(modeOf: (e: KeyboardEvent) => M 
       if (paint(held.mode)) stroke.add(frame);
     },
     held: () => (held ? held.mode : null),
+    data: () => data,
+    setData: (value) => void (data = value),
   };
 }
