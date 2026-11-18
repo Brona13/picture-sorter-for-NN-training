@@ -8,8 +8,6 @@ A review aid like the position map's zones: it is saved on the detector box as `
 """
 from __future__ import annotations
 
-import math
-
 import flow
 import labels
 
@@ -63,25 +61,15 @@ def apply(node: dict, raw: object) -> None:
     if "clockwise" in raw:
         pair["clockwise"] = bool(raw["clockwise"])
     if "nominal" in raw:
-        pair["nominal"] = None if raw["nominal"] is None else _finite(raw["nominal"], "Nominal")
+        pair["nominal"] = None if raw["nominal"] is None else flow._finite(raw["nominal"], "Nominal")
     if "tolerance" in raw:
-        tol = _finite(raw["tolerance"], "Tolerance")
+        tol = flow._finite(raw["tolerance"], "Tolerance")
         if tol < 0:
             raise flow.FlowError("The tolerance cannot be negative.")
         pair["tolerance"] = tol
     if "zone" in raw:
         pair["zone"] = flow.clean_zone(raw["zone"], pair.get("zone"))
     node["review_pair"] = pair
-
-
-def _finite(value: object, what: str) -> float:
-    try:
-        v = float(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        raise flow.FlowError(f"{what} must be a number.") from None
-    if not math.isfinite(v):
-        raise flow.FlowError(f"{what} must be a number.")
-    return v
 
 
 def state(camera: str, det_id: str) -> dict:

@@ -705,6 +705,50 @@ def review_zones(node: dict) -> dict[str, dict]:
     return {slot: clean_zone(None, zone) for slot, zone in (node.get("review_zones") or {}).items() if slot in slots}
 
 
+def review_values(node: dict) -> dict[str, dict]:
+    """The box-value rules of a detector (v1.172.0), per target slot: ``score_min`` (a match below it is weak) and
+    ``angle`` (``{"nominal", "tolerance"}``, degrees, wrapping). Review aids like the zones: not in ``signature``.
+    Slots the detector no longer has are left out."""
+    slots = {s for t in node.get("targets", []) for s in slot_names(t)}
+    return {slot: dict(v) for slot, v in (node.get("review_values") or {}).items() if slot in slots and v}
+
+
+def set_review_value(node: dict, raw: object) -> None:
+    """``{"slot", "score_min": number | None, "angle": {"nominal", "tolerance"} | None}``: set or clear either rule."""
+    if not isinstance(raw, dict) or not isinstance(raw.get("slot"), str):
+        raise FlowError("A box-value rule names the target it belongs to.")
+    slot = raw["slot"]
+    if slot not in {s for t in node.get("targets", []) for s in slot_names(t)}:
+        raise FlowError(f"Unknown target: {slot}")
+    values = {k: dict(v) for k, v in (node.get("review_values") or {}).items()}
+    rule = values.get(slot, {})
+    if "score_min" in raw:
+        if raw["score_min"] is None:
+            rule.pop("score_min", None)
+        else:
+            t = _finite(raw["score_min"], "Score threshold")
+            if not 0.0 <= t <= 1.0:
+                raise FlowError("The score threshold is between 0 and 1.")
+            rule["score_min"] = round(t, 3)
+    if "angle" in raw:
+        a = raw["angle"]
+        if a is None:
+            rule.pop("angle", None)
+        elif isinstance(a, dict):
+            nominal = _finite(a.get("nominal"), "Nominal angle") % 360.0
+            tol = _finite(a.get("tolerance", 5.0), "Tolerance")
+            if not 0.0 <= tol <= 180.0:
+                raise FlowError("The angle tolerance is between 0 and 180 degrees.")
+            rule["angle"] = {"nominal": round(nominal, 2), "tolerance": round(tol, 2)}
+        else:
+            raise FlowError("The angle rule is a nominal and a tolerance.")
+    if rule:
+        values[slot] = rule
+    else:
+        values.pop(slot, None)
+    node["review_values"] = values
+
+
 def _review_pair_settings(node: dict) -> dict | None:
     import review_pair  # noqa: PLC0415  (it imports this module)
 
@@ -1207,6 +1251,8 @@ def update_node(camera: str, node_id: str, raw: dict) -> dict:
                 node["angle_range"] = [lo, hi]
         if "review_zone" in raw:
             set_review_zone(node, raw["review_zone"])
+        if "review_value" in raw:
+            set_review_value(node, raw["review_value"])
         if "review_pair" in raw:
             import review_pair  # noqa: PLC0415  (it imports this module)
 
@@ -2800,6 +2846,7 @@ def node_detail(camera: str, node_id: str, graph: dict | None = None) -> dict:
             "angle_range": node["angle_range"],
             "pad": node["pad"],
             "review_zones": review_zones(node),
+            "review_values": review_values(node),
             "review_pair": _review_pair_settings(node),
             "status": status(camera, node_id, graph),
             "summary": summarize_detector(camera, node_id),

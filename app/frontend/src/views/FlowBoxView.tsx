@@ -16,6 +16,7 @@ import ZoneScatter from "./ZoneScatter";
 import { HeatControls, useHeatChoice } from "./heatChoice";
 import PositionMap, { startRadius } from "./PositionMap";
 import PairMap from "./PairMap";
+import BoxValues, { BoxMeasure, boxValue } from "./BoxValues";
 import { ATTENTION_SORTS, AttentionSort, attentionOf, attentionText, isAttentionSort, sortByAttention } from "../attention";
 import { judgeZone, Pt2, Zone } from "../zoneGeometry";
 import CalcGeometry from "./CalcGeometry";
@@ -159,6 +160,8 @@ function DetectorWork(p: {
   const heatChoice = useHeatChoice();
   const [pairState, setPairState] = useState<FlowPairState | null>(null); // the pair map (v1.170.0)
   const [pairRange, setPairRange] = useState<[number, number] | null>(null); // the pair histogram's zoom: only those pictures
+  const [boxMeasure, setBoxMeasure] = useState<BoxMeasure>("score"); // the box-values chart (v1.172.0)
+  const [boxRange, setBoxRange] = useState<{ slot: string; measure: BoxMeasure; range: [number, number] } | null>(null); // its zoom: only those pictures
   // The order of the strip and the grid (v1.171.0): needs attention first unless another signal is chosen; remembered here.
   const [sort, setSort] = useState<AttentionSort>(() => {
     try { const v = localStorage.getItem(SORT_STORE) ?? ""; return isAttentionSort(v) ? v : "attention"; } catch { return "attention"; }
@@ -244,26 +247,18 @@ function DetectorWork(p: {
   const zones = useMemo(() => detail.review_zones ?? {}, [detail.review_zones]);
   const reviewSet = useMemo(() => new Set(review), [review]);
   const missingFrames = useMemo(() => candidates.filter((f) => reviewSet.has(f)), [candidates, reviewSet]);
-  // Outside: a box outside its slot's review zone, or the pair outside its band / zone; why, per picture, for the button's tip.
-  const outsideWhy = useMemo(() => {
-    const why = new Map<string, string[]>();
-    const add = (f: string, reason: string) => why.set(f, [...(why.get(f) ?? []), reason]);
-    for (const f of candidates) {
-      for (const [slot, z] of Object.entries(zones)) { const b = boxes[f]?.[slot]; if (b && judgeZone([b.x, b.y], z) === "fail") add(f, `${slot} zone`); }
-      if (pairState?.pair && pairState.verdicts[f] === "fail") add(f, `pair ${pairState.pair.a} → ${pairState.pair.b}`);
-    }
-    return why;
-  }, [candidates, boxes, zones, pairState]);
-  const outsideFrames = useMemo(() => candidates.filter((f) => outsideWhy.has(f)), [candidates, outsideWhy]);
+  // What is wrong with each picture (attention.ts): the order of the strip and the cards, and *Outside* (any rule broken).
+  const rules = useMemo(() => detail.review_values ?? {}, [detail.review_values]);
   const attention = useMemo(
-    () => new Map(candidates.map((f) => [f, attentionOf(f, boxes[f], mapSlots.map((s) => s.slot), zones, pairState)])),
-    [candidates, boxes, mapSlots.map((s) => s.slot).join("\u0000"), zones, pairState], // eslint-disable-line react-hooks/exhaustive-deps
+    () => new Map(candidates.map((f) => [f, attentionOf(f, boxes[f], mapSlots.map((s) => s.slot), zones, pairState, rules)])),
+    [candidates, boxes, mapSlots.map((s) => s.slot).join("\u0000"), zones, pairState, rules], // eslint-disable-line react-hooks/exhaustive-deps
   );
+  const outsideFrames = useMemo(() => candidates.filter((f) => (attention.get(f)?.reasons.length ?? 0) > 0), [candidates, attention]);
   const outsideTip = useMemo(() => {
     const per = new Map<string, number>();
-    for (const reasons of outsideWhy.values()) for (const r of reasons) per.set(r, (per.get(r) ?? 0) + 1);
-    return per.size ? `Outside: ${[...per].map(([r, n]) => `${n} by the ${r}`).join(", ")}` : "Pictures outside a target's review zone or the pair's band / zone";
-  }, [outsideWhy]);
+    for (const f of outsideFrames) for (const r of attention.get(f)!.reasons) per.set(r, (per.get(r) ?? 0) + 1);
+    return per.size ? `Outside: ${[...per].map(([r, n]) => `${n} by the ${r}`).join(", ")}` : "Pictures that break a rule: a target's review zone, its score threshold or angle band, or the pair's band / zone";
+  }, [outsideFrames, attention]);
   const mapPoints = useMemo(() => {
     const out: Record<string, Pt2 | null> = {};
     if (mapOn) for (const f of candidates) { const b = boxes[f]?.[mapOn.slot]; out[f] = b ? [b.x, b.y] : null; }
@@ -273,8 +268,10 @@ function DetectorWork(p: {
     const base = show === "missing" ? missingFrames : show === "outside" ? outsideFrames : candidates;
     const inRange = (f: string) => { const v = pairState?.values[f]; return v != null && pairRange != null && v >= pairRange[0] && v <= pairRange[1]; };
     const near = spot ? base.filter((f) => { const b = boxes[f]?.[spot.slot]; return !!b && Math.hypot(b.x - spot.at[0], b.y - spot.at[1]) <= spot.radius; }) : base;
-    return sortByAttention(pairRange ? near.filter(inRange) : near, attention, sort);
-  }, [show, missingFrames, outsideFrames, candidates, spot, boxes, pairRange, pairState, attention, sort]);
+    const inBoxRange = (f: string) => { const b = boxRange && boxes[f]?.[boxRange.slot]; if (!b || !boxRange) return false; const v = boxValue(b, boxRange.measure); return v >= boxRange.range[0] && v <= boxRange.range[1]; };
+    const ranged = (pairRange ? near.filter(inRange) : near).filter((f) => !boxRange || inBoxRange(f));
+    return sortByAttention(ranged, attention, sort);
+  }, [show, missingFrames, outsideFrames, candidates, spot, boxes, pairRange, pairState, attention, sort, boxRange]);
   const at = Math.min(index, Math.max(0, shown.length - 1));
   const frame = shown[at];
   // The size counts only for the picture it was measured on. It used to be reset to "unknown" by an effect whenever the
@@ -283,7 +280,7 @@ function DetectorWork(p: {
   // until a hard refresh.
   const pictureSrc = frame ? pictureUrl(frame) : "";
   const size = useMemo(() => (measured && measured.src === pictureSrc ? { w: measured.w, h: measured.h } : null), [measured, pictureSrc]);
-  useEffect(() => setIndex(0), [show, spot, pairRange, sort]);
+  useEffect(() => setIndex(0), [show, spot, pairRange, sort, boxRange]);
   // The pair map's state: again after a run (version), a change of the pair, or new boxes.
   const savedPair = JSON.stringify(detail.review_pair ?? null);
   useEffect(() => {
@@ -507,6 +504,12 @@ function DetectorWork(p: {
   const saveZone = async (slot: string, zone: Partial<Zone> | null) => {
     try {
       p.setDetail(await api.flowUpdate(camera, nodeId, { review_zone: { slot, zone } }));
+      p.onError(null);
+    } catch (e) { p.onError(msg(e)); }
+  };
+  const saveRule = async (slot: string, change: { score_min?: number | null; angle?: { nominal: number; tolerance: number } | null }) => {
+    try {
+      p.setDetail(await api.flowUpdate(camera, nodeId, { review_value: { slot, ...change } }));
       p.onError(null);
     } catch (e) { p.onError(msg(e)); }
   };
@@ -741,7 +744,7 @@ function DetectorWork(p: {
           </ZoomPane>
         </>
       ) : (
-        <p className="muted">{spot || pairRange ? "No pictures there." : show === "missing" ? "Every target was found on every picture." : show === "outside" ? "No picture is outside a zone." : hasInput ? "No pictures reach this box yet." : "Nothing is drawn into this box, so it has no pictures. Draw a line into it on the Chain."}</p>
+        <p className="muted">{spot || pairRange || boxRange ? "No pictures there." : show === "missing" ? "Every target was found on every picture." : show === "outside" ? "No picture is outside a zone." : hasInput ? "No pictures reach this box yet." : "Nothing is drawn into this box, so it has no pictures. Draw a line into it on the Chain."}</p>
       )}
 
       <div className="flow-nav">
@@ -767,6 +770,12 @@ function DetectorWork(p: {
         <p role="status" className="flow-spot">
           Only the pictures where “{spot.slot}” was found near x {spot.at[0].toFixed(0)}, y {spot.at[1].toFixed(0)}: {shown.length}{" "}
           <button type="button" onClick={() => setSpot(null)}>Show all</button>
+        </p>
+      )}
+      {boxRange && (
+        <p role="status" className="flow-spot">
+          Only the pictures whose “{boxRange.slot}” {boxRange.measure === "score" ? "match score" : "angle"} is {boxRange.range[0].toFixed(2)} to {boxRange.range[1].toFixed(2)}: {shown.length}{" "}
+          <button type="button" onClick={() => setBoxRange(null)}>Show all</button>
         </p>
       )}
       {pairRange && (
@@ -819,6 +828,28 @@ function DetectorWork(p: {
             heat={heatChoice.heatOn ? { smoothing: heatChoice.smoothing } : null}
             missing={Object.values(mapPoints).filter((q) => !q).length}
             label={mapOn.slot}
+          />
+        </details>
+      )}
+
+      {detail.status !== "none" && mapOn && (
+        <details className="flow-position" open>
+          <summary>Box values of “{mapOn.slot}”: match score{detail.rotate ? " and angle" : ""}</summary>
+          <div className="flow-nav">
+            <span className="flow-segment" role="group" aria-label="Box value">
+              <button type="button" aria-pressed={boxMeasure === "score" || !detail.rotate} onClick={() => { setBoxMeasure("score"); setBoxRange(null); }}>Match score</button>
+              {detail.rotate && <button type="button" aria-pressed={boxMeasure === "angle"} onClick={() => { setBoxMeasure("angle"); setBoxRange(null); }}>Angle</button>}
+            </span>
+            <span className="muted">The target is the one chosen on the position map.</span>
+          </div>
+          <BoxValues
+            slot={mapOn.slot}
+            measure={detail.rotate ? boxMeasure : "score"}
+            values={candidates.map((f) => boxes[f]?.[mapOn.slot]).filter((b): b is FlowBox => !!b).map((b) => boxValue(b, detail.rotate ? boxMeasure : "score"))}
+            rule={rules[mapOn.slot]}
+            save={(change) => void saveRule(mapOn.slot, change)}
+            range={boxRange && boxRange.slot === mapOn.slot && boxRange.measure === (detail.rotate ? boxMeasure : "score") ? boxRange.range : null}
+            onRange={(r) => setBoxRange(r ? { slot: mapOn.slot, measure: detail.rotate ? boxMeasure : "score", range: r } : null)}
           />
         </details>
       )}

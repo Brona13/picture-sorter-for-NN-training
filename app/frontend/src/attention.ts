@@ -1,9 +1,10 @@
 /**
  * What makes a detector picture worth a look (v1.171.0, phase 3 of `plans/detector-review-views.md`), kept as separate
  * signals and never blended: a target not found, a box outside its review zone or the pair outside its band / zone (how
- * far, in zone sizes: 1 is the edge, 2 twice as far out), and the weakest match score. The detector page sorts by them.
+ * far, in zone sizes: 1 is the edge, 2 twice as far out; v1.172.0 adds a box angle outside its band), a match below its
+ * score threshold (weak), and the weakest match score. The detector page sorts by them.
  */
-import type { FlowBox, FlowPairState, FlowZone } from "./api";
+import type { FlowBox, FlowBoxRule, FlowPairState, FlowZone } from "./api";
 import { deviation } from "./views/FlowBoxPanel";
 
 export interface Attention {
@@ -11,9 +12,18 @@ export interface Attention {
   missing: string[];
   /** The worst "how far out" (> 1 is outside), with what said so; null when nothing is outside. */
   outside: { by: string; times: number } | null;
+  /** The weakest match below its slot's score threshold, if any. */
+  weak: { slot: string; score: number; threshold: number } | null;
   /** The lowest match score of the picture's boxes (a box placed by hand counts as 1); null when it has none. */
   score: number | null;
+  /** Every rule the picture breaks ("hole zone", "pin angle", "pair", "hole score"): what puts it under *Outside*. */
+  reasons: string[];
 }
+
+/** A box's angle on the clock, 0-360. */
+export const clockAngle = (a: number) => ((a % 360) + 360) % 360;
+/** A box's match score; a box placed by hand counts as a perfect match. */
+export const boxScore = (b: FlowBox) => (b.source === "human" ? 1 : b.score);
 
 /** How far `p` lies from the zone's centre in zone sizes (1 = on the edge); null without a centre. */
 export function zoneTimes(p: [number, number], zone: FlowZone): number | null {
@@ -36,13 +46,27 @@ export function attentionOf(
   slots: string[],
   zones: Record<string, FlowZone>,
   pair: FlowPairState | null,
+  rules: Record<string, FlowBoxRule> = {},
 ): Attention {
   const here = boxes ?? {};
   const missing = slots.filter((s) => !here[s]);
+  const reasons: string[] = [];
   let outside: Attention["outside"] = null;
   const worse = (by: string, times: number | null) => {
-    if (times !== null && times > 1 + 1e-9 && (!outside || times > outside.times)) outside = { by, times };
+    if (times === null || times <= 1 + 1e-9) return;
+    reasons.push(by);
+    if (!outside || times > outside.times) outside = { by, times };
   };
+  let weak: Attention["weak"] = null;
+  for (const [slot, rule] of Object.entries(rules)) {
+    const b = here[slot];
+    if (!b) continue;
+    if (rule.angle) worse(`${slot} angle`, bandTimes(clockAngle(b.angle), rule.angle.nominal, rule.angle.tolerance, true));
+    if (rule.score_min != null && boxScore(b) < rule.score_min) {
+      reasons.push(`${slot} score`);
+      if (!weak || boxScore(b) < weak.score) weak = { slot, score: boxScore(b), threshold: rule.score_min };
+    }
+  }
   for (const [slot, z] of Object.entries(zones)) {
     const b = here[slot];
     if (b) worse(`${slot} zone`, zoneTimes([b.x, b.y], z));
@@ -51,14 +75,14 @@ export function attentionOf(
   if (p) {
     if (pair!.mode === "zone") {
       const q = pair!.points[frame];
-      if (q) worse("pair", zoneTimes(q, p.zone));
+      if (q) worse(`pair ${p.a} → ${p.b}`, zoneTimes(q, p.zone));
     } else {
       const v = pair!.values[frame];
-      if (v != null && p.nominal != null) worse("pair", bandTimes(v, p.nominal, p.tolerance, pair!.wrap));
+      if (v != null && p.nominal != null) worse(`pair ${p.a} → ${p.b}`, bandTimes(v, p.nominal, p.tolerance, pair!.wrap));
     }
   }
-  const scores = slots.filter((s) => here[s]).map((s) => (here[s].source === "human" ? 1 : here[s].score));
-  return { missing, outside, score: scores.length ? Math.min(...scores) : null };
+  const scores = slots.filter((s) => here[s]).map((s) => boxScore(here[s]));
+  return { missing, outside, weak, score: scores.length ? Math.min(...scores) : null, reasons };
 }
 
 export const ATTENTION_SORTS = [
@@ -70,11 +94,12 @@ export const ATTENTION_SORTS = [
 export type AttentionSort = (typeof ATTENTION_SORTS)[number][0];
 export const isAttentionSort = (v: string): v is AttentionSort => ATTENTION_SORTS.some(([k]) => k === v);
 
-/** Not found first, then furthest outside, then weakest match; ties by file name. */
+/** Not found first, then furthest outside, then below a score threshold, then weakest match; ties by file name. */
 function attentionKey(a: Attention): [number, number] {
   if (a.missing.length) return [0, -a.missing.length];
   if (a.outside) return [1, -a.outside.times];
-  return [2, a.score ?? 1];
+  if (a.weak) return [2, a.weak.score];
+  return [3, a.score ?? 1];
 }
 
 export function sortByAttention(frames: string[], att: Map<string, Attention>, sort: AttentionSort): string[] {
@@ -97,5 +122,6 @@ export function attentionText(a: Attention | undefined): string | null {
   if (!a) return null;
   if (a.missing.length) return `${a.missing.join(", ")} not found`;
   if (a.outside) return `${a.outside.by} ${a.outside.times.toFixed(1)}× outside`;
+  if (a.weak) return `${a.weak.slot} score ${a.weak.score.toFixed(2)} below ${a.weak.threshold.toFixed(2)}`;
   return a.score !== null ? `score ${a.score.toFixed(2)}` : null;
 }

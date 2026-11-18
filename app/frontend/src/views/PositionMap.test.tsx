@@ -86,6 +86,12 @@ beforeEach(() => {
     if (method === "PUT" && "review_pair" in (body ?? {})) {
       node = { ...node, review_pair: body.review_pair === null ? null : { a: "hole", b: "pin", op: "distance", clockwise: false, nominal: null, tolerance: 3, ...node.review_pair, ...body.review_pair, zone: { ...circle([0, 0], 10), ...node.review_pair?.zone, ...body.review_pair.zone } } };
     }
+    if (method === "PUT" && body?.review_value) {
+      const { slot, ...change } = body.review_value;
+      const rule = { ...(node.review_values ?? {})[slot] };
+      for (const [k, v] of Object.entries(change)) { if (v === null) delete rule[k]; else rule[k] = v; }
+      node = { ...node, review_values: { ...(node.review_values ?? {}), [slot]: rule } };
+    }
     if (method === "PUT" && body?.review_zone) {
       const { slot, zone } = body.review_zone;
       const zones = { ...node.review_zones };
@@ -164,7 +170,7 @@ test("Detector page: the pair map measures two targets, its band joins Outside a
   render(<FlowBoxView camera="camA" focus={{ nodeId: "det:1", onBack: () => {} }} />);
   await userEvent.click(await screen.findByRole("button", { name: "Measure hole → pin" }));
   await waitFor(() => expect(calls.some((c) => c.method === "PUT" && c.body?.review_pair?.a === "hole" && c.body.review_pair.b === "pin" && c.body.review_pair.op === "distance")).toBe(true));
-  expect(await screen.findByRole("img", { name: "Histogram of the measured values" })).toBeInTheDocument();
+  expect(await screen.findByRole("img", { name: "Histogram of the pair values" })).toBeInTheDocument();
   expect(screen.getByTestId("pair-count")).toHaveTextContent("3 measured · click a bar or use the densest value to set the nominal · 1 not measured");
   await userEvent.click(screen.getByRole("button", { name: "Use densest value as nominal" }));
   await waitFor(() => expect(calls.some((c) => c.method === "PUT" && typeof c.body?.review_pair?.nominal === "number")).toBe(true));
@@ -182,7 +188,7 @@ test("Detector page: the pair map measures two targets, its band joins Outside a
 test("Detector page: zooming the pair histogram shows only the pictures in that range", async () => {
   node.review_pair = { a: "hole", b: "pin", op: "distance", clockwise: false, nominal: 50, tolerance: 1, zone: circle([0, 0], 10) };
   render(<FlowBoxView camera="camA" focus={{ nodeId: "det:1", onBack: () => {} }} />);
-  const chart = await screen.findByRole("img", { name: "Histogram of the measured values" });
+  const chart = await screen.findByRole("img", { name: "Histogram of the pair values" });
   await waitFor(() => expect(strip()).toHaveLength(4));
   chart.getBoundingClientRect = () => ({ left: 0, top: 0, width: 90, height: 50, right: 90, bottom: 50, x: 0, y: 0, toJSON: () => ({}) });
   fireEvent.pointerDown(chart, { button: 0, clientX: 75 }); // 50 + 75 / 90 * 12 = 60
@@ -207,4 +213,36 @@ test("Detector page: needs attention first orders the strip and says why on each
   await waitFor(() => expect(strip()).toEqual(["Show a.png", "Show b.png", "Show c.png", "Show d.png"]));
   expect(localStorage.getItem("flow.detectorSort")).toBe("name");
   localStorage.removeItem("flow.detectorSort");
+});
+
+test("Detector page: a score threshold makes weak matches join Outside, and the card says so", async () => {
+  render(<FlowBoxView camera="camA" focus={{ nodeId: "det:1", onBack: () => {} }} />);
+  const chart = await screen.findByRole("img", { name: "Histogram of the box values" });
+  expect(screen.getByTestId("box-value-count")).toHaveTextContent("3 found · click a bar to set the threshold: a match below it is weak · hole");
+  await userEvent.click(within(chart).getByRole("button", { name: "Use 0.91 as threshold" })); // every hole scores 0.90
+  await waitFor(() => expect(calls.some((c) => c.method === "PUT" && c.body?.review_value?.slot === "hole" && c.body.review_value.score_min === 0.91)).toBe(true));
+  await waitFor(() => expect(screen.getByTestId("box-value-count")).toHaveTextContent("3 of 3 below the threshold · hole"));
+  expect(screen.getByTestId("threshold-line")).toBeInTheDocument();
+  const outside = screen.getByRole("button", { name: "Outside (3)" }); // a, b weak; c weak and outside the zone
+  expect(outside.getAttribute("title")).toBe("Outside: 3 by the hole score, 1 by the hole zone");
+  expect(screen.getByTestId("finding-reason-a.png")).toHaveTextContent("hole score 0.90 below 0.91");
+  expect(screen.getByTestId("finding-reason-c.png")).toHaveTextContent(/^hole zone/); // outside ranks above weak
+  await userEvent.click(screen.getByRole("button", { name: "Remove threshold" }));
+  await waitFor(() => expect(calls.some((c) => c.method === "PUT" && c.body?.review_value?.score_min === null)).toBe(true));
+});
+
+test("Detector page: the angle band is offered when the detector searches turned, and starts on the densest angle", async () => {
+  render(<FlowBoxView camera="camA" focus={{ nodeId: "det:1", onBack: () => {} }} />);
+  await screen.findByRole("img", { name: "Histogram of the box values" });
+  await userEvent.click(within(screen.getByRole("group", { name: "Box value" })).getByRole("button", { name: "Angle" }));
+  await userEvent.click(screen.getAllByRole("button", { name: "Use densest value as nominal" })[0]);
+  await waitFor(() => expect(calls.some((c) => c.method === "PUT" && c.body?.review_value?.angle?.tolerance === 5 && Math.abs(c.body.review_value.angle.nominal) < 10)).toBe(true));
+  await waitFor(() => expect(screen.getByTestId("box-value-count")).toHaveTextContent("0 of 3 outside the band · hole"));
+});
+
+test("Detector page: without a turned search only the match score is offered", async () => {
+  node = { ...node, rotate: false };
+  render(<FlowBoxView camera="camA" focus={{ nodeId: "det:1", onBack: () => {} }} />);
+  await screen.findByRole("img", { name: "Histogram of the box values" });
+  expect(within(screen.getByRole("group", { name: "Box value" })).queryByRole("button", { name: "Angle" })).toBeNull();
 });

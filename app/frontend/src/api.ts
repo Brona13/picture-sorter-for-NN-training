@@ -616,6 +616,8 @@ export interface FlowDetector {
   pad: number;
   /** Per target slot, the area its box usually lies in (the position map's review zone, v1.169.0). A review aid only. */
   review_zones?: Record<string, FlowZone>;
+  /** Per target slot, the box-value rules (v1.172.0): a match below `score_min` is weak; an angle outside the band. Review only. */
+  review_values?: Record<string, FlowBoxRule>;
   /** The pair map's two targets, operation and band / zone (v1.170.0); null when none is set. A review aid only. */
   review_pair?: FlowPair | null;
   status: "none" | "fresh" | "stale";
@@ -639,6 +641,10 @@ export interface FlowCalc {
   same_picture?: boolean;
 }
 /** The zone of an Evaluation behind an Offset: pixels from point A (see `zoneGeometry.ts`). */
+export interface FlowBoxRule {
+  score_min?: number;
+  angle?: { nominal: number; tolerance: number };
+}
 export interface FlowPair {
   a: string;
   b: string;

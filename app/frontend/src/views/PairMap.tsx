@@ -84,6 +84,7 @@ export default function PairMap({ slots, state, save, heatChoice, range, onRange
         />
       ) : (
         <EvaluationHistogram
+          label="Histogram of the pair values"
           detail={{ histogram: state!.histogram, nominal: pair.nominal, tolerance: pair.tolerance, wrap: state!.wrap, unit: state!.unit }}
           values={numbers}
           range={range}

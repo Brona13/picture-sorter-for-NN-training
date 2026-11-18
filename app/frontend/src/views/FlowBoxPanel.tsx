@@ -48,6 +48,15 @@ export function bandPieces(
 type Band = { nominal: number; tolerance: number };
 type Range = [number, number];
 
+/** The histogram an Evaluation chart draws, made in the browser (mirrors `flow.value_histogram`): 36 bins over the values, 0-360 for an angle. */
+export function histogramOf(values: number[], wrap: boolean, bins = 36): { low: number; high: number; bins: number[] } | null {
+  if (!values.length) return null;
+  const low = wrap ? 0 : Math.min(...values);
+  let high = wrap ? 360 : Math.max(...values);
+  if (high - low < 1e-9) high = low + 1;
+  return { low, high, bins: rebin(values, [low, high], bins) };
+}
+
 /** How many of `values` fall into each of `bins` equal bins of `[low, high]` (the top edge belongs to the last bin). */
 export function rebin(values: number[], [low, high]: Range, bins: number): number[] {
   const out = new Array<number>(bins).fill(0);
@@ -69,7 +78,7 @@ const MIN_DRAG_PX = 4;
  * and right-click to see everything again.
  */
 export function EvaluationHistogram({
-  detail, onPick, onBand, values, range = null, onRange,
+  detail, onPick, onBand, values, range = null, onRange, threshold, onThreshold, label = "Histogram of the measured values",
 }: {
   /** What the chart needs of an Evaluation (the detector's pair map passes the same fields). */
   detail: Pick<FlowEvaluation, "histogram" | "nominal" | "tolerance" | "wrap" | "unit">;
@@ -79,18 +88,27 @@ export function EvaluationHistogram({
   values?: number[];
   range?: Range | null;
   onRange?: (range: Range | null) => void;
+  /** One-sided instead of a band (a match score, v1.172.0): values at or above `threshold` pass; its line is dragged and
+   * saved on release through `onThreshold`, and a click on a bar takes that value as the threshold (`onPick`). */
+  threshold?: number | null;
+  onThreshold?: (value: number) => void;
+  /** The chart's accessible name (a page with two histograms tells them apart). */
+  label?: string;
 }) {
   const h = detail.histogram;
   const box = useRef<HTMLDivElement>(null);
   const swallowClick = useRef(false);
   const [drag, setDrag] = useState<Band | null>(null);
   const [sel, setSel] = useState<Range | null>(null);
+  const [lineDrag, setLineDrag] = useState<number | null>(null);
+  const oneSided = onThreshold !== undefined;
+  const line = lineDrag ?? threshold ?? null;
   if (!h) return <p className="muted">No measured values yet. Run the detectors.</p>;
   const view: Range = range ?? [h.low, h.high];
   const counts = range && values ? rebin(values, view, h.bins.length) : h.bins;
   const width = (view[1] - view[0]) / counts.length;
   const max = Math.max(1, ...counts);
-  const band: Band | null = drag ?? (detail.nominal != null ? { nominal: detail.nominal, tolerance: detail.tolerance } : null);
+  const band: Band | null = oneSided ? null : drag ?? (detail.nominal != null ? { nominal: detail.nominal, tolerance: detail.tolerance } : null);
   const valueAt = (clientX: number) => {
     const r = box.current!.getBoundingClientRect();
     const f = Math.min(1, Math.max(0, (clientX - r.left) / (r.width || 1)));
@@ -114,6 +132,21 @@ export function EvaluationHistogram({
       window.removeEventListener("pointerup", up);
       setDrag(null);
       if (last !== start) onBand(last);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+  const grabLine = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!onThreshold) return;
+    e.preventDefault();
+    e.stopPropagation(); // not a zoom
+    let last = line;
+    const move = (ev: PointerEvent) => { last = valueAt(ev.clientX); setLineDrag(last); };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      setLineDrag(null);
+      if (last != null && last !== line) onThreshold(last);
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
@@ -148,7 +181,7 @@ export function EvaluationHistogram({
       <div
         className="flow-histogram"
         role="img"
-        aria-label="Histogram of the measured values"
+        aria-label={label}
         ref={box}
         onPointerDown={startZoom}
         onContextMenu={(e) => { if (range && onRange) { e.preventDefault(); onRange(null); } }}
@@ -156,14 +189,14 @@ export function EvaluationHistogram({
       >
         {counts.map((count, i) => {
           const centre = view[0] + (i + 0.5) * width;
-          const inside = band != null && Math.abs(deviation(centre, band.nominal, detail.wrap)) <= band.tolerance + width / 2;
+          const inside = oneSided ? line != null && centre >= line : band != null && Math.abs(deviation(centre, band.nominal, detail.wrap)) <= band.tolerance + width / 2;
           return (
             <button
               key={i}
               type="button"
               className={`flow-bar${inside ? " inside" : ""}`}
               title={`${centre.toFixed(1)} ${detail.unit}: ${count}`}
-              aria-label={`Use ${centre.toFixed(1)} as nominal`}
+              aria-label={oneSided ? `Use ${centre.toFixed(2)} as threshold` : `Use ${centre.toFixed(1)} as nominal`}
               style={{ height: `${Math.max(2, (count / max) * 100)}%` }}
               onClick={() => {
                 if (swallowClick.current) { swallowClick.current = false; return; }
@@ -190,6 +223,9 @@ export function EvaluationHistogram({
             </div>
           );
         })}
+        {oneSided && line != null && line >= view[0] && line <= view[1] && (
+          <div className="flow-threshold" data-testid="threshold-line" style={{ left: pct(line) }} title={`Threshold ${line.toFixed(2)}: drag to change it`} onPointerDown={grabLine} />
+        )}
         {sel && <div className="flow-zoom-sel" data-testid="zoom-selection" style={{ left: pct(sel[0]), right: `calc(100% - ${pct(sel[1])})` }} />}
       </div>
       <div className="flow-histogram-axis">
