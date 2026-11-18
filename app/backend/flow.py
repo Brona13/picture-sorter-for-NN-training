@@ -705,6 +705,12 @@ def review_zones(node: dict) -> dict[str, dict]:
     return {slot: clean_zone(None, zone) for slot, zone in (node.get("review_zones") or {}).items() if slot in slots}
 
 
+def _review_pair_settings(node: dict) -> dict | None:
+    import review_pair  # noqa: PLC0415  (it imports this module)
+
+    return review_pair.settings(node)
+
+
 def set_review_zone(node: dict, raw: object) -> None:
     """``{"slot": name, "zone": {...} | None}``: change (some fields of) one slot's review zone, or remove it."""
     if not isinstance(raw, dict) or not isinstance(raw.get("slot"), str):
@@ -1201,6 +1207,10 @@ def update_node(camera: str, node_id: str, raw: dict) -> dict:
                 node["angle_range"] = [lo, hi]
         if "review_zone" in raw:
             set_review_zone(node, raw["review_zone"])
+        if "review_pair" in raw:
+            import review_pair  # noqa: PLC0415  (it imports this module)
+
+            review_pair.apply(node, raw["review_pair"])
     elif kind == "calc":
         if "op" in raw:
             if raw["op"] not in OPERATIONS:
@@ -2432,6 +2442,19 @@ def parent_of_any(graph: dict, node_id: str) -> str | None:
     return None
 
 
+def value_histogram(numbers: list[float], wrap: bool) -> dict | None:
+    """The histogram an Evaluation chart draws: ``HISTOGRAM_BINS`` bins over the values (0-360 for an angle)."""
+    if not numbers:
+        return None
+    lo, hi = (0.0, 360.0) if wrap else (min(numbers), max(numbers))
+    if hi - lo < 1e-9:
+        hi = lo + 1.0
+    bins = [0] * HISTOGRAM_BINS
+    for v in numbers:
+        bins[min(HISTOGRAM_BINS - 1, int((v - lo) / (hi - lo) * HISTOGRAM_BINS))] += 1
+    return {"low": lo, "high": hi, "bins": bins}
+
+
 def judge(value: float | None, node: dict, wrap: bool) -> str:
     if value is None or node["nominal"] is None:
         return "undetermined"
@@ -2556,16 +2579,7 @@ def _evaluation_state(camera: str, eval_id: str) -> dict:
     counts = {"pass": 0, "fail": 0, "undetermined": 0}
     for v in verdicts.values():
         counts[v] += 1
-    numbers = [v for v in values.values() if v is not None]
-    histogram = None
-    if numbers:
-        lo, hi = (0.0, 360.0) if wrap else (min(numbers), max(numbers))
-        if hi - lo < 1e-9:
-            hi = lo + 1.0
-        bins = [0] * HISTOGRAM_BINS
-        for v in numbers:
-            bins[min(HISTOGRAM_BINS - 1, int((v - lo) / (hi - lo) * HISTOGRAM_BINS))] += 1
-        histogram = {"low": lo, "high": hi, "bins": bins}
+    histogram = value_histogram([v for v in values.values() if v is not None], wrap)
     return {
         "mode": "tolerance",
         "zone": None,
@@ -2786,6 +2800,7 @@ def node_detail(camera: str, node_id: str, graph: dict | None = None) -> dict:
             "angle_range": node["angle_range"],
             "pad": node["pad"],
             "review_zones": review_zones(node),
+            "review_pair": _review_pair_settings(node),
             "status": status(camera, node_id, graph),
             "summary": summarize_detector(camera, node_id),
         })

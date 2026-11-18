@@ -282,6 +282,15 @@ def get_boxes(camera: str, node_id: str, only_review: bool = False) -> dict:
     return {"boxes": boxes, "review": review}
 
 
+@router.get("/cameras/{camera}/flow/nodes/{node_id}/pair")
+def get_pair(camera: str, node_id: str) -> dict:
+    """The pair map of a detector (v1.170.0): two of its targets measured and judged like Calculate + Evaluation, review only."""
+    _known(camera, node_id)
+    import review_pair  # noqa: PLC0415
+
+    return _guard(review_pair.state, camera, node_id)
+
+
 @router.get("/cameras/{camera}/flow/nodes/{node_id}/box-geometry")
 def get_box_geometry(camera: str, node_id: str, frame: str) -> dict:
     """One picture of a Box: the detector boxes it uses, the rectangle turned with the part and the upright one, on the whole picture."""

@@ -82,6 +82,10 @@ beforeEach(() => {
     if (url.endsWith("/chain")) return new Response(JSON.stringify({ nodes: [{ id: "det:1", label: "Detector 1" }] }));
     if (/\/flow\/nodes\/[^/]+\/frames$/.test(url)) return new Response(JSON.stringify({ frames: ["a.png", "b.png", "c.png", "d.png"], has_input: true, reference_frame: null }));
     if (url.includes("/boxes")) return new Response(JSON.stringify({ boxes: BOXES, review: ["d.png"] }));
+    if (url.endsWith("/pair")) return new Response(JSON.stringify(pairState()));
+    if (method === "PUT" && "review_pair" in (body ?? {})) {
+      node = { ...node, review_pair: body.review_pair === null ? null : { a: "hole", b: "pin", op: "distance", clockwise: false, nominal: null, tolerance: 3, ...node.review_pair, ...body.review_pair, zone: { ...circle([0, 0], 10), ...node.review_pair?.zone, ...body.review_pair.zone } } };
+    }
     if (method === "PUT" && body?.review_zone) {
       const { slot, zone } = body.review_zone;
       const zones = { ...node.review_zones };
@@ -94,15 +98,32 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
+// The pair "hole" → "pin" by distance, as the backend measures it: a 50, b about 50, c about 61.4, d not measured.
+function pairState() {
+  const pair = node.review_pair ?? null;
+  const values: Record<string, number | null> = {};
+  const verdicts: Record<string, string> = {};
+  if (pair) {
+    for (const [f, here] of Object.entries(BOXES) as [string, any][]) {
+      const v = here.hole && here.pin ? Math.hypot(here.pin.x - here.hole.x, here.pin.y - here.hole.y) : null;
+      values[f] = v;
+      verdicts[f] = v === null || pair.nominal == null ? "undetermined" : Math.abs(v - pair.nominal) <= pair.tolerance ? "pass" : "fail";
+    }
+  }
+  const counts = { pass: 0, fail: 0, undetermined: 0 } as Record<string, number>;
+  for (const v of Object.values(verdicts)) counts[v] += 1;
+  return { pair, operations: { distance: "Distance A to B", angle: "Angle A to B" }, mode: "tolerance", values, points: {}, verdicts, counts, histogram: pair ? { low: 50, high: 62, bins: [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1] } : null, wrap: false, unit: "px" };
+}
+
 const strip = () => screen.getAllByRole("button", { name: /^Show [a-d]\.png$/ }).map((b) => b.getAttribute("aria-label"));
 
 test("Detector page: the position map counts the pictures outside the zone and the strip can show only those", async () => {
   render(<FlowBoxView camera="camA" focus={{ nodeId: "det:1", onBack: () => {} }} />);
   expect(await screen.findByTestId("position-map")).toBeInTheDocument();
   await waitFor(() => expect(screen.getByTestId("position-count")).toHaveTextContent("1 of 3 outside the zone · 1 not found"));
-  expect(screen.getByRole("button", { name: "Outside a zone (1)" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Outside (1)" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Not found (1)" })).toBeInTheDocument();
-  await userEvent.click(screen.getByRole("button", { name: "Outside a zone (1)" }));
+  await userEvent.click(screen.getByRole("button", { name: "Outside (1)" }));
   await waitFor(() => expect(strip()).toEqual(["Show c.png"]));
   await userEvent.click(screen.getByRole("button", { name: "Not found (1)" }));
   await waitFor(() => expect(strip()).toEqual(["Show d.png"]));
@@ -135,6 +156,40 @@ test("Detector page: a click on the map shows only the pictures near the spot, S
   fireEvent.click(svg, { clientX: 80 - r.x, clientY: 70 - r.y }); // the stray hole of c.png
   await waitFor(() => expect(strip()).toEqual(["Show c.png"]));
   expect(screen.getByText(/near x 80, y 70: 1/)).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Show all" }));
+  await waitFor(() => expect(strip()).toHaveLength(4));
+});
+
+test("Detector page: the pair map measures two targets, its band joins Outside and the histogram zoom narrows the strip", async () => {
+  render(<FlowBoxView camera="camA" focus={{ nodeId: "det:1", onBack: () => {} }} />);
+  await userEvent.click(await screen.findByRole("button", { name: "Measure hole → pin" }));
+  await waitFor(() => expect(calls.some((c) => c.method === "PUT" && c.body?.review_pair?.a === "hole" && c.body.review_pair.b === "pin" && c.body.review_pair.op === "distance")).toBe(true));
+  expect(await screen.findByRole("img", { name: "Histogram of the measured values" })).toBeInTheDocument();
+  expect(screen.getByTestId("pair-count")).toHaveTextContent("3 measured · click a bar or use the densest value to set the nominal · 1 not measured");
+  await userEvent.click(screen.getByRole("button", { name: "Use densest value as nominal" }));
+  await waitFor(() => expect(calls.some((c) => c.method === "PUT" && typeof c.body?.review_pair?.nominal === "number")).toBe(true));
+  await waitFor(() => expect(screen.getByTestId("pair-count")).toHaveTextContent("1 of 3 outside the band"));
+  // c.png is outside both the hole zone and the pair band: counted once, and the tip names both reasons
+  const outside = screen.getByRole("button", { name: "Outside (1)" });
+  expect(outside.getAttribute("title")).toBe("Outside: 1 by the hole zone, 1 by the pair hole → pin");
+  await userEvent.selectOptions(screen.getByLabelText("Pair operation"), "angle");
+  await waitFor(() => expect(calls.some((c) => c.method === "PUT" && c.body?.review_pair?.op === "angle")).toBe(true));
+  await userEvent.click(screen.getByRole("button", { name: "Remove pair" }));
+  await waitFor(() => expect(calls.some((c) => c.method === "PUT" && c.body?.review_pair === null)).toBe(true));
+  expect(await screen.findByRole("button", { name: "Measure hole → pin" })).toBeInTheDocument();
+});
+
+test("Detector page: zooming the pair histogram shows only the pictures in that range", async () => {
+  node.review_pair = { a: "hole", b: "pin", op: "distance", clockwise: false, nominal: 50, tolerance: 1, zone: circle([0, 0], 10) };
+  render(<FlowBoxView camera="camA" focus={{ nodeId: "det:1", onBack: () => {} }} />);
+  const chart = await screen.findByRole("img", { name: "Histogram of the measured values" });
+  await waitFor(() => expect(strip()).toHaveLength(4));
+  chart.getBoundingClientRect = () => ({ left: 0, top: 0, width: 90, height: 50, right: 90, bottom: 50, x: 0, y: 0, toJSON: () => ({}) });
+  fireEvent.pointerDown(chart, { button: 0, clientX: 75 }); // 50 + 75 / 90 * 12 = 60
+  fireEvent.pointerMove(window, { clientX: 90 });
+  fireEvent.pointerUp(window, { clientX: 90 }); // to 62
+  await waitFor(() => expect(strip()).toEqual(["Show c.png"]));
+  expect(screen.getByText(/pair value is 60.0 to 62.0 px: 1/)).toBeInTheDocument();
   await userEvent.click(screen.getByRole("button", { name: "Show all" }));
   await waitFor(() => expect(strip()).toHaveLength(4));
 });

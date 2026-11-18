@@ -71,7 +71,8 @@ const MIN_DRAG_PX = 4;
 export function EvaluationHistogram({
   detail, onPick, onBand, values, range = null, onRange,
 }: {
-  detail: FlowEvaluation;
+  /** What the chart needs of an Evaluation (the detector's pair map passes the same fields). */
+  detail: Pick<FlowEvaluation, "histogram" | "nominal" | "tolerance" | "wrap" | "unit">;
   onPick: (value: number) => void;
   onBand?: (band: Band) => void;
   /** The measured numbers, for binning again inside a zoomed range. */

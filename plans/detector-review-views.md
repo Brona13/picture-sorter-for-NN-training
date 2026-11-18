@@ -1,6 +1,6 @@
 # Detector review views (plan, 2026-11-18)
 
-Source: `discussions/detector-review-views-summary.md`. Status: phase 1 agreed (review aid only, 2026-11-18) and built in v1.169.0; phases 2-4 not started.
+Source: `discussions/detector-review-views-summary.md`. Status: phase 1 agreed (review aid only, 2026-11-18) and built in v1.169.0; phase 2 built in v1.170.0 as the Calculate + Evaluation logic (the user's choice: same operations and charts); phases 3-4 not started.
 
 ## Goal
 

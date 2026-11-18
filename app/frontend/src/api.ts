@@ -616,6 +616,8 @@ export interface FlowDetector {
   pad: number;
   /** Per target slot, the area its box usually lies in (the position map's review zone, v1.169.0). A review aid only. */
   review_zones?: Record<string, FlowZone>;
+  /** The pair map's two targets, operation and band / zone (v1.170.0); null when none is set. A review aid only. */
+  review_pair?: FlowPair | null;
   status: "none" | "fresh" | "stale";
   summary: { frames: number; found: Record<string, number>; complete: number; review: number };
 }
@@ -637,6 +639,28 @@ export interface FlowCalc {
   same_picture?: boolean;
 }
 /** The zone of an Evaluation behind an Offset: pixels from point A (see `zoneGeometry.ts`). */
+export interface FlowPair {
+  a: string;
+  b: string;
+  op: string;
+  clockwise: boolean;
+  nominal: number | null;
+  tolerance: number;
+  zone: FlowZone;
+}
+/** Two targets of a detector measured like Calculate and judged like Evaluation, per picture (`review_pair.state`). */
+export interface FlowPairState {
+  pair: FlowPair | null;
+  operations: Record<string, string>;
+  mode: "tolerance" | "zone";
+  values: Record<string, number | null>;
+  points: Record<string, [number, number] | null>;
+  verdicts: Record<string, "pass" | "fail" | "undetermined">;
+  counts: { pass: number; fail: number; undetermined: number };
+  histogram: { low: number; high: number; bins: number[] } | null;
+  wrap: boolean;
+  unit: string;
+}
 export interface FlowZone {
   shape: "circle" | "rect";
   center: [number, number] | null;
@@ -1973,6 +1997,8 @@ export const api = {
   /** The two boxes of a Calculate box on the whole picture, keyed by the box's point names. */
   flowCalcBoxes: (camera: string, id: string) =>
     request<{ boxes: Record<string, Record<string, FlowBox>> }>(`/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/calc-boxes`),
+  flowPair: (camera: string, id: string) =>
+    request<FlowPairState>(`/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/pair`),
   flowBoxes: (camera: string, id: string, onlyReview = false) =>
     request<FlowBoxes>(
       `/cameras/${encodeURIComponent(camera)}/flow/nodes/${encodeURIComponent(id)}/boxes${onlyReview ? "?only_review=true" : ""}`,

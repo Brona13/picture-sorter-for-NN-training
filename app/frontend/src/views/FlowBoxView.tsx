@@ -1,7 +1,7 @@
 import { densestSpot, densestValue } from "../density";
 import { referenceFrame } from "../referencePicture";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, FlowBox, FlowCalc, FlowCrop, FlowDetector, FlowLabeling, FlowNodeDetail, FlowValues, flowPictureUrl, frameImageUrl, frameThumbUrl, frameWholeThumbUrl } from "../api";
+import { api, FlowPair, FlowPairState, FlowZone, FlowBox, FlowCalc, FlowCrop, FlowDetector, FlowLabeling, FlowNodeDetail, FlowValues, flowPictureUrl, frameImageUrl, frameThumbUrl, frameWholeThumbUrl } from "../api";
 import PictureEditsWork from "./PictureEditsWork";
 import { usePictureEdits } from "./pictureEdits";
 import PictureSizeSlider, { usePictureSize } from "../PictureSize";
@@ -15,6 +15,7 @@ import FlowBoxPanel, { EvaluationHistogram } from "./FlowBoxPanel";
 import ZoneScatter from "./ZoneScatter";
 import { HeatControls, useHeatChoice } from "./heatChoice";
 import PositionMap, { startRadius } from "./PositionMap";
+import PairMap from "./PairMap";
 import { judgeZone, Pt2, Zone } from "../zoneGeometry";
 import CalcGeometry from "./CalcGeometry";
 import type { EvalSpec } from "../evalGeometry";
@@ -154,6 +155,8 @@ function DetectorWork(p: {
   const [mapSlot, setMapSlot] = useState(""); // the target slot on the position map
   const [spot, setSpot] = useState<{ slot: string; at: Pt2; radius: number } | null>(null); // a click on the map: only the pictures near it
   const heatChoice = useHeatChoice();
+  const [pairState, setPairState] = useState<FlowPairState | null>(null); // the pair map (v1.170.0)
+  const [pairRange, setPairRange] = useState<[number, number] | null>(null); // the pair histogram's zoom: only those pictures
   const [creating, setCreating] = useState(false);
   const [sel, setSel] = useState<{ name: string; index: number } | null>(null);
   const [edit, setEdit] = useState<{ kind: "move" | Handle; start: { x: number; y: number }; orig: Rect; cur: Rect } | null>(null);
@@ -231,10 +234,22 @@ function DetectorWork(p: {
   const zones = useMemo(() => detail.review_zones ?? {}, [detail.review_zones]);
   const reviewSet = useMemo(() => new Set(review), [review]);
   const missingFrames = useMemo(() => candidates.filter((f) => reviewSet.has(f)), [candidates, reviewSet]);
-  const outsideFrames = useMemo(
-    () => candidates.filter((f) => Object.entries(zones).some(([slot, z]) => { const b = boxes[f]?.[slot]; return !!b && judgeZone([b.x, b.y], z) === "fail"; })),
-    [candidates, boxes, zones],
-  );
+  // Outside: a box outside its slot's review zone, or the pair outside its band / zone; why, per picture, for the button's tip.
+  const outsideWhy = useMemo(() => {
+    const why = new Map<string, string[]>();
+    const add = (f: string, reason: string) => why.set(f, [...(why.get(f) ?? []), reason]);
+    for (const f of candidates) {
+      for (const [slot, z] of Object.entries(zones)) { const b = boxes[f]?.[slot]; if (b && judgeZone([b.x, b.y], z) === "fail") add(f, `${slot} zone`); }
+      if (pairState?.pair && pairState.verdicts[f] === "fail") add(f, `pair ${pairState.pair.a} → ${pairState.pair.b}`);
+    }
+    return why;
+  }, [candidates, boxes, zones, pairState]);
+  const outsideFrames = useMemo(() => candidates.filter((f) => outsideWhy.has(f)), [candidates, outsideWhy]);
+  const outsideTip = useMemo(() => {
+    const per = new Map<string, number>();
+    for (const reasons of outsideWhy.values()) for (const r of reasons) per.set(r, (per.get(r) ?? 0) + 1);
+    return per.size ? `Outside: ${[...per].map(([r, n]) => `${n} by the ${r}`).join(", ")}` : "Pictures outside a target's review zone or the pair's band / zone";
+  }, [outsideWhy]);
   const mapPoints = useMemo(() => {
     const out: Record<string, Pt2 | null> = {};
     if (mapOn) for (const f of candidates) { const b = boxes[f]?.[mapOn.slot]; out[f] = b ? [b.x, b.y] : null; }
@@ -242,9 +257,10 @@ function DetectorWork(p: {
   }, [candidates, boxes, mapOn?.slot]); // eslint-disable-line react-hooks/exhaustive-deps
   const shown = useMemo(() => {
     const base = show === "missing" ? missingFrames : show === "outside" ? outsideFrames : candidates;
-    if (!spot) return base;
-    return base.filter((f) => { const b = boxes[f]?.[spot.slot]; return !!b && Math.hypot(b.x - spot.at[0], b.y - spot.at[1]) <= spot.radius; });
-  }, [show, missingFrames, outsideFrames, candidates, spot, boxes]);
+    const inRange = (f: string) => { const v = pairState?.values[f]; return v != null && pairRange != null && v >= pairRange[0] && v <= pairRange[1]; };
+    const near = spot ? base.filter((f) => { const b = boxes[f]?.[spot.slot]; return !!b && Math.hypot(b.x - spot.at[0], b.y - spot.at[1]) <= spot.radius; }) : base;
+    return pairRange ? near.filter(inRange) : near;
+  }, [show, missingFrames, outsideFrames, candidates, spot, boxes, pairRange, pairState]);
   const at = Math.min(index, Math.max(0, shown.length - 1));
   const frame = shown[at];
   // The size counts only for the picture it was measured on. It used to be reset to "unknown" by an effect whenever the
@@ -253,7 +269,15 @@ function DetectorWork(p: {
   // until a hard refresh.
   const pictureSrc = frame ? pictureUrl(frame) : "";
   const size = useMemo(() => (measured && measured.src === pictureSrc ? { w: measured.w, h: measured.h } : null), [measured, pictureSrc]);
-  useEffect(() => setIndex(0), [show, spot]);
+  useEffect(() => setIndex(0), [show, spot, pairRange]);
+  // The pair map's state: again after a run (version), a change of the pair, or new boxes.
+  const savedPair = JSON.stringify(detail.review_pair ?? null);
+  useEffect(() => {
+    let current = true;
+    api.flowPair(camera, nodeId).then((r) => { if (current) setPairState(r); }).catch(() => { if (current) setPairState(null); }); // cosmetic: the page works without it
+    return () => { current = false; };
+  }, [camera, nodeId, p.version, savedPair, boxes]);
+  useEffect(() => setPairRange(null), [detail.review_pair?.op, detail.review_pair?.a, detail.review_pair?.b]);
   useEffect(() => {
     (strip.current?.querySelector('[aria-current="true"]') as HTMLElement | null)?.scrollIntoView?.({ inline: "center", block: "nearest" });
   }, [frame]);
@@ -469,6 +493,12 @@ function DetectorWork(p: {
   const saveZone = async (slot: string, zone: Partial<Zone> | null) => {
     try {
       p.setDetail(await api.flowUpdate(camera, nodeId, { review_zone: { slot, zone } }));
+      p.onError(null);
+    } catch (e) { p.onError(msg(e)); }
+  };
+  const savePair = async (pair: (Partial<Omit<FlowPair, "zone">> & { zone?: Partial<FlowZone> }) | null) => {
+    try {
+      p.setDetail(await api.flowUpdate(camera, nodeId, { review_pair: pair }));
       p.onError(null);
     } catch (e) { p.onError(msg(e)); }
   };
@@ -697,7 +727,7 @@ function DetectorWork(p: {
           </ZoomPane>
         </>
       ) : (
-        <p className="muted">{spot ? "No pictures near that spot." : show === "missing" ? "Every target was found on every picture." : show === "outside" ? "No picture is outside a zone." : hasInput ? "No pictures reach this box yet." : "Nothing is drawn into this box, so it has no pictures. Draw a line into it on the Chain."}</p>
+        <p className="muted">{spot || pairRange ? "No pictures there." : show === "missing" ? "Every target was found on every picture." : show === "outside" ? "No picture is outside a zone." : hasInput ? "No pictures reach this box yet." : "Nothing is drawn into this box, so it has no pictures. Draw a line into it on the Chain."}</p>
       )}
 
       <div className="flow-nav">
@@ -709,7 +739,7 @@ function DetectorWork(p: {
         <span className="flow-segment flow-nav-right" role="group" aria-label="Show pictures">
           <button type="button" aria-pressed={show === "all"} onClick={() => setShow("all")}>All ({candidates.length})</button>
           <button type="button" aria-pressed={show === "missing"} title="Pictures where a target with examples has no box" onClick={() => setShow("missing")}>Not found ({missingFrames.length})</button>
-          <button type="button" aria-pressed={show === "outside"} title="Pictures where a box lies outside its target's review zone (position map)" onClick={() => setShow("outside")}>Outside a zone ({outsideFrames.length})</button>
+          <button type="button" aria-pressed={show === "outside"} title={outsideTip} onClick={() => setShow("outside")}>Outside ({outsideFrames.length})</button>
         </span>
       </div>
 
@@ -717,6 +747,12 @@ function DetectorWork(p: {
         <p role="status" className="flow-spot">
           Only the pictures where “{spot.slot}” was found near x {spot.at[0].toFixed(0)}, y {spot.at[1].toFixed(0)}: {shown.length}{" "}
           <button type="button" onClick={() => setSpot(null)}>Show all</button>
+        </p>
+      )}
+      {pairRange && (
+        <p role="status" className="flow-spot">
+          Only the pictures whose pair value is {pairRange[0].toFixed(1)} to {pairRange[1].toFixed(1)} {pairState?.unit}: {shown.length}{" "}
+          <button type="button" onClick={() => setPairRange(null)}>Show all</button>
         </p>
       )}
       <div className="flow-strip" ref={strip} aria-label="Pictures">
@@ -764,6 +800,13 @@ function DetectorWork(p: {
             missing={Object.values(mapPoints).filter((q) => !q).length}
             label={mapOn.slot}
           />
+        </details>
+      )}
+
+      {detail.status !== "none" && mapSlots.length >= 2 && (
+        <details className="flow-position" open>
+          <summary>Pair map: two targets against each other</summary>
+          <PairMap slots={mapSlots.map((s) => s.slot)} state={pairState} save={(pair) => void savePair(pair)} heatChoice={heatChoice} range={pairRange} onRange={setPairRange} />
         </details>
       )}
 
