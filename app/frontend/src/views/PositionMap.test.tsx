@@ -231,6 +231,18 @@ test("Detector page: a score threshold makes weak matches join Outside, and the 
   await waitFor(() => expect(calls.some((c) => c.method === "PUT" && c.body?.review_value?.score_min === null)).toBe(true));
 });
 
+test("Detector page: the threshold can decide, then the weak matches count as not found", async () => {
+  render(<FlowBoxView camera="camA" focus={{ nodeId: "det:1", onBack: () => {} }} />);
+  const chart = await screen.findByRole("img", { name: "Histogram of the box values" });
+  expect(screen.queryByRole("checkbox", { name: "Below it counts as not found" })).toBeNull(); // no threshold, nothing to decide by
+  await userEvent.click(within(chart).getByRole("button", { name: "Use 0.91 as threshold" }));
+  const decides = await screen.findByRole("checkbox", { name: "Below it counts as not found" });
+  expect(decides).not.toBeChecked();
+  await userEvent.click(decides);
+  await waitFor(() => expect(calls.some((c) => c.method === "PUT" && c.body?.review_value?.slot === "hole" && c.body.review_value.decides === true)).toBe(true));
+  await waitFor(() => expect(screen.getByTestId("box-value-count")).toHaveTextContent("3 of 3 below the threshold, counted as not found · hole"));
+});
+
 test("Detector page: the angle band is offered when the detector searches turned, and starts on the densest angle", async () => {
   render(<FlowBoxView camera="camA" focus={{ nodeId: "det:1", onBack: () => {} }} />);
   await screen.findByRole("img", { name: "Histogram of the box values" });

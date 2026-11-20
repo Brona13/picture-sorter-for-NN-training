@@ -3,6 +3,7 @@
  * every found box with a threshold (below it is weak), or its angle with a nominal ± tolerance band (wrapping, only
  * when the detector searches turned). The Evaluation histogram draws both. Review aids like the zones: saved on the
  * detector box, never make its run stale; pictures that break them join *Outside* and the attention order.
+ * v1.174.0: the score threshold can also **decide** (`rule.decides`): a box below it counts as not found for every reader.
  */
 import { FlowBox, FlowBoxRule } from "../api";
 import { boxScore, clockAngle } from "../attention";
@@ -20,7 +21,7 @@ export default function BoxValues({ slot, measure, values, rule, save, range, on
   /** The measure's value per picture where the target was found. */
   values: number[];
   rule: FlowBoxRule | undefined;
-  save: (change: { score_min?: number | null; angle?: { nominal: number; tolerance: number } | null }) => void;
+  save: (change: { score_min?: number | null; decides?: boolean; angle?: { nominal: number; tolerance: number } | null }) => void;
   range: [number, number] | null;
   onRange: (range: [number, number] | null) => void;
 }) {
@@ -40,6 +41,11 @@ export default function BoxValues({ slot, measure, values, rule, save, range, on
           </button>
         )}
         {measure === "score" && threshold != null && <button type="button" onClick={() => save({ score_min: null })}>Remove threshold</button>}
+        {measure === "score" && threshold != null && (
+          <label title="Off: a weak match only shows up in this review. On: a match below the threshold counts as not found everywhere (lines, Calculate, Classifiers); the boxes behind this detector go stale. A box you placed by hand always counts.">
+            <input type="checkbox" checked={rule?.decides === true} onChange={(e) => save({ decides: e.target.checked })} /> Below it counts as not found
+          </label>
+        )}
         {measure === "angle" && band && <button type="button" onClick={() => save({ angle: null })}>Remove band</button>}
       </div>
       <EvaluationHistogram
@@ -55,7 +61,7 @@ export default function BoxValues({ slot, measure, values, rule, save, range, on
       <p role="status" data-testid="box-value-count" style={{ margin: "4px 0 0" }}>
         {broken === null
           ? `${values.length} found · ${measure === "score" ? "click a bar to set the threshold: a match below it is weak" : "click a bar or use the densest value to set the nominal"}`
-          : <><strong>{broken}</strong> of {values.length} {measure === "score" ? "below the threshold" : "outside the band"}</>}
+          : <><strong>{broken}</strong> of {values.length} {measure === "score" ? (rule?.decides ? "below the threshold, counted as not found" : "below the threshold") : "outside the band"}</>}
         {` · ${slot}`}
       </p>
     </>

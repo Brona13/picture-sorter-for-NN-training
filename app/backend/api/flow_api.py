@@ -273,9 +273,10 @@ def get_picture(camera: str, node_id: str, frame: str, stage: str = "input", siz
 
 @router.get("/cameras/{camera}/flow/nodes/{node_id}/boxes")
 def get_boxes(camera: str, node_id: str, only_review: bool = False) -> dict:
-    """Boxes found by a detector, by frame name; ``only_review`` lists just the frames with a missing target."""
+    """Boxes found by a detector, by frame name; ``only_review`` lists just the frames with a missing target. The boxes are every stored
+    one (the page tunes a deciding threshold by their scores); ``review`` already counts a box below a deciding threshold as missing."""
     _known(camera, node_id)
-    boxes = flow.frame_boxes(camera, node_id)
+    boxes = flow.frame_boxes(camera, node_id, raw=True)
     review = flow.review_frames(camera, node_id)
     if only_review:
         boxes = {f: boxes[f] for f in review}

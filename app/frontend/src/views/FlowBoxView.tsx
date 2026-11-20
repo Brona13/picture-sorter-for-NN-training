@@ -507,7 +507,7 @@ function DetectorWork(p: {
       p.onError(null);
     } catch (e) { p.onError(msg(e)); }
   };
-  const saveRule = async (slot: string, change: { score_min?: number | null; angle?: { nominal: number; tolerance: number } | null }) => {
+  const saveRule = async (slot: string, change: { score_min?: number | null; decides?: boolean; angle?: { nominal: number; tolerance: number } | null }) => {
     try {
       p.setDetail(await api.flowUpdate(camera, nodeId, { review_value: { slot, ...change } }));
       p.onError(null);

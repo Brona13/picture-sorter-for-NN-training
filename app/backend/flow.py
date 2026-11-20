@@ -713,8 +713,24 @@ def review_values(node: dict) -> dict[str, dict]:
     return {slot: dict(v) for slot, v in (node.get("review_values") or {}).items() if slot in slots and v}
 
 
+def decision_rules(node: dict | None) -> dict[str, float]:
+    """The targets whose score threshold decides (v1.174.0): ``{slot: score_min}``. A box found with a lower match score counts
+    as not found for every reader (``load_stored``); a box a human placed always counts."""
+    if not node or node.get("kind") != "detector":
+        return {}
+    return {slot: float(v["score_min"]) for slot, v in review_values(node).items() if v.get("decides") and v.get("score_min") is not None}
+
+
+def _decided(frames: dict, rules: dict[str, float]) -> dict:
+    """``frames`` (stored boxes by picture hash and slot) without the machine boxes that score below their slot's deciding threshold."""
+    return {key: {slot: e for slot, e in boxes.items() if e.get("source") == "human" or slot not in rules or float(e.get("score", 1.0)) >= rules[slot]}
+            for key, boxes in frames.items()}
+
+
 def set_review_value(node: dict, raw: object) -> None:
-    """``{"slot", "score_min": number | None, "angle": {"nominal", "tolerance"} | None}``: set or clear either rule."""
+    """``{"slot", "score_min": number | None, "decides": bool, "angle": {"nominal", "tolerance"} | None}``: set or clear either rule.
+    ``decides`` (v1.174.0) turns the score threshold from a review flag into the rule for found: a match below it counts as
+    not found (see ``decision_rules``). It only means something together with ``score_min``."""
     if not isinstance(raw, dict) or not isinstance(raw.get("slot"), str):
         raise FlowError("A box-value rule names the target it belongs to.")
     slot = raw["slot"]
@@ -730,6 +746,13 @@ def set_review_value(node: dict, raw: object) -> None:
             if not 0.0 <= t <= 1.0:
                 raise FlowError("The score threshold is between 0 and 1.")
             rule["score_min"] = round(t, 3)
+    if "decides" in raw:
+        if raw["decides"]:
+            rule["decides"] = True
+        else:
+            rule.pop("decides", None)
+    if "score_min" not in rule:
+        rule.pop("decides", None)  # nothing to decide by
     if "angle" in raw:
         a = raw["angle"]
         if a is None:
@@ -1252,7 +1275,10 @@ def update_node(camera: str, node_id: str, raw: dict) -> dict:
         if "review_zone" in raw:
             set_review_zone(node, raw["review_zone"])
         if "review_value" in raw:
+            decided_before = decision_rules(node)
             set_review_value(node, raw["review_value"])
+            if decision_rules(node) != decided_before:
+                datamodel.invalidate_product_membership(camera)  # a Classifier on this detector's boxes has one picture per found box
         if "review_pair" in raw:
             import review_pair  # noqa: PLC0415  (it imports this module)
 
@@ -1861,8 +1887,16 @@ def _example_image(example: dict) -> np.ndarray:
 
 
 # --- detection -------------------------------------------------------------------
-def signature(graph: dict, node_id: str) -> str:
-    """Changes when what a detector would find changes: its targets, examples, search settings and its input."""
+def signature(graph: dict, node_id: str, with_rules: bool = True) -> str:
+    """Changes when what a detector would find changes: its targets, examples, search settings and its input. With ``with_rules``
+    (what the boxes behind it use) it also changes when a deciding threshold changes what counts as found, so they go stale;
+    the detector's own run does not (``with_rules=False``: the stored boxes keep their scores, the threshold is applied on reading)."""
+    base = _base_signature(graph, node_id)
+    rules = decision_rules(graph["nodes"][node_id]) if with_rules else {}
+    return hashlib.sha1(json.dumps([base, sorted(rules.items())]).encode()).hexdigest()[:16] if rules else base
+
+
+def _base_signature(graph: dict, node_id: str) -> str:
     node = graph["nodes"][node_id]
     if node["kind"] == "box":
         import box_module  # noqa: PLC0415
@@ -1886,13 +1920,19 @@ def _results_key(node_id: str) -> str:
     return RESULTS_PREFIX + node_id
 
 
-def load_stored(camera: str, node_id: str) -> dict:
-    """The stored boxes of a detector, or of a Box (made again first when its settings or the runs it reads changed)."""
+def load_stored(camera: str, node_id: str, raw: bool = False) -> dict:
+    """The stored boxes of a detector, or of a Box (made again first when its settings or the runs it reads changed).
+    A detector target whose score threshold decides (``decision_rules``) has no box where the match scored below it, for
+    every reader; ``raw`` gives every stored box (the detector page, to tune the threshold, and what is written back)."""
     if kind_of(node_id) == "box":
         import box_module  # noqa: PLC0415
 
         return box_module.ensure(camera, node_id)
-    return _load_raw(camera, node_id)
+    stored = _load_raw(camera, node_id)
+    if raw or not stored["frames"]:
+        return stored
+    rules = decision_rules(load_graph(camera)["nodes"].get(node_id))
+    return {"sig": stored["sig"], "frames": _decided(stored["frames"], rules)} if rules else stored
 
 
 def _load_raw(camera: str, node_id: str) -> dict:
@@ -1927,7 +1967,7 @@ def status(camera: str, node_id: str, graph: dict | None = None) -> str:
     stored = load_stored(camera, node_id)
     if stored["sig"] is None:
         return "none"
-    return "fresh" if stored["sig"] == signature(graph, node_id) else "stale"
+    return "fresh" if stored["sig"] == signature(graph, node_id, with_rules=False) else "stale"
 
 
 @applog.timed("flow.live_frames")
@@ -2179,7 +2219,7 @@ def run_detector(camera: str, node_id: str, report=None, frames: list[str] | Non
             out[key] = found
         if report:
             report({"phase": "detecting", "node": node_id, "done": i, "total": len(names)})
-    _store(camera, node_id, signature(graph, node_id), out)
+    _store(camera, node_id, signature(graph, node_id, with_rules=False), out)
     return summarize_detector(camera, node_id)
 
 
@@ -2202,7 +2242,7 @@ def set_box(camera: str, node_id: str, frame: str, target: str, x: float, y: flo
     key = labels.hash_map(camera).get(frame)
     if not key:
         raise FlowError(f"Unknown frame: {frame}")
-    stored = load_stored(camera, node_id)
+    stored = _load_raw(camera, node_id)  # every box, also the ones a deciding threshold hides from readers: this is written back
     boxes = stored["frames"].setdefault(key, {})
     if target not in slot_names(entry):  # the target's plain name while it looks for several: the first free number, else the nearest box
         slots = slot_names(entry)
@@ -2219,7 +2259,7 @@ def set_box(camera: str, node_id: str, frame: str, target: str, x: float, y: flo
         "h": (old or {}).get("h", example["box"][3]),
         "source": "human",
     }
-    _store(camera, node_id, stored["sig"] or signature(graph, node_id), stored["frames"])
+    _store(camera, node_id, stored["sig"] or signature(graph, node_id, with_rules=False), stored["frames"])
     return boxes[target]
 
 
@@ -2234,9 +2274,9 @@ def summarize_detector(camera: str, node_id: str) -> dict:
     return {"frames": total, "found": per, "complete": complete, "review": total - complete}
 
 
-def frame_boxes(camera: str, node_id: str) -> dict[str, dict]:
-    """Stored boxes by frame name (only live frames the stored run knows)."""
-    stored = load_stored(camera, node_id)["frames"]
+def frame_boxes(camera: str, node_id: str, raw: bool = False) -> dict[str, dict]:
+    """Stored boxes by frame name (only live frames the stored run knows); ``raw`` keeps the ones a deciding threshold calls not found."""
+    stored = load_stored(camera, node_id, raw=raw)["frames"]
     hmap = labels.hash_map(camera)
     result: dict[str, dict] = {}
     for frame in node_frames(camera, node_id):

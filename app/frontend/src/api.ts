@@ -643,6 +643,8 @@ export interface FlowCalc {
 /** The zone of an Evaluation behind an Offset: pixels from point A (see `zoneGeometry.ts`). */
 export interface FlowBoxRule {
   score_min?: number;
+  /** v1.174.0: a match below `score_min` counts as not found for every reader, not only as weak in the review. */
+  decides?: boolean;
   angle?: { nominal: number; tolerance: number };
 }
 export interface FlowPair {
